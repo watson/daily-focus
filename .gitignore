@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+
+# Local data store, in case DAILY_FOCUS_DATA is pointed inside the repo.
+data/

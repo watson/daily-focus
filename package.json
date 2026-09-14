@@ -1,0 +1,30 @@
+{
+  "name": "daily-focus",
+  "version": "0.1.0",
+  "description": "An interactive dashboard of what you should focus on today at work",
+  "author": "Thomas Watson <w@tson.dk> (https://wa.tson.dk/)",
+  "license": "MIT",
+  "private": true,
+  "homepage": "https://github.com/watson/daily-focus#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watson/daily-focus.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts",
+    "init": "node scripts/init.ts",
+    "seed": "node scripts/seed.ts",
+    "audit": "node scripts/audit.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  }
+}

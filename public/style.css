@@ -1,0 +1,1089 @@
+/*
+ * Tokens come from the validated reference palette: the eight categorical hues
+ * carry source identity, the four status colours are reserved for state only.
+ * Both modes are selected, not flipped — dark has its own steps.
+ *
+ * Source colour is never the only cue: every dot sits beside its source name in
+ * text, which is what lets the lighter light-mode hues (aqua, yellow, magenta)
+ * sit below 3:1 contrast without losing meaning.
+ */
+
+:root {
+  color-scheme: light;
+
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-sunken: #f2f1ed;
+  --ink-1: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-3: #898781;
+  --hairline: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.1);
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.05), 0 4px 16px rgba(11, 11, 11, 0.04);
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good-ink: #006300;
+
+  --src-github: #2a78d6;
+  --src-email: #eb6834;
+  --src-calendar: #1baf7a;
+  --src-jira: #eda100;
+  --src-slack: #e87ba4;
+  --src-workday: #008300;
+  --src-tasks: #0b8ea8;
+  --src-atlassian: #4a3aa7;
+  --src-other: #898781;
+
+  --accent: #2a78d6;
+  --accent-wash: #e8f1fd;
+  --focus-ring: #2a78d6;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* The media block sits below the toggle scope, so an explicit light stamp wins. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-sunken: #131312;
+    --ink-1: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #898781;
+    --hairline: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --shadow: none;
+
+    --good-ink: #0ca30c;
+
+    --src-github: #3987e5;
+    --src-email: #d95926;
+    --src-calendar: #199e70;
+    --src-jira: #c98500;
+    --src-slack: #d55181;
+    --src-workday: #008300;
+    --src-tasks: #2ba8c4;
+    --src-atlassian: #9085e9;
+    --src-other: #898781;
+
+    --accent: #3987e5;
+    --accent-wash: #14263a;
+    --focus-ring: #3987e5;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-sunken: #131312;
+  --ink-1: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-3: #898781;
+  --hairline: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.1);
+  --shadow: none;
+
+  --good-ink: #0ca30c;
+
+  --src-github: #3987e5;
+  --src-email: #d95926;
+  --src-calendar: #199e70;
+  --src-jira: #c98500;
+  --src-slack: #d55181;
+  --src-workday: #008300;
+  --src-tasks: #2ba8c4;
+  --src-atlassian: #9085e9;
+  --src-other: #898781;
+
+  --accent: #3987e5;
+  --accent-wash: #14263a;
+  --focus-ring: #3987e5;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/*
+ * The UA stylesheet's `[hidden] { display: none }` loses to any class that sets
+ * display, so `.timer`, `.focus-bar` and `.toast` all rendered as empty boxes
+ * while "hidden". Assert it once here rather than remembering per component.
+ */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  padding: 0 clamp(16px, 4vw, 40px) 64px;
+  background: var(--page);
+  color: var(--ink-1);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+.skip-link:focus {
+  left: 16px;
+  top: 16px;
+  z-index: 10;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- header ---------- */
+
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 0 20px;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.page-header__date {
+  margin: 2px 0 0;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.page-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.freshness {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.freshness[data-stale='true'] {
+  color: var(--critical);
+  font-weight: 500;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+.icon-button:hover {
+  color: var(--ink-1);
+  border-color: var(--ink-3);
+}
+
+/* ---------- focus timer ---------- */
+
+.timer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1280px;
+  margin: 0 auto 14px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+/* Past the target the timer stops being encouraging and starts being a fact. */
+.timer[data-state='overrun'] {
+  border-left-color: var(--serious);
+}
+.timer[data-state='idle'] {
+  border-left-color: var(--hairline);
+  color: var(--ink-3);
+}
+
+.timer__clock {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-1);
+  min-width: 62px;
+}
+.timer[data-state='overrun'] .timer__clock {
+  color: var(--serious);
+}
+
+.timer__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.timer__note {
+  color: var(--ink-3);
+}
+.timer__note--warn {
+  color: var(--critical);
+}
+.timer__tally {
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/*
+ * The bar after the timer stopped itself. Marked like the overrun state rather
+ * than the idle one: something happened that's worth a glance, even though the
+ * thing that happened was the dashboard being careful.
+ */
+.timer[data-state='stopped'] {
+  border-left-color: var(--serious);
+}
+.timer__away {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.timer__away-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.timer__away-text {
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.timer__away-detail {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- banners ---------- */
+
+.banners {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.banner__icon {
+  flex: none;
+  line-height: 1.5;
+}
+.banner--critical {
+  border-left: 3px solid var(--critical);
+}
+.banner--critical .banner__icon {
+  color: var(--critical);
+}
+.banner--warning {
+  border-left: 3px solid var(--warning);
+}
+.banner--warning .banner__icon {
+  color: var(--serious);
+}
+/* Explanation, not status — so it borrows the accent, not one of the four state hues. */
+.banner--info {
+  border-left: 3px solid var(--accent);
+}
+.banner--info .banner__icon {
+  color: var(--accent);
+}
+
+/* ---------- layout ---------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .layout__side {
+    order: -1;
+  }
+}
+
+/* ---------- focus mode ---------- */
+
+/*
+ * Fourteen open rows are fourteen invitations to switch task. Focus mode answers
+ * the only question that matters mid-work — "what am I doing right now" — by
+ * leaving the objective, one item, and the clock, and taking away the menu.
+ */
+.focus-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 9px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+body[data-focus-mode='true'] .stats,
+body[data-focus-mode='true'] .headline,
+body[data-focus-mode='true'] .drawer,
+body[data-focus-mode='true'] .section__header,
+/* every section except the first, and every item in it except the first */
+body[data-focus-mode='true'] .section:not(:first-of-type),
+body[data-focus-mode='true'] .section:first-of-type .item:not(:first-child) {
+  display: none;
+}
+
+body[data-focus-mode='true'] .item {
+  padding: 18px 20px;
+}
+body[data-focus-mode='true'] .item__title {
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+/* ---------- standing objective ---------- */
+
+/*
+ * Deliberately heavier than the agent's headline below it. The headline changes
+ * daily; this doesn't, and it should be the first thing read on the page.
+ */
+.objective {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.objective__label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.objective__text {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--ink-1);
+}
+
+.objective__blocker {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.objective__blocker-label {
+  color: var(--critical);
+  font-weight: 500;
+}
+
+.objective__note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* ---------- stat row ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat {
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.stat__label {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.stat__value {
+  margin: 2px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.stat__value[data-tone='critical'] {
+  color: var(--critical);
+}
+.stat__value[data-tone='good'] {
+  color: var(--good-ink);
+}
+.stat__footnote {
+  margin: 3px 0 0;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.35;
+  /* The last thing completed can be a full title; keep the tile from growing. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.headline {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* ---------- sections ---------- */
+
+.section {
+  margin-bottom: 22px;
+}
+
+.section__header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0 2px;
+}
+.section__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.section__count {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.section__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  align-self: center;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px; /* the surface gap doing the separating, not a border */
+}
+
+/* ---------- item ---------- */
+
+.item {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  scroll-margin: 90px;
+}
+/*
+ * Three states used to share one look: selected, priority and running were all
+ * "accent border", so the one that matters most was indistinguishable from a
+ * keyboard cursor. They're now ranked — selected is quietest, running loudest.
+ */
+.item[data-selected='true'] {
+  border-color: var(--ink-3);
+  box-shadow: 0 0 0 1px var(--ink-3);
+}
+.item[data-priority='true'] {
+  border-left: 3px solid var(--accent);
+}
+
+/* The one you committed to. Four reinforcing cues, because missing it is the
+ * whole failure mode: a thick bar, a wash, a ring, and a live clock on the row. */
+.item[data-running='true'],
+.item[data-running='true'][data-selected='true'] {
+  border-color: var(--accent);
+  border-left: 5px solid var(--accent);
+  background: var(--accent-wash);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.item[data-running='true'][data-overrun='true'],
+.item[data-running='true'][data-overrun='true'][data-selected='true'] {
+  border-color: var(--serious);
+  border-left-color: var(--serious);
+  box-shadow: 0 0 0 2px var(--serious);
+}
+
+/* While a session runs, everything else recedes — the competing rows are the
+ * distraction the timer exists to resist. Hover brings one back so the list is
+ * still usable without stopping the clock. */
+body[data-session-active='true'] .item:not([data-running='true']) {
+  opacity: 0.45;
+}
+body[data-session-active='true'] .item:not([data-running='true']):hover,
+body[data-session-active='true'] .item:not([data-running='true']):focus-within {
+  opacity: 1;
+}
+.item[data-status='done'] .item__title,
+.item[data-status='dismissed'] .item__title {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+.item[data-pending='true'] {
+  opacity: 0.55;
+}
+
+.item__mark {
+  padding-top: 4px;
+}
+
+.item__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: block;
+}
+
+.item__body {
+  min-width: 0;
+}
+
+.item__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.item__title a {
+  color: inherit;
+  text-decoration: none;
+}
+.item__title a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+
+.item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.item__source {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.item__detail {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.item__detail code {
+  padding: 1px 4px;
+  background: var(--surface-sunken);
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+
+.item__notes {
+  margin: 7px 0 0;
+  padding: 6px 9px;
+  border-left: 2px solid var(--hairline);
+  background: var(--surface-sunken);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.item__note + .item__note {
+  margin-top: 4px;
+}
+
+/* pills */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.pill--priority {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pill--running {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.item[data-overrun='true'] .pill--running {
+  background: var(--serious);
+  color: #1a1a19;
+}
+.pill--objective {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.pill--overdue {
+  border-color: var(--critical);
+  color: var(--critical);
+  font-weight: 500;
+}
+.pill--due {
+  border-color: var(--serious);
+  color: var(--ink-2);
+}
+.pill--age {
+  border-color: var(--warning);
+  color: var(--ink-2);
+}
+.pill--conflict {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+.pill--tag {
+  background: var(--surface-sunken);
+  border-color: transparent;
+  color: var(--ink-3);
+}
+
+/* actions */
+
+.item__actions {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+  background: var(--surface);
+  padding-left: 6px;
+}
+.item:hover .item__actions,
+.item:focus-within .item__actions,
+.item[data-selected='true'] .item__actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .item__actions {
+    opacity: 1;
+  }
+}
+
+.button {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.button:hover {
+  color: var(--ink-1);
+  border-color: var(--ink-3);
+}
+.button--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+.button--primary:hover {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+/* note composer */
+
+.note-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.note-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* snooze menu */
+
+.menu {
+  position: absolute;
+  top: 34px;
+  right: 10px;
+  z-index: 5;
+  min-width: 172px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 6px 24px rgba(11, 11, 11, 0.14);
+}
+.menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.menu button:hover {
+  background: var(--surface-sunken);
+  color: var(--ink-1);
+}
+.menu__date {
+  display: flex;
+  gap: 5px;
+  padding: 5px 6px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+.menu__date input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--page);
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* ---------- agenda ---------- */
+
+.agenda {
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 16px;
+}
+
+.agenda__title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.agenda__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.agenda__row {
+  display: grid;
+  /* Wide enough for a 12-hour "09:30 AM" without wrapping. */
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+  font-size: 13px;
+}
+.agenda__row:first-child {
+  border-top: 0;
+}
+
+.agenda__time {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums; /* a column of times, so tabular is right here */
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+.agenda__name {
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+/* Event links take the row's ink so past events actually read as past. */
+.agenda__name a {
+  color: inherit;
+  text-decoration: none;
+}
+.agenda__name a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+.agenda__row[data-past='true'] .agenda__name,
+.agenda__row[data-past='true'] .agenda__time {
+  color: var(--ink-3);
+}
+.agenda__sub {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.agenda__row--free .agenda__name {
+  color: var(--good-ink);
+  font-weight: 500;
+}
+.agenda__row--now {
+  align-items: center;
+  padding: 2px 0;
+  border-top: 0;
+}
+.agenda__now-label {
+  color: var(--critical);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.agenda__now-line {
+  height: 2px;
+  background: var(--critical);
+  border-radius: 1px;
+}
+
+.empty {
+  margin: 0;
+  padding: 18px 4px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+/* ---------- done drawer ---------- */
+
+.drawer {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.drawer > summary {
+  padding: 9px 13px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 13px;
+  list-style: none;
+}
+.drawer > summary::-webkit-details-marker {
+  display: none;
+}
+.drawer > summary::before {
+  content: '▸ ';
+  color: var(--ink-3);
+}
+.drawer[open] > summary::before {
+  content: '▾ ';
+}
+.drawer .list {
+  padding: 0 8px 8px;
+}
+.drawer .item {
+  box-shadow: none;
+}
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  background: var(--ink-1);
+  color: var(--page);
+  border-radius: 999px;
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(11, 11, 11, 0.25);
+}
+.toast button {
+  border: 0;
+  background: none;
+  color: var(--page);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---------- help dialog ---------- */
+
+.help {
+  max-width: 420px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-1);
+}
+.help::backdrop {
+  background: rgba(11, 11, 11, 0.4);
+}
+.help h2 {
+  margin: 0 0 14px;
+  font-size: 16px;
+}
+.help dl {
+  margin: 0 0 14px;
+  display: grid;
+  gap: 6px;
+}
+.help dl > div {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  font-size: 13.5px;
+}
+.help dt {
+  color: var(--ink-2);
+}
+.help dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+.help__note {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--ink-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

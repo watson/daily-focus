@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/watson/daily-focus/schema/items.schema.json",
+  "title": "Daily Focus brief",
+  "description": "The payload the briefing agent writes to items.json. See AGENTS.md for the rules that a schema can't express — above all, that ids must be stable across runs.",
+  "type": "object",
+  "required": ["version", "generatedAt", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the run that produced this file."
+    },
+    "generatedBy": {
+      "type": "string",
+      "description": "Free-form label naming whichever agent produced this brief. The dashboard shows it, and does not care which agent it is."
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "The local date this brief is for."
+    },
+    "headline": {
+      "type": "string",
+      "description": "One or two sentences at the top of the page. Inline Markdown: **bold**, `code`, [text](url)."
+    },
+    "dayStart": {
+      "type": "string",
+      "pattern": "^\\d{2}:\\d{2}$",
+      "description": "Local time today's working day starts, derived from the calendar. Overrides the dashboard default."
+    },
+    "dayEnd": {
+      "type": "string",
+      "pattern": "^\\d{2}:\\d{2}$",
+      "description": "Local time today's working day ends. Set this when the day is short — free windows and remaining focus time are computed from it."
+    },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "required": ["id", "title", "source", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable across runs — actions are keyed on this. Derive it from upstream identity, never from the title or the date. e.g. \"github:pr:acme/webapp#3421\".",
+          "examples": ["github:pr:acme/webapp#3421", "email:thread:18f2a9c4b7", "jira:PROJ-8842"]
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "source": {
+          "enum": ["github", "email", "calendar", "jira", "slack", "workday", "tasks", "atlassian", "other"],
+          "description": "Aliases such as gmail, gh, google-tasks and confluence are normalised by the dashboard."
+        },
+        "kind": {
+          "enum": ["task", "event", "info"],
+          "description": "task = completable; event = goes on the agenda; info = context only."
+        },
+        "detail": {
+          "type": "string",
+          "description": "A sentence or two of context. Inline Markdown supported."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://",
+          "description": "Deep link. Non-http(s) URLs are dropped."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Lifts the item into the Top priorities band. Use for at most three items."
+        },
+        "due": { "type": "string", "description": "ISO date or timestamp." },
+        "start": {
+          "type": "string",
+          "description": "Events only. A bare YYYY-MM-DD means all-day."
+        },
+        "end": { "type": "string", "description": "Events only." },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "people": { "type": "array", "items": { "type": "string" } },
+        "firstSeen": {
+          "type": "string",
+          "description": "ISO date this item was FIRST raised. Carry it forward across runs so the dashboard can age it."
+        },
+        "advancesObjective": {
+          "type": "boolean",
+          "description": "True only when completing this genuinely moves the objective in focus.md forward. Drives the \"days since objective progress\" metric, so a generous reading makes that number lie."
+        }
+      }
+    }
+  }
+}

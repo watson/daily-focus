@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Daily Focus</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='38' fill='none' stroke='%232a78d6' stroke-width='10'/><circle cx='50' cy='50' r='10' fill='%23eb6834'/></svg>"
+    />
+    <script>
+      // Applied before first paint so a dark-mode user never sees a white flash.
+      const stored = localStorage.getItem('daily-focus:theme');
+      if (stored === 'light' || stored === 'dark') {
+        document.documentElement.dataset.theme = stored;
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="page-header">
+      <div class="page-header__titles">
+        <h1>Daily Focus</h1>
+        <p class="page-header__date" id="header-date"></p>
+      </div>
+      <div class="page-header__meta">
+        <span class="freshness" id="freshness" aria-live="polite"></span>
+        <button
+          type="button"
+          class="icon-button"
+          id="theme-toggle"
+          aria-label="Switch colour theme"
+          title="Switch colour theme"
+        >
+          <span aria-hidden="true">◐</span>
+        </button>
+        <button
+          type="button"
+          class="icon-button"
+          id="help-toggle"
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts"
+        >
+          <span aria-hidden="true">?</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="timer" id="timer" hidden></div>
+
+    <div id="banners" class="banners"></div>
+
+    <main id="main" class="layout">
+      <div class="layout__main">
+        <p class="focus-bar" id="focus-bar" hidden>
+          Focus mode — everything but the top item is hidden.
+          <button type="button" class="button" id="focus-exit">Show everything</button>
+        </p>
+        <section class="objective" id="objective" aria-label="Current objective" hidden></section>
+        <section class="stats" id="stats" aria-label="Today at a glance"></section>
+        <p class="headline" id="headline" hidden></p>
+        <div id="sections"></div>
+      </div>
+
+      <aside class="layout__side" aria-label="Today's agenda">
+        <div id="agenda"></div>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <dialog class="help" id="help">
+      <h2>Keyboard shortcuts</h2>
+      <dl>
+        <div><dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous item</dd></div>
+        <div><dt><kbd>e</kbd></dt><dd>Mark done</dd></div>
+        <div><dt><kbd>s</kbd></dt><dd>Snooze until tomorrow</dd></div>
+        <div><dt><kbd>x</kbd></dt><dd>Dismiss — not relevant</dd></div>
+        <div><dt><kbd>n</kbd></dt><dd>Leave a note for the agent</dd></div>
+        <div><dt><kbd>o</kbd></dt><dd>Open the source link</dd></div>
+        <div><dt><kbd>u</kbd></dt><dd>Undo the last action</dd></div>
+        <div><dt><kbd>f</kbd></dt><dd>Focus mode — hide all but the top item</dd></div>
+        <div><dt><kbd>p</kbd></dt><dd>Start a focus session on the selected item</dd></div>
+        <div><dt><kbd>?</kbd></dt><dd>This help</dd></div>
+      </dl>
+      <p class="help__note">
+        Done, snoozed and dismissed all tell the morning agent to leave an item out of
+        tomorrow's brief. A note is sent along with it as free text.
+      </p>
+      <form method="dialog"><button type="submit" class="button">Close</button></form>
+    </dialog>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
