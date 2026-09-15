@@ -827,7 +827,8 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
   top: 34px;
   right: 10px;
   z-index: 5;
-  min-width: 172px;
+  /* Wide enough that the date field below still shows its own placeholder. */
+  min-width: 204px;
   padding: 5px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -858,9 +859,19 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
   margin-top: 4px;
   border-top: 1px solid var(--hairline);
 }
+/*
+ * The presets above are stacked, so `.menu button` makes them full-width. This
+ * row is a flex line instead, and a 100% basis there lets "Set" claim the whole
+ * width and squeeze the date field down to its calendar icon — an empty box.
+ */
+.menu__date button {
+  flex: 0 0 auto;
+  width: auto;
+  text-align: center;
+}
 .menu__date input {
   flex: 1;
-  min-width: 0;
+  min-width: 5.5em;
   padding: 3px 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
