@@ -33,6 +33,7 @@ async function makeConfig(): Promise<Config> {
     archiveDir: resolve(dataDir, 'archive'),
     sessionFile: resolve(dataDir, 'session.json'),
     sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
+    pullsFile: resolve(dataDir, 'prs.json'),
     sessionMinutes: 25,
     awayAfterMinutes: 10,
     port: 0,
@@ -42,6 +43,7 @@ async function makeConfig(): Promise<Config> {
     minFreeWindowMinutes: 45,
     staleAfterHours: 24,
     agentDays: null,
+    github: { enabled: false, accounts: [], scope: [], pollMinutes: 5, ghPath: 'gh' },
   };
 }
 

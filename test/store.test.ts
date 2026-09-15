@@ -28,6 +28,7 @@ async function makeStore(overrides: Partial<Config> = {}): Promise<Store> {
     archiveDir: resolve(dataDir, 'archive'),
     sessionFile: resolve(dataDir, 'session.json'),
     sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
+    pullsFile: resolve(dataDir, 'prs.json'),
     sessionMinutes: 25,
     awayAfterMinutes: 10,
     port: 0,
@@ -37,6 +38,7 @@ async function makeStore(overrides: Partial<Config> = {}): Promise<Store> {
     minFreeWindowMinutes: 45,
     staleAfterHours: 24,
     agentDays: null,
+    github: { enabled: false, accounts: [], scope: [], pollMinutes: 5, ghPath: 'gh' },
     ...overrides,
   };
   return new Store(config);
