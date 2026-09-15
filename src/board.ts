@@ -369,8 +369,8 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
-/** Stored pending checks, one bad entry at a time rather than all or nothing. */
-function pendingChecks(value: unknown): PendingCheck[] {
+/** Stored named checks, pending or cancelled, one bad entry at a time rather than all or nothing. */
+function namedChecks(value: unknown): PendingCheck[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     if (!isRecord(entry) || typeof entry.name !== 'string' || entry.name === '') return [];
@@ -436,7 +436,11 @@ export function normalizeStoredPull(raw: unknown): PullRequest | null {
     // is null and falls back to the older reading of ready, and a value the enum
     // doesn't have is `UNKNOWN` rather than anything resembling a clean merge.
     mergeStateStatus: toMergeState(raw.mergeStateStatus),
-    pendingChecks: pendingChecks(raw.pendingChecks),
+    pendingChecks: namedChecks(raw.pendingChecks),
+    // Absent on a cache written before cancellations were told apart from
+    // failures, where they were folded into `failingChecks` instead. Nothing
+    // needs migrating: the next fetch overwrites both.
+    cancelledChecks: namedChecks(raw.cancelledChecks),
     autoMerge: raw.autoMerge === true,
     requestedReviewers: strings(raw.requestedReviewers),
     reviews,

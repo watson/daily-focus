@@ -113,7 +113,7 @@ test('the individual checks outrank the rollup summary, and the failing ones are
       ],
     },
   });
-  assert.deepEqual(lying, { checks: 'failure', failing: ['all-tests-green'], pending: [] });
+  assert.deepEqual(lying, { checks: 'failure', failing: ['all-tests-green'], pending: [], cancelled: [] });
 
   const running = summarizeChecks({
     state: 'SUCCESS',
@@ -123,31 +123,39 @@ test('the individual checks outrank the rollup summary, and the failing ones are
     checks: 'pending',
     failing: [],
     pending: [{ name: 'e2e', kind: 'check-run', detailsUrl: null }],
+    cancelled: [],
   });
 
   const statusRed = summarizeChecks({
     state: 'PENDING',
     contexts: { nodes: [{ __typename: 'StatusContext', context: 'ci/deploy', state: 'ERROR' }] },
   });
-  assert.deepEqual(statusRed, { checks: 'failure', failing: ['ci/deploy'], pending: [] });
+  assert.deepEqual(statusRed, { checks: 'failure', failing: ['ci/deploy'], pending: [], cancelled: [] });
 
-  // Cancelled and timed out are red, the way `gh pr checks` reads them; skipped and neutral are not.
+  // Timed out is red; skipped and neutral are not. Cancelled is none of the three.
   const mixed = summarizeChecks({
     state: 'SUCCESS',
     contexts: {
+      totalCount: 4,
       nodes: [
+        { __typename: 'CheckRun', name: 'slow', status: 'COMPLETED', conclusion: 'TIMED_OUT' },
         { __typename: 'CheckRun', name: 'flaky', status: 'COMPLETED', conclusion: 'CANCELLED' },
         { __typename: 'CheckRun', name: 'optional', status: 'COMPLETED', conclusion: 'SKIPPED' },
         { __typename: 'CheckRun', name: 'advice', status: 'COMPLETED', conclusion: 'NEUTRAL' },
       ],
     },
   });
-  assert.deepEqual(mixed, { checks: 'failure', failing: ['flaky'], pending: [] });
+  assert.deepEqual(mixed, {
+    checks: 'failure',
+    failing: ['slow'],
+    pending: [],
+    cancelled: [{ name: 'flaky', kind: 'check-run', detailsUrl: null }],
+  });
 
-  // Truncated contexts: the summary is still a floor.
-  assert.deepEqual(summarizeChecks({ state: 'FAILURE', contexts: { nodes: [] } }), { checks: 'failure', failing: [], pending: [] });
-  assert.deepEqual(summarizeChecks({ state: 'SUCCESS', contexts: { nodes: [] } }), { checks: 'success', failing: [], pending: [] });
-  assert.deepEqual(summarizeChecks(null), { checks: null, failing: [], pending: [] });
+  // No contexts at all: the summary is all there is, in either direction.
+  assert.deepEqual(summarizeChecks({ state: 'FAILURE', contexts: { nodes: [] } }), { checks: 'failure', failing: [], pending: [], cancelled: [] });
+  assert.deepEqual(summarizeChecks({ state: 'SUCCESS', contexts: { nodes: [] } }), { checks: 'success', failing: [], pending: [], cancelled: [] });
+  assert.deepEqual(summarizeChecks(null), { checks: null, failing: [], pending: [], cancelled: [] });
 });
 
 test('the unfinished checks keep their names, kinds and links', () => {
@@ -282,6 +290,50 @@ test('the pending checks reach the pull request the board keeps', () => {
   assert.deepEqual(pull?.failingChecks, []);
 });
 
+test('a cancelled check is neither red nor running, and the summary cannot overrule it', () => {
+  // The shape a merge queue leaves behind: the queue dropped the entry because its
+  // gate never cleared, which GitHub reports as a cancelled check run alongside the
+  // gate still in progress — and summarises as FAILURE. Treating that summary, or
+  // the cancellation, as red is what put such a pull request in the author's court.
+  const unqueued = summarizeChecks({
+    state: 'FAILURE',
+    contexts: {
+      totalCount: 3,
+      nodes: [
+        { __typename: 'CheckRun', name: 'unit-tests', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        { __typename: 'CheckRun', name: 'policy/merge', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/acme/webapp/runs/1' },
+        { __typename: 'CheckRun', name: 'policy/merge-gate', status: 'IN_PROGRESS', conclusion: null },
+      ],
+    },
+  });
+  assert.deepEqual(unqueued, {
+    checks: 'pending',
+    failing: [],
+    pending: [{ name: 'policy/merge-gate', kind: 'check-run', detailsUrl: null }],
+    cancelled: [{ name: 'policy/merge', kind: 'check-run', detailsUrl: 'https://github.com/acme/webapp/runs/1' }],
+  });
+
+  // Truncated past the hundred asked for: the contexts can't answer, so the
+  // summary is a floor again and the same cancellation reads as red.
+  const truncated = summarizeChecks({
+    state: 'FAILURE',
+    contexts: {
+      totalCount: 140,
+      nodes: [{ __typename: 'CheckRun', name: 'policy/merge', status: 'COMPLETED', conclusion: 'CANCELLED' }],
+    },
+  });
+  assert.equal(truncated.checks, 'failure');
+  assert.deepEqual(truncated.failing, [], 'nothing invents a name for what was never read');
+
+  // A caller that gave no totalCount is telling us nothing, not telling us there
+  // is more, so the checks in hand still have the last word.
+  const untold = summarizeChecks({
+    state: 'FAILURE',
+    contexts: { nodes: [{ __typename: 'CheckRun', name: 'policy/merge', status: 'COMPLETED', conclusion: 'CANCELLED' }] },
+  });
+  assert.equal(untold.checks, null, 'a lone cancellation says nothing either way');
+});
+
 test('a comment never withdraws a verdict; a dismissal does', () => {
   const pull = normalizePullRequest(
     node({
@@ -325,6 +377,7 @@ test('a draft is ready-at its creation, and the rollup collapses to three states
   assert.equal(none?.checks, null);
   assert.deepEqual(none?.failingChecks, []);
   assert.deepEqual(none?.pendingChecks, []);
+  assert.deepEqual(none?.cancelledChecks, []);
 });
 
 test('a node that is not a pull request is dropped rather than thrown on', () => {

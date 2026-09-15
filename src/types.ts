@@ -286,9 +286,10 @@ export type MergeStateStatus =
   | 'UNSTABLE';
 
 /**
- * One check on the head commit that hasn't finished. A fact, not a judgement:
- * whether a given name is the repository's merge-policy gate is a matter of
- * private configuration, so it is matched at read time and never stored.
+ * One named check on the head commit: either unfinished, or finished without
+ * reaching a verdict. A fact, not a judgement — whether a given name is the
+ * repository's merge-policy gate is a matter of private configuration, so it is
+ * matched at read time and never stored.
  */
 export interface PendingCheck {
   name: string;
@@ -346,6 +347,13 @@ export interface PullRequest {
    * since `mergeStateStatus` still says blocked.
    */
   pendingChecks: PendingCheck[];
+  /**
+   * The head commit's cancelled checks, by name. A cancelled run reached no
+   * verdict about the code, so it is neither red nor still running: it is kept
+   * apart from both, shown on the row as plain text, and never moves a court.
+   * Empty on a cache written before cancellations were told apart from failures.
+   */
+  cancelledChecks: PendingCheck[];
   autoMerge: boolean;
   /** Reviewers still requested, users by login and teams by slug. */
   requestedReviewers: string[];
