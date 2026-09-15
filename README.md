@@ -238,6 +238,27 @@ and case-sensitively, the way GitHub's repository rules name a required check, a
 setting holds your organisation's names rather than any that ship here. Unset, nothing
 gets that treatment and the rows simply say *waiting on checks*.
 
+### A cancelled check is not a failing one
+
+`gh pr checks` counts a cancelled check run as red, and on a merge queue that reading
+is actively wrong. Queue an approved pull request whose merge gate never clears and the
+queue eventually drops the entry, which lands on the pull request as a cancelled check
+— caused by the gate, and cured by nothing the author can do. Called red, it takes the
+row to **Waiting on you** and hides the gate that is the actual answer.
+
+So a cancellation is read as what it is: a run that reached no verdict. Nobody can say
+from the API who stopped it or why, so it counts as neither red nor still running, and
+the court comes from whatever else is outstanding — usually the gate or check that
+caused it. The names still appear under the row as *cancelled, no verdict*, because a
+run you cancelled yourself is worth seeing even though it decides nothing. A check that
+genuinely failed alongside one is unaffected: that failure is still red, still yours,
+and needs no special case.
+
+GitHub's own one-line summary of the rollup calls that commit `FAILURE`, so the summary
+is consulted only where the individual checks can't answer — none came back, or there
+are more than the hundred fetched. It is the weaker reading either way: it has also been
+seen claiming `SUCCESS` over a failing required check.
+
 ### Where it gets its access
 
 It borrows the GitHub CLI's login rather than keeping a token of its own. With nothing

@@ -254,6 +254,7 @@ query($q: String!, $first: Int!, $after: String) {
               statusCheckRollup {
                 state
                 contexts(first: 100) {
+                  totalCount
                   nodes {
                     __typename
                     ... on CheckRun { databaseId name status conclusion detailsUrl }
@@ -344,7 +345,7 @@ export interface RawActor {
 
 export interface RawRollup {
   state?: string;
-  contexts?: { nodes?: (RawCheck | null)[] };
+  contexts?: { totalCount?: number; nodes?: (RawCheck | null)[] };
 }
 
 /** One entry in the rollup: a check run from an app, or a commit status. */
@@ -401,8 +402,19 @@ function worse(a: CheckState, b: CheckState): CheckState {
   return CHECK_RANK[b] > CHECK_RANK[a] ? b : a;
 }
 
-/** Check run conclusions that mean red, the same set `gh pr checks` uses. */
-const FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
+/**
+ * Check run conclusions that mean red: the check reached a verdict about the code
+ * and the verdict was no.
+ *
+ * `CANCELLED` is deliberately not one of them, and this is the second place this
+ * file departs from `gh pr checks` on purpose. A cancelled run reached no verdict
+ * at all, and nothing in the API says who stopped it or why: a merge queue
+ * dropping an entry whose gate never cleared, a concurrency group superseding the
+ * run, somebody hitting the button. Reading that as "your move" invents the one
+ * fact nobody told us, so a cancellation is collected on its own and left out of
+ * the verdict in both directions.
+ */
+const FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
 const PASSED_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 
 /** Only http(s) links are kept, so a `javascript:` details URL can never reach the DOM. */
@@ -416,24 +428,32 @@ function safeUrl(url: string | null | undefined): string | null {
  * The summary `state` has been seen reporting SUCCESS on a commit whose required
  * check was FAILURE, which put a red PR in the ready-to-merge bucket. Walking the
  * contexts the way `gh pr checks` does gives the answer that page gives, and the
- * names of what failed. The summary still counts as a floor: if the contexts are
- * truncated past the first hundred and the summary says red, red wins.
+ * names of what failed.
+ *
+ * The summary is consulted only where the contexts cannot answer: none came back,
+ * or `totalCount` says there are more than the hundred asked for. It is the weaker
+ * reading in both directions — optimistic in the case above, pessimistic about a
+ * run that was merely cancelled — so wherever the checks themselves are all in
+ * hand, they have the last word.
  *
  * The unfinished ones are collected by name too, because "blocked on something
  * still running" and "blocked on the repository's merge policy" read identically
  * from the merge state alone, and the difference is the whole point of the gate
- * bucket. Which name means which is not decided here: these are facts, and the
- * match against configuration happens in `prs.ts`.
+ * bucket. Cancellations are collected the same way and for the same reason: to be
+ * sayable without being a verdict. Which name means which is not decided here:
+ * these are facts, and the match against configuration happens in `prs.ts`.
  */
 export function summarizeChecks(
   rollup: RawRollup | null | undefined,
-): { checks: CheckState; failing: string[]; pending: PendingCheck[] } {
-  if (!rollup) return { checks: null, failing: [], pending: [] };
+): { checks: CheckState; failing: string[]; pending: PendingCheck[]; cancelled: PendingCheck[] } {
+  if (!rollup) return { checks: null, failing: [], pending: [], cancelled: [] };
 
   const failing: string[] = [];
   const pending: PendingCheck[] = [];
+  const cancelled: PendingCheck[] = [];
+  const nodes = rollup.contexts?.nodes ?? [];
   let derived: CheckState = null;
-  for (const node of rollup.contexts?.nodes ?? []) {
+  for (const node of nodes) {
     if (!node) continue;
     if (node.__typename === 'CheckRun') {
       const name = node.name ?? 'unnamed check';
@@ -442,6 +462,10 @@ export function summarizeChecks(
       if (node.status !== 'COMPLETED' || !node.conclusion) {
         pending.push(waiting);
         derived = worse(derived, 'pending');
+      } else if (node.conclusion === 'CANCELLED') {
+        // Named so the row can say so, and deliberately left out of `derived`: a
+        // cancellation is neither a failure nor something still running.
+        cancelled.push(waiting);
       } else if (FAILED_CONCLUSIONS.has(node.conclusion)) {
         failing.push(name);
         derived = worse(derived, 'failure');
@@ -467,7 +491,13 @@ export function summarizeChecks(
     }
   }
 
-  return { checks: worse(derived, toCheckState(rollup.state)), failing, pending };
+  // Absent `totalCount` is not evidence of truncation: our own query always asks
+  // for it, and a caller that didn't is telling us nothing rather than telling us
+  // there is more. Zero contexts read is the other way round — there, the summary
+  // is all there is.
+  const total = rollup.contexts?.totalCount;
+  const unread = nodes.length === 0 || (typeof total === 'number' && total > nodes.length);
+  return { checks: unread ? worse(derived, toCheckState(rollup.state)) : derived, failing, pending, cancelled };
 }
 
 function toMergeable(state: string | null | undefined): MergeableState {
@@ -578,6 +608,7 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
     mergeable: toMergeable(raw.mergeable),
     mergeStateStatus: toMergeState(raw.mergeStateStatus),
     pendingChecks: ci.pending,
+    cancelledChecks: ci.cancelled,
     autoMerge: Boolean(raw.autoMergeRequest?.enabledAt),
     requestedReviewers,
     reviews: [...latestReview.values()].filter((review) => review.state !== 'DISMISSED'),

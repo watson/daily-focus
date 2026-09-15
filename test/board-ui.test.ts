@@ -132,6 +132,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     mergeable: 'MERGEABLE',
     mergeStateStatus: 'CLEAN',
     pendingChecks: [],
+    cancelledChecks: [],
     autoMerge: false,
     requestedReviewers: [],
     reviews: [{ login: 'bob', state: 'APPROVED', at: hoursAgo(6) }],
@@ -178,6 +179,34 @@ test('a gate row names the check, links GitHub\'s details page, and offers no nu
 
   // The board has no idea whose action the gate needs, so it suggests nobody.
   assert.deepEqual(buttonLabels(node), ['Park', 'Note']);
+});
+
+test('a cancelled check is shown on the row in every court, and moves none of them', () => {
+  // The merge-queue shape: the gate decides the court, and the cancellation it
+  // caused is stated underneath rather than counted as red.
+  const gated = render({
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [{ name: 'policy/merge-gate', kind: 'check-run', detailsUrl: null }],
+    cancelledChecks: [{ name: 'policy/merge', kind: 'check-run', detailsUrl: 'https://github.com/acme/webapp/runs/77' }],
+  });
+  assert.equal(gated.row.court, 'gate');
+  const lines = byClass(gated.node, 'item__reason').map((line) => line.textContent);
+  assert.deepEqual(lines, ['merge policy pending: policy/merge-gate', 'cancelled, no verdict: policy/merge']);
+
+  // And on a row where nothing is outstanding at all: still ready, and the
+  // cancellation is still said out loud, which is the point of saying it.
+  const ready = render({ cancelledChecks: [{ name: 'policy/merge', kind: 'check-run', detailsUrl: null }] });
+  assert.equal(ready.row.court, 'ready');
+  assert.deepEqual(
+    byClass(ready.node, 'item__reason').map((line) => line.textContent),
+    ['cancelled, no verdict: policy/merge'],
+  );
+  assert.equal(
+    byClass(ready.node, 'pill').some((pill) => pill.textContent === 'CI failing'),
+    false,
+    'a cancellation is not a red pill either',
+  );
 });
 
 test('a check row lists what is still running, without inventing a link', () => {

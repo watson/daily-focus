@@ -29,6 +29,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     mergeable: 'MERGEABLE',
     mergeStateStatus: 'CLEAN',
     pendingChecks: [],
+    cancelledChecks: [],
     autoMerge: false,
     requestedReviewers: [],
     reviews: [],
@@ -324,6 +325,42 @@ test('a configured pending gate is its own court, and never ready', () => {
   // The same pull request with nothing configured: the gate is just a check.
   assert.equal(judge(gated, NOW, null).court, 'checks');
   assert.equal(judge(gated, NOW, null, []).court, 'checks');
+});
+
+test('a merge queue dropping an entry whose gate never cleared stays the gate\'s business', () => {
+  // The whole shape as GitHub reports it, verified against a real pull request:
+  // approved by branch protection, no conflict, BLOCKED, the gate still in
+  // progress, and the queue's own check cancelled once it gave up waiting. The
+  // cancellation is the *consequence* of the pending gate, so a court derived from
+  // it would blame the author for the one thing they cannot act on.
+  const unqueued = approved({
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [pending('policy/merge-gate')],
+    cancelledChecks: [pending('policy/merge')],
+  });
+
+  const verdict = judge(unqueued, NOW, null, GATES);
+  assert.equal(verdict.court, 'gate');
+  assert.deepEqual(verdict.reasons, [
+    { kind: 'merge-gate', checks: [{ name: 'policy/merge-gate', kind: 'check-run', detailsUrl: null }] },
+  ]);
+
+  // Nothing configured: still a check wait rather than the author's move.
+  assert.equal(judge(unqueued, NOW, null).court, 'checks');
+
+  // `judge` reads the cancellations nowhere at all — they are shown on the row and
+  // decide nothing, which is what makes them safe to carry. Adding one to an
+  // otherwise ready pull request must not move it.
+  const ready = approved({ cancelledChecks: [pending('policy/merge')] });
+  assert.equal(judge(ready, NOW, null, GATES).court, 'ready');
+
+  // And a real failure alongside one is still a real failure: the author's court
+  // comes from the failing check, with no special case for what sits beside it.
+  const red = approved({ checks: 'failure', failingChecks: ['unit-tests'], cancelledChecks: [pending('policy/merge')] });
+  const verdictRed = judge(red, NOW, null, GATES);
+  assert.equal(verdictRed.court, 'you');
+  assert.deepEqual(verdictRed.reasons, [{ kind: 'ci-failing' }]);
 });
 
 test('a configured pending gate outranks a merge state GitHub briefly calls clean', () => {

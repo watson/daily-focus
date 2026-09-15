@@ -1057,6 +1057,7 @@ export function renderPullRow(row, state, ui, handlers) {
       ),
       renderPullMeta(row, now),
       renderPullReasons(row, now),
+      renderCancelledChecks(row),
       renderNotes(row),
       ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
     ),
@@ -1137,6 +1138,21 @@ function renderPullReasons(row, now) {
   if (parts.length === 0) return null;
   const tone = row.court === 'you' ? '' : ' item__reason--waiting';
   return el('p', { class: `item__reason${tone}` }, parts);
+}
+
+/**
+ * Cancelled checks, as a line of plain text under the reasons.
+ *
+ * Shown in every court, including ready, because it is a fact about the pull
+ * request rather than a reason for where it sits — a cancelled run reached no
+ * verdict, so it decides nothing, and the server keeps it out of the court
+ * entirely. This line is what stops that silence from being invisible: it is the
+ * whole compensation for a cancellation no longer reading as red.
+ */
+function renderCancelledChecks(row) {
+  const cancelled = row.cancelledChecks ?? [];
+  if (cancelled.length === 0) return null;
+  return el('p', { class: 'item__reason item__reason--waiting' }, ['cancelled, no verdict: ', ...checkNames(cancelled)]);
 }
 
 /**

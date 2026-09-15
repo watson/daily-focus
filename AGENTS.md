@@ -234,6 +234,14 @@ Three modules, split so the part that needs a network is small:
   the merge states keyed by node id, `PAGE_SIZE` stays small enough that the first one
   is answerable, and a merge-state request that fails costs the field and a warning
   rather than the account's rows. `PAGE_SIZE * MAX_PAGES` is the ceiling on pulls read.
+
+  The rollup is read from the individual contexts, not from its summary `state`,
+  which has been seen saying `SUCCESS` over a failing required check. The summary is
+  consulted only when the contexts can't answer — none returned, or `totalCount`
+  exceeds the hundred asked for — and that condition is load-bearing rather than an
+  optimisation: the summary also says `FAILURE` for a commit whose only unhappy check
+  was cancelled, which would put the reading back exactly where `CANCELLED` used to
+  put it.
 - `prs.ts` — pure. `judge` decides the court from the facts, the clock and the
   configured merge-gate names; `resolveBoard` joins that with the action log. The
   rules are in its comments and in the README; the tests in `test/prs.test.ts` are the
@@ -278,6 +286,17 @@ have to list the same six.
   the compatibility path. A configured gate pending outranks even a `CLEAN` state: the
   user said that check is the policy, and a clean state alongside it is a race, not a
   permission.
+- **A cancellation is not a verdict.** `CANCELLED` is deliberately absent from
+  `FAILED_CONCLUSIONS`, which is the one place this repo departs from `gh pr checks`
+  besides distrusting the summary. A cancelled run says the run was abandoned, and
+  the API never says by whom: a merge queue dropping an entry whose gate never
+  cleared looks identical to a human hitting the button. Since the queue case is
+  *caused* by the pending gate, calling it red moves the row to `you` and hides the
+  gate — so cancellations go in `cancelledChecks`, contribute nothing to `checks` or
+  `failingChecks`, and `judge` never reads them. They are rendered under the row as
+  plain text in every court, which is the whole compensation for a run you cancelled
+  yourself no longer reading as red. A check that genuinely failed beside one is
+  untouched, and needs no special case: the failure reaches `you` on its own.
 - **A gate is not a reviewer.** A pending merge gate says the merge is refused and
   nothing about whose action is missing. So `gate` rows carry the check's name and
   GitHub's `detailsUrl` and nothing else — no nudge button, no reviewer list, no

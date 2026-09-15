@@ -41,6 +41,7 @@ function pull(account: string, number: number): PullRequest {
     mergeable: 'UNKNOWN',
     mergeStateStatus: 'CLEAN',
     pendingChecks: [],
+    cancelledChecks: [],
     autoMerge: false,
     requestedReviewers: [],
     reviews: [],
