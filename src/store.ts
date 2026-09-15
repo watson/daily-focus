@@ -143,11 +143,12 @@ export class Store {
   /**
    * Read the store and fold it into everything the client needs.
    *
-   * Everything except `assetVersion` — that describes the served UI, not the data,
-   * so the server owns it and layers it on. Keeping it out here means the store
-   * has no opinion about how it's being displayed.
+   * Everything except `assetVersion` and `board` — the first describes the served
+   * UI, not the data, and the second is fetched rather than read, so the server
+   * owns both and layers them on. Keeping them out here means the store has no
+   * opinion about how it's being displayed or about GitHub.
    */
-  async getState(now: Date = new Date()): Promise<Omit<DashboardState, 'assetVersion'>> {
+  async getState(now: Date = new Date()): Promise<Omit<DashboardState, 'assetVersion' | 'board'>> {
     const [{ brief, error, warnings }, actions, focus, schedule] = await Promise.all([
       this.readBrief(),
       this.readActions(),
@@ -258,82 +259,95 @@ export class Store {
   }
 }
 
+/** What the action log says about one id, after folding. */
+export interface FoldedActions {
+  status: ItemStatus;
+  snoozedUntil?: string;
+  statusAt?: string;
+  notes: { text: string; at: string }[];
+}
+
 /**
- * Fold the action log over the brief's items.
+ * Fold the whole log, keyed on canonical id.
  *
  * The log is append-only and in chronological order, so the last action for an id
  * decides its status. A snooze whose date has arrived quietly reverts to open —
- * that is the whole point of snoozing.
+ * that is the whole point of snoozing. Shared by the brief and the pull request
+ * board so there is exactly one reading of the log.
  */
+export function foldActionLog(actions: readonly Action[], now: Date): Map<string, FoldedActions> {
+  const folded = new Map<string, FoldedActions>();
+  const today = startOfLocalDay(now);
+
+  for (const action of actions) {
+    // Keyed on the canonical id, so a difference of case or stray whitespace between
+    // the logged action and today's item can't orphan a completed row.
+    const key = canonicalId(action.id);
+    let entry = folded.get(key);
+    if (!entry) {
+      entry = { status: 'open', notes: [] };
+      folded.set(key, entry);
+    }
+    switch (action.action) {
+      case 'note':
+        if (action.text) entry.notes.push({ text: action.text, at: action.at });
+        break;
+      case 'done':
+        entry.status = 'done';
+        delete entry.snoozedUntil;
+        entry.statusAt = action.at;
+        break;
+      case 'dismiss':
+        entry.status = 'dismissed';
+        delete entry.snoozedUntil;
+        entry.statusAt = action.at;
+        break;
+      case 'snooze':
+        entry.status = 'snoozed';
+        if (action.until) entry.snoozedUntil = action.until;
+        else delete entry.snoozedUntil;
+        entry.statusAt = action.at;
+        break;
+      case 'reopen':
+        entry.status = 'open';
+        delete entry.snoozedUntil;
+        entry.statusAt = action.at;
+        break;
+    }
+  }
+
+  for (const entry of folded.values()) {
+    if (entry.status !== 'snoozed') continue;
+    const until = parseISO(entry.snoozedUntil);
+    // No date means "until further notice" — the agent decides when to resurface it.
+    if (until && until.getTime() <= today.getTime()) {
+      entry.status = 'open';
+      delete entry.snoozedUntil;
+    }
+  }
+
+  return folded;
+}
+
+/** Fold the action log over the brief's items. */
 export function resolveItems(
   items: readonly import('./types.ts').Item[],
   actions: readonly Action[],
   now: Date,
 ): ResolvedItem[] {
-  // Keyed on the canonical id, so a difference of case or stray whitespace between
-  // the logged action and today's item can't orphan a completed row.
-  const byId = new Map<string, Action[]>();
-  for (const action of actions) {
-    const key = canonicalId(action.id);
-    const list = byId.get(key);
-    if (list) list.push(action);
-    else byId.set(key, [action]);
-  }
-
-  const today = startOfLocalDay(now);
+  const folded = foldActionLog(actions, now);
 
   return items.map((item) => {
-    let status: ItemStatus = 'open';
-    let snoozedUntil: string | undefined;
-    let statusAt: string | undefined;
-    const notes: { text: string; at: string }[] = [];
-
-    for (const action of byId.get(canonicalId(item.id)) ?? []) {
-      switch (action.action) {
-        case 'note':
-          if (action.text) notes.push({ text: action.text, at: action.at });
-          break;
-        case 'done':
-          status = 'done';
-          snoozedUntil = undefined;
-          statusAt = action.at;
-          break;
-        case 'dismiss':
-          status = 'dismissed';
-          snoozedUntil = undefined;
-          statusAt = action.at;
-          break;
-        case 'snooze':
-          status = 'snoozed';
-          snoozedUntil = action.until;
-          statusAt = action.at;
-          break;
-        case 'reopen':
-          status = 'open';
-          snoozedUntil = undefined;
-          statusAt = action.at;
-          break;
-      }
-    }
-
-    if (status === 'snoozed') {
-      const until = parseISO(snoozedUntil);
-      // No date means "until further notice" — the agent decides when to resurface it.
-      if (until && until.getTime() <= today.getTime()) {
-        status = 'open';
-        snoozedUntil = undefined;
-      }
-    }
-
+    const log = folded.get(canonicalId(item.id));
     const firstSeen = parseISO(item.firstSeen);
     const resolved: ResolvedItem = {
       ...item,
-      status,
-      notes,
+      status: log?.status ?? 'open',
+      notes: log?.notes ?? [],
       ageDays: firstSeen ? Math.max(0, calendarDaysBetween(firstSeen, now)) : 0,
     };
-    if (snoozedUntil) resolved.snoozedUntil = snoozedUntil;
-    if (statusAt) resolved.statusAt = statusAt;
+    if (log?.snoozedUntil) resolved.snoozedUntil = log.snoozedUntil;
+    if (log?.statusAt) resolved.statusAt = log.statusAt;
     return resolved;
   });
 }

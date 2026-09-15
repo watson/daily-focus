@@ -14,6 +14,8 @@ before(async () => {
   process.env.DAILY_FOCUS_DATA = dataDir;
   process.env.DAILY_FOCUS_PORT = '0'; // any free port
   process.env.DAILY_FOCUS_HOST = '127.0.0.1';
+  // Never let a test reach for gh or the network.
+  process.env.DAILY_FOCUS_GITHUB = 'off';
 
   await writeFile(
     join(dataDir, 'items.json'),

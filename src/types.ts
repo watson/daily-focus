@@ -252,6 +252,131 @@ export interface SessionState {
   unattendedClose: UnattendedClose | null;
 }
 
+/* ---------- the pull request board ---------- */
+
+/**
+ * The review state of a pull request, as GitHub reports it. Null when the
+ * repository requires no reviews, in which case `prs.ts` derives one from the
+ * reviews themselves.
+ */
+export type ReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
+
+/** The status check rollup on the head commit, collapsed to what the board needs. */
+export type CheckState = 'success' | 'failure' | 'pending' | null;
+
+export type MergeableState = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+
+/** Something a person other than the author did on a pull request. */
+export interface PullActivity {
+  at: string;
+  login: string;
+  kind: 'review' | 'comment';
+}
+
+/**
+ * One open pull request the user authored, as fetched. Facts only: the court it
+ * is in is derived at render time in `prs.ts`, because that depends on the clock
+ * and on the action log, neither of which belongs in the file on disk.
+ */
+export interface PullRequest {
+  /** The brief's recipe, `github:pr:<owner>/<repo>#<number>`, so actions join across both. */
+  id: string;
+  /** The login it was fetched as. */
+  account: string;
+  /** `owner/name`. */
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  createdAt: string;
+  /** When it last left draft; `createdAt` when it was never one. */
+  readyAt: string;
+  updatedAt: string;
+  headRef: string;
+  baseRef: string;
+  reviewDecision: ReviewDecision;
+  checks: CheckState;
+  mergeable: MergeableState;
+  autoMerge: boolean;
+  /** Reviewers still requested, users by login and teams by slug. */
+  requestedReviewers: string[];
+  /** The latest formal review per reviewer, bots and the author excluded. */
+  reviews: { login: string; state: string; at: string }[];
+  /** Newest thing the author did: opened it, pushed, commented, reviewed, marked ready. */
+  lastActivityByYou: string | null;
+  /** Newest thing anyone else did, bots excluded. */
+  lastActivityByOthers: PullActivity | null;
+}
+
+export interface BoardAccount {
+  login: string;
+  ok: boolean;
+  /** Why this account couldn't be polled, when it couldn't. */
+  error: string | null;
+}
+
+/** `prs.json`: the last successful fetch, written by the server and only the server. */
+export interface PullsFile {
+  version: 1;
+  fetchedAt: string;
+  accounts: BoardAccount[];
+  scope: string[];
+  warnings: string[];
+  pulls: PullRequest[];
+}
+
+/**
+ * Whose move it is.
+ *
+ * - `you`        changes requested, CI red, conflicts, or someone acted after you did.
+ * - `ready`      approved, nothing red, nothing left but the merge button.
+ * - `reviewers`  waiting on a review, or on a re-review since your last push.
+ * - `draft`      not yet asking anyone for anything.
+ */
+export type Court = 'you' | 'ready' | 'reviewers' | 'draft';
+
+/** Why a pull request sits in your court. Formatted by the client, since the times are relative. */
+export interface CourtReason {
+  kind: 'changes-requested' | 'ci-failing' | 'conflicts' | 'activity';
+  login?: string;
+  at?: string;
+  activity?: 'review' | 'comment';
+}
+
+/** A pull request plus everything the clock and the action log add to it. */
+export interface BoardRow extends PullRequest {
+  court: Court;
+  reasons: CourtReason[];
+  ciFailing: boolean;
+  conflicts: boolean;
+  /** A draft nobody has touched in a long while. */
+  stale: boolean;
+  /** Waiting on reviewers for long enough that it's time to ask. */
+  nudge: boolean;
+  /** When the current wait began. The sort key within a court. */
+  since: string;
+  /** Only snooze is honoured here: a done or dismissed PR is still open upstream. */
+  status: 'open' | 'snoozed';
+  snoozedUntil?: string;
+  notes: { text: string; at: string }[];
+}
+
+/** The board as the client sees it. */
+export interface BoardState {
+  enabled: boolean;
+  /** Why the board can't run at all right now, when it can't: no gh, not logged in. */
+  reason: string | null;
+  fetchedAt: string | null;
+  fetching: boolean;
+  accounts: BoardAccount[];
+  scope: string[];
+  warnings: string[];
+  pollMinutes: number;
+  rows: BoardRow[];
+  counts: Record<Court | 'parked', number>;
+}
+
 /** Everything the client needs for one render. */
 export interface DashboardState {
   /**
@@ -295,6 +420,8 @@ export interface DashboardState {
   };
   items: ResolvedItem[];
   agenda: Agenda;
+  /** The live pull request board. Present even when off, so the client can say why. */
+  board: BoardState;
   stats: {
     open: number;
     topPriority: number;

@@ -6,11 +6,12 @@ import { fileURLToPath } from 'node:url';
 
 import { loadConfig } from './config.ts';
 import { Store } from './store.ts';
+import { Board } from './board.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
-import type { Action, ActionType } from './types.ts';
+import type { Action, ActionType, DashboardState } from './types.ts';
 
 const PUBLIC_DIR = resolve(fileURLToPath(new URL('../public', import.meta.url)));
 
@@ -107,9 +108,18 @@ export async function startServer(): Promise<StartedServer> {
 
   let assetVersion = await computeAssetVersion(PUBLIC_DIR);
 
-  /** State plus the asset fingerprint the client watches for self-reload. */
-  async function buildState() {
-    return { ...(await store.getState()), assetVersion };
+  // The board polls only while a tab is open, so it's told the audience below,
+  // and it broadcasts on its own whenever a fetch starts or lands.
+  const board = new Board(config, () => void broadcast());
+
+  /**
+   * State plus the two things the store doesn't own: the asset fingerprint the
+   * client watches for self-reload, and the board, which is fetched rather than
+   * read but joins the same action log.
+   */
+  async function buildState(): Promise<DashboardState> {
+    const [state, actions] = await Promise.all([store.getState(), store.readActions()]);
+    return { ...state, board: board.view(actions, new Date(state.now)), assetVersion };
   }
 
   async function broadcast(): Promise<void> {
@@ -136,9 +146,17 @@ export async function startServer(): Promise<StartedServer> {
       // snapshot the progress metric reads from.
       void store.archiveCurrentBrief().then(() => broadcast());
     },
-    // The timer re-stamps its own file every poll; that's this process talking to
-    // itself, and it already broadcasts when something actually changed.
-    { ignore: [basename(config.sessionFile), `${basename(config.sessionFile)}.tmp`] },
+    // The timer re-stamps its own file every poll and the board rewrites prs.json
+    // every fetch; that's this process talking to itself, and both already
+    // broadcast when something actually changed.
+    {
+      ignore: [
+        basename(config.sessionFile),
+        `${basename(config.sessionFile)}.tmp`,
+        basename(config.pullsFile),
+        `${basename(config.pullsFile)}.tmp`,
+      ],
+    },
   );
 
   // The agenda's "now" marker and free windows drift as the day passes, so refresh
@@ -199,6 +217,13 @@ export async function startServer(): Promise<StartedServer> {
   // A session may already be running from before a restart.
   scheduleSessionTick((await buildState()).session.active?.endsAt ?? null);
 
+  // Reads the last fetch off disk, then fetches once in the background so the
+  // first tab to open has something to show. Never awaited: GitHub being slow
+  // must not hold up the dashboard listening.
+  void board.start().catch((err: unknown) => {
+    console.error(`[daily-focus] pull request board failed to start: ${(err as Error).message}`);
+  });
+
   const heartbeat = setInterval(() => {
     void broadcast();
   }, 60_000);
@@ -236,13 +261,23 @@ export async function startServer(): Promise<StartedServer> {
       });
       res.write(`event: state\ndata: ${JSON.stringify(await buildState())}\n\n`);
       subscribers.add(res);
+      board.setAudience(subscribers.size);
 
       const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
       keepAlive.unref();
       req.on('close', () => {
         clearInterval(keepAlive);
         subscribers.delete(res);
+        board.setAudience(subscribers.size);
       });
+      return;
+    }
+
+    if (path === '/api/board/refresh' && req.method === 'POST') {
+      // Waits for the fetch so the response carries the fresh board; a fetch
+      // already in flight is joined rather than doubled.
+      await board.refresh();
+      sendJSON(res, 200, await buildState());
       return;
     }
 
@@ -373,6 +408,7 @@ export async function startServer(): Promise<StartedServer> {
       clearInterval(heartbeat);
       clearInterval(presencePoll);
       if (sessionTick) clearTimeout(sessionTick);
+      board.stop();
       stopWatching();
       stopWatchingAssets();
       for (const res of subscribers) res.end();
