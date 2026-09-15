@@ -388,20 +388,21 @@ a {
   color: var(--ink-2);
 }
 
-body[data-focus-mode='true'] .stats,
-body[data-focus-mode='true'] .headline,
-body[data-focus-mode='true'] .drawer,
-body[data-focus-mode='true'] .section__header,
+/* Scoped to the Today view: the board is a different question, and stays whole. */
+body[data-focus-mode='true'][data-view='today'] .stats,
+body[data-focus-mode='true'][data-view='today'] .headline,
+body[data-focus-mode='true'][data-view='today'] #today .drawer,
+body[data-focus-mode='true'][data-view='today'] #today .section__header,
 /* every section except the first, and every item in it except the first */
-body[data-focus-mode='true'] .section:not(:first-of-type),
-body[data-focus-mode='true'] .section:first-of-type .item:not(:first-child) {
+body[data-focus-mode='true'][data-view='today'] #today .section:not(:first-of-type),
+body[data-focus-mode='true'][data-view='today'] #today .section:first-of-type .item:not(:first-child) {
   display: none;
 }
 
-body[data-focus-mode='true'] .item {
+body[data-focus-mode='true'][data-view='today'] #today .item {
   padding: 18px 20px;
 }
-body[data-focus-mode='true'] .item__title {
+body[data-focus-mode='true'][data-view='today'] #today .item__title {
   font-size: 19px;
   line-height: 1.35;
 }
@@ -1086,4 +1087,119 @@ kbd {
   * {
     transition: none !important;
   }
+}
+
+/* ---------- tabs ---------- */
+
+/*
+ * Two views, one page. Today is the brief; the board is the live list of pull
+ * requests. They're tabs rather than one long page because the brief is edited
+ * down to a short list on purpose, and a wall of PRs beneath it would undo that.
+ */
+.tabs {
+  display: flex;
+  gap: 4px;
+  max-width: 1280px;
+  margin: -6px auto 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px 9px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tab:hover {
+  color: var(--ink-1);
+}
+.tab[aria-selected='true'] {
+  color: var(--ink-1);
+  border-bottom-color: var(--accent);
+}
+
+.tab__badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--critical);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Which view is showing. Focus mode is scoped to Today (see the rules above). */
+body[data-view='board'] #today,
+body[data-view='board'] .layout__side {
+  display: none;
+}
+body[data-view='today'] #board {
+  display: none;
+}
+body[data-view='board'] .layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---------- the pull request board ---------- */
+
+.board__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 9px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.board__status-text {
+  overflow-wrap: anywhere;
+}
+
+.item__ref {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The line under a waiting-on-you row that says why. Reads as the row's detail. */
+.item__reason {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--critical);
+  overflow-wrap: anywhere;
+}
+
+.pill--good {
+  border-color: var(--good);
+  color: var(--good-ink);
+  font-weight: 500;
+}
+
+.item--pull[data-status='snoozed'] .item__title {
+  color: var(--ink-3);
+}
+
+/* An anchor styled as a button sits a hair lower than a real one; align them. */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }

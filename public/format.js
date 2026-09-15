@@ -7,6 +7,7 @@ const dayFmt = new Intl.DateTimeFormat(undefined, {
   month: 'long',
 });
 const shortDayFmt = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' });
+const shortDayYearFmt = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
 
 export function parseDate(value) {
@@ -121,4 +122,28 @@ function anchor(href, label) {
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
   return a;
+}
+
+/**
+ * "just now" / "12 min ago" / "5 h ago" / "3 days ago" / a short date.
+ *
+ * Hour granularity under two days, because on the pull request board the
+ * difference between a review that landed an hour ago and one from this morning
+ * is the difference between "they're on it" and "ask".
+ */
+export function relativeTime(value, now = new Date()) {
+  const d = parseDate(value);
+  if (!d) return '';
+  const seconds = Math.round((now.getTime() - d.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days <= 30) return `${days} days ago`;
+  // Past a month the date itself reads better than "247 days ago", and once it's
+  // in another year the year has to be on it: "Jan 14" is ambiguous on a PR that
+  // has been open since the one before last.
+  return d.getFullYear() === now.getFullYear() ? formatShortDay(value) : shortDayYearFmt.format(d);
 }

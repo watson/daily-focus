@@ -56,3 +56,13 @@ export async function postSession(body) {
   }
   return res.json();
 }
+
+/** Ask the server to poll GitHub now. Resolves with fresh state once it has. */
+export async function postBoardRefresh() {
+  const res = await fetch('/api/board/refresh', { method: 'POST' });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/board/refresh returned ${res.status}`);
+  }
+  return res.json();
+}

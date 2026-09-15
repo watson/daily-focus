@@ -48,20 +48,33 @@
       </div>
     </header>
 
+    <nav class="tabs" aria-label="Views" role="tablist">
+      <button type="button" class="tab" id="tab-today" role="tab" aria-selected="true" data-view="today">
+        Today
+      </button>
+      <button type="button" class="tab" id="tab-board" role="tab" aria-selected="false" data-view="board">
+        Pull requests
+        <span class="tab__badge" id="board-badge" hidden></span>
+      </button>
+    </nav>
+
     <div class="timer" id="timer" hidden></div>
 
     <div id="banners" class="banners"></div>
 
     <main id="main" class="layout">
       <div class="layout__main">
-        <p class="focus-bar" id="focus-bar" hidden>
-          Focus mode — everything but the top item is hidden.
-          <button type="button" class="button" id="focus-exit">Show everything</button>
-        </p>
-        <section class="objective" id="objective" aria-label="Current objective" hidden></section>
-        <section class="stats" id="stats" aria-label="Today at a glance"></section>
-        <p class="headline" id="headline" hidden></p>
-        <div id="sections"></div>
+        <div id="today" role="tabpanel" aria-labelledby="tab-today">
+          <p class="focus-bar" id="focus-bar" hidden>
+            Focus mode — everything but the top item is hidden.
+            <button type="button" class="button" id="focus-exit">Show everything</button>
+          </p>
+          <section class="objective" id="objective" aria-label="Current objective" hidden></section>
+          <section class="stats" id="stats" aria-label="Today at a glance"></section>
+          <p class="headline" id="headline" hidden></p>
+          <div id="sections"></div>
+        </div>
+        <div id="board" role="tabpanel" aria-labelledby="tab-board" hidden></div>
       </div>
 
       <aside class="layout__side" aria-label="Today's agenda">
@@ -74,6 +87,7 @@
     <dialog class="help" id="help">
       <h2>Keyboard shortcuts</h2>
       <dl>
+        <div><dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Today / pull requests</dd></div>
         <div><dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous item</dd></div>
         <div><dt><kbd>e</kbd></dt><dd>Mark done</dd></div>
         <div><dt><kbd>s</kbd></dt><dd>Snooze until tomorrow</dd></div>
@@ -83,11 +97,13 @@
         <div><dt><kbd>u</kbd></dt><dd>Undo the last action</dd></div>
         <div><dt><kbd>f</kbd></dt><dd>Focus mode — hide all but the top item</dd></div>
         <div><dt><kbd>p</kbd></dt><dd>Start a focus session on the selected item</dd></div>
+        <div><dt><kbd>r</kbd></dt><dd>Refresh the pull request board now</dd></div>
         <div><dt><kbd>?</kbd></dt><dd>This help</dd></div>
       </dl>
       <p class="help__note">
         Done, snoozed and dismissed all tell the morning agent to leave an item out of
-        tomorrow's brief. A note is sent along with it as free text.
+        tomorrow's brief. A note is sent along with it as free text. On the pull request
+        board only snooze and note apply: a pull request stays until it's merged or closed.
       </p>
       <form method="dialog"><button type="submit" class="button">Close</button></form>
     </dialog>

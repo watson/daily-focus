@@ -1,20 +1,25 @@
 /** Wiring: state, optimistic actions, keyboard, theme. */
 
-import { fetchState, postAction, postSession, subscribe } from './api.js';
+import { fetchState, postAction, postBoardRefresh, postSession, subscribe } from './api.js';
 import { localDateKey } from './format.js';
 import {
   clock,
   renderAgenda,
   renderBanners,
+  renderBoard,
   renderHeadline,
   renderHeader,
   renderObjective,
   renderTimer,
   renderSections,
   renderStats,
+  renderTabs,
 } from './render.js';
 
 let state = null;
+
+/** Which view the page is on. Persisted: a pinned tab should come back where it was. */
+const VIEW_KEY = 'daily-focus:view';
 
 /**
  * Which self-closed session has already been acknowledged, by its end time.
@@ -38,6 +43,7 @@ const ui = {
   activeSessionId: null,
   sessionOverrun: false,
   unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
+  view: localStorage.getItem(VIEW_KEY) === 'board' ? 'board' : 'today',
 };
 
 /** Last completed action, for the `u` shortcut. */
@@ -90,6 +96,10 @@ const handlers = {
     localStorage.setItem(UNATTENDED_SEEN_KEY, endedAt);
     render();
   },
+  // A nudge on Slack is invisible to GitHub, so it's recorded as a note: the agent
+  // reads it as free text, and the board's nudge timer starts over from it.
+  nudge: (id) => void applyAction(id, 'note', { text: 'Nudged reviewers' }),
+  refreshBoard: () => void refreshBoard(),
 };
 
 function render() {
@@ -98,6 +108,8 @@ function render() {
   ui.sessionOverrun = state.session?.active?.overrun === true;
   // Lets the stylesheet recede every row except the one being worked on.
   document.body.dataset.sessionActive = String(ui.activeSessionId !== null);
+  document.body.dataset.view = ui.view;
+  renderTabs(state, ui);
   renderTimer(state, ui, handlers);
   renderHeader(state);
   renderBanners(state, ui.connectionError);
@@ -105,7 +117,46 @@ function render() {
   renderStats(state);
   renderHeadline(state);
   renderSections(state, ui, handlers);
+  renderBoard(state, ui, handlers);
   renderAgenda(state);
+}
+
+/* ---------- views ---------- */
+
+function setView(view) {
+  if (ui.view === view) return;
+  ui.view = view;
+  localStorage.setItem(VIEW_KEY, view);
+  // The selection belongs to the list it was made in.
+  ui.selectedId = null;
+  ui.menuFor = null;
+  discardNote();
+  document.getElementById(view).hidden = false;
+  document.getElementById(view === 'today' ? 'board' : 'today').hidden = true;
+  render();
+}
+
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => setView(tab.dataset.view));
+}
+document.getElementById(ui.view).hidden = false;
+document.getElementById(ui.view === 'today' ? 'board' : 'today').hidden = true;
+
+/**
+ * Ask GitHub now rather than at the next poll.
+ *
+ * The server answers once the fetch has landed, so this can take a few seconds;
+ * the board says "refreshing" in the meantime because the fetch start is
+ * broadcast over SSE like any other change.
+ */
+async function refreshBoard() {
+  if (!state?.board?.enabled) return;
+  try {
+    state = await postBoardRefresh();
+    render();
+  } catch (err) {
+    showToast(`Could not refresh: ${err.message}`);
+  }
 }
 
 /* ---------- actions ---------- */
@@ -135,6 +186,12 @@ async function applyAction(id, action, extra = {}) {
     item.status = action === 'reopen' ? 'open' : action === 'dismiss' ? 'dismissed' : action === 'done' ? 'done' : 'snoozed';
     item.statusAt = new Date().toISOString();
     if (action === 'snooze') item.snoozedUntil = extra.until;
+  }
+  // The board only ever parks and unparks, and the same id may be a brief item too.
+  const row = state?.board?.rows.find((candidate) => candidate.id === id);
+  if (row && (action === 'snooze' || action === 'reopen')) {
+    row.status = action === 'snooze' ? 'snoozed' : 'open';
+    row.snoozedUntil = action === 'snooze' ? extra.until : undefined;
   }
   render();
 
@@ -281,9 +338,9 @@ function hideToast() {
 
 /* ---------- keyboard ---------- */
 
-/** Ids of the items currently on screen, in visual order. */
+/** Ids of the items currently on screen, in visual order. Only the showing view counts. */
 function visibleItemIds() {
-  return [...document.querySelectorAll('.item')].map((node) => node.dataset.id);
+  return [...document.querySelectorAll(`#${ui.view} .item`)].map((node) => node.dataset.id);
 }
 
 function moveSelection(delta) {
@@ -298,8 +355,11 @@ function moveSelection(delta) {
     ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
+/** The selected brief item or board row. Rows carry `court`, items carry `kind`. */
 function selectedItem() {
-  return state?.items.find((item) => item.id === ui.selectedId) ?? null;
+  if (!state || ui.selectedId === null) return null;
+  const list = ui.view === 'board' ? state.board.rows : state.items;
+  return list.find((entry) => entry.id === ui.selectedId) ?? null;
 }
 
 function tomorrow() {
@@ -339,6 +399,20 @@ document.addEventListener('keydown', (event) => {
       event.preventDefault();
       setFocusMode(document.body.dataset.focusMode !== 'true');
       return;
+    case '1':
+      event.preventDefault();
+      setView('today');
+      return;
+    case '2':
+      event.preventDefault();
+      setView('board');
+      return;
+    case 'r':
+      if (ui.view === 'board') {
+        event.preventDefault();
+        void refreshBoard();
+      }
+      return;
     case '?':
       event.preventDefault();
       help.showModal();
@@ -353,11 +427,13 @@ document.addEventListener('keydown', (event) => {
 
   const item = selectedItem();
   if (!item) return;
+  // A pull request can be parked and annotated, but not done, dismissed or timed.
+  const pull = ui.view === 'board';
 
   switch (event.key) {
     case 'e':
       event.preventDefault();
-      if (item.status === 'open') void applyAction(item.id, 'done');
+      if (!pull && item.status === 'open') void applyAction(item.id, 'done');
       break;
     case 's':
       event.preventDefault();
@@ -365,7 +441,7 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'x':
       event.preventDefault();
-      if (item.status === 'open') void applyAction(item.id, 'dismiss');
+      if (!pull && item.status === 'open') void applyAction(item.id, 'dismiss');
       break;
     case 'n':
       event.preventDefault();
@@ -373,6 +449,7 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'p':
       event.preventDefault();
+      if (pull) break;
       if (ui.activeSessionId === item.id) handlers.stopSession();
       else if (item.status === 'open' && item.kind === 'task') handlers.startSession(item.id);
       break;
@@ -498,6 +575,9 @@ subscribe(
       const optimistic = state?.items.find((item) => item.id === id);
       const incoming = next.items.find((item) => item.id === id);
       if (optimistic && incoming) Object.assign(incoming, { status: optimistic.status });
+      const optimisticRow = state?.board?.rows.find((row) => row.id === id);
+      const incomingRow = next.board?.rows.find((row) => row.id === id);
+      if (optimisticRow && incomingRow) Object.assign(incomingRow, { status: optimisticRow.status });
     }
     state = next;
     ui.connectionError = null;
