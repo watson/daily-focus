@@ -266,6 +266,39 @@ export type CheckState = 'success' | 'failure' | 'pending' | null;
 
 export type MergeableState = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 
+/**
+ * GitHub's own reading of whether the merge button would work, which is a broader
+ * question than `mergeable`.
+ *
+ * `mergeable` only answers "does this conflict". Repository policy — required
+ * reviews, required checks, anything a ruleset adds — shows up here and nowhere
+ * else, which is why an approved, conflict-free, green pull request can still be
+ * `BLOCKED`. Null when the field wasn't fetched: a cache written before this
+ * existed, or a token GitHub won't tell.
+ */
+export type MergeStateStatus =
+  | 'BEHIND'
+  | 'BLOCKED'
+  | 'CLEAN'
+  | 'DIRTY'
+  | 'HAS_HOOKS'
+  | 'UNKNOWN'
+  | 'UNSTABLE';
+
+/**
+ * One check on the head commit that hasn't finished. A fact, not a judgement:
+ * whether a given name is the repository's merge-policy gate is a matter of
+ * private configuration, so it is matched at read time and never stored.
+ */
+export interface PendingCheck {
+  name: string;
+  kind: 'check-run' | 'status-context';
+  /** Where GitHub says to look. Null when it gave no link, or a non-http(s) one. */
+  detailsUrl: string | null;
+  /** Check runs only. The key an output lookup would cache under, if one is ever added. */
+  checkRunId?: number;
+}
+
 /** Something a person other than the author did on a pull request. */
 export interface PullActivity {
   at: string;
@@ -304,6 +337,15 @@ export interface PullRequest {
    */
   failingChecks: string[];
   mergeable: MergeableState;
+  /** GitHub's broader merge state. Null on a cache written before it was fetched. */
+  mergeStateStatus: MergeStateStatus | null;
+  /**
+   * The head commit's unfinished checks, by name, with whatever link GitHub gave.
+   * Read from the first hundred contexts only, the same window `checks` is derived
+   * from — a gate beyond that is missed for presentation, never for readiness,
+   * since `mergeStateStatus` still says blocked.
+   */
+  pendingChecks: PendingCheck[];
   autoMerge: boolean;
   /** Reviewers still requested, users by login and teams by slug. */
   requestedReviewers: string[];
@@ -335,19 +377,40 @@ export interface PullsFile {
 /**
  * Whose move it is.
  *
- * - `you`        changes requested, CI red, conflicts, or someone acted after you did.
- * - `ready`      approved, nothing red, nothing left but the merge button.
+ * - `you`        changes requested, CI red, conflicts, a stale branch, or someone
+ *                acted after you did.
+ * - `ready`      approved, nothing red, and GitHub says the merge would work.
  * - `reviewers`  waiting on a review, or on a re-review since your last push.
+ * - `gate`       a check the user named as the repository's aggregate merge-policy
+ *                decision hasn't finished. Nobody here knows whose move that is —
+ *                the gate's own rules are private to whatever implements them.
+ * - `checks`     GitHub says the merge is blocked or unstable and no configured gate
+ *                explains it: something is still running, or still red.
  * - `draft`      not yet asking anyone for anything.
  */
-export type Court = 'you' | 'ready' | 'reviewers' | 'draft';
+export type Court = 'you' | 'ready' | 'reviewers' | 'gate' | 'checks' | 'draft';
 
-/** Why a pull request sits in your court. Formatted by the client, since the times are relative. */
+/** Why a pull request sits where it does. Formatted by the client, since the times are relative. */
 export interface CourtReason {
-  kind: 'changes-requested' | 'ci-failing' | 'conflicts' | 'activity';
+  kind:
+    | 'changes-requested'
+    | 'ci-failing'
+    | 'conflicts'
+    | 'activity'
+    | 'behind'
+    /** A configured merge gate is pending; `checks` names it. */
+    | 'merge-gate'
+    /** Ordinary checks are still running; `checks` names them when GitHub said. */
+    | 'checks-pending'
+    /** GitHub says blocked but returned no pending context to blame. */
+    | 'merge-blocked'
+    /** GitHub hasn't worked out whether the merge would succeed. */
+    | 'mergeability-unknown';
   login?: string;
   at?: string;
   activity?: 'review' | 'comment';
+  /** The checks this reason is about, for the gate and pending-check kinds. */
+  checks?: PendingCheck[];
 }
 
 /** A pull request plus everything the clock and the action log add to it. */

@@ -1187,6 +1187,20 @@ body[data-view='board'] .layout {
   overflow-wrap: anywhere;
 }
 
+/*
+ * Waiting on a gate or on checks is not a failure, so it doesn't get the red the
+ * "your move" reasons use. Nothing has gone wrong; it just isn't finished.
+ */
+.item__reason--waiting {
+  color: var(--ink-3);
+}
+
+.item__reason--waiting a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
 .pill--good {
   border-color: var(--good);
   color: var(--good-ink);

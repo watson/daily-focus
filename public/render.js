@@ -912,10 +912,15 @@ const COURT_TITLE = {
   you: 'Waiting on you',
   ready: 'Ready to merge',
   reviewers: 'Waiting on reviewers',
+  gate: 'Waiting on merge gate',
+  checks: 'Waiting on checks',
   draft: 'Drafts',
 };
 
-const COURT_ORDER = ['you', 'ready', 'reviewers', 'draft'];
+const COURT_ORDER = ['you', 'ready', 'reviewers', 'gate', 'checks', 'draft'];
+
+/** The courts whose rows carry a reason worth printing under the title. */
+const COURTS_WITH_REASONS = new Set(['you', 'gate', 'checks']);
 
 export function renderBoard(state, ui, handlers) {
   const container = document.getElementById('board');
@@ -1007,7 +1012,8 @@ function boardStatus(board, now, handlers) {
   );
 }
 
-function renderPullRow(row, state, ui, handlers) {
+/** Exported for `test/board-ui.test.ts`, which renders one row against a DOM stub. */
+export function renderPullRow(row, state, ui, handlers) {
   const now = new Date(state.now);
   const selected = ui.selectedId === row.id;
 
@@ -1050,9 +1056,7 @@ function renderPullRow(row, state, ui, handlers) {
         ),
       ),
       renderPullMeta(row, now),
-      row.court === 'you' && row.reasons.length > 0
-        ? el('p', { class: 'item__reason' }, row.reasons.map((reason) => describeReason(reason, row, now)).join(' · '))
-        : null,
+      renderPullReasons(row, now),
       renderNotes(row),
       ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
     ),
@@ -1074,6 +1078,12 @@ function renderPullMeta(row, now) {
   if (row.mergeable === 'CONFLICTING') pills.push(el('span', { class: 'pill pill--overdue' }, 'conflicts'));
   if (row.autoMerge) pills.push(el('span', { class: 'pill pill--good' }, 'auto-merge on'));
   if (row.nudge) pills.push(el('span', { class: 'pill pill--age' }, 'time to ask'));
+  // How long the merge has been refused, which the section header and the reason
+  // both leave out. A span rather than a point in time: "last touched" is about
+  // people, and the thing holding these two courts up is not a person.
+  if (row.court === 'gate' || row.court === 'checks') {
+    pills.push(el('span', { class: 'pill' }, `waiting ${waitedFor(row.since, now)}`));
+  }
   if (row.stale) pills.push(el('span', { class: 'pill pill--age' }, 'untouched for weeks'));
   if (row.status === 'snoozed') {
     pills.push(
@@ -1105,24 +1115,96 @@ function renderPullMeta(row, now) {
   );
 }
 
-/** One reason it's your move, in words. The server sends facts; the times are relative here. */
+/**
+ * Why the row sits where it does.
+ *
+ * A paragraph rather than a joined string, because the check-shaped reasons name
+ * checks, and a check GitHub gave a link for should be clickable — that link is
+ * the whole of what the board knows about a merge gate's internal policy.
+ */
+function renderPullReasons(row, now) {
+  if (!COURTS_WITH_REASONS.has(row.court) || row.reasons.length === 0) return null;
+  const parts = [];
+  for (const reason of row.reasons) {
+    // A kind this client doesn't know describes to nothing, and contributes no
+    // separator either — a stray " · " is how a forward-compatible renderer
+    // announces that it is out of date.
+    const described = describeReason(reason, row, now);
+    if (described.length === 0) continue;
+    if (parts.length > 0) parts.push(' · ');
+    parts.push(...described);
+  }
+  if (parts.length === 0) return null;
+  const tone = row.court === 'you' ? '' : ' item__reason--waiting';
+  return el('p', { class: `item__reason${tone}` }, parts);
+}
+
+/**
+ * One reason, as an array of text and links. The server sends facts; the times are
+ * relative and the wording belongs here.
+ */
 function describeReason(reason, row, now) {
   switch (reason.kind) {
     case 'changes-requested':
-      return `changes requested${reason.login ? ` by @${reason.login}` : ''}${reason.at ? ` ${relativeTime(reason.at, now)}` : ''}`;
+      return [`changes requested${reason.login ? ` by @${reason.login}` : ''}${reason.at ? ` ${relativeTime(reason.at, now)}` : ''}`];
     case 'ci-failing': {
       const names = row.failingChecks ?? [];
-      if (names.length === 0) return 'CI is failing';
+      if (names.length === 0) return ['CI is failing'];
       const shown = names.slice(0, 3).join(', ');
-      return `CI failing: ${shown}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`;
+      return [`CI failing: ${shown}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`];
     }
     case 'conflicts':
-      return 'conflicts with the base branch';
+      return ['conflicts with the base branch'];
+    case 'behind':
+      return ['the branch is behind its base — update it to merge'];
     case 'activity':
-      return `@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${relativeTime(reason.at, now)}`;
+      return [`@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${relativeTime(reason.at, now)}`];
+    case 'merge-gate':
+      // Deliberately says nothing about what the gate is waiting for. Its rules
+      // are the repository's, not ours, and the link is where they are readable.
+      return reason.checks?.length
+        ? ['merge policy pending: ', ...checkNames(reason.checks)]
+        : ['merge policy pending'];
+    case 'checks-pending':
+      return reason.checks?.length
+        ? ['still running: ', ...checkNames(reason.checks)]
+        : ['checks are still running'];
+    case 'merge-blocked':
+      return ['merge blocked by GitHub'];
+    case 'mergeability-unknown':
+      return ['GitHub is still determining mergeability'];
     default:
-      return '';
+      return [];
   }
+}
+
+/**
+ * How long a wait has run, as a span. The same thresholds `relativeTime` uses, so
+ * "waiting 30 h" and "last touched 30 h ago" on one row can't disagree.
+ */
+function waitedFor(since, now) {
+  const at = parseDate(since);
+  const minutes = at ? Math.round((now.getTime() - at.getTime()) / 60_000) : 0;
+  if (minutes < 1) return 'moments';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h`;
+  return `${Math.round(hours / 24)} days`;
+}
+
+/** Pending check names, linked where GitHub gave somewhere to look. At most three. */
+function checkNames(checks) {
+  const parts = [];
+  for (const check of checks.slice(0, 3)) {
+    if (parts.length > 0) parts.push(', ');
+    parts.push(
+      check.detailsUrl
+        ? el('a', { href: check.detailsUrl, target: '_blank', rel: 'noopener noreferrer' }, check.name)
+        : check.name,
+    );
+  }
+  if (checks.length > 3) parts.push(` and ${checks.length - 3} more`);
+  return parts;
 }
 
 function renderPullActions(row, ui, handlers) {

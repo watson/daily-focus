@@ -183,18 +183,26 @@ again next week. So the board is a status board rather than a to-do list, and it
 the one thing the dashboard fetches itself, since state changes during the day and a
 review that landed at eleven should not read as "waiting on reviewers" until tomorrow.
 
-Four buckets, most actionable first:
+Six buckets, most actionable first:
 
-- **Waiting on you.** Changes requested, CI red, a merge conflict, or someone acted
-  after you did. The row says which.
-- **Ready to merge.** Approved, nothing red, nothing left but the button.
+- **Waiting on you.** Changes requested, CI red, a merge conflict, a branch behind
+  its base, or someone acted after you did. The row says which.
+- **Ready to merge.** Approved, nothing red, and GitHub agrees the merge would go
+  through. Nothing left but the button.
 - **Waiting on reviewers.** Nobody has acted since your last push. After a day it
   says *time to ask*.
+- **Waiting on merge gate.** A check you named in `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS`
+  hasn't finished. See below.
+- **Waiting on checks.** GitHub says the merge is blocked or unstable and no
+  configured gate explains it. The row names whatever is still running.
 - **Drafts.** Not asking anyone for anything. After a fortnight untouched it says so,
   because a draft you meant to finish and a draft you meant to abandon look the same.
 
 Bots don't count as people acting. A review that approves is read as ready rather
-than as your move, unless a comment landed after it.
+than as your move, unless a comment landed after it. Reviewers GitHub is still
+*asking* don't hold a pull request back on their own — GitHub keeps asking long after
+the required approvals have landed, so only a review GitHub itself still requires
+counts.
 
 Three things you can do to a row, all through the same action log as the brief and
 under the same `github:pr:` ids, so the morning agent sees them too:
@@ -202,11 +210,33 @@ under the same `github:pr:` ids, so the morning agent sees them too:
 - **Park** it until a date. It drops into a drawer and comes back when the date
   arrives. This is how a draft is shelved on purpose.
 - **Note.** Free text, shown on the row and read by the agent.
-- **Nudged.** On rows waiting on reviewers. You asked on Slack, which GitHub can't see,
-  so this records a note saying so and the *time to ask* flag starts over from now.
+- **Nudged.** On rows waiting on reviewers, and only those — on a gate or a check row
+  the board has no idea whose action is missing, so it suggests asking nobody. You
+  asked on Slack, which GitHub can't see, so this records a note saying so and the
+  *time to ask* flag starts over from now.
 
 Done and dismiss don't apply: marking the brief's "CI failing on #3402" done doesn't
 close #3402, and the board shows what is open.
+
+### Never ready when GitHub says blocked
+
+`mergeable` only answers "does this conflict", which is why an approved, green,
+conflict-free pull request could still be presented as ready while GitHub was quietly
+refusing to merge it. `mergeStateStatus` is the broader answer, and it is what
+**Ready to merge** requires: `CLEAN` or `HAS_HOOKS`, nothing else. `BLOCKED` and
+`UNSTABLE` go to **Waiting on checks**, `BEHIND` and `DIRTY` to **Waiting on you**,
+and an `UNKNOWN` merge state is reported as GitHub not having worked it out yet rather
+than assumed to be fine.
+
+Some repositories put review policy, ownership, security and whatever else behind a
+single status check, and let that one check speak for all of it. Such a check pending
+means the merge is refused — but not whose action is missing: reviewers', yours, or
+some system's. So naming those checks in `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS` gets
+them a bucket that claims nothing more than it knows, with the check's name and
+GitHub's own link to it, and no suggestion to nudge anybody. Names are matched exactly
+and case-sensitively, the way GitHub's repository rules name a required check, and the
+setting holds your organisation's names rather than any that ship here. Unset, nothing
+gets that treatment and the rows simply say *waiting on checks*.
 
 ### Where it gets its access
 
@@ -255,6 +285,7 @@ logins. Restart to apply.
 | `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board; nothing is polled |
 | `DAILY_FOCUS_GITHUB_ACCOUNTS` | *gh's active account* | Logins to poll as, comma-separated, each resolved with `gh auth token --user` |
 | `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |
+| `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS` | *none* | Check names that stand for a repository's whole merge policy, comma-separated and matched exactly. Their rows get the *Waiting on merge gate* bucket |
 | `DAILY_FOCUS_GITHUB_POLL_MINUTES` | `5` | Minutes between polls while a tab is open |
 | `DAILY_FOCUS_GH` | `gh` | Path to the GitHub CLI, for when the server's PATH lacks it. `~` is expanded |
 
@@ -374,4 +405,6 @@ React later is mechanical rather than a rewrite.
 - **The board is state, not judgement.** The agent decides what deserves attention;
   the server only reads what GitHub can say for certain, and reads it deterministically
   so two accounts either both work or fail visibly. Whose court a PR is in is computed
-  at render time from the facts and the clock, never stored.
+  at render time from the facts, the clock and the action log, never stored — and
+  neither is whether a pending check is one of your merge gates, since that answer
+  comes from your configuration rather than from GitHub.

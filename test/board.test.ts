@@ -39,6 +39,8 @@ function pull(account: string, number: number): PullRequest {
     checks: null,
     failingChecks: [],
     mergeable: 'UNKNOWN',
+    mergeStateStatus: 'CLEAN',
+    pendingChecks: [],
     autoMerge: false,
     requestedReviewers: [],
     reviews: [],
@@ -227,6 +229,68 @@ test('the file on disk is the last good fetch, written atomically', async () => 
   assert.equal(upgraded?.pulls[0]?.account, '');
   assert.deepEqual(upgraded?.accounts, [{ login: 'alice', ok: true, error: null }]);
   assert.equal(normalizeStoredPull({ id: 'x' }), null);
+});
+
+test('a stored pull from before the merge state existed reads as "nobody said"', async () => {
+  const { mergeStateStatus: _gone, pendingChecks: _also, ...older } = pull('alice', 7);
+  const restored = normalizeStoredPull(older);
+  assert.equal(restored?.mergeStateStatus, null, 'null, not UNKNOWN: a refresh will answer properly');
+  assert.deepEqual(restored?.pendingChecks, []);
+
+  // A merge state GitHub has added since must not be read as a clean merge.
+  assert.equal(normalizeStoredPull({ ...pull('alice', 7), mergeStateStatus: 'MERGE_QUEUED' })?.mergeStateStatus, 'UNKNOWN');
+  assert.equal(normalizeStoredPull({ ...pull('alice', 7), mergeStateStatus: 12 })?.mergeStateStatus, null);
+});
+
+test('malformed pending checks cost their own entry and nothing else', () => {
+  const restored = normalizeStoredPull({
+    ...pull('alice', 8),
+    pendingChecks: [
+      { name: 'policy/merge-gate', kind: 'check-run', detailsUrl: 'https://github.com/acme/webapp/runs/9', checkRunId: 9 },
+      { name: 'ci/deploy', kind: 'status-context' },
+      { name: 'shouty', kind: 'nonsense', detailsUrl: 'javascript:alert(1)' },
+      { kind: 'check-run' },
+      { name: '' },
+      'junk',
+      null,
+    ],
+  });
+  assert.deepEqual(restored?.pendingChecks, [
+    { name: 'policy/merge-gate', kind: 'check-run', detailsUrl: 'https://github.com/acme/webapp/runs/9', checkRunId: 9 },
+    { name: 'ci/deploy', kind: 'status-context', detailsUrl: null },
+    { name: 'shouty', kind: 'check-run', detailsUrl: null },
+  ]);
+  assert.deepEqual(normalizeStoredPull({ ...pull('alice', 8), pendingChecks: 'nope' })?.pendingChecks, []);
+});
+
+test('the configured merge gate decides the court, and is never written to the file', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS: 'policy/merge-gate' });
+  const gated: PullRequest = {
+    ...pull('alice', 3421),
+    reviewDecision: 'APPROVED',
+    reviews: [{ login: 'bob', state: 'APPROVED', at: '2026-09-10T10:00:00Z' }],
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [{ name: 'policy/merge-gate', kind: 'check-run', detailsUrl: null }],
+  };
+  const deps = fakeDeps({
+    accounts: [{ login: 'alice', active: true }],
+    tokens: { active: 't1' },
+    fetches: { t1: ok('alice', [gated]) },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+
+  const view = board.view([], new Date('2026-09-11T09:00:00Z'));
+  assert.equal(view.rows[0]?.court, 'gate');
+  assert.equal(view.counts.gate, 1);
+  assert.equal(view.counts.ready, 0);
+
+  // The match comes from private configuration, so the cache must not carry it.
+  const raw = await readFile(cfg.pullsFile, 'utf8');
+  assert.ok(!raw.includes('court'), 'prs.json holds facts, not verdicts');
+  assert.ok(!raw.includes('isMergeGate'), 'and not which of them the configuration matched');
 });
 
 test('a broken file on disk never takes the view or the poll down', async () => {

@@ -23,6 +23,19 @@ export interface GitHubConfig {
    * `org:acme` or `repo:acme/webapp`. Empty means every PR the account authored.
    */
   scope: readonly string[];
+  /**
+   * Check names that stand for the whole merge policy of their repository, exactly
+   * as GitHub spells them.
+   *
+   * Some repositories put review policy, ownership and security behind one status
+   * check and let that check speak for all of it. Such a check pending means the
+   * merge is refused, but says nothing about whose action is missing — reviewers',
+   * the author's, or an automated system's — so the board gives it a bucket of its
+   * own rather than guessing. Which names those are is a property of the user's
+   * repositories, never of this project: nothing is recognised unless it is
+   * configured here, and an empty list simply means no row gets that treatment.
+   */
+  mergeGateChecks: readonly string[];
   /** Minutes between polls while a browser is watching. */
   pollMinutes: number;
   /** The gh binary. Overridable because a launchd job's PATH rarely has Homebrew on it. */
@@ -99,6 +112,23 @@ function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number 
   return n;
 }
 
+/**
+ * A comma-separated list, trimmed, empties and duplicates dropped.
+ *
+ * Commas only, unlike `envList`: GitHub check names contain spaces often enough
+ * that splitting on whitespace would turn one name into three that match nothing.
+ */
+function envNameList(name: string, env: NodeJS.ProcessEnv): string[] {
+  const raw = env[name];
+  if (raw === undefined) return [];
+  const names: string[] = [];
+  for (const entry of raw.split(',')) {
+    const trimmed = entry.trim();
+    if (trimmed !== '' && !names.includes(trimmed)) names.push(trimmed);
+  }
+  return names;
+}
+
 /** A comma- or whitespace-separated list, trimmed, empties dropped. */
 function envList(name: string, env: NodeJS.ProcessEnv): string[] {
   const raw = env[name];
@@ -137,6 +167,7 @@ function envGitHub(env: NodeJS.ProcessEnv): GitHubConfig {
     enabled: !['off', 'false', '0', 'no'].includes(flag),
     accounts: envList('DAILY_FOCUS_GITHUB_ACCOUNTS', env),
     scope: parseScope(envList('DAILY_FOCUS_GITHUB_SCOPE', env)),
+    mergeGateChecks: envNameList('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', env),
     pollMinutes,
     ghPath: expandHome((env.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
   };

@@ -2,7 +2,15 @@ import { readFile } from 'node:fs/promises';
 
 import type { Config } from './config.ts';
 import { writeJsonAtomic } from './fs.ts';
-import { GhMissingError, fetchPulls, ghToken, listGhAccounts, type AccountFetch, type OrgVisibility } from './github.ts';
+import {
+  GhMissingError,
+  fetchPulls,
+  ghToken,
+  listGhAccounts,
+  toMergeState,
+  type AccountFetch,
+  type OrgVisibility,
+} from './github.ts';
 import { countBoard, resolveBoard } from './prs.ts';
 import type {
   Action,
@@ -10,6 +18,7 @@ import type {
   BoardState,
   CheckState,
   MergeableState,
+  PendingCheck,
   PullActivity,
   PullRequest,
   PullsFile,
@@ -153,7 +162,7 @@ export class Board {
     let rows: BoardState['rows'] = [];
     if (this.enabled) {
       try {
-        rows = resolveBoard(this.#file?.pulls ?? [], actions, now);
+        rows = resolveBoard(this.#file?.pulls ?? [], actions, now, this.#config.github.mergeGateChecks);
       } catch (err) {
         warnings.push(`Could not judge the pull requests on file: ${(err as Error).message}`);
       }
@@ -360,6 +369,23 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
+/** Stored pending checks, one bad entry at a time rather than all or nothing. */
+function pendingChecks(value: unknown): PendingCheck[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.name !== 'string' || entry.name === '') return [];
+    const check: PendingCheck = {
+      name: entry.name,
+      kind: entry.kind === 'status-context' ? 'status-context' : 'check-run',
+      // Re-checked on the way in as well as on the way out: the file is ours, but
+      // a link that reaches an anchor tag should never have been trusted twice.
+      detailsUrl: typeof entry.detailsUrl === 'string' && /^https?:\/\//i.test(entry.detailsUrl) ? entry.detailsUrl : null,
+    };
+    if (typeof entry.checkRunId === 'number') check.checkRunId = entry.checkRunId;
+    return [check];
+  });
+}
+
 /**
  * One stored pull, made whole.
  *
@@ -405,6 +431,12 @@ export function normalizeStoredPull(raw: unknown): PullRequest | null {
     checks: oneOf<NonNullable<CheckState>>(raw.checks, ['success', 'failure', 'pending'], null),
     failingChecks: strings(raw.failingChecks),
     mergeable: oneOf<MergeableState>(raw.mergeable, ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'], 'UNKNOWN') ?? 'UNKNOWN',
+    // Read through the same normaliser a fresh fetch uses, so the file and the API
+    // can't come to different conclusions about what a merge state means: absent
+    // is null and falls back to the older reading of ready, and a value the enum
+    // doesn't have is `UNKNOWN` rather than anything resembling a clean merge.
+    mergeStateStatus: toMergeState(raw.mergeStateStatus),
+    pendingChecks: pendingChecks(raw.pendingChecks),
     autoMerge: raw.autoMerge === true,
     requestedReviewers: strings(raw.requestedReviewers),
     reviews,

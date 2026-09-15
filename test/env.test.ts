@@ -78,6 +78,26 @@ test('the board is on by default and off on request', () => {
   }
 });
 
+test('no check is a merge gate until one is named', () => {
+  assert.deepEqual(loadConfig({ DAILY_FOCUS_DATA: '/tmp/x' }).github.mergeGateChecks, []);
+  assert.deepEqual(loadConfig({ DAILY_FOCUS_DATA: '/tmp/x', DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS: '' }).github.mergeGateChecks, []);
+  assert.deepEqual(loadConfig({ DAILY_FOCUS_DATA: '/tmp/x', DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS: ' , ,' }).github.mergeGateChecks, []);
+});
+
+test('merge gate names are split on commas only, trimmed and deduplicated', () => {
+  const gates = (raw: string) =>
+    loadConfig({ DAILY_FOCUS_DATA: '/tmp/x', DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS: raw }).github.mergeGateChecks;
+
+  assert.deepEqual(gates(' policy/merge-gate , repository-policy '), ['policy/merge-gate', 'repository-policy']);
+  assert.deepEqual(gates('policy/merge-gate,policy/merge-gate'), ['policy/merge-gate'], 'the same name twice is one gate');
+  // Commas only: GitHub check names contain spaces, and splitting on whitespace
+  // would turn one real name into three that match nothing.
+  assert.deepEqual(gates('merge policy decision'), ['merge policy decision']);
+  assert.deepEqual(gates('merge policy decision, ownership review'), ['merge policy decision', 'ownership review']);
+  // Matching happens in prs.ts, but the case has to survive the config to get there.
+  assert.deepEqual(gates('Policy/Merge-Gate'), ['Policy/Merge-Gate']);
+});
+
 test('accounts and scope are lists, and the scope becomes search qualifiers', () => {
   const config = loadConfig({
     DAILY_FOCUS_DATA: '/tmp/x',
