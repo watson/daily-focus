@@ -220,19 +220,37 @@ review landing at eleven changes whose move it is.
 Three modules, split so the part that needs a network is small:
 
 - `github.ts` — borrows tokens from `gh auth token --user <login>` rather than storing
-  any, runs one GraphQL search per account, and reduces each node to a `PullRequest` of
+  any, runs the GraphQL search per account, and reduces each node to a `PullRequest` of
   facts. Bots are dropped as activity. Each `org:` in scope is probed by name first,
   because a search scoped to a SAML-protected org the token isn't authorised for returns
   nothing rather than an error, and nothing is what a quiet board looks like.
-- `prs.ts` — pure. `judge` decides the court from the facts and the clock;
-  `resolveBoard` joins that with the action log. The rules are in its comments and in
-  the README; the tests in `test/prs.test.ts` are the spec.
+
+  Two requests per page, not one, and the split is not an accident. `mergeStateStatus`
+  makes GitHub compute a trial merge per pull request, and asking for that in the same
+  request as the check rollups times the gateway out — measured at eleven seconds for a
+  page of fifty, answered with a 502 or a truncated body. Since an account whose fetch
+  fails keeps its previous rows, the symptom is a board that looks merely stale while
+  every poll silently fails. So the search carries the rollup, a second request carries
+  the merge states keyed by node id, `PAGE_SIZE` stays small enough that the first one
+  is answerable, and a merge-state request that fails costs the field and a warning
+  rather than the account's rows. `PAGE_SIZE * MAX_PAGES` is the ceiling on pulls read.
+- `prs.ts` — pure. `judge` decides the court from the facts, the clock and the
+  configured merge-gate names; `resolveBoard` joins that with the action log. The
+  rules are in its comments and in the README; the tests in `test/prs.test.ts` are the
+  spec. The order the questions are asked in is load-bearing and written out above
+  `judge`: a draft, then anything only the author can fix, then a review GitHub itself
+  still requires, then a configured gate, then any other blocked or unstable merge
+  state, then ready, then waiting on reviewers.
 - `board.ts` — the poller. Once at startup, then only while an SSE subscriber exists,
   with backoff on failure and a pause near the rate limit. An account that fails a
   round keeps its previous rows. Its GitHub calls are injectable, which is how
   `test/board.test.ts` drives it without a network.
 
 Two rules the board must keep:
+
+The board's six courts, and what each one is claiming, are in `Court` in
+`src/types.ts`; the client's `COURT_TITLE` and `COURT_ORDER` in `public/render.js`
+have to list the same six.
 
 - **It joins the same action log under the same ids** (`github:pr:<owner>/<repo>#<n>`),
   so a PR the brief also raises is one thing, not two. But it honours only `snooze` and
@@ -246,7 +264,26 @@ Two rules the board must keep:
   a plain `reopen` otherwise. Notes get no undo at all, since nothing un-notes.
 - **Nothing computed is stored.** `prs.json` holds facts and a timestamp; court, reasons,
   nudge and stale flags are derived on every read from the facts, the clock and the
-  log, so a row moves between courts as the day passes without a fetch.
+  log, so a row moves between courts as the day passes without a fetch. Whether a
+  pending check is a merge gate is derived too, and for a second reason: the answer
+  comes from `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS`, which is the user's private
+  configuration and has no business in a cache of GitHub facts.
+- **Ready means GitHub agrees.** `mergeable` answers only "does this conflict", so an
+  approved, green, conflict-free pull request could still be called ready while GitHub
+  was refusing the merge on policy. `mergeStateStatus` is the field that says so, and
+  **Ready to merge** requires it to be `CLEAN` or `HAS_HOOKS`. A value the enum does
+  not have reads as `UNKNOWN` rather than as a clean merge; `null` means nobody told
+  us — an older cache — and falls back to the pre-merge-state reading, which is
+  tightened to "approved and nothing outstanding" so the old bug can't return through
+  the compatibility path. A configured gate pending outranks even a `CLEAN` state: the
+  user said that check is the policy, and a clean state alongside it is a race, not a
+  permission.
+- **A gate is not a reviewer.** A pending merge gate says the merge is refused and
+  nothing about whose action is missing. So `gate` rows carry the check's name and
+  GitHub's `detailsUrl` and nothing else — no nudge button, no reviewer list, no
+  reading of the check's own output. Parsing a check-run title, summary or app name to
+  guess at the policy behind it is specifically out of scope; if that text is ever
+  wanted it goes below the row as plain text and never changes a court.
 
 The server test sets `DAILY_FOCUS_GITHUB=off` so no test ever spawns `gh` or reaches
 GitHub. Keep it that way: the fixtures in `test/github.test.ts` are invented, and

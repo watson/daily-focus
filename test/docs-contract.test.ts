@@ -128,6 +128,49 @@ test('the required item fields are called out as required in both documents', ()
 });
 
 /**
+ * The board's courts are written down three times too: the `Court` union the server
+ * sorts and counts by, the client's title and order lists, and the README's list of
+ * buckets. A court the server can produce and the client can't name renders as a
+ * missing section — the rows simply vanish, with nothing on screen to say so, which
+ * is the same class of silent failure the checks above exist to catch.
+ */
+test('the server, the client and the README agree on the board\'s courts', async () => {
+  const types = await readFile(resolve(root, 'src/types.ts'), 'utf8');
+  const client = await readFile(resolve(root, 'public/render.js'), 'utf8');
+
+  const union = /export type Court = ([^;]+);/.exec(types);
+  assert.ok(union, 'Court is no longer declared where this test looks for it');
+  const courts = [...union[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
+  assert.ok(courts.length >= 4, 'expected a union of string literals');
+
+  const titles = /const COURT_TITLE = \{([^}]+)\}/.exec(client);
+  assert.ok(titles, 'render.js no longer declares COURT_TITLE where this test looks');
+  const titled = new Map([...titles[1]!.matchAll(/(\w+): '([^']+)'/g)].map((m) => [m[1]!, m[2]!]));
+
+  const order = /const COURT_ORDER = \[([^\]]+)\]/.exec(client);
+  assert.ok(order, 'render.js no longer declares COURT_ORDER where this test looks');
+  const ordered = [...order[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
+
+  assert.deepEqual([...titled.keys()].sort(), [...courts].sort(), 'COURT_TITLE must name every court, and no others');
+  assert.deepEqual([...ordered].sort(), [...courts].sort(), 'COURT_ORDER must place every court, and no others');
+
+  // The README is what a person reads to know what a bucket claims, so every
+  // heading the client can render has to appear there in the same words.
+  const readme = await readFile(resolve(root, 'README.md'), 'utf8');
+  for (const title of titled.values()) {
+    assert.ok(readme.includes(title), `the README never describes the "${title}" bucket`);
+  }
+  // The prose count goes stale silently, which is how "Four buckets" survived a
+  // fifth being added in an earlier draft of this change.
+  const spelled = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'][courts.length];
+  assert.match(
+    readme,
+    new RegExp(`\\b(${courts.length}|${spelled}) buckets\\b`, 'i'),
+    `the README should say there are ${courts.length} buckets`,
+  );
+});
+
+/**
  * Configuration is documented twice — the README table and `.env.example` — and read
  * once, in `src/config.ts`. A knob in any one of the three but not the others is a
  * setting nobody can find or one nobody can set, so the three lists have to match.

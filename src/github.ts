@@ -2,7 +2,15 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { laterISO } from './time.ts';
-import type { CheckState, MergeableState, PullActivity, PullRequest, ReviewDecision } from './types.ts';
+import type {
+  CheckState,
+  MergeStateStatus,
+  MergeableState,
+  PendingCheck,
+  PullActivity,
+  PullRequest,
+  ReviewDecision,
+} from './types.ts';
 
 const run = promisify(execFile);
 
@@ -13,8 +21,18 @@ const FETCH_TIMEOUT_MS = 30_000;
 
 const GRAPHQL_URL = 'https://api.github.com/graphql';
 
-/** Pages of search results to walk before giving up; fifty a page. */
-const MAX_PAGES = 6;
+/**
+ * How many pull requests to ask for at a time, and how many pages to walk.
+ *
+ * Deliberately well under GraphQL's hundred-node maximum. The per-pull payload
+ * here is large — the whole check rollup, fifty reviews, fifty comments — and a
+ * page of fifty has been measured taking eleven seconds against an account with
+ * forty open pull requests, which is past the gateway's patience: it answers 502,
+ * or 200 with a truncated body. Twenty-five comes back in seven or eight. The
+ * product is the ceiling, kept at what it was when pages were bigger.
+ */
+const PAGE_SIZE = 25;
+const MAX_PAGES = 12;
 
 /*
  * Every gh invocation runs with prompts and update nags disabled. Without this
@@ -211,11 +229,12 @@ export function buildSearchQuery(scope: readonly string[]): string {
 }
 
 const SEARCH_QUERY = `
-query($q: String!, $after: String) {
-  search(query: $q, type: ISSUE, first: 50, after: $after) {
+query($q: String!, $first: Int!, $after: String) {
+  search(query: $q, type: ISSUE, first: $first, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
       ... on PullRequest {
+        id
         number
         title
         url
@@ -237,8 +256,8 @@ query($q: String!, $after: String) {
                 contexts(first: 100) {
                   nodes {
                     __typename
-                    ... on CheckRun { name status conclusion }
-                    ... on StatusContext { context state }
+                    ... on CheckRun { databaseId name status conclusion detailsUrl }
+                    ... on StatusContext { context state targetUrl }
                   }
                 }
               }
@@ -262,8 +281,42 @@ query($q: String!, $after: String) {
   }
 }`;
 
+/**
+ * Merge states, asked for on their own.
+ *
+ * `mergeStateStatus` is not a stored field GitHub reads back: it computes a trial
+ * merge to answer, and doing that for a page of pull requests whose check rollups
+ * are also being fetched reliably times the gateway out — a 502, and a board that
+ * silently keeps yesterday's rows. Asked for by node id and nothing else, fifty at
+ * a time come back in about seven seconds. Two modest requests beat one that
+ * doesn't answer.
+ */
+const MERGE_STATE_QUERY = `
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on PullRequest { id mergeStateStatus }
+  }
+}`;
+
+export interface RawMergeState {
+  id?: string;
+  mergeStateStatus?: string | null;
+}
+
+/** Read the merge-state reply into a map keyed by node id. One odd node costs itself. */
+export function mergeStatesFromNodes(nodes: readonly (RawMergeState | null | undefined)[]): Map<string, MergeStateStatus | null> {
+  const states = new Map<string, MergeStateStatus | null>();
+  for (const node of nodes) {
+    if (!node || typeof node.id !== 'string' || node.id === '') continue;
+    states.set(node.id, toMergeState(node.mergeStateStatus));
+  }
+  return states;
+}
+
 /** Loosely typed: the shape of one `search.nodes` entry, as far as the board reads it. */
 export interface RawPullRequest {
+  /** The GraphQL node id, used only to join the merge-state request. Never stored. */
+  id?: string;
   number?: number;
   title?: string;
   url?: string;
@@ -275,6 +328,7 @@ export interface RawPullRequest {
   repository?: { nameWithOwner?: string };
   reviewDecision?: string | null;
   mergeable?: string | null;
+  mergeStateStatus?: string | null;
   autoMergeRequest?: { enabledAt?: string } | null;
   commits?: { nodes?: { commit?: { committedDate?: string; statusCheckRollup?: RawRollup | null } }[] };
   readyEvents?: { nodes?: ({ createdAt?: string } | null)[] };
@@ -297,12 +351,15 @@ export interface RawRollup {
 export interface RawCheck {
   __typename?: string;
   /** CheckRun */
+  databaseId?: number | null;
   name?: string;
   status?: string;
   conclusion?: string | null;
+  detailsUrl?: string | null;
   /** StatusContext */
   context?: string;
   state?: string;
+  targetUrl?: string | null;
 }
 
 /**
@@ -348,6 +405,11 @@ function worse(a: CheckState, b: CheckState): CheckState {
 const FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
 const PASSED_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 
+/** Only http(s) links are kept, so a `javascript:` details URL can never reach the DOM. */
+function safeUrl(url: string | null | undefined): string | null {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
+}
+
 /**
  * What CI says, read from the individual checks rather than the rollup's summary.
  *
@@ -356,17 +418,29 @@ const PASSED_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'NEUTRAL', '
  * contexts the way `gh pr checks` does gives the answer that page gives, and the
  * names of what failed. The summary still counts as a floor: if the contexts are
  * truncated past the first hundred and the summary says red, red wins.
+ *
+ * The unfinished ones are collected by name too, because "blocked on something
+ * still running" and "blocked on the repository's merge policy" read identically
+ * from the merge state alone, and the difference is the whole point of the gate
+ * bucket. Which name means which is not decided here: these are facts, and the
+ * match against configuration happens in `prs.ts`.
  */
-export function summarizeChecks(rollup: RawRollup | null | undefined): { checks: CheckState; failing: string[] } {
-  if (!rollup) return { checks: null, failing: [] };
+export function summarizeChecks(
+  rollup: RawRollup | null | undefined,
+): { checks: CheckState; failing: string[]; pending: PendingCheck[] } {
+  if (!rollup) return { checks: null, failing: [], pending: [] };
 
   const failing: string[] = [];
+  const pending: PendingCheck[] = [];
   let derived: CheckState = null;
   for (const node of rollup.contexts?.nodes ?? []) {
     if (!node) continue;
     if (node.__typename === 'CheckRun') {
       const name = node.name ?? 'unnamed check';
+      const waiting: PendingCheck = { name, kind: 'check-run', detailsUrl: safeUrl(node.detailsUrl) };
+      if (typeof node.databaseId === 'number') waiting.checkRunId = node.databaseId;
       if (node.status !== 'COMPLETED' || !node.conclusion) {
+        pending.push(waiting);
         derived = worse(derived, 'pending');
       } else if (FAILED_CONCLUSIONS.has(node.conclusion)) {
         failing.push(name);
@@ -375,6 +449,7 @@ export function summarizeChecks(rollup: RawRollup | null | undefined): { checks:
         derived = worse(derived, 'success');
       } else {
         // STALE and anything GitHub adds later: not a pass, not a fail.
+        pending.push(waiting);
         derived = worse(derived, 'pending');
       }
     } else if (node.__typename === 'StatusContext') {
@@ -385,16 +460,46 @@ export function summarizeChecks(rollup: RawRollup | null | undefined): { checks:
       } else if (node.state === 'SUCCESS') {
         derived = worse(derived, 'success');
       } else {
+        // PENDING and EXPECTED, plus anything unrecognised: not finished.
+        pending.push({ name, kind: 'status-context', detailsUrl: safeUrl(node.targetUrl) });
         derived = worse(derived, 'pending');
       }
     }
   }
 
-  return { checks: worse(derived, toCheckState(rollup.state)), failing };
+  return { checks: worse(derived, toCheckState(rollup.state)), failing, pending };
 }
 
 function toMergeable(state: string | null | undefined): MergeableState {
   return state === 'MERGEABLE' || state === 'CONFLICTING' ? state : 'UNKNOWN';
+}
+
+const MERGE_STATES: readonly MergeStateStatus[] = [
+  'BEHIND',
+  'BLOCKED',
+  'CLEAN',
+  'DIRTY',
+  'HAS_HOOKS',
+  'UNKNOWN',
+  'UNSTABLE',
+];
+
+/**
+ * GitHub's merge state, or null when it didn't say.
+ *
+ * Null and `UNKNOWN` are different answers and are kept apart on purpose. `UNKNOWN`
+ * is GitHub telling us it hasn't worked the merge out yet, which is not ready —
+ * it computes the answer lazily, so the first request for a pull request it hasn't
+ * looked at recently reports `UNKNOWN` and the next one reports the real state.
+ * That resolves itself within a poll, which is why it costs a row a turn in
+ * `checks` rather than anything worse. Null is nobody having told us at all — an
+ * older cache — and falls back to the pre-merge-state reading in `prs.ts`. Anything
+ * GitHub adds to the enum later reads as `UNKNOWN`, since a value we can't reason
+ * about must not be read as a clean merge.
+ */
+export function toMergeState(state: unknown): MergeStateStatus | null {
+  if (typeof state !== 'string' || state === '') return null;
+  return (MERGE_STATES as readonly string[]).includes(state) ? (state as MergeStateStatus) : 'UNKNOWN';
 }
 
 function toDecision(state: string | null | undefined): ReviewDecision {
@@ -471,6 +576,8 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
     checks: ci.checks,
     failingChecks: ci.failing,
     mergeable: toMergeable(raw.mergeable),
+    mergeStateStatus: toMergeState(raw.mergeStateStatus),
+    pendingChecks: ci.pending,
     autoMerge: Boolean(raw.autoMergeRequest?.enabledAt),
     requestedReviewers,
     reviews: [...latestReview.values()].filter((review) => review.state !== 'DISMISSED'),
@@ -522,6 +629,21 @@ function buildProbeQuery(scope: readonly string[]): { query: string; orgs: strin
   return { query: `{ viewer { login } ${fields.join(' ')} }`, orgs };
 }
 
+/** The merge states for pulls already found, by node id. */
+async function fetchMergeStates(
+  token: string,
+  ids: readonly string[],
+  signal?: AbortSignal,
+): Promise<{ states: Map<string, MergeStateStatus | null>; rateLimitRemaining: number | null }> {
+  if (ids.length === 0) return { states: new Map(), rateLimitRemaining: null };
+  const result = await graphql<{ nodes?: (RawMergeState | null)[] }>(token, MERGE_STATE_QUERY, { ids }, signal);
+  const fatal = result.errors.filter((error) => !isSamlError(error));
+  if (result.data?.nodes === undefined && fatal.length > 0) {
+    throw new GitHubRequestError(fatal.map((error) => error.message).join('; '));
+  }
+  return { states: mergeStatesFromNodes(result.data?.nodes ?? []), rateLimitRemaining: result.rateLimitRemaining };
+}
+
 export async function fetchPulls(
   token: string,
   scope: readonly string[],
@@ -555,10 +677,11 @@ export async function fetchPulls(
   const pulls: PullRequest[] = [];
   let after: string | null = null;
   let rateLimitRemaining = who.rateLimitRemaining;
+  let mergeStateWarned = false;
   for (let page = 0; page < MAX_PAGES; page++) {
     const result: GraphQLResult<{
       search?: { pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }; nodes?: (RawPullRequest | null)[] };
-    }> = await graphql(token, SEARCH_QUERY, { q: buildSearchQuery(scope), after }, signal);
+    }> = await graphql(token, SEARCH_QUERY, { q: buildSearchQuery(scope), first: PAGE_SIZE, after }, signal);
     rateLimitRemaining = result.rateLimitRemaining ?? rateLimitRemaining;
 
     const fatal = result.errors.filter((error) => !isSamlError(error));
@@ -570,17 +693,43 @@ export async function fetchPulls(
       warnings.push(`${login}: some results were withheld by an organisation's single sign-on policy.`);
     }
 
+    // Keyed by node id only for as long as it takes to ask for the merge states;
+    // the id is GitHub's handle for the pull request, not a fact about it, and it
+    // is deliberately not among the facts that reach `prs.json`.
+    const found = new Map<string, PullRequest>();
     for (const node of result.data?.search?.nodes ?? []) {
       if (!node) continue;
       const pull = normalizePullRequest(node, login);
-      if (pull) pulls.push(pull);
+      if (!pull) continue;
+      pulls.push(pull);
+      if (typeof node.id === 'string' && node.id !== '') found.set(node.id, pull);
+    }
+
+    // The board is the search; the merge state is an improvement on it. So a
+    // second request that fails leaves the pulls alone and says so once, rather
+    // than costing the account its rows — `prs.ts` falls back to judging ready
+    // from the review and the checks when nothing says otherwise.
+    try {
+      const states = await fetchMergeStates(token, [...found.keys()], signal);
+      rateLimitRemaining = states.rateLimitRemaining ?? rateLimitRemaining;
+      for (const [nodeId, pull] of found) {
+        if (states.states.has(nodeId)) pull.mergeStateStatus = states.states.get(nodeId) ?? null;
+      }
+    } catch (err) {
+      if (!mergeStateWarned) {
+        mergeStateWarned = true;
+        warnings.push(
+          `${login}: GitHub wouldn't say whether these pull requests can be merged (${(err as Error).message}). ` +
+            'Ready to merge falls back to the reviews and checks until the next poll.',
+        );
+      }
     }
 
     const pageInfo = result.data?.search?.pageInfo;
     if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
     after = pageInfo.endCursor;
     if (page === MAX_PAGES - 1) {
-      warnings.push(`${login} has more open pull requests than the board reads (${MAX_PAGES * 50}); narrow the scope.`);
+      warnings.push(`${login} has more open pull requests than the board reads (${MAX_PAGES * PAGE_SIZE}); narrow the scope.`);
     }
   }
 

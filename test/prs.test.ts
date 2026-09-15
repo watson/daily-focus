@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { NUDGE_AFTER_MS, STALE_DRAFT_AFTER_MS, countBoard, deriveDecision, judge, resolveBoard } from '../src/prs.ts';
-import type { Action, PullRequest } from '../src/types.ts';
+import type { Action, PendingCheck, PullRequest } from '../src/types.ts';
 
 const NOW = new Date('2026-09-15T12:00:00Z');
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
@@ -27,6 +27,8 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     checks: 'success',
     failingChecks: [],
     mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+    pendingChecks: [],
     autoMerge: false,
     requestedReviewers: [],
     reviews: [],
@@ -35,6 +37,27 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     ...overrides,
   };
 }
+
+/**
+ * Invented check names throughout: `policy/merge-gate` stands in for whatever
+ * aggregate merge-policy check a real repository uses, and nothing in this repo
+ * may name a real one.
+ */
+function pending(name: string, extra: Partial<PendingCheck> = {}): PendingCheck {
+  return { name, kind: 'check-run', detailsUrl: null, ...extra };
+}
+
+/** An approved PR, since most of the merge-state rules only bite once it is. */
+function approved(overrides: Partial<PullRequest> = {}): PullRequest {
+  return pr({
+    reviewDecision: 'APPROVED',
+    reviews: [{ login: 'bob', state: 'APPROVED', at: hoursAgo(6) }],
+    lastActivityByOthers: { at: hoursAgo(6), login: 'bob', kind: 'review' },
+    ...overrides,
+  });
+}
+
+const GATES = ['policy/merge-gate', 'repository-policy'];
 
 test('a draft is a draft, and goes stale after a fortnight untouched', () => {
   const fresh = judge(pr({ isDraft: true, lastActivityByYou: daysAgo(3) }), NOW, null);
@@ -217,7 +240,7 @@ test('the board honours snooze and notes from the log, and ignores done and dism
   assert.equal(byNumber.get(4)?.status, 'snoozed');
   assert.equal(byNumber.get(4)?.snoozedUntil, '2026-10-01');
 
-  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 3, draft: 0, parked: 1 });
+  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 3, gate: 0, checks: 0, draft: 0, parked: 1 });
 });
 
 test('an expired snooze reopens, and a dateless one parks indefinitely', () => {
@@ -245,9 +268,24 @@ test('rows come out by court, and longest wait first within one', () => {
         reviews: [{ login: 'bob', state: 'APPROVED', at: hoursAgo(2) }],
       }),
       pr({ id: 'github:pr:acme/webapp#5', number: 5, checks: 'failure' }),
+      approved({
+        id: 'github:pr:acme/webapp#6',
+        number: 6,
+        mergeStateStatus: 'BLOCKED',
+        checks: 'pending',
+        pendingChecks: [pending('policy/merge-gate')],
+      }),
+      approved({
+        id: 'github:pr:acme/webapp#7',
+        number: 7,
+        mergeStateStatus: 'UNSTABLE',
+        checks: 'pending',
+        pendingChecks: [pending('integration-tests')],
+      }),
     ],
     [],
     NOW,
+    GATES,
   );
   assert.deepEqual(
     rows.map((row) => [row.number, row.court]),
@@ -256,7 +294,166 @@ test('rows come out by court, and longest wait first within one', () => {
       [4, 'ready'],
       [3, 'reviewers'],
       [2, 'reviewers'],
+      [6, 'gate'],
+      [7, 'checks'],
       [1, 'draft'],
     ],
   );
+});
+
+/* ---------- the merge gate, and GitHub's own merge state ---------- */
+
+test('a configured pending gate is its own court, and never ready', () => {
+  const gated = approved({
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [pending('policy/merge-gate', { detailsUrl: 'https://github.com/acme/webapp/runs/9', checkRunId: 9 })],
+  });
+
+  const verdict = judge(gated, NOW, null, GATES);
+  assert.equal(verdict.court, 'gate');
+  assert.deepEqual(verdict.reasons, [
+    {
+      kind: 'merge-gate',
+      checks: [{ name: 'policy/merge-gate', kind: 'check-run', detailsUrl: 'https://github.com/acme/webapp/runs/9', checkRunId: 9 }],
+    },
+  ]);
+  assert.equal(verdict.nudge, false, 'nobody knows who to nudge about a gate');
+  assert.equal(verdict.since, daysAgo(2), 'the wait runs from your last push, as for any check');
+
+  // The same pull request with nothing configured: the gate is just a check.
+  assert.equal(judge(gated, NOW, null).court, 'checks');
+  assert.equal(judge(gated, NOW, null, []).court, 'checks');
+});
+
+test('a configured pending gate outranks a merge state GitHub briefly calls clean', () => {
+  const racing = approved({ mergeStateStatus: 'CLEAN', pendingChecks: [pending('repository-policy')] });
+  assert.equal(judge(racing, NOW, null, GATES).court, 'gate');
+  assert.equal(judge(racing, NOW, null).court, 'ready', 'without the configuration, a clean state is still ready');
+});
+
+test('gate names are matched exactly and case-sensitively', () => {
+  for (const name of ['Policy/Merge-Gate', 'policy/merge-gate ', 'policy/merge', 'merge-gate']) {
+    const near = approved({ mergeStateStatus: 'BLOCKED', pendingChecks: [pending(name)] });
+    assert.equal(judge(near, NOW, null, GATES).court, 'checks', name);
+  }
+  // A name with spaces is one name, and matches as one.
+  const spaced = approved({ mergeStateStatus: 'BLOCKED', pendingChecks: [pending('merge policy decision')] });
+  assert.equal(judge(spaced, NOW, null, ['merge policy decision']).court, 'gate');
+});
+
+test('an unconfigured pending check is an ordinary check wait, and names itself', () => {
+  const verdict = judge(
+    approved({ mergeStateStatus: 'BLOCKED', checks: 'pending', pendingChecks: [pending('integration-tests')] }),
+    NOW,
+    null,
+    GATES,
+  );
+  assert.equal(verdict.court, 'checks');
+  assert.deepEqual(verdict.reasons, [
+    { kind: 'checks-pending', checks: [{ name: 'integration-tests', kind: 'check-run', detailsUrl: null }] },
+  ]);
+  assert.equal(verdict.nudge, false);
+});
+
+test('blocked with no pending context returned says only what GitHub said', () => {
+  const verdict = judge(approved({ mergeStateStatus: 'BLOCKED' }), NOW, null, GATES);
+  assert.equal(verdict.court, 'checks');
+  assert.deepEqual(verdict.reasons, [{ kind: 'merge-blocked' }]);
+});
+
+test('outstanding review requests never hold back a clean, approved pull request', () => {
+  const verdict = judge(
+    approved({ mergeStateStatus: 'CLEAN', requestedReviewers: ['carol', 'dave', 'webapp-owners'] }),
+    NOW,
+    null,
+    GATES,
+  );
+  assert.equal(verdict.court, 'ready', 'GitHub keeps asking long after the required approvals land');
+});
+
+test('a review GitHub still requires outranks a gate and every other check', () => {
+  const verdict = judge(
+    pr({
+      reviewDecision: 'REVIEW_REQUIRED',
+      mergeStateStatus: 'BLOCKED',
+      checks: 'pending',
+      pendingChecks: [pending('policy/merge-gate')],
+      requestedReviewers: ['carol', 'dave', 'webapp-owners'],
+      readyAt: daysAgo(2),
+      lastActivityByYou: daysAgo(2),
+    }),
+    NOW,
+    null,
+    GATES,
+  );
+  assert.equal(verdict.court, 'reviewers', 'an approval is the one thing a person can go and get');
+  assert.equal(verdict.nudge, true);
+});
+
+test('a failed check or a conflict still outranks the merge state', () => {
+  const red = judge(approved({ mergeStateStatus: 'BLOCKED', checks: 'failure', failingChecks: ['unit-tests'], pendingChecks: [pending('policy/merge-gate')] }), NOW, null, GATES);
+  assert.equal(red.court, 'you');
+  assert.deepEqual(red.reasons, [{ kind: 'ci-failing' }]);
+
+  const conflicting = judge(approved({ mergeable: 'CONFLICTING', mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate')] }), NOW, null, GATES);
+  assert.equal(conflicting.court, 'you');
+  assert.deepEqual(conflicting.reasons, [{ kind: 'conflicts' }]);
+});
+
+test('behind, dirty and unknown merge states each land where they belong', () => {
+  const behind = judge(approved({ mergeStateStatus: 'BEHIND' }), NOW, null, GATES);
+  assert.equal(behind.court, 'you', 'nobody else can press update-branch for you');
+  assert.deepEqual(behind.reasons, [{ kind: 'behind' }]);
+
+  // DIRTY is GitHub's own word for the conflict `mergeable` reports: one reason, not two.
+  const dirty = judge(approved({ mergeable: 'UNKNOWN', mergeStateStatus: 'DIRTY' }), NOW, null, GATES);
+  assert.equal(dirty.court, 'you');
+  assert.deepEqual(dirty.reasons, [{ kind: 'conflicts' }]);
+  const both = judge(approved({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }), NOW, null, GATES);
+  assert.deepEqual(both.reasons, [{ kind: 'conflicts' }]);
+
+  const unsure = judge(approved({ mergeStateStatus: 'UNKNOWN' }), NOW, null, GATES);
+  assert.equal(unsure.court, 'checks', 'not worked out is not the same as fine');
+  assert.deepEqual(unsure.reasons, [{ kind: 'mergeability-unknown' }]);
+
+  assert.equal(judge(approved({ mergeStateStatus: 'HAS_HOOKS' }), NOW, null, GATES).court, 'ready');
+  assert.equal(judge(approved({ mergeStateStatus: 'UNSTABLE' }), NOW, null, GATES).court, 'checks');
+});
+
+test('a cache from before the merge state existed keeps the old reading, but only when quiet', () => {
+  // `mergeStateStatus` and `pendingChecks` absent entirely, as an older prs.json has them.
+  const legacy = (overrides: Partial<PullRequest> = {}) => {
+    const { mergeStateStatus: _gone, pendingChecks: _also, ...rest } = approved(overrides);
+    return rest as unknown as PullRequest;
+  };
+
+  assert.equal(judge(legacy(), NOW, null, GATES).court, 'ready', 'approved, green and quiet is still ready');
+
+  const running = judge(legacy({ checks: 'pending' }), NOW, null, GATES);
+  assert.equal(running.court, 'checks', 'a refresh will say whether that check blocks the merge');
+  assert.deepEqual(running.reasons, [{ kind: 'checks-pending' }]);
+
+  // A legacy file can still carry a gate if it was written after pendingChecks arrived.
+  const gated = { ...legacy(), pendingChecks: [pending('policy/merge-gate')] } as PullRequest;
+  assert.equal(judge(gated, NOW, null, GATES).court, 'gate');
+  assert.equal(judge(legacy({ mergeable: 'CONFLICTING' }), NOW, null, GATES).court, 'you');
+  assert.equal(judge(legacy({ reviewDecision: null, reviews: [], lastActivityByOthers: null }), NOW, null, GATES).court, 'reviewers');
+});
+
+test('the counts cover every court the board can render', () => {
+  const rows = resolveBoard(
+    [
+      pr({ id: 'github:pr:acme/webapp#1', number: 1, checks: 'failure' }),
+      approved({ id: 'github:pr:acme/webapp#2', number: 2 }),
+      pr({ id: 'github:pr:acme/webapp#3', number: 3 }),
+      approved({ id: 'github:pr:acme/webapp#4', number: 4, mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate')] }),
+      approved({ id: 'github:pr:acme/webapp#5', number: 5, mergeStateStatus: 'UNSTABLE', pendingChecks: [pending('e2e')] }),
+      pr({ id: 'github:pr:acme/webapp#6', number: 6, isDraft: true }),
+    ],
+    [],
+    NOW,
+    GATES,
+  );
+  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, checks: 1, draft: 1, parked: 0 });
 });
