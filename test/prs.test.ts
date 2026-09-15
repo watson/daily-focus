@@ -114,12 +114,12 @@ test('changes requested, red CI and conflicts are each your move, whatever else 
 
   const red = judge(pr({ checks: 'failure', failingChecks: ['all-tests-green'], lastActivityByYou: hoursAgo(1) }), NOW, null);
   assert.equal(red.court, 'you');
-  assert.equal(red.ciFailing, true);
-  assert.deepEqual(red.reasons, [{ kind: 'ci-failing', checks: ['all-tests-green'] }]);
+  assert.deepEqual(red.reasons, [{ kind: 'ci-failing' }]);
 
   const conflicting = judge(pr({ mergeable: 'CONFLICTING', reviewDecision: 'APPROVED' }), NOW, null);
   assert.equal(conflicting.court, 'you', 'approved but conflicting is still yours to fix');
-  assert.equal(conflicting.conflicts, true);
+  assert.equal(conflicting.decision, 'APPROVED', 'the decision is reported as GitHub gave it');
+  assert.deepEqual(conflicting.reasons, [{ kind: 'conflicts' }]);
 });
 
 test('approved, green and mergeable is ready to merge', () => {
@@ -150,11 +150,29 @@ test('a comment after the approval puts it back in your court', () => {
   assert.deepEqual(verdict.reasons, [{ kind: 'activity', login: 'bob', at: hoursAgo(1), activity: 'comment' }]);
 });
 
-test('a red draft still shows its CI flag, but stays a draft', () => {
+test('a red draft stays a draft, with no reasons', () => {
   const verdict = judge(pr({ isDraft: true, checks: 'failure', mergeable: 'CONFLICTING' }), NOW, null);
   assert.equal(verdict.court, 'draft');
-  assert.equal(verdict.ciFailing, true);
-  assert.equal(verdict.conflicts, true);
+  assert.deepEqual(verdict.reasons, []);
+});
+
+test('an inline review comment after the approval counts the same as a comment', () => {
+  const verdict = judge(
+    pr({
+      reviewDecision: 'APPROVED',
+      reviews: [{ login: 'bob', state: 'APPROVED', at: hoursAgo(6) }],
+      lastActivityByOthers: { at: hoursAgo(1), login: 'carol', kind: 'review' },
+    }),
+    NOW,
+    null,
+  );
+  assert.equal(verdict.court, 'you');
+  assert.deepEqual(verdict.reasons, [{ kind: 'activity', login: 'carol', at: hoursAgo(1), activity: 'review' }]);
+});
+
+test('a pull read back without optional keys is judged, not thrown on', () => {
+  const partial = { ...pr(), lastActivityByOthers: undefined, lastActivityByYou: undefined } as unknown as PullRequest;
+  assert.equal(judge(partial, NOW, null).court, 'reviewers');
 });
 
 test('without branch protection the decision comes from the reviews themselves', () => {
@@ -195,6 +213,7 @@ test('the board honours snooze and notes from the log, and ignores done and dism
   assert.equal(byNumber.get(2)?.status, 'open', 'dismiss does not either');
   assert.equal(byNumber.get(3)?.notes[0]?.text, 'Nudged reviewers');
   assert.equal(byNumber.get(3)?.nudge, false, 'the note reset the timer');
+  assert.equal(byNumber.get(1)?.decision, null);
   assert.equal(byNumber.get(4)?.status, 'snoozed');
   assert.equal(byNumber.get(4)?.snoozedUntil, '2026-10-01');
 

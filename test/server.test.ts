@@ -26,7 +26,8 @@ before(async () => {
     }),
   );
 
-  server = await startServer();
+  // The process environment only, never the developer's private .env.
+  server = await startServer(process.env);
 });
 
 after(async () => {

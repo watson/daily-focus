@@ -1,6 +1,7 @@
 import type { Action, BoardRow, Court, CourtReason, PullRequest, ReviewDecision } from './types.ts';
+import { canonicalId } from './ids.ts';
 import { foldActionLog } from './store.ts';
-import { parseISO, startOfLocalDay } from './time.ts';
+import { laterISO, parseISO } from './time.ts';
 
 /**
  * How long a pull request may sit waiting on reviewers before the board suggests
@@ -24,12 +25,6 @@ function ms(iso: string | null | undefined): number | null {
   return parsed ? parsed.getTime() : null;
 }
 
-function later(a: string | null, b: string | null | undefined): string | null {
-  if (!b) return a;
-  if (!a) return b;
-  return b > a ? b : a;
-}
-
 /**
  * Stand in for `reviewDecision` when the repository requires no reviews.
  *
@@ -47,12 +42,16 @@ export function deriveDecision(pr: PullRequest): ReviewDecision {
 
 interface Judgement {
   court: Court;
+  decision: ReviewDecision;
   reasons: CourtReason[];
-  ciFailing: boolean;
-  conflicts: boolean;
   stale: boolean;
   nudge: boolean;
   since: string;
+}
+
+/** The newest review in a given state, or undefined. */
+function newest(pr: PullRequest, state: string): { login: string; at: string } | undefined {
+  return pr.reviews.filter((review) => review.state === state).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
 }
 
 /**
@@ -64,39 +63,34 @@ interface Judgement {
  * a PR between courts, since the court is about what GitHub can see.
  */
 export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null): Judgement {
-  const ciFailing = pr.checks === 'failure';
-  const conflicts = pr.mergeable === 'CONFLICTING';
-  const you = pr.lastActivityByYou;
-  const others = pr.lastActivityByOthers;
+  const decision = deriveDecision(pr);
+  // `?? null`: a pull read back from an older file may lack the key entirely.
+  const you = pr.lastActivityByYou ?? null;
+  const others = pr.lastActivityByOthers ?? null;
 
   if (pr.isDraft) {
     const touched = you ?? pr.createdAt;
     const idle = now.getTime() - (ms(touched) ?? now.getTime());
-    return { court: 'draft', reasons: [], ciFailing, conflicts, stale: idle >= STALE_DRAFT_AFTER_MS, nudge: false, since: touched };
+    return { court: 'draft', decision, reasons: [], stale: idle >= STALE_DRAFT_AFTER_MS, nudge: false, since: touched };
   }
 
-  const decision = deriveDecision(pr);
   const reasons: CourtReason[] = [];
-
   if (decision === 'CHANGES_REQUESTED') {
-    const request = pr.reviews
-      .filter((review) => review.state === 'CHANGES_REQUESTED')
-      .sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+    const request = newest(pr, 'CHANGES_REQUESTED');
     reasons.push({ kind: 'changes-requested', login: request?.login, at: request?.at });
   }
-  if (ciFailing) reasons.push({ kind: 'ci-failing', checks: [...pr.failingChecks] });
-  if (conflicts) reasons.push({ kind: 'conflicts' });
+  if (pr.checks === 'failure') reasons.push({ kind: 'ci-failing' });
+  if (pr.mergeable === 'CONFLICTING') reasons.push({ kind: 'conflicts' });
 
   const theirMove = others !== null && (you === null || others.at > you);
-  const approval = pr.reviews
-    .filter((review) => review.state === 'APPROVED')
-    .sort((a, b) => (a.at < b.at ? 1 : -1))[0];
+  const approval = newest(pr, 'APPROVED');
   // An approval is itself "someone acted after you", and the right reading of it
-  // is ready, not your move. A comment landing after the approval is different:
-  // "one more thing before you merge" puts it back in your court.
-  const commentAfterApproval =
-    others !== null && others.kind === 'comment' && approval !== undefined && others.at > approval.at;
-  const ready = decision === 'APPROVED' && !commentAfterApproval;
+  // is ready, not your move. Anything by others newer than the newest approval is
+  // by definition not that approval: a comment in the conversation, an inline
+  // review comment, a "one more thing before you merge". That puts it back in
+  // your court.
+  const afterApproval = others !== null && approval !== undefined && others.at > approval.at;
+  const ready = decision === 'APPROVED' && !afterApproval;
 
   if (theirMove && others && !ready) {
     reasons.push({ kind: 'activity', login: others.login, at: others.at, activity: others.kind });
@@ -106,18 +100,18 @@ export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null): Ju
     // The wait began when the ball landed: their last action if that's what put it
     // here, otherwise whenever GitHub last saw the PR change.
     const since = theirMove && others ? others.at : pr.updatedAt;
-    return { court: 'you', reasons, ciFailing, conflicts, stale: false, nudge: false, since };
+    return { court: 'you', decision, reasons, stale: false, nudge: false, since };
   }
 
   if (ready) {
-    return { court: 'ready', reasons, ciFailing, conflicts, stale: false, nudge: false, since: approval?.at ?? pr.updatedAt };
+    return { court: 'ready', decision, reasons, stale: false, nudge: false, since: approval?.at ?? pr.updatedAt };
   }
 
   // Waiting on reviewers, since the later of becoming ready and your last push.
-  const since = later(pr.readyAt, you) ?? pr.createdAt;
-  const quietSince = later(since, lastNoteAt) ?? since;
+  const since = laterISO(pr.readyAt, you) ?? pr.createdAt;
+  const quietSince = laterISO(since, lastNoteAt) ?? since;
   const waited = now.getTime() - (ms(quietSince) ?? now.getTime());
-  return { court: 'reviewers', reasons, ciFailing, conflicts, stale: false, nudge: waited >= NUDGE_AFTER_MS, since };
+  return { court: 'reviewers', decision, reasons, stale: false, nudge: waited >= NUDGE_AFTER_MS, since };
 }
 
 /**
@@ -125,34 +119,23 @@ export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null): Ju
  * the longest wait in each court comes first.
  *
  * Only two things in the log are honoured. A snooze parks the row until its date,
- * which is how a draft is deliberately shelved. Notes are shown, and the newest
- * one resets the nudge timer. Done and dismissed are ignored on purpose: the brief
- * may raise "CI failing on #3402" and the user may mark that done, but #3402 is
- * still open, and this board shows what is open.
+ * which is how a draft is deliberately shelved; `foldActionLog` has already turned
+ * an expired one back into open. Notes are shown, and the newest one resets the
+ * nudge timer. Done and dismissed are ignored on purpose: the brief may raise "CI
+ * failing on #3402" and the user may mark that done, but #3402 is still open, and
+ * this board shows what is open.
  */
 export function resolveBoard(pulls: readonly PullRequest[], actions: readonly Action[], now: Date): BoardRow[] {
   const folded = foldActionLog(actions, now);
-  const today = startOfLocalDay(now).getTime();
 
   const rows = pulls.map((pr): BoardRow => {
-    const log = folded.get(pr.id.trim().toLowerCase());
+    const log = folded.get(canonicalId(pr.id));
     const notes = log?.notes ?? [];
     const lastNoteAt = notes.length > 0 ? notes[notes.length - 1]!.at : null;
     const verdict = judge(pr, now, lastNoteAt);
 
-    let status: BoardRow['status'] = 'open';
-    let snoozedUntil: string | undefined;
-    if (log?.status === 'snoozed') {
-      const until = parseISO(log.snoozedUntil);
-      // No date means shelved until further notice; a date that has arrived means open.
-      if (!until || until.getTime() > today) {
-        status = 'snoozed';
-        snoozedUntil = log.snoozedUntil;
-      }
-    }
-
-    const row: BoardRow = { ...pr, ...verdict, status, notes };
-    if (snoozedUntil) row.snoozedUntil = snoozedUntil;
+    const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes };
+    if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;
     return row;
   });
 

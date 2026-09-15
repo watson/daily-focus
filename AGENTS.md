@@ -39,9 +39,9 @@ npm run audit       # re-derives the agent's own checklist from the brief on dis
 ```
 
 Configuration is read from the real environment layered over a repo-root `.env`, see
-`src/env.ts`. `test/docs-contract.test.ts` checks that `.env.example`, the README's
-configuration table and `src/config.ts` all name the same variables, so adding a knob
-means adding it in all three.
+`src/env.ts`. `test/docs-contract.test.ts` checks that `.env.example`, the README and
+`src/config.ts` all name the same variables, so adding a knob means adding it in all
+three.
 
 Two scripts write into the store, and they are not equally safe. **`npm run seed`
 overwrites `items.json`** — never point it at a store holding a real brief; give it a
@@ -180,7 +180,9 @@ only counts actions that predated `generatedAt` for exactly this reason.
 **The log outranks upstream state, always.** An email replied to by phone looks
 identical to one ignored; only the click distinguishes them. No code here may conclude
 an item is handled from read-status, from its absence in a query, or from upstream
-silence.
+silence. The one place that reads the log differently is the pull request board, which
+shows what is *open* rather than what is *handled*, and so ignores `done` and `dismiss`
+on purpose; see below for what that means when the same id is in both.
 
 ### Ageing, and the progress metric
 
@@ -237,7 +239,11 @@ Two rules the board must keep:
   `note`. `done` and `dismiss` are deliberately ignored: the brief may raise "CI failing
   on #3402" and the user may mark that done, and #3402 is still open. The newest note
   also resets the nudge timer, which is how "I asked on Slack" is told to a board that
-  can't see Slack.
+  can't see Slack. The shared log cuts the other way too: a park from the board is a
+  `snooze` on the id, and the fold is last-action-wins, so it replaces a `done` the brief
+  recorded that morning — deliberately, so the agent leaves the PR alone until the date.
+  Unparking restores what the park replaced when the client still remembers it, and is
+  a plain `reopen` otherwise. Notes get no undo at all, since nothing un-notes.
 - **Nothing computed is stored.** `prs.json` holds facts and a timestamp; court, reasons,
   nudge and stale flags are derived on every read from the facts, the clock and the
   log, so a row moves between courts as the day passes without a fetch.

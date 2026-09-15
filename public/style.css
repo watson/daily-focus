@@ -603,11 +603,11 @@ body[data-focus-mode='true'][data-view='today'] #today .item__title {
 /* While a session runs, everything else recedes — the competing rows are the
  * distraction the timer exists to resist. Hover brings one back so the list is
  * still usable without stopping the clock. */
-body[data-session-active='true'] .item:not([data-running='true']) {
+body[data-session-active='true'] #today .item:not([data-running='true']) {
   opacity: 0.45;
 }
-body[data-session-active='true'] .item:not([data-running='true']):hover,
-body[data-session-active='true'] .item:not([data-running='true']):focus-within {
+body[data-session-active='true'] #today .item:not([data-running='true']):hover,
+body[data-session-active='true'] #today .item:not([data-running='true']):focus-within {
   opacity: 1;
 }
 .item[data-status='done'] .item__title,

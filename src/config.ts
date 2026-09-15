@@ -138,7 +138,7 @@ function envGitHub(env: NodeJS.ProcessEnv): GitHubConfig {
     accounts: envList('DAILY_FOCUS_GITHUB_ACCOUNTS', env),
     scope: parseScope(envList('DAILY_FOCUS_GITHUB_SCOPE', env)),
     pollMinutes,
-    ghPath: (env.DAILY_FOCUS_GH ?? '').trim() || 'gh',
+    ghPath: expandHome((env.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
   };
 }
 
@@ -159,10 +159,18 @@ function envWeekdays(name: string, env: NodeJS.ProcessEnv): readonly Weekday[] |
   }
 }
 
+/** `~` and `~/…` become the home directory; a bare command name (`gh`) is left for PATH. */
 function expandHome(p: string): string {
   if (p === '~') return homedir();
   if (p.startsWith('~/')) return resolve(homedir(), p.slice(2));
+  if (!p.includes('/')) return p;
   return isAbsolute(p) ? p : resolve(process.cwd(), p);
+}
+
+/** A string knob; an empty value in `.env` means the default, as it does for numbers. */
+function envString(name: string, fallback: string, env: NodeJS.ProcessEnv): string {
+  const raw = env[name];
+  return raw === undefined || raw.trim() === '' ? fallback : raw.trim();
 }
 
 /**
@@ -170,7 +178,7 @@ function expandHome(p: string): string {
  * the repo's `.env`; tests pass an explicit object and never touch the file.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
-  const dataDir = expandHome(env.DAILY_FOCUS_DATA ?? '~/.daily-focus');
+  const dataDir = expandHome(envString('DAILY_FOCUS_DATA', '~/.daily-focus', env));
   return {
     dataDir,
     itemsFile: resolve(dataDir, 'items.json'),
@@ -186,7 +194,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     sessionMinutes: envInt('DAILY_FOCUS_SESSION_MINUTES', 25, env),
     awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', 10, env),
     port: envInt('DAILY_FOCUS_PORT', 4321, env),
-    host: env.DAILY_FOCUS_HOST ?? '127.0.0.1',
+    host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
     workStartHour: envInt('DAILY_FOCUS_WORK_START', 9, env),
     workEndHour: envInt('DAILY_FOCUS_WORK_END', 17, env),
     minFreeWindowMinutes: envInt('DAILY_FOCUS_MIN_FREE_WINDOW', 45, env),

@@ -94,7 +94,8 @@ The distinction matters:
 - **Dismiss.** It wasn't worth raising, and the agent can learn from that.
 - **Note.** Free text for the agent. It doesn't change status, it tells the agent why.
 
-Everything is undoable, from the toast or with <kbd>u</kbd>.
+Everything but a note is undoable, from the toast or with <kbd>u</kbd>. A note is
+append-only, like the log it lands in.
 
 | Key | |
 |---|---|
@@ -216,13 +217,14 @@ picked, since *active* is whichever you last switched to in a terminal. Name the
 `DAILY_FOCUS_GITHUB_ACCOUNTS` to poll more than one, each resolved through
 `gh auth token --user` so a `gh auth switch` elsewhere changes nothing here.
 
-`DAILY_FOCUS_GITHUB_SCOPE` narrows it to organisations or repositories, which is how
-your open source PRs stay off a work board. Each organisation in scope is probed by
-name before searching, because a search scoped to a SAML-protected organisation the
-token isn't authorised for returns nothing, and nothing is what a quiet board looks
-like. The probe turns that into a warning naming the account, the organisation and
-the fix. An organisation an account simply isn't a member of is not a warning; with
-two accounts, each seeing its own is the normal case.
+`DAILY_FOCUS_GITHUB_SCOPE` narrows it to organisations, users or repositories, which
+is how your open source PRs stay off a work board. Each owner in scope is probed before
+searching, because a search scoped to a SAML-protected organisation the token isn't
+authorised for returns nothing, and nothing is what a quiet board looks like. The
+probe turns that into a warning naming the account, the organisation and the fix. An
+organisation an account simply isn't a member of is not a warning; with two accounts,
+each seeing its own is the normal case. Only a name no polled account can find is
+flagged as a likely typo.
 
 It polls once at startup and then every `DAILY_FOCUS_GITHUB_POLL_MINUTES` while a
 browser tab holds the page open, backing off on failure and pausing near the rate
@@ -254,7 +256,7 @@ logins. Restart to apply.
 | `DAILY_FOCUS_GITHUB_ACCOUNTS` | *gh's active account* | Logins to poll as, comma-separated, each resolved with `gh auth token --user` |
 | `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |
 | `DAILY_FOCUS_GITHUB_POLL_MINUTES` | `5` | Minutes between polls while a tab is open |
-| `DAILY_FOCUS_GH` | `gh` | Path to the GitHub CLI, for when the server's PATH lacks it |
+| `DAILY_FOCUS_GH` | `gh` | Path to the GitHub CLI, for when the server's PATH lacks it. `~` is expanded |
 
 ### When is the weekend?
 

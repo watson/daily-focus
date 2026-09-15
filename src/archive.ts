@@ -1,4 +1,6 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
+
+import { writeJsonAtomic } from './fs.ts';
 import { resolve } from 'node:path';
 
 import type { Action, Brief, ObjectiveProgress } from './types.ts';
@@ -65,11 +67,7 @@ export async function archiveBrief(config: Config, brief: Brief): Promise<boolea
     // Missing or unreadable — either way, write it.
   }
 
-  await mkdir(config.archiveDir, { recursive: true });
-  // Same temp-then-rename discipline we ask of the agent.
-  const temp = `${target}.tmp`;
-  await writeFile(temp, `${JSON.stringify(brief, null, 2)}\n`, 'utf8');
-  await rename(temp, target);
+  await writeJsonAtomic(target, brief);
   return true;
 }
 

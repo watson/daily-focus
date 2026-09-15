@@ -11,7 +11,7 @@ import {
   startSession,
   stopSession,
 } from '../src/sessions.ts';
-import type { Config } from '../src/config.ts';
+import { loadConfig, type Config } from '../src/config.ts';
 import type { Agenda } from '../src/types.ts';
 
 const dirs: string[] = [];
@@ -22,29 +22,7 @@ after(async () => {
 async function makeConfig(): Promise<Config> {
   const dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-sessions-'));
   dirs.push(dataDir);
-  return {
-    dataDir,
-    itemsFile: resolve(dataDir, 'items.json'),
-    actionsFile: resolve(dataDir, 'actions.jsonl'),
-    focusFile: resolve(dataDir, 'focus.md'),
-    sourcesFile: resolve(dataDir, 'sources.md'),
-    promptFile: resolve(dataDir, 'prompt.md'),
-    schemaFile: resolve(dataDir, 'items.schema.json'),
-    archiveDir: resolve(dataDir, 'archive'),
-    sessionFile: resolve(dataDir, 'session.json'),
-    sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
-    pullsFile: resolve(dataDir, 'prs.json'),
-    sessionMinutes: 25,
-    awayAfterMinutes: 10,
-    port: 0,
-    host: '127.0.0.1',
-    workStartHour: 9,
-    workEndHour: 17,
-    minFreeWindowMinutes: 45,
-    staleAfterHours: 24,
-    agentDays: null,
-    github: { enabled: false, accounts: [], scope: [], pollMinutes: 5, ghPath: 'gh' },
-  };
+  return { ...loadConfig({ DAILY_FOCUS_DATA: dataDir }), port: 0 };
 }
 
 const NOW = new Date(2026, 8, 10, 10, 0, 0);

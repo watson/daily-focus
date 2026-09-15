@@ -1,10 +1,20 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 import type { Config } from './config.ts';
+import { writeJsonAtomic } from './fs.ts';
 import { GhMissingError, fetchPulls, ghToken, listGhAccounts, type AccountFetch, type OrgVisibility } from './github.ts';
 import { countBoard, resolveBoard } from './prs.ts';
-import type { Action, BoardAccount, BoardState, PullRequest, PullsFile } from './types.ts';
+import type {
+  Action,
+  BoardAccount,
+  BoardState,
+  CheckState,
+  MergeableState,
+  PullActivity,
+  PullRequest,
+  PullsFile,
+  ReviewDecision,
+} from './types.ts';
 
 /** Never poll more often than this, whatever the config says, once things start failing. */
 const MAX_BACKOFF_MS = 30 * 60_000;
@@ -24,6 +34,12 @@ export interface BoardDeps {
 
 const realDeps: BoardDeps = { listAccounts: listGhAccounts, token: ghToken, fetch: fetchPulls };
 
+/** An account the poller could get a token for. */
+interface Identity {
+  account: BoardAccount;
+  token: string;
+}
+
 /**
  * The live pull request board.
  *
@@ -35,6 +51,10 @@ const realDeps: BoardDeps = { listAccounts: listGhAccounts, token: ghToken, fetc
  *
  * It polls only while somebody is looking — the SSE subscriber count is the
  * audience — plus once at startup so the tab has something on first paint.
+ *
+ * Nothing here may throw past `refresh()` or `view()`: the scheduled poll runs
+ * with nobody awaiting it, and the view is built inside every state the server
+ * sends, so an error in either would take the brief down with the board.
  */
 export class Board {
   readonly #config: Config;
@@ -54,8 +74,11 @@ export class Board {
   #audience = 0;
   #failures = 0;
   #stopped = false;
+  /** When the last poll finished, success or not. Zero until one has. */
+  #lastPollAt = 0;
   /** When the rate limit says to leave GitHub alone until. */
   #holdUntil = 0;
+  readonly #abort = new AbortController();
 
   constructor(config: Config, onChange: () => void, deps: BoardDeps = realDeps) {
     this.#config = config;
@@ -74,13 +97,19 @@ export class Board {
     await this.refresh();
   }
 
+  /** Stop polling and cancel a fetch in flight, so nothing lands after close. */
   stop(): void {
     this.#stopped = true;
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
+    this.#abort.abort();
   }
 
-  /** How many browsers are watching. Polling pauses at zero. */
+  /**
+   * How many browsers are watching. Polling pauses at zero, and a tab opening on
+   * a board that is already older than one interval fetches straight away rather
+   * than waiting one out.
+   */
   setAudience(count: number): void {
     this.#audience = count;
     if (count === 0) {
@@ -88,51 +117,78 @@ export class Board {
       this.#timer = null;
       return;
     }
-    if (!this.#timer && !this.#fetching) this.#schedule();
+    if (this.#timer || this.#fetching) return;
+    if (this.#dueIn() === 0) void this.refresh();
+    else this.#schedule();
   }
 
-  /** Fetch now. Joins a fetch already in flight rather than starting a second. */
+  /** Fetch now. Joins a fetch already in flight rather than starting a second. Never rejects. */
   async refresh(): Promise<void> {
     if (!this.enabled || this.#stopped) return;
     if (this.#fetching) return this.#fetching;
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
 
-    this.#fetching = this.#poll().finally(() => {
-      this.#fetching = null;
-      this.#schedule();
-      this.#onChange();
-    });
+    this.#fetching = this.#poll()
+      .catch((err: unknown) => {
+        // Bookkeeping errors, not GitHub ones — those are handled inside. A poll
+        // that throws must still leave a board behind and say what happened.
+        this.#reason = `The board hit an unexpected error: ${(err as Error).message}`;
+        this.#failures++;
+        console.error(`[daily-focus] pull request poll failed: ${(err as Error).stack ?? String(err)}`);
+      })
+      .finally(() => {
+        this.#fetching = null;
+        this.#lastPollAt = Date.now();
+        this.#schedule();
+        this.#onChange();
+      });
     this.#onChange();
     return this.#fetching;
   }
 
-  /** The board joined with the action log, ready to render. */
+  /** The board joined with the action log, ready to render. Never throws. */
   view(actions: readonly Action[], now: Date): BoardState {
-    const rows = this.enabled ? resolveBoard(this.#file?.pulls ?? [], actions, now) : [];
+    const warnings = this.enabled ? [...this.#attemptWarnings] : [];
+    let rows: BoardState['rows'] = [];
+    if (this.enabled) {
+      try {
+        rows = resolveBoard(this.#file?.pulls ?? [], actions, now);
+      } catch (err) {
+        warnings.push(`Could not judge the pull requests on file: ${(err as Error).message}`);
+      }
+    }
+    // The live accounts, unless there's a reason nothing was polled — then the
+    // file's list would contradict the banner sitting next to it.
+    const accounts = this.#reason ? [] : this.#accounts.length > 0 ? this.#accounts : (this.#file?.accounts ?? []);
     return {
       enabled: this.enabled,
       reason: this.enabled ? this.#reason : null,
       fetchedAt: this.#file?.fetchedAt ?? null,
       fetching: this.#fetching !== null,
-      accounts: this.#accounts.length > 0 ? this.#accounts : (this.#file?.accounts ?? []),
+      accounts: accounts.map((account) => ({ ...account })),
       scope: [...this.#config.github.scope],
-      warnings: this.enabled ? [...this.#attemptWarnings] : [],
+      warnings,
       pollMinutes: this.#config.github.pollMinutes,
       rows,
       counts: countBoard(rows),
     };
   }
 
-  #schedule(): void {
-    if (this.#stopped || this.#audience === 0 || this.#timer || this.#fetching) return;
+  /** Milliseconds until the next poll is due, from the last one, backoff and any hold. */
+  #dueIn(): number {
     const base = this.#config.github.pollMinutes * 60_000;
     const backoff = Math.min(MAX_BACKOFF_MS, base * 2 ** this.#failures);
-    const delay = Math.max(backoff, this.#holdUntil - Date.now());
+    const due = Math.max(this.#lastPollAt + backoff, this.#holdUntil);
+    return Math.max(0, due - Date.now());
+  }
+
+  #schedule(): void {
+    if (this.#stopped || this.#audience === 0 || this.#timer || this.#fetching) return;
     this.#timer = setTimeout(() => {
       this.#timer = null;
       void this.refresh();
-    }, delay);
+    }, this.#dueIn());
     this.#timer.unref();
   }
 
@@ -144,20 +200,24 @@ export class Board {
    * account is used, and a second account being present is worth saying, since
    * "active" is whichever one was last switched to in a terminal.
    */
-  async #identities(): Promise<{ login: string | null; token: string }[]> {
+  async #identities(): Promise<Identity[]> {
     const { ghPath, accounts } = this.#config.github;
-    const found: { login: string | null; token: string }[] = [];
 
     if (accounts.length > 0) {
-      for (const login of accounts) {
-        try {
-          found.push({ login, token: await this.#deps.token(ghPath, login) });
-          this.#accounts.push({ login, ok: true, error: null });
-        } catch (err) {
-          if (err instanceof GhMissingError) throw err;
-          this.#accounts.push({ login, ok: false, error: (err as Error).message });
+      const attempts = await Promise.allSettled(accounts.map((login) => this.#deps.token(ghPath, login)));
+      const found: Identity[] = [];
+      attempts.forEach((attempt, i) => {
+        const login = accounts[i]!;
+        if (attempt.status === 'fulfilled') {
+          const account = { login, ok: true, error: null };
+          this.#accounts.push(account);
+          found.push({ account, token: attempt.value });
+        } else if (attempt.reason instanceof GhMissingError) {
+          throw attempt.reason;
+        } else {
+          this.#accounts.push({ login, ok: false, error: (attempt.reason as Error).message });
         }
-      }
+      });
       return found;
     }
 
@@ -173,19 +233,25 @@ export class Board {
       );
     }
     const token = await this.#deps.token(ghPath, null);
-    this.#accounts.push({ login: active.login, ok: true, error: null });
-    return [{ login: active.login, token }];
+    const account = { login: active.login, ok: true, error: null };
+    this.#accounts.push(account);
+    return [{ account, token }];
   }
 
   async #poll(): Promise<void> {
-    if (Date.now() < this.#holdUntil) return;
+    if (Date.now() < this.#holdUntil) {
+      const until = new Date(this.#holdUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const notice = `Paused near GitHub's rate limit until ${until}.`;
+      if (!this.#attemptWarnings.includes(notice)) this.#attemptWarnings.push(notice);
+      return;
+    }
 
     const previous = this.#file;
     this.#accounts = [];
     this.#attemptWarnings = [];
     this.#reason = null;
 
-    let identities: { login: string | null; token: string }[];
+    let identities: Identity[];
     try {
       identities = await this.#identities();
     } catch (err) {
@@ -196,37 +262,38 @@ export class Board {
 
     const pulls: PullRequest[] = [];
     const warnings: string[] = [];
-    const succeeded = new Set<string>();
     const visibility = new Map<string, OrgVisibility[]>();
     let lowestRemaining: number | null = null;
 
-    for (const identity of identities) {
-      const entry = this.#accounts.find((account) => account.login === identity.login) ?? null;
-      try {
-        const result = await this.#deps.fetch(identity.token, this.#config.github.scope, identity.login);
-        pulls.push(...result.pulls);
-        warnings.push(...result.warnings);
-        succeeded.add(result.login.toLowerCase());
-        for (const [org, seen] of Object.entries(result.orgs)) {
-          visibility.set(org, [...(visibility.get(org) ?? []), seen]);
-        }
-        if (entry) entry.login = result.login;
-        if (result.rateLimitRemaining !== null) {
-          lowestRemaining = Math.min(lowestRemaining ?? Infinity, result.rateLimitRemaining);
-        }
-      } catch (err) {
-        if (entry) {
-          entry.ok = false;
-          entry.error = (err as Error).message;
-        }
+    // The accounts are independent, so their round trips overlap.
+    const results = await Promise.allSettled(
+      identities.map((identity) =>
+        this.#deps.fetch(identity.token, this.#config.github.scope, identity.account.login, this.#abort.signal),
+      ),
+    );
+    results.forEach((result, i) => {
+      const { account } = identities[i]!;
+      if (result.status === 'rejected') {
+        account.ok = false;
+        account.error = (result.reason as Error).message;
+        return;
       }
-    }
+      account.login = result.value.login;
+      pulls.push(...result.value.pulls);
+      warnings.push(...result.value.warnings);
+      for (const [org, seen] of Object.entries(result.value.orgs)) {
+        visibility.set(org, [...(visibility.get(org) ?? []), seen]);
+      }
+      if (result.value.rateLimitRemaining !== null) {
+        lowestRemaining = Math.min(lowestRemaining ?? Infinity, result.value.rateLimitRemaining);
+      }
+    });
 
     // An account that failed this round keeps what it had last time, so one
     // account's outage doesn't make the other's PRs vanish along with it.
+    const failed = new Set(this.#accounts.filter((account) => !account.ok).map((account) => account.login.toLowerCase()));
     for (const pull of previous?.pulls ?? []) {
-      const owner = this.#accounts.find((account) => account.login.toLowerCase() === pull.account.toLowerCase());
-      if (owner && !owner.ok && !succeeded.has(pull.account.toLowerCase())) pulls.push(pull);
+      if (failed.has(pull.account.toLowerCase())) pulls.push(pull);
     }
 
     // A private organisation is invisible to an account that isn't a member, and
@@ -236,8 +303,8 @@ export class Board {
       if (seen.length > 0 && seen.every((state) => state === 'not-found')) {
         warnings.push(
           seen.length === 1
-            ? `Can't find an organisation called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`
-            : `None of the polled accounts can find an organisation called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`,
+            ? `Can't find an organisation or user called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`
+            : `None of the polled accounts can find an organisation or user called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`,
         );
       }
     }
@@ -247,14 +314,14 @@ export class Board {
     }
     this.#attemptWarnings.push(...warnings);
 
-    if (succeeded.size === 0) {
+    if (!this.#accounts.some((account) => account.ok)) {
       this.#failures++;
       return;
     }
 
     if (lowestRemaining !== null && lowestRemaining < RATE_LIMIT_FLOOR) {
       this.#holdUntil = Date.now() + MAX_BACKOFF_MS;
-      this.#attemptWarnings.push('Close to GitHub\'s rate limit; pausing the board for half an hour.');
+      this.#attemptWarnings.push("Close to GitHub's rate limit; pausing the board for half an hour.");
     }
 
     this.#failures = 0;
@@ -267,12 +334,83 @@ export class Board {
       pulls,
     };
     try {
-      await writePullsFile(this.#config.pullsFile, this.#file);
+      await writeJsonAtomic(this.#config.pullsFile, this.#file);
     } catch (err) {
       // Losing the file costs a restart its first paint; it must not cost the board.
       console.warn(`[daily-focus] could not write prs.json: ${(err as Error).message}`);
     }
   }
+}
+
+/* ---------- prs.json ---------- */
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function str(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T | null): T | null {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+/**
+ * One stored pull, made whole.
+ *
+ * The file is the server's own, but the same rule applies as to the agent's: one
+ * odd entry must cost that entry, never the page. A pull without the handful of
+ * facts nothing can stand in for is dropped; everything else gets the value a
+ * fresh fetch would have given it.
+ */
+export function normalizeStoredPull(raw: unknown): PullRequest | null {
+  if (!isRecord(raw)) return null;
+  const { id, repo, number, title, url, createdAt } = raw;
+  if (typeof id !== 'string' || typeof repo !== 'string' || typeof number !== 'number') return null;
+  if (typeof title !== 'string' || typeof url !== 'string' || typeof createdAt !== 'string') return null;
+
+  const reviews = Array.isArray(raw.reviews)
+    ? raw.reviews.flatMap((review) =>
+        isRecord(review) && typeof review.login === 'string' && typeof review.state === 'string' && typeof review.at === 'string'
+          ? [{ login: review.login, state: review.state, at: review.at }]
+          : [],
+      )
+    : [];
+
+  let lastActivityByOthers: PullActivity | null = null;
+  const others = raw.lastActivityByOthers;
+  if (isRecord(others) && typeof others.at === 'string' && typeof others.login === 'string') {
+    lastActivityByOthers = { at: others.at, login: others.login, kind: others.kind === 'review' ? 'review' : 'comment' };
+  }
+
+  return {
+    id,
+    account: str(raw.account, ''),
+    repo,
+    number,
+    title,
+    url,
+    isDraft: raw.isDraft === true,
+    createdAt,
+    readyAt: str(raw.readyAt, createdAt),
+    updatedAt: str(raw.updatedAt, createdAt),
+    headRef: str(raw.headRef, ''),
+    baseRef: str(raw.baseRef, ''),
+    reviewDecision: oneOf<NonNullable<ReviewDecision>>(raw.reviewDecision, ['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'], null),
+    checks: oneOf<NonNullable<CheckState>>(raw.checks, ['success', 'failure', 'pending'], null),
+    failingChecks: strings(raw.failingChecks),
+    mergeable: oneOf<MergeableState>(raw.mergeable, ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'], 'UNKNOWN') ?? 'UNKNOWN',
+    autoMerge: raw.autoMerge === true,
+    requestedReviewers: strings(raw.requestedReviewers),
+    reviews,
+    lastActivityByYou: typeof raw.lastActivityByYou === 'string' ? raw.lastActivityByYou : null,
+    lastActivityByOthers,
+  };
 }
 
 /** Read the last fetch back. Anything unreadable is treated as no file, never as an error. */
@@ -284,34 +422,24 @@ export async function readPullsFile(path: string): Promise<PullsFile | null> {
     return null;
   }
   try {
-    const raw = JSON.parse(text) as Partial<PullsFile>;
-    if (raw.version !== 1 || typeof raw.fetchedAt !== 'string' || !Array.isArray(raw.pulls)) return null;
+    const raw = JSON.parse(text) as unknown;
+    if (!isRecord(raw) || raw.version !== 1 || typeof raw.fetchedAt !== 'string' || !Array.isArray(raw.pulls)) return null;
+    const accounts: BoardAccount[] = Array.isArray(raw.accounts)
+      ? raw.accounts.flatMap((account) =>
+          isRecord(account) && typeof account.login === 'string'
+            ? [{ login: account.login, ok: account.ok === true, error: typeof account.error === 'string' ? account.error : null }]
+            : [],
+        )
+      : [];
     return {
       version: 1,
       fetchedAt: raw.fetchedAt,
-      accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
-      scope: Array.isArray(raw.scope) ? raw.scope : [],
-      warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
-      // A file from an earlier build may predate a field. Fill in what a fresh
-      // fetch would have, so the first paint after an upgrade doesn't trip on it.
-      pulls: raw.pulls
-        .filter((pull): pull is PullRequest => typeof pull === 'object' && pull !== null && typeof pull.id === 'string')
-        .map((pull) => ({
-          ...pull,
-          failingChecks: Array.isArray(pull.failingChecks) ? pull.failingChecks : [],
-          reviews: Array.isArray(pull.reviews) ? pull.reviews : [],
-          requestedReviewers: Array.isArray(pull.requestedReviewers) ? pull.requestedReviewers : [],
-        })),
+      accounts,
+      scope: strings(raw.scope),
+      warnings: strings(raw.warnings),
+      pulls: raw.pulls.flatMap((pull) => normalizeStoredPull(pull) ?? []),
     };
   } catch {
     return null;
   }
-}
-
-/** Write via a sibling temp file and rename, so a reader never sees half a file. */
-async function writePullsFile(path: string, file: PullsFile): Promise<void> {
-  // A fixed name, so the store watcher can be told to ignore it; polls never overlap.
-  const tmp = join(dirname(path), `${basename(path)}.tmp`);
-  await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, 'utf8');
-  await rename(tmp, path);
 }

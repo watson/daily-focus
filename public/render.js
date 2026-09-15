@@ -474,7 +474,8 @@ function restoreNoteField(container, ui, before) {
   input.setSelectionRange(before.start, before.end);
 }
 
-function section(title, items, state, ui, handlers, source) {
+/** A titled list. `row` renders one entry: a brief item by default, a pull request on the board. */
+function section(title, items, state, ui, handlers, source, row = renderItem) {
   return el(
     'section',
     { class: 'section' },
@@ -494,12 +495,12 @@ function section(title, items, state, ui, handlers, source) {
     el(
       'ul',
       { class: 'list' },
-      items.map((item) => renderItem(item, state, ui, handlers)),
+      items.map((item) => row(item, state, ui, handlers)),
     ),
   );
 }
 
-function drawer(title, items, state, ui, handlers) {
+function drawer(title, items, state, ui, handlers, row = renderItem) {
   return el(
     'details',
     { class: 'drawer' },
@@ -507,7 +508,7 @@ function drawer(title, items, state, ui, handlers) {
     el(
       'ul',
       { class: 'list' },
-      items.map((item) => renderItem(item, state, ui, handlers)),
+      items.map((item) => row(item, state, ui, handlers)),
     ),
   );
 }
@@ -943,19 +944,7 @@ export function renderBoard(state, ui, handlers) {
   for (const court of COURT_ORDER) {
     const rows = open.filter((row) => row.court === court);
     if (rows.length === 0) continue;
-    parts.push(
-      el(
-        'section',
-        { class: 'section' },
-        el(
-          'div',
-          { class: 'section__header' },
-          el('h2', { class: 'section__title' }, COURT_TITLE[court]),
-          el('span', { class: 'section__count' }, String(rows.length)),
-        ),
-        el('ul', { class: 'list' }, rows.map((row) => renderPullRow(row, state, ui, handlers))),
-      ),
-    );
+    parts.push(section(COURT_TITLE[court], rows, state, ui, handlers, null, renderPullRow));
   }
 
   if (open.length === 0 && !board.reason) {
@@ -976,14 +965,7 @@ export function renderBoard(state, ui, handlers) {
 
   const parked = board.rows.filter((row) => row.status === 'snoozed');
   if (parked.length > 0) {
-    parts.push(
-      el(
-        'details',
-        { class: 'drawer' },
-        el('summary', {}, `Parked (${parked.length})`),
-        el('ul', { class: 'list' }, parked.map((row) => renderPullRow(row, state, ui, handlers))),
-      ),
-    );
+    parts.push(drawer(`Parked (${parked.length})`, parked, state, ui, handlers, renderPullRow));
   }
 
   const note = captureNoteField(container);
@@ -1033,7 +1015,9 @@ function renderPullRow(row, state, ui, handlers) {
     'li',
     {
       class: 'item item--pull',
-      id: `item-${cssId(row.id)}`,
+      // Its own scheme: the same PR can be a brief row too, and two elements
+      // with one id is invalid HTML and an ambiguous fragment target.
+      id: `pull-${cssId(row.id)}`,
       dataset: {
         id: row.id,
         status: row.status,
@@ -1067,7 +1051,7 @@ function renderPullRow(row, state, ui, handlers) {
       ),
       renderPullMeta(row, now),
       row.court === 'you' && row.reasons.length > 0
-        ? el('p', { class: 'item__reason' }, row.reasons.map((reason) => describeReason(reason, now)).join(' · '))
+        ? el('p', { class: 'item__reason' }, row.reasons.map((reason) => describeReason(reason, row, now)).join(' · '))
         : null,
       renderNotes(row),
       ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
@@ -1081,16 +1065,13 @@ function renderPullRow(row, state, ui, handlers) {
 function renderPullMeta(row, now) {
   const pills = [];
 
+  // The server's reading of the reviews, so the pill and the bucket can't disagree.
   if (row.isDraft) pills.push(el('span', { class: 'pill pill--tag' }, 'draft'));
-  if (row.reviewDecision === 'APPROVED' || (row.reviewDecision === null && row.reviews.some((r) => r.state === 'APPROVED'))) {
-    if (!row.reviews.some((r) => r.state === 'CHANGES_REQUESTED')) pills.push(el('span', { class: 'pill pill--good' }, 'approved'));
-  }
-  if (row.reviewDecision === 'CHANGES_REQUESTED' || row.reviews.some((r) => r.state === 'CHANGES_REQUESTED')) {
-    pills.push(el('span', { class: 'pill pill--overdue' }, 'changes requested'));
-  }
-  if (row.ciFailing) pills.push(el('span', { class: 'pill pill--overdue' }, 'CI failing'));
+  if (row.decision === 'APPROVED') pills.push(el('span', { class: 'pill pill--good' }, 'approved'));
+  if (row.decision === 'CHANGES_REQUESTED') pills.push(el('span', { class: 'pill pill--overdue' }, 'changes requested'));
+  if (row.checks === 'failure') pills.push(el('span', { class: 'pill pill--overdue' }, 'CI failing'));
   else if (row.checks === 'pending') pills.push(el('span', { class: 'pill' }, 'checks running'));
-  if (row.conflicts) pills.push(el('span', { class: 'pill pill--overdue' }, 'conflicts'));
+  if (row.mergeable === 'CONFLICTING') pills.push(el('span', { class: 'pill pill--overdue' }, 'conflicts'));
   if (row.autoMerge) pills.push(el('span', { class: 'pill pill--good' }, 'auto-merge on'));
   if (row.nudge) pills.push(el('span', { class: 'pill pill--age' }, 'time to ask'));
   if (row.stale) pills.push(el('span', { class: 'pill pill--age' }, 'untouched for weeks'));
@@ -1125,12 +1106,12 @@ function renderPullMeta(row, now) {
 }
 
 /** One reason it's your move, in words. The server sends facts; the times are relative here. */
-function describeReason(reason, now) {
+function describeReason(reason, row, now) {
   switch (reason.kind) {
     case 'changes-requested':
       return `changes requested${reason.login ? ` by @${reason.login}` : ''}${reason.at ? ` ${relativeTime(reason.at, now)}` : ''}`;
     case 'ci-failing': {
-      const names = reason.checks ?? [];
+      const names = row.failingChecks ?? [];
       if (names.length === 0) return 'CI is failing';
       const shown = names.slice(0, 3).join(', ');
       return `CI failing: ${shown}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`;
@@ -1182,7 +1163,7 @@ function renderPullActions(row, ui, handlers) {
       ),
     );
   } else {
-    buttons.push(el('button', { type: 'button', class: 'button', onclick: act(row.id, 'reopen') }, 'Unpark'));
+    buttons.push(el('button', { type: 'button', class: 'button', onclick: () => handlers.unpark(row.id) }, 'Unpark'));
   }
 
   buttons.push(

@@ -42,6 +42,14 @@ test('comments, blank lines and quotes are handled', async () => {
   });
 });
 
+test('an empty value means the default, and a byte-order mark is ignored', async () => {
+  const path = await dotenv('\uFEFFDAILY_FOCUS_HOST=\nDAILY_FOCUS_DATA=\nDAILY_FOCUS_GH=~/bin/gh\n');
+  const config = loadConfig(mergeEnv(readDotEnv(path), {}));
+  assert.equal(config.host, '127.0.0.1', 'an empty host must not become "listen everywhere"');
+  assert.match(config.dataDir, /\.daily-focus$/, 'an empty store path must not become the working directory');
+  assert.match(config.github.ghPath, /^\/.*\/bin\/gh$/, 'a tilde in the gh path is expanded');
+});
+
 test('the real environment wins over the file', () => {
   const merged = mergeEnv(
     { DAILY_FOCUS_PORT: '1111', DAILY_FOCUS_HOST: '0.0.0.0' },

@@ -1,4 +1,6 @@
-import { appendFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, unlink } from 'node:fs/promises';
+
+import { writeJsonAtomic } from './fs.ts';
 
 import type { Config } from './config.ts';
 import type { IdleProbe } from './presence.ts';
@@ -86,10 +88,7 @@ async function readActive(config: Config): Promise<StoredSession | null> {
 }
 
 async function writeActive(config: Config, session: StoredSession): Promise<void> {
-  await mkdir(config.dataDir, { recursive: true });
-  const temp = `${config.sessionFile}.tmp`;
-  await writeFile(temp, `${JSON.stringify(session, null, 2)}\n`, 'utf8');
-  await rename(temp, config.sessionFile);
+  await writeJsonAtomic(config.sessionFile, session);
 }
 
 async function clearActive(config: Config): Promise<void> {

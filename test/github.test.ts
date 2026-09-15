@@ -12,7 +12,7 @@ test('the search names the author and appends the scope verbatim', () => {
 });
 
 test('bots are recognised by type and by suffix, and a missing author counts as one', () => {
-  assert.equal(isBot({ __typename: 'Bot', login: 'codecov' }), true);
+  assert.equal(isBot({ __typename: 'Bot', login: 'coverage' }), true);
   assert.equal(isBot({ __typename: 'User', login: 'pr-commenter[bot]' }), true);
   assert.equal(isBot({ __typename: 'User', login: 'alice' }), false);
   assert.equal(isBot(null), true);
@@ -57,14 +57,14 @@ function node(overrides: Partial<RawPullRequest> = {}): RawPullRequest {
     reviews: {
       nodes: [
         { author: { __typename: 'User', login: 'bob' }, state: 'CHANGES_REQUESTED', submittedAt: '2026-09-12T12:00:00Z' },
-        { author: { __typename: 'Bot', login: 'chatgpt-codex-connector[bot]' }, state: 'COMMENTED', submittedAt: '2026-09-14T14:00:00Z' },
+        { author: { __typename: 'Bot', login: 'review-summary[bot]' }, state: 'COMMENTED', submittedAt: '2026-09-14T14:00:00Z' },
         { author: { __typename: 'User', login: 'bob' }, state: 'APPROVED', submittedAt: '2026-09-13T12:00:00Z' },
       ],
     },
     comments: {
       nodes: [
         { author: { __typename: 'User', login: 'Alice' }, createdAt: '2026-09-13T13:00:00Z' },
-        { author: { __typename: 'Bot', login: 'codecov[bot]' }, createdAt: '2026-09-14T15:00:00Z' },
+        { author: { __typename: 'Bot', login: 'coverage[bot]' }, createdAt: '2026-09-14T15:00:00Z' },
       ],
     },
     ...overrides,
@@ -129,6 +129,30 @@ test('the individual checks outrank the rollup summary, and the failing ones are
   assert.deepEqual(summarizeChecks({ state: 'FAILURE', contexts: { nodes: [] } }), { checks: 'failure', failing: [] });
   assert.deepEqual(summarizeChecks({ state: 'SUCCESS', contexts: { nodes: [] } }), { checks: 'success', failing: [] });
   assert.deepEqual(summarizeChecks(null), { checks: null, failing: [] });
+});
+
+test('a comment never withdraws a verdict; a dismissal does', () => {
+  const pull = normalizePullRequest(
+    node({
+      reviewDecision: null,
+      reviews: {
+        nodes: [
+          { author: { __typename: 'User', login: 'bob' }, state: 'APPROVED', submittedAt: '2026-09-12T10:00:00Z' },
+          { author: { __typename: 'User', login: 'bob' }, state: 'COMMENTED', submittedAt: '2026-09-12T11:00:00Z' },
+          { author: { __typename: 'User', login: 'carol' }, state: 'COMMENTED', submittedAt: '2026-09-12T12:00:00Z' },
+          { author: { __typename: 'User', login: 'dave' }, state: 'CHANGES_REQUESTED', submittedAt: '2026-09-12T13:00:00Z' },
+          { author: { __typename: 'User', login: 'dave' }, state: 'DISMISSED', submittedAt: '2026-09-12T14:00:00Z' },
+        ],
+      },
+      comments: { nodes: [] },
+    }),
+    'alice',
+  );
+  assert.deepEqual(pull?.reviews, [
+    { login: 'bob', state: 'APPROVED', at: '2026-09-12T10:00:00Z' },
+    { login: 'carol', state: 'COMMENTED', at: '2026-09-12T12:00:00Z' },
+  ]);
+  assert.deepEqual(pull?.lastActivityByOthers, { at: '2026-09-12T14:00:00Z', login: 'dave', kind: 'review' }, 'every review is still activity');
 });
 
 test('a draft is ready-at its creation, and the rollup collapses to three states', () => {

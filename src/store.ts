@@ -148,13 +148,19 @@ export class Store {
    * owns both and layers them on. Keeping them out here means the store has no
    * opinion about how it's being displayed or about GitHub.
    */
-  async getState(now: Date = new Date()): Promise<Omit<DashboardState, 'assetVersion' | 'board'>> {
-    const [{ brief, error, warnings }, actions, focus, schedule] = await Promise.all([
+  async getState(
+    now: Date = new Date(),
+    actions?: readonly Action[],
+  ): Promise<Omit<DashboardState, 'assetVersion' | 'board'>> {
+    const [{ brief, error, warnings }, readActions, focus, schedule] = await Promise.all([
       this.readBrief(),
-      this.readActions(),
+      // The caller may have read the log already, to fold the board from the same
+      // snapshot; two reads could straddle an append and disagree.
+      actions ? Promise.resolve(actions) : this.readActions(),
       this.readFocus(),
       resolveSchedule(this.config, now),
     ]);
+    actions = readActions;
 
     // Which days the agent runs decides both halves of the staleness question, and
     // it's also the dashboard's only notion of a weekend — so the progress metric

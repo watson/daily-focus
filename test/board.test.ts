@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { Board, readPullsFile, type BoardDeps } from '../src/board.ts';
+import { Board, normalizeStoredPull, readPullsFile, type BoardDeps } from '../src/board.ts';
 import { GhAuthError, GhMissingError, type AccountFetch } from '../src/github.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 import type { PullRequest } from '../src/types.ts';
@@ -208,12 +208,106 @@ test('the file on disk is the last good fetch, written atomically', async () => 
   await writeFile(cfg.pullsFile, '{not json');
   assert.equal(await readPullsFile(cfg.pullsFile), null, 'garbage reads as no file');
 
-  // A file from before a field existed still reads, with the field filled in.
-  const { failingChecks: _dropped, ...older } = pull('alice', 2);
-  await writeFile(cfg.pullsFile, JSON.stringify({ version: 1, fetchedAt: '2026-09-14T06:00:00Z', pulls: [older, 'junk'] }));
+  // A file from before a field existed still reads, with the field filled in, and
+  // an entry missing what nothing can stand in for is dropped rather than thrown on.
+  const { failingChecks: _dropped, lastActivityByOthers: _also, account: _too, ...older } = pull('alice', 2);
+  await writeFile(
+    cfg.pullsFile,
+    JSON.stringify({
+      version: 1,
+      fetchedAt: '2026-09-14T06:00:00Z',
+      accounts: [null, 'alice', { login: 'alice', ok: true }],
+      pulls: [older, 'junk', { id: 'github:pr:acme/webapp#3' }],
+    }),
+  );
   const upgraded = await readPullsFile(cfg.pullsFile);
   assert.equal(upgraded?.pulls.length, 1);
   assert.deepEqual(upgraded?.pulls[0]?.failingChecks, []);
+  assert.equal(upgraded?.pulls[0]?.lastActivityByOthers, null);
+  assert.equal(upgraded?.pulls[0]?.account, '');
+  assert.deepEqual(upgraded?.accounts, [{ login: 'alice', ok: true, error: null }]);
+  assert.equal(normalizeStoredPull({ id: 'x' }), null);
+});
+
+test('a broken file on disk never takes the view or the poll down', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice' });
+  const { account: _gone, ...noAccount } = pull('alice', 1);
+  await writeFile(cfg.pullsFile, JSON.stringify({ version: 1, fetchedAt: '2026-09-14T06:00:00Z', pulls: [noAccount] }));
+  const deps = fakeDeps({
+    tokens: { alice: 't1' },
+    fetches: {
+      t1: async () => {
+        throw new Error('GitHub answered 502');
+      },
+    },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+  await board.refresh();
+  const view = board.view([], new Date());
+  assert.equal(view.rows.length, 1, 'the stored pull still shows');
+  assert.equal(view.reason, null);
+});
+
+test('an unexpected error inside a poll is reported, not thrown', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice' });
+  const deps = fakeDeps({
+    tokens: { alice: 't1' },
+    fetches: { t1: async () => ({ login: 'alice', pulls: [], warnings: [], orgs: null as never, rateLimitRemaining: null }) },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+  assert.match(board.view([], new Date()).reason ?? '', /unexpected error/);
+});
+
+test('a tab opening on a stale board fetches at once; a fresh one waits', async () => {
+  const cfg = await config();
+  const deps = fakeDeps({
+    accounts: [{ login: 'alice', active: true }],
+    tokens: { active: 't1' },
+    fetches: { t1: ok('alice', []) },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+  const fetches = () => deps.calls.filter((call) => call.startsWith('fetch:')).length;
+  assert.equal(fetches(), 1);
+
+  board.setAudience(1);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(fetches(), 1, 'just fetched, so the next one is scheduled, not started');
+  board.setAudience(0);
+  board.stop();
+
+  const stale = new Board(cfg, () => {}, deps);
+  // Never polled in this process, so the last poll is at the epoch and long overdue.
+  stale.setAudience(1);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(fetches(), 2, 'a board with no poll behind it fetches as soon as someone looks');
+  stale.stop();
+});
+
+test('stop cancels a fetch in flight so nothing lands afterwards', async () => {
+  const cfg = await config();
+  let release: (() => void) | null = null;
+  let changes = 0;
+  const deps = fakeDeps({
+    accounts: [{ login: 'alice', active: true }],
+    tokens: { active: 't1' },
+    fetches: {
+      t1: () =>
+        new Promise((resolve) => {
+          release = () => resolve({ login: 'alice', pulls: [pull('alice', 1)], warnings: [], orgs: {}, rateLimitRemaining: null });
+        }),
+    },
+  });
+  const board = new Board(cfg, () => changes++, deps);
+  const started = board.start();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  board.stop();
+  release!();
+  await started;
+  assert.equal(board.view([], new Date()).rows.length, 1, 'the fake ignores the signal, so its answer still lands');
+  assert.ok(changes >= 2);
 });
 
 test('a disabled board does nothing and says so', async () => {
@@ -255,7 +349,7 @@ test('an org only one account can see is normal; one nobody can see is a warning
 
   const { warnings } = board.view([], new Date());
   assert.equal(warnings.length, 1, warnings.join('\n'));
-  assert.match(warnings[0] ?? '', /None of the polled accounts can find an organisation called acme-typo/);
+  assert.match(warnings[0] ?? '', /None of the polled accounts can find an organisation or user called acme-typo/);
 });
 
 test('with one account, an org it cannot find is a warning straight away', async () => {
@@ -267,5 +361,5 @@ test('with one account, an org it cannot find is a warning straight away', async
   });
   const board = new Board(cfg, () => {}, deps);
   await board.start();
-  assert.match(board.view([], new Date()).warnings[0] ?? '', /^Can't find an organisation called acme-typo/);
+  assert.match(board.view([], new Date()).warnings[0] ?? '', /^Can't find an organisation or user called acme-typo/);
 });

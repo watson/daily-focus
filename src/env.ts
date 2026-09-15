@@ -27,8 +27,10 @@ export function readDotEnv(path: string = DOTENV_PATH): Record<string, string> {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
     throw new Error(`could not read ${path}: ${(err as Error).message}`);
   }
+  // Some editors save a byte-order mark, which parseEnv would keep as part of the
+  // first key — and a key that doesn't start with the prefix is silently dropped.
   const parsed: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parseEnv(text))) {
+  for (const [key, value] of Object.entries(parseEnv(text.replace(/^\uFEFF/, '')))) {
     if (value !== undefined) parsed[key] = value;
   }
   return parsed;

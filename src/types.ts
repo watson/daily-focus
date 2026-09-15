@@ -348,16 +348,14 @@ export interface CourtReason {
   login?: string;
   at?: string;
   activity?: 'review' | 'comment';
-  /** `ci-failing` only: which checks. */
-  checks?: string[];
 }
 
 /** A pull request plus everything the clock and the action log add to it. */
 export interface BoardRow extends PullRequest {
   court: Court;
+  /** `reviewDecision`, or the one derived from the reviews when GitHub gives none. */
+  decision: ReviewDecision;
   reasons: CourtReason[];
-  ciFailing: boolean;
-  conflicts: boolean;
   /** A draft nobody has touched in a long while. */
   stale: boolean;
   /** Waiting on reviewers for long enough that it's time to ask. */

@@ -28,6 +28,11 @@ There is also an `archive/` directory of dated past briefs. The dashboard mainta
 it; you never write to it. Read it if you want history — it is how the dashboard
 knows how long it has been since the objective moved.
 
+- `prs.json` — **you only ever read this.** The dashboard's own cache of the pull
+  requests the user has open, refreshed while the dashboard is in use. Facts only —
+  reviews, checks, who last acted — with no judgement attached; use it if it helps,
+  never write it, and never treat its absence as meaning anything.
+
 Work through the five steps below in order. Do not start gathering before step 1 is
 done — what you find in step 1 changes what counts as worth raising.
 

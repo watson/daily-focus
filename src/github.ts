@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { laterISO } from './time.ts';
 import type { CheckState, MergeableState, PullActivity, PullRequest, ReviewDecision } from './types.ts';
 
 const run = promisify(execFile);
@@ -43,13 +44,21 @@ async function gh(ghPath: string, args: string[]): Promise<{ stdout: string; std
     const { stdout, stderr } = await run(ghPath, args, { env: GH_ENV, timeout: GH_TIMEOUT_MS, maxBuffer: 1 << 20 });
     return { stdout, stderr, code: 0 };
   } catch (err) {
-    const failure = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: number | string };
-    if (failure.code === 'ENOENT') throw new GhMissingError(ghPath);
-    return {
-      stdout: failure.stdout ?? '',
-      stderr: failure.stderr ?? failure.message,
-      code: typeof failure.code === 'number' ? failure.code : 1,
+    const failure = err as NodeJS.ErrnoException & {
+      stdout?: string;
+      stderr?: string;
+      code?: number | string;
+      killed?: boolean;
+      signal?: string;
     };
+    if (failure.code === 'ENOENT' || failure.code === 'EACCES') throw new GhMissingError(ghPath);
+    // A timed-out gh is not a logged-out gh. execFile hands back an empty stderr
+    // on a kill, so say what actually happened rather than letting the caller
+    // read the silence as "no token".
+    const stderr = failure.killed || failure.signal
+      ? `gh did not answer within ${GH_TIMEOUT_MS / 1000}s — a keychain prompt or a slow network?`
+      : failure.stderr || failure.message;
+    return { stdout: failure.stdout ?? '', stderr, code: typeof failure.code === 'number' ? failure.code : 1 };
   }
 }
 
@@ -63,7 +72,10 @@ export interface GhAccount {
  *
  * `gh auth status --json` reports every host; only github.com matters here since
  * the board doesn't do Enterprise Server. A gh that isn't logged in anywhere exits
- * non-zero but still prints the structure, so the output is read either way.
+ * non-zero but still prints the structure, so the output is read either way. Each
+ * entry's `state` is gh's own liveness check against the API, which fails offline
+ * too, so it is deliberately not consulted: a token that exists is listed, and if
+ * it's bad the fetch says so with the real error.
  */
 export async function listGhAccounts(ghPath: string): Promise<GhAccount[]> {
   const { stdout } = await gh(ghPath, ['auth', 'status', '--hostname', 'github.com', '--json', 'hosts']);
@@ -79,9 +91,8 @@ export async function listGhAccounts(ghPath: string): Promise<GhAccount[]> {
   const accounts: GhAccount[] = [];
   for (const entry of entries) {
     if (typeof entry !== 'object' || entry === null) continue;
-    const { login, active, state } = entry as { login?: unknown; active?: unknown; state?: unknown };
+    const { login, active } = entry as { login?: unknown; active?: unknown };
     if (typeof login !== 'string' || login === '') continue;
-    if (state !== undefined && state !== 'success') continue;
     accounts.push({ login, active: active === true });
   }
   return accounts;
@@ -390,12 +401,6 @@ function toDecision(state: string | null | undefined): ReviewDecision {
   return state === 'APPROVED' || state === 'CHANGES_REQUESTED' || state === 'REVIEW_REQUIRED' ? state : null;
 }
 
-function latest(a: string | null, b: string | null | undefined): string | null {
-  if (!b) return a;
-  if (!a) return b;
-  return b > a ? b : a;
-}
-
 /**
  * Reduce one search node to the facts the board keeps. Returns null for anything
  * that isn't recognisably a pull request, so one odd node can't sink a page.
@@ -411,21 +416,23 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
   const readyAt = raw.isDraft ? raw.createdAt : (readyEvent ?? raw.createdAt);
 
   let lastByYou: string | null = raw.createdAt;
-  lastByYou = latest(lastByYou, readyAt);
-  lastByYou = latest(lastByYou, head?.committedDate);
+  lastByYou = laterISO(lastByYou, readyAt);
+  lastByYou = laterISO(lastByYou, head?.committedDate);
 
   let lastByOthers: PullActivity | null = null;
   const consider = (actor: RawActor | null | undefined, at: string | null | undefined, kind: PullActivity['kind']) => {
     if (!at || isBot(actor)) return;
     if (sameLogin(actor?.login, account)) {
-      lastByYou = latest(lastByYou, at);
+      lastByYou = laterISO(lastByYou, at);
       return;
     }
     if (!lastByOthers || at > lastByOthers.at) lastByOthers = { at, login: actor?.login ?? 'someone', kind };
   };
 
-  // Latest formal review per person, so a reviewer who approved after requesting
-  // changes counts once, as approved.
+  // One standing review per person: a reviewer who approved after requesting
+  // changes counts once, as approved. Only a verdict replaces a verdict — GitHub
+  // files every inline reply as a COMMENTED review, and "thanks" an hour after an
+  // approval does not withdraw it. A dismissal does.
   const latestReview = new Map<string, { login: string; state: string; at: string }>();
   for (const review of raw.reviews?.nodes ?? []) {
     const at = review.submittedAt ?? null;
@@ -433,7 +440,8 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
     if (!at || isBot(review.author) || sameLogin(review.author?.login, account)) continue;
     const login = review.author?.login;
     if (!login || typeof review.state !== 'string') continue;
-    latestReview.set(login, { login, state: review.state, at });
+    const verdict = review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED' || review.state === 'DISMISSED';
+    if (verdict || !latestReview.has(login)) latestReview.set(login, { login, state: review.state, at });
   }
   for (const comment of raw.comments?.nodes ?? []) {
     consider(comment.author, comment.createdAt ?? null, 'comment');
@@ -505,7 +513,12 @@ function buildProbeQuery(scope: readonly string[]): { query: string; orgs: strin
   const orgs = scope
     .filter((qualifier) => qualifier.startsWith('org:'))
     .map((qualifier) => qualifier.slice('org:'.length));
-  const fields = orgs.map((org, i) => `o${i}: organization(login: ${JSON.stringify(org)}) { login }`);
+  // `repositoryOwner` resolves a user as well as an organisation, since the scope
+  // accepts both. Asking for one repository is what makes single sign-on speak up:
+  // the owner itself is public and answers cleanly however the token is authorised.
+  const fields = orgs.map(
+    (org, i) => `o${i}: repositoryOwner(login: ${JSON.stringify(org)}) { login repositories(first: 1) { totalCount } }`,
+  );
   return { query: `{ viewer { login } ${fields.join(' ')} }`, orgs };
 }
 
@@ -518,24 +531,26 @@ export async function fetchPulls(
   const warnings: string[] = [];
 
   const probe = buildProbeQuery(scope);
-  const who = await graphql<{ viewer?: { login?: string } }>(token, probe.query, {}, signal);
+  const who = await graphql<{ viewer?: { login?: string } } & Record<string, unknown>>(token, probe.query, {}, signal);
   const login = who.data?.viewer?.login ?? expectedLogin ?? 'unknown';
-  const orgs: Record<string, OrgVisibility> = Object.fromEntries(probe.orgs.map((org) => [org, 'ok' as const]));
-  for (const error of who.errors) {
-    const alias = error.path?.[0];
-    const index = typeof alias === 'string' && /^o\d+$/.test(alias) ? Number(alias.slice(1)) : -1;
-    const org = probe.orgs[index];
-    if (!org) continue;
-    if (isSamlError(error)) {
+  const orgs: Record<string, OrgVisibility> = {};
+  let samlWarned = false;
+  probe.orgs.forEach((org, i) => {
+    const error = who.errors.find((candidate) => candidate.path?.[0] === `o${i}`);
+    if (error && isSamlError(error)) {
       orgs[org] = 'saml';
+      samlWarned = true;
       warnings.push(
         `${login} can't see ${org}: the token isn't authorised for that organisation's single sign-on. ` +
           `Run \`gh auth refresh\` as ${login}, or authorise the GitHub CLI app for ${org} under GitHub's SSO settings.`,
       );
-    } else if (error.type === 'NOT_FOUND') {
+    } else if (!error && who.data?.[`o${i}`] === null) {
+      // No such owner answers as null without an error.
       orgs[org] = 'not-found';
+    } else {
+      orgs[org] = 'ok';
     }
-  }
+  });
 
   const pulls: PullRequest[] = [];
   let after: string | null = null;
@@ -550,10 +565,9 @@ export async function fetchPulls(
     if (result.data?.search === undefined && fatal.length > 0) {
       throw new GitHubRequestError(`GitHub search failed: ${fatal.map((error) => error.message).join('; ')}`);
     }
-    for (const error of result.errors) {
-      if (isSamlError(error) && !warnings.some((warning) => warning.includes('single sign-on'))) {
-        warnings.push(`${login}: some results were withheld by an organisation's single sign-on policy.`);
-      }
+    if (!samlWarned && result.errors.some(isSamlError)) {
+      samlWarned = true;
+      warnings.push(`${login}: some results were withheld by an organisation's single sign-on policy.`);
     }
 
     for (const node of result.data?.search?.nodes ?? []) {
