@@ -3,10 +3,10 @@
 A localhost dashboard for "what should I actually do today", meant to live in a
 pinned browser tab.
 
-It doesn't fetch anything. A separate agent runs each weekday morning, gathers from
-Calendar, Gmail, Slack, GitHub, Jira, Workday and your own Google Tasks list, and
-writes the result to a shared file store. The dashboard reads that store and writes
-back to it, so when you tick something off, tomorrow's brief leaves it out.
+The judgement comes from somewhere else. A separate agent runs each weekday morning,
+gathers from Calendar, Gmail, Slack, GitHub, Jira, Workday and your own Google Tasks
+list, and writes the result to a shared file store. The dashboard reads that store and
+writes back to it, so when you tick something off, tomorrow's brief leaves it out.
 
 ```
 you            ──write──▶  ~/.daily-focus/focus.md       ──read──▶  agent + dashboard
@@ -14,10 +14,16 @@ morning agent  ──write──▶  ~/.daily-focus/items.json     ──read─
     ▲                                                                   │
     ├────────read────────  ~/.daily-focus/actions.jsonl   ◀──append─────┤
     └────────read────────  ~/.daily-focus/sessions.jsonl  ◀──append─────┘
+dashboard      ──write──▶  ~/.daily-focus/prs.json       ──read──▶  dashboard
 ```
 
 One owner per file. Nobody writes anybody else's file, so there is no locking, no
 clobbering, and no database.
+
+The one thing the dashboard gathers itself is the list of pull requests you have open,
+on a second tab. That is state rather than judgement, and it changes during the day,
+so it is polled live rather than left to the morning. See
+[The pull request board](#the-pull-request-board).
 
 `focus.md` is the standing objective, and it's the only input that isn't reactive.
 Everything else describes what other people did overnight, and a brief built from
@@ -50,6 +56,9 @@ It never overwrites. Run it twice and the second run reports what is already the
 and changes nothing. It doesn't create `items.json`, `actions.jsonl` or
 `sessions.jsonl`, since each of those has exactly one writer and all three read as
 empty when absent.
+
+Settings live in a `.env` file at the repo root. Copy `.env.example` to `.env` and
+uncomment what you want to change; see [Configuration](#configuration).
 
 Node 22.18 or newer, 24 recommended. There is no build step. The server is
 TypeScript run directly through Node's type stripping, and the frontend is plain ES
@@ -89,6 +98,7 @@ Everything is undoable, from the toast or with <kbd>u</kbd>.
 
 | Key | |
 |---|---|
+| <kbd>1</kbd> / <kbd>2</kbd> | the Today tab / the pull request board |
 | <kbd>j</kbd> / <kbd>k</kbd> | next / previous item |
 | <kbd>e</kbd> | done |
 | <kbd>s</kbd> | snooze until tomorrow |
@@ -98,6 +108,7 @@ Everything is undoable, from the toast or with <kbd>u</kbd>.
 | <kbd>u</kbd> | undo the last action |
 | <kbd>f</kbd> | focus mode |
 | <kbd>p</kbd> | start / stop a focus session on the selected item |
+| <kbd>r</kbd> | refresh the pull request board now |
 | <kbd>?</kbd> | shortcuts |
 
 Focus mode (<kbd>f</kbd>) collapses the page to the objective, the single top-ranked
@@ -162,7 +173,70 @@ timer is built here rather than borrowed from a timer app. The system learns wha
 nothing to mark done, and without this record that is indistinguishable from doing
 nothing.
 
+## The pull request board
+
+The second tab (<kbd>2</kbd>) is every pull request you have open, sorted by whose
+move it is. It exists because the brief is edited down on purpose, and a PR is not a
+task: it outlives any single obligation on it, and "nudge the reviewers" needs doing
+again next week. So the board is a status board rather than a to-do list, and it is
+the one thing the dashboard fetches itself, since state changes during the day and a
+review that landed at eleven should not read as "waiting on reviewers" until tomorrow.
+
+Four buckets, most actionable first:
+
+- **Waiting on you.** Changes requested, CI red, a merge conflict, or someone acted
+  after you did. The row says which.
+- **Ready to merge.** Approved, nothing red, nothing left but the button.
+- **Waiting on reviewers.** Nobody has acted since your last push. After a day it
+  says *time to ask*.
+- **Drafts.** Not asking anyone for anything. After a fortnight untouched it says so,
+  because a draft you meant to finish and a draft you meant to abandon look the same.
+
+Bots don't count as people acting. A review that approves is read as ready rather
+than as your move, unless a comment landed after it.
+
+Three things you can do to a row, all through the same action log as the brief and
+under the same `github:pr:` ids, so the morning agent sees them too:
+
+- **Park** it until a date. It drops into a drawer and comes back when the date
+  arrives. This is how a draft is shelved on purpose.
+- **Note.** Free text, shown on the row and read by the agent.
+- **Nudged.** On rows waiting on reviewers. You asked on Slack, which GitHub can't see,
+  so this records a note saying so and the *time to ask* flag starts over from now.
+
+Done and dismiss don't apply: marking the brief's "CI failing on #3402" done doesn't
+close #3402, and the board shows what is open.
+
+### Where it gets its access
+
+It borrows the GitHub CLI's login rather than keeping a token of its own. With nothing
+configured it polls whatever account `gh` has active on github.com, so there is no
+setup beyond `gh auth login`. If `gh` holds several accounts it says which one it
+picked, since *active* is whichever you last switched to in a terminal. Name them in
+`DAILY_FOCUS_GITHUB_ACCOUNTS` to poll more than one, each resolved through
+`gh auth token --user` so a `gh auth switch` elsewhere changes nothing here.
+
+`DAILY_FOCUS_GITHUB_SCOPE` narrows it to organisations or repositories, which is how
+your open source PRs stay off a work board. Each organisation in scope is probed by
+name before searching, because a search scoped to a SAML-protected organisation the
+token isn't authorised for returns nothing, and nothing is what a quiet board looks
+like. The probe turns that into a warning naming the account, the organisation and
+the fix. An organisation an account simply isn't a member of is not a warning; with
+two accounts, each seeing its own is the normal case.
+
+It polls once at startup and then every `DAILY_FOCUS_GITHUB_POLL_MINUTES` while a
+browser tab holds the page open, backing off on failure and pausing near the rate
+limit. The last good answer is kept in `prs.json` in the store, so a restart or an
+outage shows the board as of an hour ago rather than an empty one, and the status line
+says which. `DAILY_FOCUS_GITHUB=off` turns the whole thing off.
+
 ## Configuration
+
+Every setting is an environment variable, and every one can be put in a `.env` file at
+the repo root instead. `.env.example` lists them all, explained and commented out; copy
+it to `.env` and uncomment what you change. A variable set in the real environment
+always beats the file, and the file is gitignored because it will hold org names and
+logins. Restart to apply.
 
 | Variable | Default | |
 |---|---|---|
@@ -176,6 +250,11 @@ nothing.
 | `DAILY_FOCUS_AGENT_DAYS` | *inferred* | Weekdays the agent is scheduled on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
 | `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
 | `DAILY_FOCUS_AWAY_AFTER` | `10` | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
+| `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board; nothing is polled |
+| `DAILY_FOCUS_GITHUB_ACCOUNTS` | *gh's active account* | Logins to poll as, comma-separated, each resolved with `gh auth token --user` |
+| `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |
+| `DAILY_FOCUS_GITHUB_POLL_MINUTES` | `5` | Minutes between polls while a tab is open |
+| `DAILY_FOCUS_GH` | `gh` | Path to the GitHub CLI, for when the server's PATH lacks it |
 
 ### When is the weekend?
 
@@ -233,7 +312,11 @@ else.
 src/
   types.ts     the contract, documented
   config.ts    env-driven configuration
+  env.ts       the repo-root .env, layered under the real environment
   focus.ts     focus.md, the standing objective
+  github.ts    tokens from gh, the GraphQL search, and what a PR node becomes
+  prs.ts       whose court a pull request is in, joined with the action log
+  board.ts     the poller, and prs.json
   archive.ts   dated brief snapshots, and days-since-progress
   sessions.ts  focus sessions, and the session log
   presence.ts  whether anyone is at the machine
@@ -266,6 +349,7 @@ React later is mechanical rather than a rewrite.
 | `GET /api/state` | The folded state: items with status, agenda, stats, warnings |
 | `GET /api/events` | SSE stream, pushes `state` on every store change |
 | `POST /api/actions` | `{id, action, until?, text?}`. Appends to the log, returns fresh state |
+| `POST /api/board/refresh` | Polls GitHub now. Returns fresh state once it has |
 | `GET /api/health` | |
 
 ## Design notes
@@ -285,3 +369,7 @@ React later is mechanical rather than a rewrite.
   the ranking. A test asserts it never survives serialisation.
 - **Colour never carries meaning alone.** Source hues come from a CVD-validated
   palette and always sit beside the source name in text.
+- **The board is state, not judgement.** The agent decides what deserves attention;
+  the server only reads what GitHub can say for certain, and reads it deterministically
+  so two accounts either both work or fail visibly. Whose court a PR is in is computed
+  at render time from the facts and the clock, never stored.

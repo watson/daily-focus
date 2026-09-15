@@ -26,6 +26,10 @@ than committing a copy. And if something needs to write inside the repo, point
 `DAILY_FOCUS_DATA` at `./data`, which is already gitignored; a file dropped at the
 repo root is not, and that is exactly how a real brief once got committed.
 
+The one tracked-adjacent file that holds real names is `.env` at the repo root, which
+is where GitHub logins and organisation names go. It is gitignored; `.env.example` is
+the tracked template and must stay invented.
+
 ## Checks
 
 ```sh
@@ -33,6 +37,11 @@ npm run typecheck   # tsc --noEmit
 npm test            # node:test
 npm run audit       # re-derives the agent's own checklist from the brief on disk
 ```
+
+Configuration is read from the real environment layered over a repo-root `.env`, see
+`src/env.ts`. `test/docs-contract.test.ts` checks that `.env.example`, the README's
+configuration table and `src/config.ts` all name the same variables, so adding a knob
+means adding it in all three.
 
 Two scripts write into the store, and they are not equally safe. **`npm run seed`
 overwrites `items.json`** — never point it at a store holding a real brief; give it a
@@ -62,12 +71,19 @@ writer needs to be a deliberate decision rather than a convenience:
 | `focus.md` | the user, by hand | both |
 | `sources.md` | the user, by hand | the agent only — the server never opens it |
 | `archive/items-<date>.json` | the server | the agent, and `archive.ts` |
+| `prs.json` | the server, from GitHub | the dashboard; the agent may read it |
 | `prompt.md`, `items.schema.json` | `npm run init`, as symlinks into this repo | the agent only |
 
 The server never writes `items.json`, and nothing in this repo writes `actions.jsonl`,
 `sessions.jsonl`, `focus.md`, `sources.md` or anything under `archive/` on the agent's
 behalf. The action log in particular is append-only and unreproducible — it is the only
 record that a thing was dealt with, so nothing may compact or rewrite it.
+
+`prs.json` is the one file here that comes from outside the store: the server's last
+successful fetch of the user's open pull requests, written via a sibling temp file and
+rename so a reader never sees half of it. It is a cache, not a record — losing it costs
+a restart its first paint and nothing else — and `board.ts` reads it back defensively
+for the same reason `validate.ts` is forgiving.
 
 `sources.md` is the one file here the dashboard never opens at all. It is the personal
 half of the brief — who the user is, which calendars to query, which accounts to judge
@@ -190,6 +206,45 @@ asserting it cannot survive serialisation; don't route focus text to the client 
 other path. `checks.ts` additionally looks for the agent having quoted it back into a
 title or `detail`, comparing six-word runs — single-word overlap is nothing but false
 positives, since both halves legitimately share the vocabulary.
+
+### The pull request board is fetched, not read
+
+The board on the second tab is the one part of the dashboard that gathers anything
+itself, and the reason is that it is state rather than judgement. The agent decides
+what deserves attention; the board only shows what GitHub can say for certain about the
+pull requests the user authored, and it has to be current during the day, since a
+review landing at eleven changes whose move it is.
+
+Three modules, split so the part that needs a network is small:
+
+- `github.ts` — borrows tokens from `gh auth token --user <login>` rather than storing
+  any, runs one GraphQL search per account, and reduces each node to a `PullRequest` of
+  facts. Bots are dropped as activity. Each `org:` in scope is probed by name first,
+  because a search scoped to a SAML-protected org the token isn't authorised for returns
+  nothing rather than an error, and nothing is what a quiet board looks like.
+- `prs.ts` — pure. `judge` decides the court from the facts and the clock;
+  `resolveBoard` joins that with the action log. The rules are in its comments and in
+  the README; the tests in `test/prs.test.ts` are the spec.
+- `board.ts` — the poller. Once at startup, then only while an SSE subscriber exists,
+  with backoff on failure and a pause near the rate limit. An account that fails a
+  round keeps its previous rows. Its GitHub calls are injectable, which is how
+  `test/board.test.ts` drives it without a network.
+
+Two rules the board must keep:
+
+- **It joins the same action log under the same ids** (`github:pr:<owner>/<repo>#<n>`),
+  so a PR the brief also raises is one thing, not two. But it honours only `snooze` and
+  `note`. `done` and `dismiss` are deliberately ignored: the brief may raise "CI failing
+  on #3402" and the user may mark that done, and #3402 is still open. The newest note
+  also resets the nudge timer, which is how "I asked on Slack" is told to a board that
+  can't see Slack.
+- **Nothing computed is stored.** `prs.json` holds facts and a timestamp; court, reasons,
+  nudge and stale flags are derived on every read from the facts, the clock and the
+  log, so a row moves between courts as the day passes without a fetch.
+
+The server test sets `DAILY_FOCUS_GITHUB=off` so no test ever spawns `gh` or reaches
+GitHub. Keep it that way: the fixtures in `test/github.test.ts` are invented, and
+real PRs, like real briefs, stay out of the repo.
 
 ### Sessions record effort, not completion
 

@@ -20,6 +20,7 @@ else. `npm run init` symlinks this prompt into it as `prompt.md`, alongside
   actions.jsonl       the dashboard appends
   sessions.jsonl      the dashboard appends
   archive/            the dashboard writes
+  prs.json            the dashboard writes: its last fetch of the user's open pull requests
 ```
 
 That boundary is the point, and it is worth being strict about. A prompt that reaches
