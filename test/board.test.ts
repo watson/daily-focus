@@ -37,6 +37,7 @@ function pull(account: string, number: number): PullRequest {
     baseRef: 'main',
     reviewDecision: null,
     checks: null,
+    failingChecks: [],
     mergeable: 'UNKNOWN',
     autoMerge: false,
     requestedReviewers: [],
@@ -75,12 +76,15 @@ function fakeDeps(opts: {
   };
 }
 
-const ok = (login: string, pulls: PullRequest[], warnings: string[] = []) => async (): Promise<AccountFetch> => ({
-  login,
-  pulls,
-  warnings,
-  rateLimitRemaining: 4000,
-});
+const ok =
+  (login: string, pulls: PullRequest[], warnings: string[] = [], orgs: AccountFetch['orgs'] = {}) =>
+  async (): Promise<AccountFetch> => ({
+    login,
+    pulls,
+    warnings,
+    orgs,
+    rateLimitRemaining: 4000,
+  });
 
 test('with nothing configured it polls the active account, and warns when there are more', async () => {
   const cfg = await config();
@@ -132,7 +136,7 @@ test('an account that fails keeps what it had last time', async () => {
       t1: ok('alice', [pull('alice', 1)]),
       t2: async () => {
         if (corpFails) throw new Error('GitHub answered 502');
-        return { login: 'alice_corp', pulls: [pull('alice_corp', 9)], warnings: [], rateLimitRemaining: 4000 };
+        return { login: 'alice_corp', pulls: [pull('alice_corp', 9)], warnings: [], orgs: {}, rateLimitRemaining: 4000 };
       },
     },
   });
@@ -203,6 +207,13 @@ test('the file on disk is the last good fetch, written atomically', async () => 
 
   await writeFile(cfg.pullsFile, '{not json');
   assert.equal(await readPullsFile(cfg.pullsFile), null, 'garbage reads as no file');
+
+  // A file from before a field existed still reads, with the field filled in.
+  const { failingChecks: _dropped, ...older } = pull('alice', 2);
+  await writeFile(cfg.pullsFile, JSON.stringify({ version: 1, fetchedAt: '2026-09-14T06:00:00Z', pulls: [older, 'junk'] }));
+  const upgraded = await readPullsFile(cfg.pullsFile);
+  assert.equal(upgraded?.pulls.length, 1);
+  assert.deepEqual(upgraded?.pulls[0]?.failingChecks, []);
 });
 
 test('a disabled board does nothing and says so', async () => {
@@ -228,4 +239,33 @@ test('change notifications fire when a fetch starts and when it lands', async ()
   const board = new Board(cfg, () => changes++, deps);
   await board.start();
   assert.equal(changes, 2);
+});
+
+test('an org only one account can see is normal; one nobody can see is a warning', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice,alice_corp', DAILY_FOCUS_GITHUB_SCOPE: 'acme,acme-corp,acme-typo' });
+  const deps = fakeDeps({
+    tokens: { alice: 't1', alice_corp: 't2' },
+    fetches: {
+      t1: ok('alice', [], [], { acme: 'ok', 'acme-corp': 'not-found', 'acme-typo': 'not-found' }),
+      t2: ok('alice_corp', [], [], { acme: 'not-found', 'acme-corp': 'ok', 'acme-typo': 'not-found' }),
+    },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+
+  const { warnings } = board.view([], new Date());
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.match(warnings[0] ?? '', /None of the polled accounts can find an organisation called acme-typo/);
+});
+
+test('with one account, an org it cannot find is a warning straight away', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_SCOPE: 'acme-typo' });
+  const deps = fakeDeps({
+    accounts: [{ login: 'alice', active: true }],
+    tokens: { active: 't1' },
+    fetches: { t1: ok('alice', [], [], { 'acme-typo': 'not-found' }) },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+  assert.match(board.view([], new Date()).warnings[0] ?? '', /^Can't find an organisation called acme-typo/);
 });

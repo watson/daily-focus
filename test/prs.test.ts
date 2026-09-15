@@ -25,6 +25,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     baseRef: 'main',
     reviewDecision: null,
     checks: 'success',
+    failingChecks: [],
     mergeable: 'MERGEABLE',
     autoMerge: false,
     requestedReviewers: [],
@@ -111,10 +112,10 @@ test('changes requested, red CI and conflicts are each your move, whatever else 
   assert.equal(changes.court, 'you');
   assert.deepEqual(changes.reasons, [{ kind: 'changes-requested', login: 'bob', at: daysAgo(1) }]);
 
-  const red = judge(pr({ checks: 'failure', lastActivityByYou: hoursAgo(1) }), NOW, null);
+  const red = judge(pr({ checks: 'failure', failingChecks: ['all-tests-green'], lastActivityByYou: hoursAgo(1) }), NOW, null);
   assert.equal(red.court, 'you');
   assert.equal(red.ciFailing, true);
-  assert.deepEqual(red.reasons, [{ kind: 'ci-failing' }]);
+  assert.deepEqual(red.reasons, [{ kind: 'ci-failing', checks: ['all-tests-green'] }]);
 
   const conflicting = judge(pr({ mergeable: 'CONFLICTING', reviewDecision: 'APPROVED' }), NOW, null);
   assert.equal(conflicting.court, 'you', 'approved but conflicting is still yours to fix');

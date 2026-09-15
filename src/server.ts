@@ -318,8 +318,9 @@ export async function startServer(): Promise<StartedServer> {
       if (action === 'note' && typeof text === 'string') record.text = text.trim();
 
       await store.appendAction(record);
-      const state = await store.getState();
-      sendJSON(res, 200, state);
+      // The full state, board included: the client swaps its whole state for this
+      // reply, so anything missing here is a field the next render trips over.
+      sendJSON(res, 200, await buildState());
       void broadcast();
       return;
     }

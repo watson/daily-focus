@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildSearchQuery, isBot, isSamlError, normalizePullRequest, type RawPullRequest } from '../src/github.ts';
+import { buildSearchQuery, isBot, isSamlError, normalizePullRequest, summarizeChecks, type RawPullRequest } from '../src/github.ts';
 
 test('the search names the author and appends the scope verbatim', () => {
   assert.equal(buildSearchQuery([]), 'is:pr is:open archived:false author:@me');
@@ -39,7 +39,19 @@ function node(overrides: Partial<RawPullRequest> = {}): RawPullRequest {
     reviewDecision: 'REVIEW_REQUIRED',
     mergeable: 'MERGEABLE',
     autoMergeRequest: null,
-    commits: { nodes: [{ commit: { committedDate: '2026-09-12T10:00:00Z', statusCheckRollup: { state: 'SUCCESS' } } }] },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            committedDate: '2026-09-12T10:00:00Z',
+            statusCheckRollup: {
+              state: 'SUCCESS',
+              contexts: { nodes: [{ __typename: 'CheckRun', name: 'unit-tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] },
+            },
+          },
+        },
+      ],
+    },
     readyEvents: { nodes: [{ createdAt: '2026-09-11T08:00:00Z' }] },
     reviewRequests: { nodes: [{ requestedReviewer: { __typename: 'User', login: 'bob' } }, { requestedReviewer: { __typename: 'Team', slug: 'webapp-owners' } }] },
     reviews: {
@@ -74,6 +86,51 @@ test('a search node becomes the facts the board keeps', () => {
   assert.deepEqual(pull.lastActivityByOthers, { at: '2026-09-13T12:00:00Z', login: 'bob', kind: 'review' }, 'bots ignored');
 });
 
+test('the individual checks outrank the rollup summary, and the failing ones are named', () => {
+  // Seen in the wild: the summary said SUCCESS while a required check was FAILURE.
+  const lying = summarizeChecks({
+    state: 'SUCCESS',
+    contexts: {
+      nodes: [
+        { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        { __typename: 'CheckRun', name: 'all-tests-green', status: 'COMPLETED', conclusion: 'FAILURE' },
+        { __typename: 'StatusContext', context: 'ci/build', state: 'SUCCESS' },
+      ],
+    },
+  });
+  assert.deepEqual(lying, { checks: 'failure', failing: ['all-tests-green'] });
+
+  const running = summarizeChecks({
+    state: 'SUCCESS',
+    contexts: { nodes: [{ __typename: 'CheckRun', name: 'e2e', status: 'IN_PROGRESS', conclusion: null }] },
+  });
+  assert.deepEqual(running, { checks: 'pending', failing: [] });
+
+  const statusRed = summarizeChecks({
+    state: 'PENDING',
+    contexts: { nodes: [{ __typename: 'StatusContext', context: 'ci/deploy', state: 'ERROR' }] },
+  });
+  assert.deepEqual(statusRed, { checks: 'failure', failing: ['ci/deploy'] });
+
+  // Cancelled and timed out are red, the way `gh pr checks` reads them; skipped and neutral are not.
+  const mixed = summarizeChecks({
+    state: 'SUCCESS',
+    contexts: {
+      nodes: [
+        { __typename: 'CheckRun', name: 'flaky', status: 'COMPLETED', conclusion: 'CANCELLED' },
+        { __typename: 'CheckRun', name: 'optional', status: 'COMPLETED', conclusion: 'SKIPPED' },
+        { __typename: 'CheckRun', name: 'advice', status: 'COMPLETED', conclusion: 'NEUTRAL' },
+      ],
+    },
+  });
+  assert.deepEqual(mixed, { checks: 'failure', failing: ['flaky'] });
+
+  // Truncated contexts: the summary is still a floor.
+  assert.deepEqual(summarizeChecks({ state: 'FAILURE', contexts: { nodes: [] } }), { checks: 'failure', failing: [] });
+  assert.deepEqual(summarizeChecks({ state: 'SUCCESS', contexts: { nodes: [] } }), { checks: 'success', failing: [] });
+  assert.deepEqual(summarizeChecks(null), { checks: null, failing: [] });
+});
+
 test('a draft is ready-at its creation, and the rollup collapses to three states', () => {
   const draft = normalizePullRequest(node({ isDraft: true, readyEvents: { nodes: [] } }), 'alice');
   assert.equal(draft?.isDraft, true);
@@ -91,6 +148,7 @@ test('a draft is ready-at its creation, and the rollup collapses to three states
   }
   const none = normalizePullRequest(node({ commits: { nodes: [{ commit: { statusCheckRollup: null } }] } }), 'alice');
   assert.equal(none?.checks, null);
+  assert.deepEqual(none?.failingChecks, []);
 });
 
 test('a node that is not a pull request is dropped rather than thrown on', () => {

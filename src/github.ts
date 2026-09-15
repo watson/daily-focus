@@ -218,7 +218,21 @@ query($q: String!, $after: String) {
         mergeable
         autoMergeRequest { enabledAt }
         commits(last: 1) {
-          nodes { commit { committedDate statusCheckRollup { state } } }
+          nodes {
+            commit {
+              committedDate
+              statusCheckRollup {
+                state
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { name status conclusion }
+                    ... on StatusContext { context state }
+                  }
+                }
+              }
+            }
+          }
         }
         readyEvents: timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
           nodes { ... on ReadyForReviewEvent { createdAt } }
@@ -251,7 +265,7 @@ export interface RawPullRequest {
   reviewDecision?: string | null;
   mergeable?: string | null;
   autoMergeRequest?: { enabledAt?: string } | null;
-  commits?: { nodes?: { commit?: { committedDate?: string; statusCheckRollup?: { state?: string } | null } }[] };
+  commits?: { nodes?: { commit?: { committedDate?: string; statusCheckRollup?: RawRollup | null } }[] };
   readyEvents?: { nodes?: ({ createdAt?: string } | null)[] };
   reviewRequests?: { nodes?: { requestedReviewer?: { __typename?: string; login?: string; slug?: string } | null }[] };
   reviews?: { nodes?: { author?: RawActor | null; state?: string; submittedAt?: string | null }[] };
@@ -261,6 +275,23 @@ export interface RawPullRequest {
 export interface RawActor {
   __typename?: string;
   login?: string;
+}
+
+export interface RawRollup {
+  state?: string;
+  contexts?: { nodes?: (RawCheck | null)[] };
+}
+
+/** One entry in the rollup: a check run from an app, or a commit status. */
+export interface RawCheck {
+  __typename?: string;
+  /** CheckRun */
+  name?: string;
+  status?: string;
+  conclusion?: string | null;
+  /** StatusContext */
+  context?: string;
+  state?: string;
 }
 
 /**
@@ -294,6 +325,63 @@ function toCheckState(state: string | undefined): CheckState {
   }
 }
 
+const CHECK_RANK: Record<NonNullable<CheckState>, number> = { success: 1, pending: 2, failure: 3 };
+
+function worse(a: CheckState, b: CheckState): CheckState {
+  if (a === null) return b;
+  if (b === null) return a;
+  return CHECK_RANK[b] > CHECK_RANK[a] ? b : a;
+}
+
+/** Check run conclusions that mean red, the same set `gh pr checks` uses. */
+const FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
+const PASSED_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
+
+/**
+ * What CI says, read from the individual checks rather than the rollup's summary.
+ *
+ * The summary `state` has been seen reporting SUCCESS on a commit whose required
+ * check was FAILURE, which put a red PR in the ready-to-merge bucket. Walking the
+ * contexts the way `gh pr checks` does gives the answer that page gives, and the
+ * names of what failed. The summary still counts as a floor: if the contexts are
+ * truncated past the first hundred and the summary says red, red wins.
+ */
+export function summarizeChecks(rollup: RawRollup | null | undefined): { checks: CheckState; failing: string[] } {
+  if (!rollup) return { checks: null, failing: [] };
+
+  const failing: string[] = [];
+  let derived: CheckState = null;
+  for (const node of rollup.contexts?.nodes ?? []) {
+    if (!node) continue;
+    if (node.__typename === 'CheckRun') {
+      const name = node.name ?? 'unnamed check';
+      if (node.status !== 'COMPLETED' || !node.conclusion) {
+        derived = worse(derived, 'pending');
+      } else if (FAILED_CONCLUSIONS.has(node.conclusion)) {
+        failing.push(name);
+        derived = worse(derived, 'failure');
+      } else if (PASSED_CONCLUSIONS.has(node.conclusion)) {
+        derived = worse(derived, 'success');
+      } else {
+        // STALE and anything GitHub adds later: not a pass, not a fail.
+        derived = worse(derived, 'pending');
+      }
+    } else if (node.__typename === 'StatusContext') {
+      const name = node.context ?? 'unnamed status';
+      if (node.state === 'FAILURE' || node.state === 'ERROR') {
+        failing.push(name);
+        derived = worse(derived, 'failure');
+      } else if (node.state === 'SUCCESS') {
+        derived = worse(derived, 'success');
+      } else {
+        derived = worse(derived, 'pending');
+      }
+    }
+  }
+
+  return { checks: worse(derived, toCheckState(rollup.state)), failing };
+}
+
 function toMergeable(state: string | null | undefined): MergeableState {
   return state === 'MERGEABLE' || state === 'CONFLICTING' ? state : 'UNKNOWN';
 }
@@ -318,6 +406,7 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
   if (typeof raw.url !== 'string' || typeof raw.createdAt !== 'string') return null;
 
   const head = raw.commits?.nodes?.[0]?.commit;
+  const ci = summarizeChecks(head?.statusCheckRollup);
   const readyEvent = raw.readyEvents?.nodes?.find((node) => node?.createdAt)?.createdAt;
   const readyAt = raw.isDraft ? raw.createdAt : (readyEvent ?? raw.createdAt);
 
@@ -371,7 +460,8 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
     headRef: typeof raw.headRefName === 'string' ? raw.headRefName : '',
     baseRef: typeof raw.baseRefName === 'string' ? raw.baseRefName : '',
     reviewDecision: toDecision(raw.reviewDecision),
-    checks: toCheckState(head?.statusCheckRollup?.state),
+    checks: ci.checks,
+    failingChecks: ci.failing,
     mergeable: toMergeable(raw.mergeable),
     autoMerge: Boolean(raw.autoMergeRequest?.enabledAt),
     requestedReviewers,
@@ -383,11 +473,22 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
 
 /* ---------- one account's worth ---------- */
 
+/**
+ * What one account could see of each organisation in scope.
+ *
+ * `not-found` is what GitHub says about a private organisation to an account that
+ * isn't a member, which with two accounts is the normal case for one of them. So
+ * it is reported rather than warned about here; `board.ts` warns only when no
+ * account at all can find it, which is when it's a typo.
+ */
+export type OrgVisibility = 'ok' | 'saml' | 'not-found';
+
 export interface AccountFetch {
   /** The login the token actually belongs to, as GitHub reports it. */
   login: string;
   pulls: PullRequest[];
   warnings: string[];
+  orgs: Record<string, OrgVisibility>;
   rateLimitRemaining: number | null;
 }
 
@@ -419,17 +520,20 @@ export async function fetchPulls(
   const probe = buildProbeQuery(scope);
   const who = await graphql<{ viewer?: { login?: string } }>(token, probe.query, {}, signal);
   const login = who.data?.viewer?.login ?? expectedLogin ?? 'unknown';
+  const orgs: Record<string, OrgVisibility> = Object.fromEntries(probe.orgs.map((org) => [org, 'ok' as const]));
   for (const error of who.errors) {
     const alias = error.path?.[0];
     const index = typeof alias === 'string' && /^o\d+$/.test(alias) ? Number(alias.slice(1)) : -1;
     const org = probe.orgs[index];
-    if (org && isSamlError(error)) {
+    if (!org) continue;
+    if (isSamlError(error)) {
+      orgs[org] = 'saml';
       warnings.push(
         `${login} can't see ${org}: the token isn't authorised for that organisation's single sign-on. ` +
           `Run \`gh auth refresh\` as ${login}, or authorise the GitHub CLI app for ${org} under GitHub's SSO settings.`,
       );
-    } else if (org && error.type === 'NOT_FOUND') {
-      warnings.push(`${login} can't find an organisation called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`);
+    } else if (error.type === 'NOT_FOUND') {
+      orgs[org] = 'not-found';
     }
   }
 
@@ -466,5 +570,5 @@ export async function fetchPulls(
     }
   }
 
-  return { login, pulls, warnings, rateLimitRemaining };
+  return { login, pulls, warnings, orgs, rateLimitRemaining };
 }

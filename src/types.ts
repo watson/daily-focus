@@ -297,6 +297,12 @@ export interface PullRequest {
   baseRef: string;
   reviewDecision: ReviewDecision;
   checks: CheckState;
+  /**
+   * The checks that failed, by name. Derived from the individual check runs and
+   * statuses rather than the rollup's summary state, because the summary has been
+   * seen to say success while a required check was red.
+   */
+  failingChecks: string[];
   mergeable: MergeableState;
   autoMerge: boolean;
   /** Reviewers still requested, users by login and teams by slug. */
@@ -342,6 +348,8 @@ export interface CourtReason {
   login?: string;
   at?: string;
   activity?: 'review' | 'comment';
+  /** `ci-failing` only: which checks. */
+  checks?: string[];
 }
 
 /** A pull request plus everything the clock and the action log add to it. */

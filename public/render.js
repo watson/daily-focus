@@ -922,7 +922,7 @@ export function renderBoard(state, ui, handlers) {
   const now = new Date(state.now);
   const parts = [];
 
-  if (!board.enabled) {
+  if (!board || !board.enabled) {
     replace(
       container,
       el(
@@ -1129,8 +1129,12 @@ function describeReason(reason, now) {
   switch (reason.kind) {
     case 'changes-requested':
       return `changes requested${reason.login ? ` by @${reason.login}` : ''}${reason.at ? ` ${relativeTime(reason.at, now)}` : ''}`;
-    case 'ci-failing':
-      return 'CI is failing';
+    case 'ci-failing': {
+      const names = reason.checks ?? [];
+      if (names.length === 0) return 'CI is failing';
+      const shown = names.slice(0, 3).join(', ');
+      return `CI failing: ${shown}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`;
+    }
     case 'conflicts':
       return 'conflicts with the base branch';
     case 'activity':

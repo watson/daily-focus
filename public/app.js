@@ -358,7 +358,7 @@ function moveSelection(delta) {
 /** The selected brief item or board row. Rows carry `court`, items carry `kind`. */
 function selectedItem() {
   if (!state || ui.selectedId === null) return null;
-  const list = ui.view === 'board' ? state.board.rows : state.items;
+  const list = ui.view === 'board' ? (state.board?.rows ?? []) : state.items;
   return list.find((entry) => entry.id === ui.selectedId) ?? null;
 }
 

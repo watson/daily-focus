@@ -84,7 +84,7 @@ export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null): Ju
       .sort((a, b) => (a.at < b.at ? 1 : -1))[0];
     reasons.push({ kind: 'changes-requested', login: request?.login, at: request?.at });
   }
-  if (ciFailing) reasons.push({ kind: 'ci-failing' });
+  if (ciFailing) reasons.push({ kind: 'ci-failing', checks: [...pr.failingChecks] });
   if (conflicts) reasons.push({ kind: 'conflicts' });
 
   const theirMove = others !== null && (you === null || others.at > you);

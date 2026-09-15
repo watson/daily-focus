@@ -2,7 +2,7 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import type { Config } from './config.ts';
-import { GhMissingError, fetchPulls, ghToken, listGhAccounts, type AccountFetch } from './github.ts';
+import { GhMissingError, fetchPulls, ghToken, listGhAccounts, type AccountFetch, type OrgVisibility } from './github.ts';
 import { countBoard, resolveBoard } from './prs.ts';
 import type { Action, BoardAccount, BoardState, PullRequest, PullsFile } from './types.ts';
 
@@ -197,6 +197,7 @@ export class Board {
     const pulls: PullRequest[] = [];
     const warnings: string[] = [];
     const succeeded = new Set<string>();
+    const visibility = new Map<string, OrgVisibility[]>();
     let lowestRemaining: number | null = null;
 
     for (const identity of identities) {
@@ -206,6 +207,9 @@ export class Board {
         pulls.push(...result.pulls);
         warnings.push(...result.warnings);
         succeeded.add(result.login.toLowerCase());
+        for (const [org, seen] of Object.entries(result.orgs)) {
+          visibility.set(org, [...(visibility.get(org) ?? []), seen]);
+        }
         if (entry) entry.login = result.login;
         if (result.rateLimitRemaining !== null) {
           lowestRemaining = Math.min(lowestRemaining ?? Infinity, result.rateLimitRemaining);
@@ -223,6 +227,19 @@ export class Board {
     for (const pull of previous?.pulls ?? []) {
       const owner = this.#accounts.find((account) => account.login.toLowerCase() === pull.account.toLowerCase());
       if (owner && !owner.ok && !succeeded.has(pull.account.toLowerCase())) pulls.push(pull);
+    }
+
+    // A private organisation is invisible to an account that isn't a member, and
+    // with two accounts that is what one of them will always say. Only when every
+    // account that answered can't find it is the name itself the problem.
+    for (const [org, seen] of visibility) {
+      if (seen.length > 0 && seen.every((state) => state === 'not-found')) {
+        warnings.push(
+          seen.length === 1
+            ? `Can't find an organisation called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`
+            : `None of the polled accounts can find an organisation called ${org} — check DAILY_FOCUS_GITHUB_SCOPE.`,
+        );
+      }
     }
 
     for (const account of this.#accounts) {
@@ -275,7 +292,16 @@ export async function readPullsFile(path: string): Promise<PullsFile | null> {
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
       scope: Array.isArray(raw.scope) ? raw.scope : [],
       warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
-      pulls: raw.pulls,
+      // A file from an earlier build may predate a field. Fill in what a fresh
+      // fetch would have, so the first paint after an upgrade doesn't trip on it.
+      pulls: raw.pulls
+        .filter((pull): pull is PullRequest => typeof pull === 'object' && pull !== null && typeof pull.id === 'string')
+        .map((pull) => ({
+          ...pull,
+          failingChecks: Array.isArray(pull.failingChecks) ? pull.failingChecks : [],
+          reviews: Array.isArray(pull.reviews) ? pull.reviews : [],
+          requestedReviewers: Array.isArray(pull.requestedReviewers) ? pull.requestedReviewers : [],
+        })),
     };
   } catch {
     return null;
