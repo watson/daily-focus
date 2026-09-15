@@ -120,3 +120,16 @@ export function workingMsBetween(from: Date, to: Date, counts: DayTest = isWorki
   }
   return total;
 }
+
+/**
+ * The later of two ISO 8601 timestamps, tolerating either being absent.
+ *
+ * Plain string comparison is exact for timestamps in the same zone and format,
+ * which is what GitHub returns; the fallbacks are what make it usable on fields
+ * that may not be there at all.
+ */
+export function laterISO(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!b) return a ?? null;
+  if (!a) return b;
+  return b > a ? b : a;
+}

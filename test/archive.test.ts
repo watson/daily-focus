@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 
 import { archiveBrief, briefDateKey, computeObjectiveProgress, readArchiveIndex } from '../src/archive.ts';
 import type { ArchivedItem } from '../src/archive.ts';
-import type { Config } from '../src/config.ts';
+import { loadConfig, type Config } from '../src/config.ts';
 import type { Action, Brief } from '../src/types.ts';
 
 const dirs: string[] = [];
@@ -18,27 +18,7 @@ after(async () => {
 async function makeConfig(): Promise<Config> {
   const dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-archive-'));
   dirs.push(dataDir);
-  return {
-    dataDir,
-    itemsFile: resolve(dataDir, 'items.json'),
-    actionsFile: resolve(dataDir, 'actions.jsonl'),
-    focusFile: resolve(dataDir, 'focus.md'),
-    sourcesFile: resolve(dataDir, 'sources.md'),
-    promptFile: resolve(dataDir, 'prompt.md'),
-    schemaFile: resolve(dataDir, 'items.schema.json'),
-    archiveDir: resolve(dataDir, 'archive'),
-    sessionFile: resolve(dataDir, 'session.json'),
-    sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
-    sessionMinutes: 25,
-    awayAfterMinutes: 10,
-    port: 0,
-    host: '127.0.0.1',
-    workStartHour: 9,
-    workEndHour: 17,
-    minFreeWindowMinutes: 45,
-    staleAfterHours: 24,
-    agentDays: null,
-  };
+  return { ...loadConfig({ DAILY_FOCUS_DATA: dataDir }), port: 0 };
 }
 
 function brief(date: string, generatedAt: string, items: Brief['items'] = []): Brief {

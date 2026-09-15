@@ -15,6 +15,7 @@ import {
   localDateKey,
   parseDate,
   relativeDay,
+  relativeTime,
   renderMarkdown,
 } from './format.js';
 
@@ -473,7 +474,8 @@ function restoreNoteField(container, ui, before) {
   input.setSelectionRange(before.start, before.end);
 }
 
-function section(title, items, state, ui, handlers, source) {
+/** A titled list. `row` renders one entry: a brief item by default, a pull request on the board. */
+function section(title, items, state, ui, handlers, source, row = renderItem) {
   return el(
     'section',
     { class: 'section' },
@@ -493,12 +495,12 @@ function section(title, items, state, ui, handlers, source) {
     el(
       'ul',
       { class: 'list' },
-      items.map((item) => renderItem(item, state, ui, handlers)),
+      items.map((item) => row(item, state, ui, handlers)),
     ),
   );
 }
 
-function drawer(title, items, state, ui, handlers) {
+function drawer(title, items, state, ui, handlers, row = renderItem) {
   return el(
     'details',
     { class: 'drawer' },
@@ -506,7 +508,7 @@ function drawer(title, items, state, ui, handlers) {
     el(
       'ul',
       { class: 'list' },
-      items.map((item) => renderItem(item, state, ui, handlers)),
+      items.map((item) => row(item, state, ui, handlers)),
     ),
   );
 }
@@ -726,7 +728,12 @@ function renderActions(item, ui, handlers) {
   return el('div', { class: 'item__actions' }, buttons);
 }
 
-function renderSnoozeMenu(item, now, handlers) {
+/**
+ * The snooze presets. `indefinite` offers "until the agent decides", which only
+ * means something on the brief — the board has no agent deciding anything, so a
+ * parked pull request always carries a date or is parked outright.
+ */
+function renderSnoozeMenu(item, now, handlers, { indefinite = true } = {}) {
   const presets = [
     ['Tomorrow', 1],
     ['In 3 days', 3],
@@ -749,15 +756,17 @@ function renderSnoozeMenu(item, now, handlers) {
         label,
       ),
     ),
-    el(
-      'button',
-      {
-        type: 'button',
-        role: 'menuitem',
-        onclick: () => handlers.onAction(item.id, 'snooze', {}),
-      },
-      'Until the agent decides',
-    ),
+    indefinite
+      ? el(
+          'button',
+          {
+            type: 'button',
+            role: 'menuitem',
+            onclick: () => handlers.onAction(item.id, 'snooze', {}),
+          },
+          'Until the agent decides',
+        )
+      : null,
     el(
       'div',
       { class: 'menu__date' },
@@ -878,4 +887,292 @@ function nowRow(now) {
     el('span', { class: 'agenda__now-label' }, formatTime(now.toISOString())),
     el('span', { class: 'agenda__now-line' }),
   );
+}
+
+/* ---------- tabs ---------- */
+
+/**
+ * Two views, one page. The badge is the one number the board pushes into the
+ * Today view: how many pull requests are waiting on you, right now.
+ */
+export function renderTabs(state, ui) {
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.setAttribute('aria-selected', String(tab.dataset.view === ui.view));
+  }
+  const badge = document.getElementById('board-badge');
+  const waiting = state.board?.enabled ? state.board.counts.you : 0;
+  badge.hidden = waiting === 0;
+  badge.textContent = String(waiting);
+  badge.setAttribute('aria-label', `${waiting} waiting on you`);
+}
+
+/* ---------- the pull request board ---------- */
+
+const COURT_TITLE = {
+  you: 'Waiting on you',
+  ready: 'Ready to merge',
+  reviewers: 'Waiting on reviewers',
+  draft: 'Drafts',
+};
+
+const COURT_ORDER = ['you', 'ready', 'reviewers', 'draft'];
+
+export function renderBoard(state, ui, handlers) {
+  const container = document.getElementById('board');
+  const board = state.board;
+  const now = new Date(state.now);
+  const parts = [];
+
+  if (!board || !board.enabled) {
+    replace(
+      container,
+      el(
+        'p',
+        { class: 'empty' },
+        'The pull request board is switched off (DAILY_FOCUS_GITHUB=off).',
+      ),
+    );
+    return;
+  }
+
+  parts.push(boardStatus(board, now, handlers));
+
+  if (board.reason) parts.push(banner('critical', '!', board.reason));
+  for (const warning of board.warnings) parts.push(banner('warning', '!', warning));
+
+  const open = board.rows.filter((row) => row.status === 'open');
+  for (const court of COURT_ORDER) {
+    const rows = open.filter((row) => row.court === court);
+    if (rows.length === 0) continue;
+    parts.push(section(COURT_TITLE[court], rows, state, ui, handlers, null, renderPullRow));
+  }
+
+  if (open.length === 0 && !board.reason) {
+    parts.push(
+      el(
+        'p',
+        { class: 'empty' },
+        board.fetchedAt === null
+          ? board.fetching
+            ? 'Asking GitHub…'
+            : 'Nothing fetched yet.'
+          : board.scope.length > 0
+            ? `No open pull requests in ${board.scope.map((q) => q.replace(/^\w+:/, '')).join(', ')}.`
+            : 'No open pull requests.',
+      ),
+    );
+  }
+
+  const parked = board.rows.filter((row) => row.status === 'snoozed');
+  if (parked.length > 0) {
+    parts.push(drawer(`Parked (${parked.length})`, parked, state, ui, handlers, renderPullRow));
+  }
+
+  const note = captureNoteField(container);
+  replace(container, parts);
+  restoreNoteField(container, ui, note);
+}
+
+/** "as of 10:42 · polling alice, bob every 5 min", and the button that doesn't wait. */
+function boardStatus(board, now, handlers) {
+  const polled = board.accounts.filter((account) => account.ok).map((account) => account.login);
+  const bits = [];
+  if (board.fetching) bits.push('refreshing…');
+  else if (board.fetchedAt) bits.push(`as of ${formatTime(board.fetchedAt)}`);
+  if (polled.length > 0) {
+    bits.push(`polling ${polled.join(', ')} every ${board.pollMinutes} min`);
+  }
+  if (board.fetchedAt && !board.fetching) {
+    const ageMinutes = Math.round((now.getTime() - new Date(board.fetchedAt).getTime()) / 60_000);
+    // Older than two polls means the poller has been failing or paused; say so
+    // rather than let an "as of" from this morning pass for current.
+    if (ageMinutes > board.pollMinutes * 2) bits.push(`${relativeTime(board.fetchedAt, now)}`);
+  }
+
+  return el(
+    'div',
+    { class: 'board__status' },
+    el('span', { class: 'board__status-text' }, bits.join(' · ') || 'Not polled yet'),
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'button',
+        disabled: board.fetching,
+        title: 'Ask GitHub now (r)',
+        onclick: () => handlers.refreshBoard(),
+      },
+      board.fetching ? 'Refreshing…' : 'Refresh',
+    ),
+  );
+}
+
+function renderPullRow(row, state, ui, handlers) {
+  const now = new Date(state.now);
+  const selected = ui.selectedId === row.id;
+
+  const node = el(
+    'li',
+    {
+      class: 'item item--pull',
+      // Its own scheme: the same PR can be a brief row too, and two elements
+      // with one id is invalid HTML and an ambiguous fragment target.
+      id: `pull-${cssId(row.id)}`,
+      dataset: {
+        id: row.id,
+        status: row.status,
+        court: row.court,
+        selected: String(selected),
+        pending: String(ui.pending.has(row.id)),
+      },
+      onclick: (event) => {
+        if (event.target.closest('a, button, input, summary')) return;
+        handlers.onSelect(row.id);
+      },
+    },
+    el(
+      'span',
+      { class: 'item__mark' },
+      el('span', { class: 'item__dot', style: `background:${sourceColor('github')}`, 'aria-hidden': 'true' }),
+    ),
+    el(
+      'div',
+      { class: 'item__body' },
+      el(
+        'p',
+        { class: 'item__title' },
+        el(
+          'a',
+          { href: row.url, target: '_blank', rel: 'noopener noreferrer' },
+          el('span', { class: 'item__ref' }, `${row.repo}#${row.number}`),
+          ' ',
+          row.title,
+        ),
+      ),
+      renderPullMeta(row, now),
+      row.court === 'you' && row.reasons.length > 0
+        ? el('p', { class: 'item__reason' }, row.reasons.map((reason) => describeReason(reason, row, now)).join(' · '))
+        : null,
+      renderNotes(row),
+      ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
+    ),
+    renderPullActions(row, ui, handlers),
+    ui.menuFor === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false }) : null,
+  );
+  return node;
+}
+
+function renderPullMeta(row, now) {
+  const pills = [];
+
+  // The server's reading of the reviews, so the pill and the bucket can't disagree.
+  if (row.isDraft) pills.push(el('span', { class: 'pill pill--tag' }, 'draft'));
+  if (row.decision === 'APPROVED') pills.push(el('span', { class: 'pill pill--good' }, 'approved'));
+  if (row.decision === 'CHANGES_REQUESTED') pills.push(el('span', { class: 'pill pill--overdue' }, 'changes requested'));
+  if (row.checks === 'failure') pills.push(el('span', { class: 'pill pill--overdue' }, 'CI failing'));
+  else if (row.checks === 'pending') pills.push(el('span', { class: 'pill' }, 'checks running'));
+  if (row.mergeable === 'CONFLICTING') pills.push(el('span', { class: 'pill pill--overdue' }, 'conflicts'));
+  if (row.autoMerge) pills.push(el('span', { class: 'pill pill--good' }, 'auto-merge on'));
+  if (row.nudge) pills.push(el('span', { class: 'pill pill--age' }, 'time to ask'));
+  if (row.stale) pills.push(el('span', { class: 'pill pill--age' }, 'untouched for weeks'));
+  if (row.status === 'snoozed') {
+    pills.push(
+      el('span', { class: 'pill' }, row.snoozedUntil ? `parked until ${relativeDay(row.snoozedUntil, now)}` : 'parked'),
+    );
+  }
+
+  const touched = row.lastActivityByOthers;
+  const you = row.lastActivityByYou;
+  let lastTouch;
+  if (touched && (!you || touched.at > you)) {
+    lastTouch = `@${touched.login} ${touched.kind === 'review' ? 'reviewed' : 'commented'} ${relativeTime(touched.at, now)}`;
+  } else if (you) {
+    lastTouch = `you, ${relativeTime(you, now)}`;
+  }
+
+  const waiting =
+    row.court === 'reviewers' && row.requestedReviewers.length > 0
+      ? `asked ${row.requestedReviewers.map((r) => `@${r}`).join(', ')}`
+      : null;
+
+  return el(
+    'div',
+    { class: 'item__meta' },
+    el('span', { class: 'item__source' }, `opened ${relativeTime(row.createdAt, now)}`),
+    lastTouch ? el('span', {}, `· last touched by ${lastTouch}`) : null,
+    waiting ? el('span', {}, `· ${waiting}`) : null,
+    pills,
+  );
+}
+
+/** One reason it's your move, in words. The server sends facts; the times are relative here. */
+function describeReason(reason, row, now) {
+  switch (reason.kind) {
+    case 'changes-requested':
+      return `changes requested${reason.login ? ` by @${reason.login}` : ''}${reason.at ? ` ${relativeTime(reason.at, now)}` : ''}`;
+    case 'ci-failing': {
+      const names = row.failingChecks ?? [];
+      if (names.length === 0) return 'CI is failing';
+      const shown = names.slice(0, 3).join(', ');
+      return `CI failing: ${shown}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`;
+    }
+    case 'conflicts':
+      return 'conflicts with the base branch';
+    case 'activity':
+      return `@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${relativeTime(reason.at, now)}`;
+    default:
+      return '';
+  }
+}
+
+function renderPullActions(row, ui, handlers) {
+  const buttons = [];
+  const act = (id, action, extra) => () => handlers.onAction(id, action, extra);
+
+  buttons.push(
+    el(
+      'a',
+      { class: 'button', href: row.url, target: '_blank', rel: 'noopener noreferrer', title: 'Open on GitHub' },
+      'Open',
+    ),
+  );
+
+  if (row.status === 'open') {
+    // Nudging happens on Slack, where the board can't see it. This is how it's told:
+    // a note, so the agent reads it too, and the nudge timer starts over.
+    if (row.court === 'reviewers') {
+      buttons.push(
+        el(
+          'button',
+          { type: 'button', class: 'button', title: 'Record that you asked for a review', onclick: () => handlers.nudge(row.id) },
+          'Nudged',
+        ),
+      );
+    }
+    buttons.push(
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'button',
+          title: 'Park this until a date',
+          'aria-expanded': String(ui.menuFor === row.id),
+          onclick: () => handlers.toggleMenu(row.id),
+        },
+        'Park',
+      ),
+    );
+  } else {
+    buttons.push(el('button', { type: 'button', class: 'button', onclick: () => handlers.unpark(row.id) }, 'Unpark'));
+  }
+
+  buttons.push(
+    el(
+      'button',
+      { type: 'button', class: 'button', title: 'Leave a note', onclick: () => handlers.toggleNote(row.id) },
+      'Note',
+    ),
+  );
+
+  return el('div', { class: 'item__actions' }, buttons);
 }

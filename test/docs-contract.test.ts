@@ -126,3 +126,27 @@ test('the required item fields are called out as required in both documents', ()
     );
   }
 });
+
+/**
+ * Configuration is documented twice — the README table and `.env.example` — and read
+ * once, in `src/config.ts`. A knob in any one of the three but not the others is a
+ * setting nobody can find or one nobody can set, so the three lists have to match.
+ */
+test('the README, .env.example and config.ts name the same variables', async () => {
+  const names = (text: string) => new Set([...text.matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
+
+  // The whole README, not a slice between headings: a check anchored on prose is
+  // a check about formatting, and it goes quiet the day a heading is reworded.
+  const documented = names(await readFile(resolve(root, 'README.md'), 'utf8'));
+  const exampled = names(await readFile(resolve(root, '.env.example'), 'utf8'));
+  const read = names(await readFile(resolve(root, 'src/config.ts'), 'utf8'));
+
+  assert.ok(read.size >= 10, 'config.ts reads fewer variables than expected; did the naming change?');
+  for (const name of read) {
+    assert.ok(documented.has(name), `README never mentions ${name}`);
+    assert.ok(exampled.has(name), `.env.example never mentions ${name}`);
+  }
+  for (const name of [...documented, ...exampled]) {
+    assert.ok(read.has(name), `${name} is documented but config.ts never reads it`);
+  }
+});

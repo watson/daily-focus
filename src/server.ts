@@ -5,12 +5,14 @@ import { basename, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadConfig } from './config.ts';
+import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
+import { Board } from './board.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
-import type { Action, ActionType } from './types.ts';
+import type { Action, ActionType, DashboardState } from './types.ts';
 
 const PUBLIC_DIR = resolve(fileURLToPath(new URL('../public', import.meta.url)));
 
@@ -56,6 +58,15 @@ function sendJSON(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
+/**
+ * Reply with a full dashboard state. Typed, so the reply an endpoint builds has to
+ * carry every field the client will render: a store state handed back without the
+ * board once compiled fine and made every save look failed.
+ */
+function sendState(res: ServerResponse, state: DashboardState): void {
+  sendJSON(res, 200, state);
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -97,8 +108,13 @@ export interface StartedServer {
   close(): Promise<void>;
 }
 
-export async function startServer(): Promise<StartedServer> {
-  const config = loadConfig();
+/**
+ * Start listening. `env` is the environment to configure from; the default reads
+ * the real one over the repo's `.env`, and a test passes its own so a developer's
+ * private file can't leak into it.
+ */
+export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServer> {
+  const config = env ? loadConfig(env) : loadConfig();
   const store = new Store(config);
   await store.ensureDataDir();
 
@@ -107,16 +123,29 @@ export async function startServer(): Promise<StartedServer> {
 
   let assetVersion = await computeAssetVersion(PUBLIC_DIR);
 
-  /** State plus the asset fingerprint the client watches for self-reload. */
-  async function buildState() {
-    return { ...(await store.getState()), assetVersion };
+  // The board polls only while a tab is open, so it's told the audience below,
+  // and it broadcasts on its own whenever a fetch starts or lands.
+  const board = new Board(config, () => void broadcast());
+
+  /**
+   * State plus the two things the store doesn't own: the asset fingerprint the
+   * client watches for self-reload, and the board, which is fetched rather than
+   * read but joins the same action log.
+   */
+  async function buildState(): Promise<DashboardState> {
+    // One read of the log, folded twice: the brief and the board must agree.
+    const actions = await store.readActions();
+    const now = new Date();
+    const state = await store.getState(now, actions);
+    return { ...state, board: board.view(actions, now), assetVersion };
   }
 
-  async function broadcast(): Promise<void> {
+  /** Push state to every open tab. A caller that just built one can hand it over. */
+  async function broadcast(prebuilt?: DashboardState): Promise<void> {
     if (subscribers.size === 0) return;
     let payload: string;
     try {
-      payload = JSON.stringify(await buildState());
+      payload = JSON.stringify(prebuilt ?? (await buildState()));
     } catch (err) {
       console.error(`[daily-focus] could not build state: ${(err as Error).message}`);
       return;
@@ -136,9 +165,17 @@ export async function startServer(): Promise<StartedServer> {
       // snapshot the progress metric reads from.
       void store.archiveCurrentBrief().then(() => broadcast());
     },
-    // The timer re-stamps its own file every poll; that's this process talking to
-    // itself, and it already broadcasts when something actually changed.
-    { ignore: [basename(config.sessionFile), `${basename(config.sessionFile)}.tmp`] },
+    // The timer re-stamps its own file every poll and the board rewrites prs.json
+    // every fetch; that's this process talking to itself, and both already
+    // broadcast when something actually changed.
+    {
+      ignore: [
+        basename(config.sessionFile),
+        basename(tempPathFor(config.sessionFile)),
+        basename(config.pullsFile),
+        basename(tempPathFor(config.pullsFile)),
+      ],
+    },
   );
 
   // The agenda's "now" marker and free windows drift as the day passes, so refresh
@@ -199,6 +236,13 @@ export async function startServer(): Promise<StartedServer> {
   // A session may already be running from before a restart.
   scheduleSessionTick((await buildState()).session.active?.endsAt ?? null);
 
+  // Reads the last fetch off disk, then fetches once in the background so the
+  // first tab to open has something to show. Never awaited: GitHub being slow
+  // must not hold up the dashboard listening.
+  void board.start().catch((err: unknown) => {
+    console.error(`[daily-focus] pull request board failed to start: ${(err as Error).message}`);
+  });
+
   const heartbeat = setInterval(() => {
     void broadcast();
   }, 60_000);
@@ -222,7 +266,7 @@ export async function startServer(): Promise<StartedServer> {
     const path = url.pathname;
 
     if (path === '/api/state' && req.method === 'GET') {
-      sendJSON(res, 200, await buildState());
+      sendState(res, await buildState());
       return;
     }
 
@@ -236,13 +280,23 @@ export async function startServer(): Promise<StartedServer> {
       });
       res.write(`event: state\ndata: ${JSON.stringify(await buildState())}\n\n`);
       subscribers.add(res);
+      board.setAudience(subscribers.size);
 
       const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
       keepAlive.unref();
       req.on('close', () => {
         clearInterval(keepAlive);
         subscribers.delete(res);
+        board.setAudience(subscribers.size);
       });
+      return;
+    }
+
+    if (path === '/api/board/refresh' && req.method === 'POST') {
+      // Waits for the fetch so the response carries the fresh board; a fetch
+      // already in flight is joined rather than doubled.
+      await board.refresh();
+      sendState(res, await buildState());
       return;
     }
 
@@ -283,9 +337,11 @@ export async function startServer(): Promise<StartedServer> {
       if (action === 'note' && typeof text === 'string') record.text = text.trim();
 
       await store.appendAction(record);
-      const state = await store.getState();
-      sendJSON(res, 200, state);
-      void broadcast();
+      // The full state, board included: the client swaps its whole state for this
+      // reply, so anything missing here is a field the next render trips over.
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
       return;
     }
 
@@ -336,9 +392,9 @@ export async function startServer(): Promise<StartedServer> {
       }
 
       const state = await buildState();
-      sendJSON(res, 200, state);
+      sendState(res, state);
       scheduleSessionTick(state.session.active?.endsAt ?? null);
-      void broadcast();
+      void broadcast(state);
       return;
     }
 
@@ -373,6 +429,7 @@ export async function startServer(): Promise<StartedServer> {
       clearInterval(heartbeat);
       clearInterval(presencePoll);
       if (sessionTick) clearTimeout(sessionTick);
+      board.stop();
       stopWatching();
       stopWatchingAssets();
       for (const res of subscribers) res.end();

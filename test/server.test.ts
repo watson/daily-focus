@@ -14,6 +14,8 @@ before(async () => {
   process.env.DAILY_FOCUS_DATA = dataDir;
   process.env.DAILY_FOCUS_PORT = '0'; // any free port
   process.env.DAILY_FOCUS_HOST = '127.0.0.1';
+  // Never let a test reach for gh or the network.
+  process.env.DAILY_FOCUS_GITHUB = 'off';
 
   await writeFile(
     join(dataDir, 'items.json'),
@@ -24,7 +26,8 @@ before(async () => {
     }),
   );
 
-  server = await startServer();
+  // The process environment only, never the developer's private .env.
+  server = await startServer(process.env);
 });
 
 after(async () => {
@@ -59,6 +62,11 @@ test('POST /api/actions records an action and returns fresh state', async () => 
   const state = await json(res);
   assert.equal(state.items[0].status, 'done');
   assert.equal(state.stats.completedToday, 1);
+  // The client replaces its whole state with this reply, so it has to be the
+  // complete one. A reply without the board once made every save look failed.
+  assert.ok(state.board, 'the action reply carries the board');
+  assert.equal(state.board.enabled, false);
+  assert.ok(state.assetVersion, 'and the asset fingerprint');
 });
 
 test('POST /api/actions rejects a bad payload', async () => {

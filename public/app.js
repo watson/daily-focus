@@ -1,20 +1,25 @@
 /** Wiring: state, optimistic actions, keyboard, theme. */
 
-import { fetchState, postAction, postSession, subscribe } from './api.js';
+import { fetchState, postAction, postBoardRefresh, postSession, subscribe } from './api.js';
 import { localDateKey } from './format.js';
 import {
   clock,
   renderAgenda,
   renderBanners,
+  renderBoard,
   renderHeadline,
   renderHeader,
   renderObjective,
   renderTimer,
   renderSections,
   renderStats,
+  renderTabs,
 } from './render.js';
 
 let state = null;
+
+/** Which view the page is on. Persisted: a pinned tab should come back where it was. */
+const VIEW_KEY = 'daily-focus:view';
 
 /**
  * Which self-closed session has already been acknowledged, by its end time.
@@ -38,10 +43,29 @@ const ui = {
   activeSessionId: null,
   sessionOverrun: false,
   unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
+  view: localStorage.getItem(VIEW_KEY) === 'board' ? 'board' : 'today',
 };
 
 /** Last completed action, for the `u` shortcut. */
 let lastAction = null;
+
+/**
+ * What a brief item was before the board parked the same id.
+ *
+ * The log is shared and last-action-wins, so parking a pull request the brief had
+ * already marked done turns that done into a snooze. Unparking it with a plain
+ * reopen would then leave the brief item open — a finished task resurrected by a
+ * gesture on another tab. So unpark restores what the park replaced. Kept in
+ * memory only: after a reload the plain reopen is the best that can be done.
+ */
+const parkedFrom = new Map();
+
+/** The action that takes a park back: the status it replaced, or a plain reopen. */
+function unpark(id) {
+  const restore = parkedFrom.get(id);
+  parkedFrom.delete(id);
+  return applyAction(id, restore ?? 'reopen');
+}
 
 /**
  * Close the note form and drop whatever was half-written in it.
@@ -90,6 +114,11 @@ const handlers = {
     localStorage.setItem(UNATTENDED_SEEN_KEY, endedAt);
     render();
   },
+  // A nudge on Slack is invisible to GitHub, so it's recorded as a note: the agent
+  // reads it as free text, and the board's nudge timer starts over from it.
+  nudge: (id) => void applyAction(id, 'note', { text: 'Nudged reviewers' }),
+  unpark: (id) => void unpark(id),
+  refreshBoard: () => void refreshBoard(),
 };
 
 function render() {
@@ -98,14 +127,83 @@ function render() {
   ui.sessionOverrun = state.session?.active?.overrun === true;
   // Lets the stylesheet recede every row except the one being worked on.
   document.body.dataset.sessionActive = String(ui.activeSessionId !== null);
+  document.body.dataset.view = ui.view;
+  renderTabs(state, ui);
   renderTimer(state, ui, handlers);
   renderHeader(state);
   renderBanners(state, ui.connectionError);
-  renderObjective(state);
-  renderStats(state);
-  renderHeadline(state);
-  renderSections(state, ui, handlers);
-  renderAgenda(state);
+  // Only the showing view is built. setView renders again after switching, so the
+  // other one is rebuilt the moment it's looked at, and never for a hidden panel.
+  if (ui.view === 'board') {
+    renderBoard(state, ui, handlers);
+  } else {
+    renderObjective(state);
+    renderStats(state);
+    renderHeadline(state);
+    renderSections(state, ui, handlers);
+    renderAgenda(state);
+  }
+}
+
+/* ---------- views ---------- */
+
+/** Which panel shows is decided by `body[data-view]` in the stylesheet, and nowhere else. */
+function setView(view) {
+  if (ui.view === view) return;
+  ui.view = view;
+  localStorage.setItem(VIEW_KEY, view);
+  // The selection belongs to the list it was made in.
+  ui.selectedId = null;
+  ui.menuFor = null;
+  discardNote();
+  render();
+}
+
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => setView(tab.dataset.view));
+}
+// Before the first state arrives, so the right panel is the one that's empty.
+document.body.dataset.view = ui.view;
+
+/**
+ * Ask GitHub now rather than at the next poll.
+ *
+ * The server answers once the fetch has landed, so this can take a few seconds;
+ * the board says "refreshing" in the meantime because the fetch start is
+ * broadcast over SSE like any other change.
+ */
+async function refreshBoard() {
+  // A held key repeats at keyboard rate; one fetch in flight is all there is to want.
+  if (!state?.board?.enabled || state.board.fetching) return;
+  try {
+    adoptState(await postBoardRefresh());
+  } catch (err) {
+    showToast(`Could not refresh: ${err.message}`);
+  }
+}
+
+/**
+ * Take a state the server built on its own clock, not in reply to a click.
+ *
+ * Such a state may predate an action still in flight, so anything pending keeps
+ * its optimistic status until that action's own reply lands. The SSE push and the
+ * board refresh both arrive this way; a reply to an action does not, since it was
+ * built after the action was appended.
+ */
+function adoptState(next) {
+  for (const id of ui.pending) {
+    const optimistic = state?.items.find((item) => item.id === id);
+    const incoming = next.items.find((item) => item.id === id);
+    if (optimistic && incoming) Object.assign(incoming, { status: optimistic.status });
+    const optimisticRow = state?.board?.rows.find((row) => row.id === id);
+    const incomingRow = next.board?.rows.find((row) => row.id === id);
+    if (optimisticRow && incomingRow) Object.assign(incomingRow, { status: optimisticRow.status });
+  }
+  state = next;
+  ui.connectionError = null;
+  render();
+  startLocalTick();
+  checkAssetVersion(next.assetVersion);
 }
 
 /* ---------- actions ---------- */
@@ -131,10 +229,22 @@ async function applyAction(id, action, extra = {}) {
   ui.pending.add(id);
 
   const item = state?.items.find((candidate) => candidate.id === id);
+  // The board only ever parks and unparks. The same id may be a brief item too,
+  // and the log is shared, so a park from the board is a snooze on that item as
+  // well — deliberately, so the agent leaves the PR alone until the date. What
+  // the park replaces is remembered so unparking can put it back.
+  const row = state?.board?.rows.find((candidate) => candidate.id === id);
+  if (row && action === 'snooze' && item && (item.status === 'done' || item.status === 'dismissed')) {
+    parkedFrom.set(id, item.status === 'done' ? 'done' : 'dismiss');
+  }
   if (item && action !== 'note') {
     item.status = action === 'reopen' ? 'open' : action === 'dismiss' ? 'dismissed' : action === 'done' ? 'done' : 'snoozed';
     item.statusAt = new Date().toISOString();
     if (action === 'snooze') item.snoozedUntil = extra.until;
+  }
+  if (row && action !== 'note') {
+    row.status = action === 'snooze' ? 'snoozed' : 'open';
+    row.snoozedUntil = action === 'snooze' ? extra.until : undefined;
   }
   render();
 
@@ -143,11 +253,18 @@ async function applyAction(id, action, extra = {}) {
     ui.pending.delete(id);
     render();
 
+    // A note is append-only and can't be taken back, and "undoing" it with a
+    // reopen would rewrite the status of whatever else shares the id. So notes
+    // get no Undo and don't become the target of `u`.
+    if (action === 'note') {
+      showToast(PAST_TENSE[action]);
+      return;
+    }
     lastAction = { id, action };
     if (action === 'reopen') {
       showToast(PAST_TENSE[action]);
     } else {
-      showToast(PAST_TENSE[action], () => void applyAction(id, 'reopen'));
+      showToast(PAST_TENSE[action], () => void unpark(id));
     }
   } catch (err) {
     ui.pending.delete(id);
@@ -281,9 +398,9 @@ function hideToast() {
 
 /* ---------- keyboard ---------- */
 
-/** Ids of the items currently on screen, in visual order. */
+/** Ids of the items currently on screen, in visual order. Only the showing view counts. */
 function visibleItemIds() {
-  return [...document.querySelectorAll('.item')].map((node) => node.dataset.id);
+  return [...document.querySelectorAll(`#${ui.view} .item`)].map((node) => node.dataset.id);
 }
 
 function moveSelection(delta) {
@@ -293,13 +410,18 @@ function moveSelection(delta) {
   const next = current === -1 ? (delta > 0 ? 0 : ids.length - 1) : current + delta;
   ui.selectedId = ids[Math.max(0, Math.min(ids.length - 1, next))];
   render();
+  // Scoped to the showing view: the same id can be a row in both lists, and the
+  // hidden one comes first in the document.
   document
-    .querySelector('.item[data-selected="true"]')
+    .querySelector(`#${ui.view} .item[data-selected="true"]`)
     ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
+/** The selected brief item or board row. Rows carry `court`, items carry `kind`. */
 function selectedItem() {
-  return state?.items.find((item) => item.id === ui.selectedId) ?? null;
+  if (!state || ui.selectedId === null) return null;
+  const list = ui.view === 'board' ? (state.board?.rows ?? []) : state.items;
+  return list.find((entry) => entry.id === ui.selectedId) ?? null;
 }
 
 function tomorrow() {
@@ -336,8 +458,25 @@ document.addEventListener('keydown', (event) => {
       moveSelection(-1);
       return;
     case 'f':
+      // Focus mode only affects Today; toggling it from the board would change
+      // nothing on screen and arm a collapsed view for the next visit.
+      if (ui.view !== 'today') return;
       event.preventDefault();
       setFocusMode(document.body.dataset.focusMode !== 'true');
+      return;
+    case '1':
+      event.preventDefault();
+      setView('today');
+      return;
+    case '2':
+      event.preventDefault();
+      setView('board');
+      return;
+    case 'r':
+      if (ui.view === 'board') {
+        event.preventDefault();
+        void refreshBoard();
+      }
       return;
     case '?':
       event.preventDefault();
@@ -346,18 +485,20 @@ document.addEventListener('keydown', (event) => {
     case 'u':
       if (lastAction && lastAction.action !== 'reopen') {
         event.preventDefault();
-        void applyAction(lastAction.id, 'reopen');
+        void unpark(lastAction.id);
       }
       return;
   }
 
   const item = selectedItem();
   if (!item) return;
+  // A pull request can be parked and annotated, but not done, dismissed or timed.
+  const pull = ui.view === 'board';
 
   switch (event.key) {
     case 'e':
       event.preventDefault();
-      if (item.status === 'open') void applyAction(item.id, 'done');
+      if (!pull && item.status === 'open') void applyAction(item.id, 'done');
       break;
     case 's':
       event.preventDefault();
@@ -365,7 +506,7 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'x':
       event.preventDefault();
-      if (item.status === 'open') void applyAction(item.id, 'dismiss');
+      if (!pull && item.status === 'open') void applyAction(item.id, 'dismiss');
       break;
     case 'n':
       event.preventDefault();
@@ -373,6 +514,7 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'p':
       event.preventDefault();
+      if (pull) break;
       if (ui.activeSessionId === item.id) handlers.stopSession();
       else if (item.status === 'open' && item.kind === 'task') handlers.startSession(item.id);
       break;
@@ -491,20 +633,9 @@ await refresh();
 startLocalTick();
 
 subscribe(
-  (next) => {
-    // A server push is authoritative, but must not yank a row out from under an
-    // in-flight click, so anything still pending keeps its optimistic status.
-    for (const id of ui.pending) {
-      const optimistic = state?.items.find((item) => item.id === id);
-      const incoming = next.items.find((item) => item.id === id);
-      if (optimistic && incoming) Object.assign(incoming, { status: optimistic.status });
-    }
-    state = next;
-    ui.connectionError = null;
-    render();
-    startLocalTick();
-    checkAssetVersion(next.assetVersion);
-  },
+  // A server push is authoritative, but must not yank a row out from under an
+  // in-flight click; adoptState keeps anything pending at its optimistic status.
+  (next) => adoptState(next),
   (err) => {
     ui.connectionError = err;
     render();

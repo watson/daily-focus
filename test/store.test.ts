@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 
 import { Store } from '../src/store.ts';
-import type { Config } from '../src/config.ts';
+import { loadConfig, type Config } from '../src/config.ts';
 import type { Brief } from '../src/types.ts';
 
 const dirs: string[] = [];
@@ -17,28 +17,7 @@ after(async () => {
 async function makeStore(overrides: Partial<Config> = {}): Promise<Store> {
   const dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-'));
   dirs.push(dataDir);
-  const config: Config = {
-    dataDir,
-    itemsFile: resolve(dataDir, 'items.json'),
-    actionsFile: resolve(dataDir, 'actions.jsonl'),
-    focusFile: resolve(dataDir, 'focus.md'),
-    sourcesFile: resolve(dataDir, 'sources.md'),
-    promptFile: resolve(dataDir, 'prompt.md'),
-    schemaFile: resolve(dataDir, 'items.schema.json'),
-    archiveDir: resolve(dataDir, 'archive'),
-    sessionFile: resolve(dataDir, 'session.json'),
-    sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
-    sessionMinutes: 25,
-    awayAfterMinutes: 10,
-    port: 0,
-    host: '127.0.0.1',
-    workStartHour: 9,
-    workEndHour: 17,
-    minFreeWindowMinutes: 45,
-    staleAfterHours: 24,
-    agentDays: null,
-    ...overrides,
-  };
+  const config: Config = { ...loadConfig({ DAILY_FOCUS_DATA: dataDir }), port: 0, ...overrides };
   return new Store(config);
 }
 
