@@ -946,11 +946,12 @@ const COURT_TITLE = {
   ready: 'Ready to merge',
   reviewers: 'Waiting on reviewers',
   gate: 'Waiting on merge gate',
+  blocked: 'Merge blocked by GitHub',
   checks: 'Waiting on checks',
   draft: 'Drafts',
 };
 
-const COURT_ORDER = ['you', 'ready', 'reviewers', 'gate', 'checks', 'draft'];
+const COURT_ORDER = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'draft'];
 
 /** The courts whose rows carry a reason worth printing under the title. */
 const COURTS_WITH_REASONS = new Set(['you', 'gate', 'checks']);
@@ -1112,10 +1113,12 @@ function renderPullMeta(row, now) {
   if (row.mergeable === 'CONFLICTING') pills.push(el('span', { class: 'pill pill--overdue' }, 'conflicts'));
   if (row.autoMerge) pills.push(el('span', { class: 'pill pill--good' }, 'auto-merge on'));
   if (row.nudge) pills.push(el('span', { class: 'pill pill--age' }, 'time to ask'));
-  // How long the merge has been refused, which the section header and the reason
-  // both leave out. A span rather than a point in time: "last touched" is about
-  // people, and the thing holding these two courts up is not a person.
-  if (row.court === 'gate' || row.court === 'checks') {
+  // How long the merge has been refused, which the section header leaves out.
+  // A span rather than a point in time: "last touched" is about people, and the
+  // thing holding these courts up is not a person.
+  if (row.court === 'blocked') {
+    pills.push(el('span', { class: 'pill' }, `blocked ${waitedFor(row.since, now)}`));
+  } else if (row.court === 'gate' || row.court === 'checks') {
     pills.push(el('span', { class: 'pill' }, `waiting ${waitedFor(row.since, now)}`));
   }
   if (row.stale) pills.push(el('span', { class: 'pill pill--age' }, 'untouched for weeks'));

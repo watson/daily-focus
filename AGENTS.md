@@ -293,8 +293,8 @@ Three modules, split so the part that needs a network is small:
   rules are in its comments and in the README; the tests in `test/prs.test.ts` are the
   spec. The order the questions are asked in is load-bearing and written out above
   `judge`: a draft, then anything only the author can fix, then a review GitHub itself
-  still requires, then a configured gate, then any other blocked or unstable merge
-  state, then ready, then waiting on reviewers.
+  still requires, then a configured gate, then an unexplained blocked merge, then an
+  ordinary check wait or unstable merge, then ready, then waiting on reviewers.
 - `board.ts` — the poller. Once at startup, then only while an SSE subscriber exists,
   with backoff on failure and a pause near the rate limit. An account that fails a
   round keeps its previous rows. Its GitHub calls are injectable, which is how
@@ -302,9 +302,9 @@ Three modules, split so the part that needs a network is small:
 
 Two rules the board must keep:
 
-The board's six courts, and what each one is claiming, are in `Court` in
+The board's seven courts, and what each one is claiming, are in `Court` in
 `src/types.ts`; the client's `COURT_TITLE` and `COURT_ORDER` in `public/render.js`
-have to list the same six.
+have to list the same seven.
 
 - **It joins the same action log under the same ids** (`github:pr:<owner>/<repo>#<n>`),
   so a PR the brief also raises is one thing, not two. But it honours only `snooze` and
@@ -331,7 +331,9 @@ have to list the same six.
   tightened to "approved and nothing outstanding" so the old bug can't return through
   the compatibility path. A configured gate pending outranks even a `CLEAN` state: the
   user said that check is the policy, and a clean state alongside it is a race, not a
-  permission.
+  permission. `BLOCKED` without a pending check gets its own court rather than being
+  labelled as a check wait: the only honest claim is that some GitHub policy refused
+  the merge.
 - **A cancellation is not a verdict.** `CANCELLED` is deliberately absent from
   `FAILED_CONCLUSIONS`, which is the one place this repo departs from `gh pr checks`
   besides distrusting the summary. A cancelled run says the run was abandoned, and

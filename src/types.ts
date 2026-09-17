@@ -425,11 +425,12 @@ export interface PullsFile {
  * - `gate`       a check the user named as the repository's aggregate merge-policy
  *                decision hasn't finished. Nobody here knows whose move that is —
  *                the gate's own rules are private to whatever implements them.
- * - `checks`     GitHub says the merge is blocked or unstable and no configured gate
- *                explains it: something is still running, or still red.
+ * - `blocked`    GitHub says the merge is blocked, but returned no unfinished check
+ *                to explain it. This may be any repository or ruleset policy.
+ * - `checks`     an unfinished check is named, or GitHub says the merge is unstable.
  * - `draft`      not yet asking anyone for anything.
  */
-export type Court = 'you' | 'ready' | 'reviewers' | 'gate' | 'checks' | 'draft';
+export type Court = 'you' | 'ready' | 'reviewers' | 'gate' | 'blocked' | 'checks' | 'draft';
 
 /** Why a pull request sits where it does. Formatted by the client, since the times are relative. */
 export interface CourtReason {

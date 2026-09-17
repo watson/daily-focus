@@ -241,7 +241,7 @@ test('the board honours snooze and notes from the log, and ignores done and dism
   assert.equal(byNumber.get(4)?.status, 'snoozed');
   assert.equal(byNumber.get(4)?.snoozedUntil, '2026-10-01');
 
-  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 3, gate: 0, checks: 0, draft: 0, parked: 1 });
+  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 3, gate: 0, blocked: 0, checks: 0, draft: 0, parked: 1 });
 });
 
 test('an expired snooze reopens, and a dateless one parks indefinitely', () => {
@@ -283,6 +283,11 @@ test('rows come out by court, and longest wait first within one', () => {
         checks: 'pending',
         pendingChecks: [pending('integration-tests')],
       }),
+      approved({
+        id: 'github:pr:acme/webapp#8',
+        number: 8,
+        mergeStateStatus: 'BLOCKED',
+      }),
     ],
     [],
     NOW,
@@ -296,6 +301,7 @@ test('rows come out by court, and longest wait first within one', () => {
       [3, 'reviewers'],
       [2, 'reviewers'],
       [6, 'gate'],
+      [8, 'blocked'],
       [7, 'checks'],
       [1, 'draft'],
     ],
@@ -395,7 +401,7 @@ test('an unconfigured pending check is an ordinary check wait, and names itself'
 
 test('blocked with no pending context returned says only what GitHub said', () => {
   const verdict = judge(approved({ mergeStateStatus: 'BLOCKED' }), NOW, null, GATES);
-  assert.equal(verdict.court, 'checks');
+  assert.equal(verdict.court, 'blocked');
   assert.deepEqual(verdict.reasons, [{ kind: 'merge-blocked' }]);
 });
 
@@ -487,10 +493,11 @@ test('the counts cover every court the board can render', () => {
       approved({ id: 'github:pr:acme/webapp#4', number: 4, mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate')] }),
       approved({ id: 'github:pr:acme/webapp#5', number: 5, mergeStateStatus: 'UNSTABLE', pendingChecks: [pending('e2e')] }),
       pr({ id: 'github:pr:acme/webapp#6', number: 6, isDraft: true }),
+      approved({ id: 'github:pr:acme/webapp#7', number: 7, mergeStateStatus: 'BLOCKED' }),
     ],
     [],
     NOW,
     GATES,
   );
-  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, checks: 1, draft: 1, parked: 0 });
+  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, blocked: 1, checks: 1, draft: 1, parked: 0 });
 });

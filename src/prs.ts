@@ -13,7 +13,7 @@ export const NUDGE_AFTER_MS = 24 * 3_600_000;
 /** How long a draft may go untouched before it's flagged as parked-by-accident. */
 export const STALE_DRAFT_AFTER_MS = 14 * 86_400_000;
 
-const COURT_ORDER: readonly Court[] = ['you', 'ready', 'reviewers', 'gate', 'checks', 'draft'];
+const COURT_ORDER: readonly Court[] = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'draft'];
 
 /** Order the buckets render in: what only you can move first, drafts last. */
 export function courtOrder(court: Court): number {
@@ -89,9 +89,10 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *      stale branch, or somebody having spoken after you
  *   3. a review GitHub itself still requires, which outranks any check
  *   4. a configured merge gate that hasn't finished
- *   5. GitHub reporting the merge blocked or unstable for some other reason
- *   6. ready, which needs GitHub to agree the merge would work
- *   7. otherwise, waiting on reviewers
+ *   5. GitHub reporting the merge blocked without naming an unfinished check
+ *   6. GitHub reporting an ordinary check wait or an unstable merge
+ *   7. ready, which needs GitHub to agree the merge would work
+ *   8. otherwise, waiting on reviewers
  */
 export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null, gates: readonly string[] = []): Judgement {
   const decision = deriveDecision(pr);
@@ -166,11 +167,12 @@ export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null, gat
     const running: CourtReason = { kind: 'checks-pending' };
     if (pending.length > 0) running.checks = pending;
 
-    if (mergeState === 'BLOCKED' || mergeState === 'UNSTABLE') {
-      // Blocked with nothing pending to blame: a required check that never ran, or
-      // a ruleset whose decision has no check of its own. Say only that much.
-      return settled('checks', pending.length > 0 ? running : { kind: 'merge-blocked' });
+    // Blocked with nothing pending to blame: a required check that never ran, or
+    // a ruleset whose decision has no check of its own. It is not a check wait.
+    if (mergeState === 'BLOCKED' && pending.length === 0) {
+      return settled('blocked', { kind: 'merge-blocked' });
     }
+    if (mergeState === 'BLOCKED' || mergeState === 'UNSTABLE') return settled('checks', running);
     // GitHub computes the merge state lazily, so a pull request it hasn't looked
     // at recently answers UNKNOWN once and properly on the next poll. Not ready,
     // but not a state anything needs to be clever about either.
@@ -246,7 +248,16 @@ export function resolveBoard(
 
 /** How many rows sit in each court, plus the parked ones, for the badge and the headers. */
 export function countBoard(rows: readonly BoardRow[]): Record<Court | 'parked', number> {
-  const counts: Record<Court | 'parked', number> = { you: 0, ready: 0, reviewers: 0, gate: 0, checks: 0, draft: 0, parked: 0 };
+  const counts: Record<Court | 'parked', number> = {
+    you: 0,
+    ready: 0,
+    reviewers: 0,
+    gate: 0,
+    blocked: 0,
+    checks: 0,
+    draft: 0,
+    parked: 0,
+  };
   for (const row of rows) {
     if (row.status === 'snoozed') counts.parked++;
     else counts[row.court]++;
