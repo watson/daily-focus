@@ -72,6 +72,7 @@ writer needs to be a deliberate decision rather than a convenience:
 | `sources.md` | the user, by hand | the agent only — the server never opens it |
 | `archive/items-<date>.json` | the server | the agent, and `archive.ts` |
 | `prs.json` | the server, from GitHub | the dashboard; the agent may read it |
+| `calendar.json` | the server, from Calendar.app | the dashboard |
 | `prompt.md`, `items.schema.json` | `npm run init`, as symlinks into this repo | the agent only |
 
 The server never writes `items.json`, and nothing in this repo writes `actions.jsonl`,
@@ -305,8 +306,67 @@ have to list the same six.
   guess at the policy behind it is specifically out of scope; if that text is ever
   wanted it goes below the row as plain text and never changes a court.
 
-The server test sets `DAILY_FOCUS_GITHUB=off` so no test ever spawns `gh` or reaches
-GitHub. Keep it that way: the fixtures in `test/github.test.ts` are invented, and
+### The agenda is read live, and falls back
+
+The agenda pane prefers today's events as **Calendar.app** has them, and uses the
+`kind: "event"` items in the brief when it can't. The reason is the same one the
+board exists for: the brief is written once at dawn, so a meeting declined at eleven
+leaves a gap nothing can see, and the focus time the dashboard offers is time you
+don't have. About a third of the meetings on a real work calendar turn out to be
+declined ones.
+
+`tools/dfcal` is a Swift helper built by `npm run build:calendar`. It is an `.app`
+bundle and launched with `open`, and neither is a style choice: macOS attributes a
+calendar request to the *responsible process*, so a bare binary spawned by the server
+inherits whatever launched the server and is refused outright when that carries no
+calendar usage description. The refusal is silent — the request returns false with no
+error and the status never leaves "not determined" — and running the Mach-O inside
+the bundle directly fails identically. Only launching it as an app gives it an
+identity of its own. `open` returns before the helper does and gives back no exit
+code and no stdout, so the contract is a file: the helper always writes one, refusals
+included, and no file at all means it died.
+
+The helper stays thin, because everything it does is untestable without a real
+calendar. It makes exactly one judgement, and that one is privacy-shaped: attendees
+are reduced to a single self-status before anything is written, so no colleague's
+address reaches the disk. Matching is by address rather than `isCurrentUser`, which
+is false for every attendee of every event on a Google account synced through
+Calendar.app — which is why `DAILY_FOCUS_CALENDAR_ADDRESSES` exists, and why
+declined meetings still block without it.
+
+Three rules this has to keep:
+
+- **Fallback is not merge.** The live events replace the brief's wholesale or aren't
+  used at all. Blending the two would need the brief's ids to match the calendar's,
+  and they don't: the agent writes Google's per-occurrence id while EventKit reports
+  a series-level external identifier, so the join needs normalising *and* a start
+  time and still misses whenever the agent departs from the id recipe. A source-level
+  switch needs none of that to be right. Both paths fold through the same action log,
+  so a dismissal sticks either way.
+- **Nothing is empty by accident.** A day with no meetings, a mistyped calendar name,
+  a revoked permission and an unbuilt helper all produce no events, and only the first
+  may reach the screen as an empty agenda. So a read resolving no calendars at all
+  falls back and says why, while a read resolving calendars and finding nothing is
+  reported as live. This is the same trap `github.ts` probes each `org:` to avoid —
+  nothing is what a quiet board looks like. An *unnamed* calendar list is neither: it
+  is a feature nobody turned on, and must not produce a banner every morning.
+- **The calendar names are the dashboard's own.** They are not read from `sources.md`,
+  which the server has still never opened. The agent picks calendars to form judgement
+  from and the dashboard picks calendars to display; the two reach the same calendars
+  through different accounts and spell them differently, so one shared list would look
+  like a single source of truth while quietly being two. A name matching several
+  calendars keeps all of them and folds duplicates by id, because a calendar shared
+  from a second account appears once per account and the copies are not identical —
+  events Google creates from your email don't travel through sharing.
+
+`agenda.ts` also honours `blocking: false`, which is how a delivery window or a
+restaurant booking sits on the agenda without shortening the day. Only an explicit
+`false` frees the slot, for the same reason `advancesObjective` refuses a truthy
+string: over-reserving understates the time available, while the opposite mistake
+promises a focus block that isn't there.
+
+The server test sets `DAILY_FOCUS_GITHUB=off` and `DAILY_FOCUS_CALENDAR=off` so no
+test ever spawns `gh`, reaches GitHub, or trips a calendar permission prompt. Keep it that way: the fixtures in `test/github.test.ts` are invented, and
 real PRs, like real briefs, stay out of the repo.
 
 ### Sessions record effort, not completion
