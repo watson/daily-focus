@@ -25,11 +25,16 @@ const GRAPHQL_URL = 'https://api.github.com/graphql';
  * How many pull requests to ask for at a time, and how many pages to walk.
  *
  * Deliberately well under GraphQL's hundred-node maximum. The per-pull payload
- * here is large — the whole check rollup, fifty reviews, fifty comments — and a
- * page of fifty has been measured taking eleven seconds against an account with
- * forty open pull requests, which is past the gateway's patience: it answers 502,
- * or 200 with a truncated body. Twenty-five comes back in seven or eight. The
- * product is the ceiling, kept at what it was when pages were bigger.
+ * here is large — fifty reviews and fifty comments each — and a page of fifty has
+ * been measured taking eleven seconds against an account with forty open pull
+ * requests, which is past the gateway's patience: it answers 502, or 200 with a
+ * truncated body. The product is the ceiling on pulls read.
+ *
+ * The checks used to ride along in this request and no longer do, which is what
+ * bought the headroom back: carrying a hundred contexts per pull made the page
+ * 380 KB and took eight to ten seconds, one bad afternoon away from the timeout
+ * it was already trimmed once to avoid. Without them the same page is 28 KB and
+ * answers in under four. See `CHECKS_QUERY`.
  */
 const PAGE_SIZE = 25;
 const MAX_PAGES = 12;
@@ -228,6 +233,54 @@ export function buildSearchQuery(scope: readonly string[]): string {
   return ['is:pr', 'is:open', 'archived:false', 'author:@me', ...scope].join(' ');
 }
 
+/** One page of a commit's checks. GraphQL's connection maximum, and what a page costs. */
+const CONTEXT_PAGE_SIZE = 100;
+
+/**
+ * How far the walk past the first page of checks will go: pages for one commit,
+ * and pages for one account's whole poll.
+ *
+ * Both are sized from measurement rather than taste. A large matrix repository
+ * puts 700–1300 checks on a commit, so sixteen pages is roughly double the worst
+ * seen; and an account with thirty-two open pull requests, half of them in such a
+ * repository, spent 27 rounds reading the rest. The whole poll measured 37
+ * requests and 47 of the five thousand points an hour GraphQL allows, against 5
+ * requests and 7 points before the checks moved out of the search — so polling
+ * every five minutes spends roughly a ninth of the budget, and only while
+ * somebody has the board open, since that is the only time `board.ts` polls.
+ *
+ * Both are spent rather than enforced: a pull request the budget didn't reach
+ * keeps the summary reading it already had, which is the pessimistic direction,
+ * and says so once in a warning.
+ */
+const MAX_CONTEXT_PAGES = 16;
+const MAX_CONTEXT_REQUESTS = 200;
+
+/** How many pulls' checks to ask for in one request. See `CHECKS_QUERY`. */
+const CHECKS_BATCH_SIZE = 6;
+
+/**
+ * One commit's checks, asked for identically wherever they are read, because the
+ * two readings have to agree: the search's first page and the walk that completes
+ * it are spliced together and summarized as one set.
+ *
+ * `checkSuite` is here for supersession rather than for display. A re-run leaves
+ * the run it replaced on the commit, and the workflow it belongs to plus its run
+ * and attempt numbers are the only things that say which of two runs of a name is
+ * the live one. See `latestChecks`.
+ */
+const CHECK_CONTEXTS = `
+  totalCount
+  pageInfo { hasNextPage endCursor }
+  nodes {
+    __typename
+    ... on CheckRun {
+      databaseId name status conclusion detailsUrl startedAt completedAt
+      checkSuite { app { id } workflowRun { databaseId runNumber runAttempt workflow { id } } }
+    }
+    ... on StatusContext { context state targetUrl createdAt }
+  }`;
+
 const SEARCH_QUERY = `
 query($q: String!, $first: Int!, $after: String) {
   search(query: $q, type: ISSUE, first: $first, after: $after) {
@@ -247,24 +300,7 @@ query($q: String!, $first: Int!, $after: String) {
         reviewDecision
         mergeable
         autoMergeRequest { enabledAt }
-        commits(last: 1) {
-          nodes {
-            commit {
-              committedDate
-              statusCheckRollup {
-                state
-                contexts(first: 100) {
-                  totalCount
-                  nodes {
-                    __typename
-                    ... on CheckRun { databaseId name status conclusion detailsUrl }
-                    ... on StatusContext { context state targetUrl }
-                  }
-                }
-              }
-            }
-          }
-        }
+        commits(last: 1) { nodes { commit { oid committedDate } } }
         readyEvents: timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
           nodes { ... on ReadyForReviewEvent { createdAt } }
         }
@@ -299,6 +335,72 @@ query($ids: [ID!]!) {
   }
 }`;
 
+/**
+ * The checks on several pulls' head commits, keyed by node id.
+ *
+ * Batched rather than asked per pull request, and six is measured rather than
+ * picked: six first pages come back in two to three seconds for 189 KB and cost a
+ * single point of the rate limit, where the same six asked one at a time cost six
+ * points and six seconds. Twelve still answers, at 341 KB and four and a half
+ * seconds — near enough the payload that made the search itself unreliable to be
+ * worth staying below.
+ */
+const CHECKS_QUERY = `
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on PullRequest {
+      id
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            statusCheckRollup {
+              state
+              contexts(first: ${CONTEXT_PAGE_SIZE}) { ${CHECK_CONTEXTS} }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/** One pull request's head commit, as the checks request describes it. */
+interface RawHead {
+  oid: string | null;
+  rollup: RawRollup | null;
+}
+
+/** The first page of checks for a batch of pulls already found, by node id. */
+async function fetchChecks(
+  token: string,
+  ids: readonly string[],
+  signal?: AbortSignal,
+): Promise<{ heads: Map<string, RawHead>; rateLimitRemaining: number | null }> {
+  const heads = new Map<string, RawHead>();
+  if (ids.length === 0) return { heads, rateLimitRemaining: null };
+  const result = await graphql<{ nodes?: (RawPullRequest | null)[] }>(token, CHECKS_QUERY, { ids }, signal);
+  const fatal = result.errors.filter((error) => !isSamlError(error));
+  if (result.data?.nodes === undefined && fatal.length > 0) {
+    throw new GitHubRequestError(`GitHub wouldn't list the checks: ${fatal.map((error) => error.message).join('; ')}`);
+  }
+  for (const node of result.data?.nodes ?? []) {
+    if (!node || typeof node.id !== 'string' || node.id === '') continue;
+    const head = node.commits?.nodes?.[0]?.commit;
+    heads.set(node.id, { oid: head?.oid ?? null, rollup: head?.statusCheckRollup ?? null });
+  }
+  return { heads, rateLimitRemaining: result.rateLimitRemaining };
+}
+
+/** Read one commit's checks onto the pull request, replacing whatever was there. */
+function applyChecks(pull: PullRequest, rollup: RawRollup | null | undefined): void {
+  const ci = summarizeChecks(rollup);
+  pull.checks = ci.checks;
+  pull.failingChecks = ci.failing;
+  pull.pendingChecks = ci.pending;
+  pull.cancelledChecks = ci.cancelled;
+}
+
 export interface RawMergeState {
   id?: string;
   mergeStateStatus?: string | null;
@@ -331,7 +433,7 @@ export interface RawPullRequest {
   mergeable?: string | null;
   mergeStateStatus?: string | null;
   autoMergeRequest?: { enabledAt?: string } | null;
-  commits?: { nodes?: { commit?: { committedDate?: string; statusCheckRollup?: RawRollup | null } }[] };
+  commits?: { nodes?: { commit?: { oid?: string; committedDate?: string; statusCheckRollup?: RawRollup | null } }[] };
   readyEvents?: { nodes?: ({ createdAt?: string } | null)[] };
   reviewRequests?: { nodes?: { requestedReviewer?: { __typename?: string; login?: string; slug?: string } | null }[] };
   reviews?: { nodes?: { author?: RawActor | null; state?: string; submittedAt?: string | null }[] };
@@ -345,7 +447,23 @@ export interface RawActor {
 
 export interface RawRollup {
   state?: string;
-  contexts?: { totalCount?: number; nodes?: (RawCheck | null)[] };
+  contexts?: {
+    totalCount?: number;
+    /** Absent from an older cache, and authoritative when present. See `rollupTruncated`. */
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: (RawCheck | null)[];
+  };
+}
+
+/** Where a check run came from, which is what says whether a re-run replaced it. */
+export interface RawCheckSuite {
+  app?: { id?: string } | null;
+  workflowRun?: {
+    databaseId?: number | null;
+    runNumber?: number | null;
+    runAttempt?: number | null;
+    workflow?: { id?: string } | null;
+  } | null;
 }
 
 /** One entry in the rollup: a check run from an app, or a commit status. */
@@ -357,10 +475,14 @@ export interface RawCheck {
   status?: string;
   conclusion?: string | null;
   detailsUrl?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  checkSuite?: RawCheckSuite | null;
   /** StatusContext */
   context?: string;
   state?: string;
   targetUrl?: string | null;
+  createdAt?: string | null;
 }
 
 /**
@@ -423,6 +545,107 @@ function safeUrl(url: string | null | undefined): string | null {
 }
 
 /**
+ * Whether GitHub had more checks on this commit than it handed back.
+ *
+ * `pageInfo` is the direct answer and wins whenever it was asked for, including
+ * when it says the walk reached the end: a `totalCount` that moved while the pages
+ * were being read is a count taken at a different moment, not evidence that
+ * something went unread. `totalCount` is the fallback for a caller — or a cached
+ * file — from before the cursor was fetched.
+ */
+export function rollupTruncated(rollup: RawRollup): boolean {
+  const more = rollup.contexts?.pageInfo?.hasNextPage;
+  if (typeof more === 'boolean') return more;
+  const total = rollup.contexts?.totalCount;
+  return typeof total === 'number' && total > (rollup.contexts?.nodes?.length ?? 0);
+}
+
+/** A check's place in its slot's history: run then attempt, or failing those, its clock. */
+type Generation = readonly [number, number];
+
+/**
+ * What a re-run replaces: a check name within one workflow.
+ *
+ * Narrower than the name alone, and deliberately so — a matrix that gives two
+ * jobs of the same workflow run the same display name puts two live check runs of
+ * that name on the commit, and they have to survive as two. Checks from something
+ * other than Actions have no run to key on and fall back to their app. A check
+ * that says nothing about where it came from gets a slot of its own name and is
+ * separated from its namesakes only by the clock.
+ *
+ * REST's `?filter=latest` is not a substitute for any of this, however much it
+ * sounds like one: asked for a name with a superseded run, it was measured
+ * returning both the dead run and its replacement, because "latest" there is per
+ * check suite and a re-run makes a new suite.
+ */
+function checkSlot(node: RawCheck): string {
+  if (node.__typename === 'StatusContext') return `status\u0000${node.context ?? ''}`;
+  const workflow = node.checkSuite?.workflowRun?.workflow?.id;
+  if (typeof workflow === 'string' && workflow !== '') return `workflow\u0000${workflow}\u0000${node.name ?? ''}`;
+  const app = node.checkSuite?.app?.id;
+  if (typeof app === 'string' && app !== '') return `app\u0000${app}\u0000${node.name ?? ''}`;
+  return `check\u0000${node.name ?? ''}`;
+}
+
+/**
+ * Which generation of its slot a check belongs to.
+ *
+ * Run and attempt numbers where GitHub gives them, because they are the only
+ * monotonic thing here: check run timestamps have been seen completing a run
+ * before it started, so ordering re-runs by the clock would be ordering them by
+ * noise. Everything else falls back to that clock, and anything with no clock
+ * either ties — which keeps it, since a tie is not evidence of supersession.
+ */
+function checkGeneration(node: RawCheck): Generation {
+  const run = node.checkSuite?.workflowRun;
+  const sequence = run?.runNumber ?? run?.databaseId;
+  if (typeof sequence === 'number') return [sequence, run?.runAttempt ?? 0];
+  const at = node.completedAt ?? node.startedAt ?? node.createdAt ?? null;
+  const time = at ? Date.parse(at) : Number.NaN;
+  return [Number.isFinite(time) ? time : 0, 0];
+}
+
+/**
+ * The live check runs, with the ones a re-run superseded dropped.
+ *
+ * GitHub does not replace a check run when it is run again: both stay on the
+ * commit, in separate check suites, and `statusCheckRollup` hands back every one
+ * of them. So a check that failed and was then fixed *without a push* — a
+ * workflow re-run, or an edit to the pull request that re-triggers one, which is
+ * how a title or commit-message check gets fixed — goes on reading red for as
+ * long as the head commit stands, because the dead run is still there to be read.
+ * GitHub's own pull request page collapses each check to its latest run, and this
+ * is that, done before any verdict is folded rather than after: a superseded
+ * failure that reached `worse` would already have outvoted its own fix.
+ *
+ * Only a later generation of the same slot drops anything. Within one run and
+ * attempt every check of a name is kept, which is what keeps a genuinely failing
+ * matrix job from being hidden behind a namesake that passed.
+ */
+export function latestChecks(nodes: readonly (RawCheck | null)[]): RawCheck[] {
+  const slots = new Map<string, { generation: Generation; nodes: RawCheck[] }>();
+  const order: string[] = [];
+  for (const node of nodes) {
+    if (!node) continue;
+    const slot = checkSlot(node);
+    const generation = checkGeneration(node);
+    const held = slots.get(slot);
+    if (!held) {
+      slots.set(slot, { generation, nodes: [node] });
+      order.push(slot);
+      continue;
+    }
+    if (generation[0] === held.generation[0] && generation[1] === held.generation[1]) {
+      held.nodes.push(node);
+    } else if (generation[0] > held.generation[0] || (generation[0] === held.generation[0] && generation[1] > held.generation[1])) {
+      // The slot keeps its place in the reading order; only its contents change.
+      slots.set(slot, { generation, nodes: [node] });
+    }
+  }
+  return order.flatMap((slot) => slots.get(slot)?.nodes ?? []);
+}
+
+/**
  * What CI says, read from the individual checks rather than the rollup's summary.
  *
  * The summary `state` has been seen reporting SUCCESS on a commit whose required
@@ -451,10 +674,10 @@ export function summarizeChecks(
   const failing: string[] = [];
   const pending: PendingCheck[] = [];
   const cancelled: PendingCheck[] = [];
-  const nodes = rollup.contexts?.nodes ?? [];
+  const read = rollup.contexts?.nodes ?? [];
+  const nodes = latestChecks(read);
   let derived: CheckState = null;
   for (const node of nodes) {
-    if (!node) continue;
     if (node.__typename === 'CheckRun') {
       const name = node.name ?? 'unnamed check';
       const waiting: PendingCheck = { name, kind: 'check-run', detailsUrl: safeUrl(node.detailsUrl) };
@@ -491,12 +714,11 @@ export function summarizeChecks(
     }
   }
 
-  // Absent `totalCount` is not evidence of truncation: our own query always asks
-  // for it, and a caller that didn't is telling us nothing rather than telling us
-  // there is more. Zero contexts read is the other way round — there, the summary
-  // is all there is.
-  const total = rollup.contexts?.totalCount;
-  const unread = nodes.length === 0 || (typeof total === 'number' && total > nodes.length);
+  // Truncation is measured against what GitHub handed back, not against what
+  // survived `latestChecks`: dropping a superseded run is this function reading
+  // the page, not GitHub withholding it. Zero contexts read is the other way
+  // round — there, the summary is all there is.
+  const unread = read.length === 0 || rollupTruncated(rollup);
   return { checks: unread ? worse(derived, toCheckState(rollup.state)) : derived, failing, pending, cancelled };
 }
 
@@ -660,6 +882,138 @@ function buildProbeQuery(scope: readonly string[]): { query: string; orgs: strin
   return { query: `{ viewer { login } ${fields.join(' ')} }`, orgs };
 }
 
+/** One commit's checks being read past the first page, and where the reading got to. */
+interface Walk {
+  id: string;
+  pull: PullRequest;
+  /** The head commit the first page described. */
+  oid: string | null;
+  /** That first page, which the walk resumes from and is spliced onto. */
+  rollup: RawRollup;
+  /** Contexts read beyond the first page. */
+  nodes: RawCheck[];
+  cursor: string | null;
+  totalCount: number | undefined;
+  /** The walk reached the end of this commit's contexts. */
+  complete: boolean;
+  /** The head commit moved mid-walk, so what was read belongs to no one commit. */
+  stale: boolean;
+  done: boolean;
+}
+
+/**
+ * One round of several commits' remaining checks, each resumed from its own cursor.
+ *
+ * Aliased fields rather than `nodes(ids: [...])`, because every pull request is at
+ * a different point in its own connection and `nodes` takes one argument list for
+ * all of them. Same idiom as the org probe above, and the same reason: the
+ * alternative is a request per pull request, and a large repository needs a dozen
+ * of those for one commit.
+ */
+export function buildRemainingChecksQuery(batch: readonly { id: string; cursor: string | null }[]): string {
+  const fields = batch.map((walk, i) => {
+    const after = walk.cursor === null ? 'null' : JSON.stringify(walk.cursor);
+    return `w${i}: node(id: ${JSON.stringify(walk.id)}) {
+    ... on PullRequest {
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            statusCheckRollup { contexts(first: ${CONTEXT_PAGE_SIZE}, after: ${after}) { ${CHECK_CONTEXTS} } }
+          }
+        }
+      }
+    }
+  }`;
+  });
+  return `{\n  ${fields.join('\n  ')}\n}`;
+}
+
+/**
+ * Read the checks the first page didn't fit, for every pull request that has some.
+ *
+ * A hundred contexts is generous for most repositories and nothing like enough for
+ * a large test matrix: 700 to 1300 on one commit, where the first page can be all
+ * green while the failure — or the merge gate still running — sits on the third.
+ * An account with thirty-two such pull requests takes about 105 pages to read
+ * out, which is two minutes and 105 requests asked one pull request at a time.
+ * Batched six to a request it is 27 requests and 45 seconds — and since a request
+ * costs one point whether it carries one pull request or six, measured both ways,
+ * the batching buys the points back as well as the time.
+ *
+ * Every walk advances one page per round, so the rounds are bounded by the longest
+ * commit rather than by how many there are. A round that fails costs the pulls in
+ * it their completion and nothing more: they keep the first page's reading, in
+ * which `summarizeChecks` has already folded GitHub's summary as a floor.
+ */
+async function walkRemainingChecks(
+  token: string,
+  walks: readonly Walk[],
+  budget: number,
+  signal?: AbortSignal,
+): Promise<{ requests: number; rateLimitRemaining: number | null; failure: string | null; exhausted: boolean }> {
+  let requests = 0;
+  let rateLimitRemaining: number | null = null;
+  let failure: string | null = null;
+  let exhausted = false;
+
+  for (let round = 0; round < MAX_CONTEXT_PAGES && !exhausted; round++) {
+    const active = walks.filter((walk) => !walk.done);
+    if (active.length === 0) break;
+    for (let from = 0; from < active.length; from += CHECKS_BATCH_SIZE) {
+      if (requests >= budget) {
+        exhausted = true;
+        break;
+      }
+      const batch = active.slice(from, from + CHECKS_BATCH_SIZE);
+      requests++;
+      let result: GraphQLResult<Record<string, RawPullRequest | null>>;
+      try {
+        result = await graphql(token, buildRemainingChecksQuery(batch), {}, signal);
+      } catch (err) {
+        failure ??= (err as Error).message;
+        for (const walk of batch) walk.done = true;
+        continue;
+      }
+      rateLimitRemaining = result.rateLimitRemaining ?? rateLimitRemaining;
+      const fatal = result.errors.filter((error) => !isSamlError(error));
+      if (result.data === null && fatal.length > 0) {
+        failure ??= fatal.map((error) => error.message).join('; ');
+        for (const walk of batch) walk.done = true;
+        continue;
+      }
+      batch.forEach((walk, i) => {
+        const head = result.data?.[`w${i}`]?.commits?.nodes?.[0]?.commit;
+        // A push landing mid-walk gives `commits(last: 1)` a different commit,
+        // whose connection this cursor doesn't index at all. What was read is
+        // thrown away rather than spliced onto the wrong commit; the next poll
+        // reads the new head from its first page.
+        if (walk.oid && head?.oid && head.oid !== walk.oid) {
+          walk.stale = true;
+          walk.done = true;
+          return;
+        }
+        const contexts = head?.statusCheckRollup?.contexts;
+        // Nothing to read and no error: leave it unfinished, which keeps the
+        // summary in charge rather than claiming the checks in hand are all of them.
+        if (!contexts) {
+          walk.done = true;
+          return;
+        }
+        if (typeof contexts.totalCount === 'number') walk.totalCount = contexts.totalCount;
+        for (const node of contexts.nodes ?? []) if (node) walk.nodes.push(node);
+        if (contexts.pageInfo?.hasNextPage === true && contexts.pageInfo.endCursor) {
+          walk.cursor = contexts.pageInfo.endCursor;
+        } else {
+          walk.complete = true;
+          walk.done = true;
+        }
+      });
+    }
+  }
+  return { requests, rateLimitRemaining, failure, exhausted };
+}
+
 /** The merge states for pulls already found, by node id. */
 async function fetchMergeStates(
   token: string,
@@ -709,6 +1063,9 @@ export async function fetchPulls(
   let after: string | null = null;
   let rateLimitRemaining = who.rateLimitRemaining;
   let mergeStateWarned = false;
+  let contextsWarned = false;
+  let contextBudgetWarned = false;
+  let contextRequests = 0;
   for (let page = 0; page < MAX_PAGES; page++) {
     const result: GraphQLResult<{
       search?: { pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }; nodes?: (RawPullRequest | null)[] };
@@ -732,8 +1089,14 @@ export async function fetchPulls(
       if (!node) continue;
       const pull = normalizePullRequest(node, login);
       if (!pull) continue;
+      // The node id is now the join key for the checks as well as the merge state,
+      // and a pull request whose checks were never read looks quiet rather than
+      // unknown. So one without an id is dropped, the same way `normalizePullRequest`
+      // drops a node it can't make sense of, rather than shown with a reading
+      // nothing supplied.
+      if (typeof node.id !== 'string' || node.id === '') continue;
       pulls.push(pull);
-      if (typeof node.id === 'string' && node.id !== '') found.set(node.id, pull);
+      found.set(node.id, pull);
     }
 
     // The board is the search; the merge state is an improvement on it. So a
@@ -752,6 +1115,78 @@ export async function fetchPulls(
         warnings.push(
           `${login}: GitHub wouldn't say whether these pull requests can be merged (${(err as Error).message}). ` +
             'Ready to merge falls back to the reviews and checks until the next poll.',
+        );
+      }
+    }
+
+    // The checks, which the search no longer carries. Unlike the merge state this
+    // is not an improvement on the search but half of what a court is judged from,
+    // and a pull request with no reading at all would look quiet rather than
+    // unknown — an empty `pendingChecks` beside a null `checks` is exactly what
+    // `prs.ts` reads as nothing outstanding. So a batch that fails takes the
+    // account's whole round with it: the board keeps the rows it had and says why,
+    // rather than showing a red pull request as ready to merge.
+    const partial: { id: string; pull: PullRequest; oid: string | null; rollup: RawRollup }[] = [];
+    const ids = [...found.keys()];
+    for (let from = 0; from < ids.length; from += CHECKS_BATCH_SIZE) {
+      const batch = ids.slice(from, from + CHECKS_BATCH_SIZE);
+      const checks = await fetchChecks(token, batch, signal);
+      rateLimitRemaining = checks.rateLimitRemaining ?? rateLimitRemaining;
+      for (const [nodeId, head] of checks.heads) {
+        const pull = found.get(nodeId);
+        if (!pull) continue;
+        applyChecks(pull, head.rollup);
+        if (head.rollup && rollupTruncated(head.rollup)) {
+          partial.push({ id: nodeId, pull, oid: head.oid, rollup: head.rollup });
+        }
+      }
+    }
+
+    // Read the rest of the checks for the pulls that had more than a page of them.
+    // Unlike the first page this is an improvement on a reading that already
+    // exists rather than the only one there is, so what it costs when it fails is
+    // the completion: `summarizeChecks` falls back to GitHub's summary, which is
+    // the pessimistic direction and self-corrects on the next poll.
+    if (partial.length > 0) {
+      const walks: Walk[] = partial.map((entry) => ({
+        ...entry,
+        nodes: [],
+        cursor: entry.rollup.contexts?.pageInfo?.endCursor ?? null,
+        totalCount: entry.rollup.contexts?.totalCount,
+        complete: false,
+        stale: false,
+        done: false,
+      }));
+      const walked = await walkRemainingChecks(token, walks, MAX_CONTEXT_REQUESTS - contextRequests, signal);
+      contextRequests += walked.requests;
+      rateLimitRemaining = walked.rateLimitRemaining ?? rateLimitRemaining;
+
+      for (const walk of walks) {
+        if (walk.stale || walk.nodes.length === 0) continue;
+        applyChecks(walk.pull, {
+          state: walk.rollup.state,
+          contexts: {
+            totalCount: walk.totalCount,
+            // What the walk found out, said in the one field that outranks the
+            // count: complete means the checks themselves have the last word.
+            pageInfo: { hasNextPage: !walk.complete },
+            nodes: [...(walk.rollup.contexts?.nodes ?? []), ...walk.nodes],
+          },
+        });
+      }
+
+      if (walked.failure && !contextsWarned) {
+        contextsWarned = true;
+        warnings.push(
+          `${login}: GitHub wouldn't list all the checks on some pull requests (${walked.failure}). ` +
+            "Their CI state comes from GitHub's own summary until the next poll.",
+        );
+      }
+      if (walked.exhausted && !contextBudgetWarned) {
+        contextBudgetWarned = true;
+        warnings.push(
+          `${login}: some pull requests have more checks than the board reads in one poll, so their CI state ` +
+            "comes from GitHub's own summary rather than the checks themselves.",
         );
       }
     }

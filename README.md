@@ -255,9 +255,32 @@ genuinely failed alongside one is unaffected: that failure is still red, still y
 and needs no special case.
 
 GitHub's own one-line summary of the rollup calls that commit `FAILURE`, so the summary
-is consulted only where the individual checks can't answer — none came back, or there
-are more than the hundred fetched. It is the weaker reading either way: it has also been
+is consulted only where the individual checks can't answer — none came back, or the
+board gave up on reading them all. It is the weaker reading either way: it has also been
 seen claiming `SUCCESS` over a failing required check.
+
+### A check that was re-run is only as red as its newest run
+
+Re-running a check does not replace the run it supersedes. Both stay on the commit, in
+separate check suites, and GitHub hands back every one of them. So a check that failed
+and was then fixed *without a push* — a workflow re-run, or an edit to the pull request
+that re-triggers one, which is how a title or commit-message check gets fixed — would
+go on reading red for as long as that commit stood, because the dead run is still there
+to be read. GitHub's own pull request page collapses each check to its latest run, and
+the board now does the same.
+
+What a re-run replaces is narrower than a name, though: a name *within one workflow*.
+A test matrix can give two jobs of the same workflow run the same display name, and
+both of those are live — collapsing them by name would hide a genuinely failing job
+behind its namesake that passed, which is the worse of the two mistakes. So only a
+later run or attempt of the same workflow drops anything.
+
+Reading the checks this way means reading all of them, and a large matrix repository
+puts 700 to 1300 checks on a single commit against GitHub's hundred per request. They
+are fetched apart from the search that finds the pull requests, several pull requests
+to a request, each resuming from where its own last page ended. A pull request whose
+checks can't all be read keeps GitHub's summary as a floor and says so, rather than
+reporting the first hundred as though they were all of them.
 
 ### Where it gets its access
 
