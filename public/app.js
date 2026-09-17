@@ -1,4 +1,4 @@
-/** Wiring: state, optimistic actions, keyboard, theme. */
+/** Wiring: state, optimistic actions, keyboard. */
 
 import { fetchState, postAction, postBoardRefresh, postSession, subscribe } from './api.js';
 import { localDateKey } from './format.js';
@@ -580,48 +580,6 @@ function setFocusMode(on) {
 
 setFocusMode(localStorage.getItem('daily-focus:focus-mode') === '1');
 document.getElementById('focus-exit').addEventListener('click', () => setFocusMode(false));
-
-/* ---------- theme ---------- */
-
-/**
- * Flip between light and dark, always visibly.
- *
- * This used to cycle system → light → dark. The trouble is that "system"
- * renders identically to whichever mode the OS is already in, so one press in
- * three changed nothing and the button looked broken — on a light-mode machine,
- * reaching dark took two presses while reaching light took one.
- *
- * Deciding from what's *rendered* rather than from a stored cycle position makes
- * a no-op press impossible. The OS preference still applies until the first
- * click; clearing `daily-focus:theme` in storage hands control back to it.
- */
-const themeToggle = document.getElementById('theme-toggle');
-
-function currentlyDark() {
-  const stamped = document.documentElement.dataset.theme;
-  if (stamped === 'dark') return true;
-  if (stamped === 'light') return false;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
-function describeThemeToggle() {
-  const next = currentlyDark() ? 'light' : 'dark';
-  themeToggle.title = `Switch to ${next} mode`;
-  themeToggle.setAttribute('aria-label', `Switch to ${next} mode`);
-}
-
-themeToggle.addEventListener('click', () => {
-  const next = currentlyDark() ? 'light' : 'dark';
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem('daily-focus:theme', next);
-  describeThemeToggle();
-});
-
-describeThemeToggle();
-// Keep the hint honest if the OS flips while we're still following it.
-window
-  .matchMedia('(prefers-color-scheme: dark)')
-  .addEventListener('change', () => describeThemeToggle());
 
 document.getElementById('help-toggle').addEventListener('click', () => {
   document.getElementById('help').showModal();

@@ -46,9 +46,12 @@
   --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-/* The media block sits below the toggle scope, so an explicit light stamp wins. */
+/*
+ * Dark is the system's call and only the system's: there is no in-app override,
+ * so this needs no scope to out-specify and re-evaluates the moment the OS flips.
+ */
 @media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme='light'])) {
+  :root {
     color-scheme: dark;
 
     --page: #0d0d0d;
@@ -77,36 +80,6 @@
     --accent-wash: #14263a;
     --focus-ring: #3987e5;
   }
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-
-  --page: #0d0d0d;
-  --surface: #1a1a19;
-  --surface-sunken: #131312;
-  --ink-1: #ffffff;
-  --ink-2: #c3c2b7;
-  --ink-3: #898781;
-  --hairline: #2c2c2a;
-  --border: rgba(255, 255, 255, 0.1);
-  --shadow: none;
-
-  --good-ink: #0ca30c;
-
-  --src-github: #3987e5;
-  --src-email: #d95926;
-  --src-calendar: #199e70;
-  --src-jira: #c98500;
-  --src-slack: #d55181;
-  --src-workday: #008300;
-  --src-tasks: #2ba8c4;
-  --src-atlassian: #9085e9;
-  --src-other: #898781;
-
-  --accent: #3987e5;
-  --accent-wash: #14263a;
-  --focus-ring: #3987e5;
 }
 
 *,

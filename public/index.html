@@ -9,13 +9,6 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='38' fill='none' stroke='%232a78d6' stroke-width='10'/><circle cx='50' cy='50' r='10' fill='%23eb6834'/></svg>"
     />
-    <script>
-      // Applied before first paint so a dark-mode user never sees a white flash.
-      const stored = localStorage.getItem('daily-focus:theme');
-      if (stored === 'light' || stored === 'dark') {
-        document.documentElement.dataset.theme = stored;
-      }
-    </script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -27,15 +20,6 @@
       </div>
       <div class="page-header__meta">
         <span class="freshness" id="freshness" aria-live="polite"></span>
-        <button
-          type="button"
-          class="icon-button"
-          id="theme-toggle"
-          aria-label="Switch colour theme"
-          title="Switch colour theme"
-        >
-          <span aria-hidden="true">◐</span>
-        </button>
         <button
           type="button"
           class="icon-button"
