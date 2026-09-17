@@ -183,7 +183,7 @@ again next week. So the board is a status board rather than a to-do list, and it
 the one thing the dashboard fetches itself, since state changes during the day and a
 review that landed at eleven should not read as "waiting on reviewers" until tomorrow.
 
-Six buckets, most actionable first:
+Seven buckets, most actionable first:
 
 - **Waiting on you.** Changes requested, CI red, a merge conflict, a branch behind
   its base, or someone acted after you did. The row says which.
@@ -193,8 +193,10 @@ Six buckets, most actionable first:
   says *time to ask*.
 - **Waiting on merge gate.** A check you named in `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS`
   hasn't finished. See below.
-- **Waiting on checks.** GitHub says the merge is blocked or unstable and no
-  configured gate explains it. The row names whatever is still running.
+- **Merge blocked by GitHub.** GitHub reports `BLOCKED` but names no unfinished
+  check. This is a repository or ruleset policy, not a claim that CI is running.
+- **Waiting on checks.** An ordinary check is still running, or GitHub reports the
+  merge as unstable. The row names whatever is still running when GitHub returns it.
 - **Drafts.** Not asking anyone for anything. After a fortnight untouched it says so,
   because a draft you meant to finish and a draft you meant to abandon look the same.
 
@@ -210,10 +212,10 @@ under the same `github:pr:` ids, so the morning agent sees them too:
 - **Park** it until a date. It drops into a drawer and comes back when the date
   arrives. This is how a draft is shelved on purpose.
 - **Note.** Free text, shown on the row and read by the agent.
-- **Nudged.** On rows waiting on reviewers, and only those — on a gate or a check row
-  the board has no idea whose action is missing, so it suggests asking nobody. You
-  asked on Slack, which GitHub can't see, so this records a note saying so and the
-  *time to ask* flag starts over from now.
+- **Nudged.** On rows waiting on reviewers, and only those — on a gate, blocked
+  merge, or check row the board has no idea whose action is missing, so it suggests
+  asking nobody. You asked on Slack, which GitHub can't see, so this records a note
+  saying so and the *time to ask* flag starts over from now.
 
 Done and dismiss don't apply: marking the brief's "CI failing on #3402" done doesn't
 close #3402, and the board shows what is open.
@@ -224,9 +226,11 @@ close #3402, and the board shows what is open.
 conflict-free pull request could still be presented as ready while GitHub was quietly
 refusing to merge it. `mergeStateStatus` is the broader answer, and it is what
 **Ready to merge** requires: `CLEAN` or `HAS_HOOKS`, nothing else. `BLOCKED` and
-`UNSTABLE` go to **Waiting on checks**, `BEHIND` and `DIRTY` to **Waiting on you**,
-and an `UNKNOWN` merge state is reported as GitHub not having worked it out yet rather
-than assumed to be fine.
+`UNSTABLE` are not the same answer: a `BLOCKED` pull request with no unfinished
+check goes to **Merge blocked by GitHub**, while an unstable one goes to
+**Waiting on checks**. `BEHIND` and `DIRTY` go to **Waiting on you**, and an
+`UNKNOWN` merge state is reported as GitHub not having worked it out yet rather than
+assumed to be fine.
 
 Some repositories put review policy, ownership, security and whatever else behind a
 single status check, and let that one check speak for all of it. Such a check pending

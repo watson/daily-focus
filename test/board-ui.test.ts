@@ -151,10 +151,11 @@ test('a check row lists what is still running, without inventing a link', () => 
   assert.deepEqual(buttonLabels(node), ['Park', 'Note']);
 });
 
-test('a blocked merge with nothing pending says only that much', () => {
+test('a blocked merge with nothing pending is not presented as a check wait', () => {
   const { row, node } = render({ mergeStateStatus: 'BLOCKED' });
-  assert.equal(row.court, 'checks');
-  assert.match(byClass(node, 'item__reason')[0]?.textContent ?? '', /merge blocked by GitHub/);
+  assert.equal(row.court, 'blocked');
+  assert.equal(byClass(node, 'item__reason').length, 0, 'the section heading already says why the row is here');
+  assert.ok(byClass(node, 'pill').some((pill) => pill.textContent === 'blocked 2 days'));
 });
 
 test('an undecided merge state is reported as undecided, not as fine', () => {
@@ -190,12 +191,23 @@ test('a ready row is plain: no reason, no nudge', () => {
 });
 
 test('a reason kind this client has never heard of is skipped, not printed half', () => {
-  const [row] = resolveBoard([pr({ mergeStateStatus: 'BLOCKED' })], [], NOW, GATES);
+  const [row] = resolveBoard(
+    [
+      pr({
+        mergeStateStatus: 'UNSTABLE',
+        checks: 'pending',
+        pendingChecks: [{ name: 'integration-tests', kind: 'check-run', detailsUrl: null }],
+      }),
+    ],
+    [],
+    NOW,
+    GATES,
+  );
   assert.ok(row);
   // A server one version ahead: the row renders, minus the part nothing can word.
   const ahead = { ...row, reasons: [{ kind: 'merge-queue-position' }, ...row.reasons] } as unknown as BoardRow;
   const reason = byClass(renderPullRow(ahead, { now: NOW.toISOString() }, UI, HANDLERS), 'item__reason')[0];
-  assert.equal(reason?.textContent, 'merge blocked by GitHub', 'no stray separator where the unknown reason was');
+  assert.equal(reason?.textContent, 'still running: integration-tests', 'no stray separator where the unknown reason was');
 });
 
 test('more than three pending checks are summarised rather than listed', () => {
