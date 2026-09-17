@@ -160,6 +160,11 @@ items against four usable hours instead of seven is not the same brief.
 
 #### Gmail
 
+Search Gmail account-wide within the relevant time window — archived mail, and anything
+the user's filters moved out of the inbox, included. Mail they filed is not mail they
+finished with, and a label records how they sorted something, not whether they dealt
+with it.
+
 Prioritise direct requests, deadlines, decisions, travel and logistics,
 finance/legal/security, and anyone plausibly waiting on a reply. **Do not limit
 continuity-sensitive searches to unread mail** — the things that rot are usually the
