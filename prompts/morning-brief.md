@@ -108,6 +108,12 @@ original `firstSeen` across verbatim. Only assign `firstSeen` = today to genuine
 new items. Resetting it every run destroys the ageing display, which is what makes
 neglected things look neglected.
 
+**Source lookback windows govern discovery, not retention.** Reconsider every task
+from the previous `items.json` whose folded action status is open, even when its
+source has fallen outside the current search window. If it is still actionable,
+carry it forward with the same `id` and `firstSeen`. Do not let age or absence from
+a recent query alone make unfinished work disappear.
+
 ### Step 2 — Gather
 
 #### Across every source
