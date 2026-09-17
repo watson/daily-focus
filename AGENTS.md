@@ -227,23 +227,67 @@ Three modules, split so the part that needs a network is small:
   because a search scoped to a SAML-protected org the token isn't authorised for returns
   nothing rather than an error, and nothing is what a quiet board looks like.
 
-  Two requests per page, not one, and the split is not an accident. `mergeStateStatus`
-  makes GitHub compute a trial merge per pull request, and asking for that in the same
-  request as the check rollups times the gateway out — measured at eleven seconds for a
-  page of fifty, answered with a 502 or a truncated body. Since an account whose fetch
-  fails keeps its previous rows, the symptom is a board that looks merely stale while
-  every poll silently fails. So the search carries the rollup, a second request carries
-  the merge states keyed by node id, `PAGE_SIZE` stays small enough that the first one
-  is answerable, and a merge-state request that fails costs the field and a warning
-  rather than the account's rows. `PAGE_SIZE * MAX_PAGES` is the ceiling on pulls read.
+  Three requests per page, not one, and the split is not an accident. Asking for
+  everything at once times the gateway out — measured at eleven seconds for a page of
+  fifty, answered with a 502 or a truncated body. Since an account whose fetch fails
+  keeps its previous rows, the symptom is a board that looks merely stale while every
+  poll silently fails. Two fields are what cost the most. `mergeStateStatus` makes
+  GitHub compute a trial merge per pull request; and a hundred check contexts per pull
+  made a page of twenty-five 380 KB and eight to ten seconds, which is 28 KB and under
+  four without them. So the search carries neither: `MERGE_STATE_QUERY` fetches the
+  merge states keyed by node id, `CHECKS_QUERY` fetches the checks the same way in
+  batches of `CHECKS_BATCH_SIZE`, and `PAGE_SIZE * MAX_PAGES` is the ceiling on pulls
+  read. `test/github.test.ts` asserts the split rather than trusting it.
+
+  The two follow-ups differ in what their failure costs, because they differ in what
+  they are. A merge state that can't be fetched costs the field and a warning, and
+  `prs.ts` falls back to judging ready from the reviews. The checks are not an
+  improvement on the search but half of what a court is judged from, and a pull request
+  with no reading at all looks *quiet* rather than unknown — a null `checks` beside an
+  empty `pendingChecks` is exactly what reads as nothing outstanding. So a checks
+  request that fails takes the account's round with it, and the board keeps the rows it
+  had rather than showing a red pull request as ready to merge.
 
   The rollup is read from the individual contexts, not from its summary `state`,
   which has been seen saying `SUCCESS` over a failing required check. The summary is
-  consulted only when the contexts can't answer — none returned, or `totalCount`
-  exceeds the hundred asked for — and that condition is load-bearing rather than an
-  optimisation: the summary also says `FAILURE` for a commit whose only unhappy check
-  was cancelled, which would put the reading back exactly where `CANCELLED` used to
-  put it.
+  consulted only when the contexts can't answer — none returned, or they could not all
+  be read — and that condition is load-bearing rather than an optimisation: the summary
+  also says `FAILURE` for a commit whose only unhappy check was cancelled, which would
+  put the reading back exactly where `CANCELLED` used to put it.
+
+  **A re-run does not replace the run it supersedes.** Both stay on the commit, in
+  separate check suites, and `statusCheckRollup` returns every one of them — so a check
+  that failed and was then fixed *without a push*, by a workflow re-run or by an edit
+  that re-triggers one, reads red for as long as the head commit stands. `latestChecks`
+  collapses each check to its newest run before any verdict is folded, since a
+  superseded failure that reached `worse` would already have outvoted its own fix.
+  What a re-run replaces is a name *within one workflow*, not a name: a matrix can give
+  two jobs of one workflow run the same display name, and dropping one of those would
+  hide a real failure behind its namesake's pass, which is the worse mistake of the
+  two. So the slot is the name plus the workflow (or the app, for checks Actions didn't
+  run), the generation is the run and attempt number, and only a later generation drops
+  anything.
+
+  Which of the two numbers does the work is worth knowing, because GitHub is only
+  inconsistent in one direction. Re-running a job *within* a workflow run — the flaky
+  test case — replaces the check run, and the rollup carries the new attempt alone:
+  measured across three pull requests, attempt 2 appears while no name ever shows two
+  attempts of one run. A workflow re-triggered as a *new* run accumulates instead, and
+  one commit was seen carrying 502 such superseded slots. So the run number is what
+  actually drops anything today and the attempt number is defensive — which is the
+  right way round, since it costs one comparison to be insulated from GitHub changing
+  its mind about replacement. Run numbers rather than timestamps because check runs have been seen
+  completing before they started. The selection this depends on is asserted too: trim
+  `workflowRun` out of `CHECK_CONTEXTS` and supersession silently stops working.
+
+  Reading the contexts means reading all of them, and a large matrix repository puts
+  700–1300 on one commit against GraphQL's hundred per request. `walkRemainingChecks`
+  pages the rest with one aliased field per pull request, so each resumes from its own
+  cursor — `nodes(ids:)` can't, since it takes one argument list for all of them.
+  Bounded by `MAX_CONTEXT_PAGES` per commit and `MAX_CONTEXT_REQUESTS` per poll; both
+  are spent rather than enforced, and a pull request the budget didn't reach keeps the
+  summary reading and warns. A push landing mid-walk is detected by `oid` and the
+  reading discarded, rather than spliced onto the wrong commit.
 - `prs.ts` — pure. `judge` decides the court from the facts, the clock and the
   configured merge-gate names; `resolveBoard` joins that with the action log. The
   rules are in its comments and in the README; the tests in `test/prs.test.ts` are the
