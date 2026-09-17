@@ -865,27 +865,36 @@ function agendaNotes(source) {
   return notes;
 }
 
-function eventRow(event, now, conflictIds) {
+export function eventRow(event, now, conflictIds) {
   const start = new Date(event.start);
   const end = event.end ? new Date(event.end) : null;
   const allDay = /^\d{4}-\d{2}-\d{2}$/.test(event.start);
   const past = (end ?? start).getTime() < now.getTime();
   const clashes = conflictIds.includes(event.id);
+  // Only an explicit false frees the slot, which is the reading `agenda.ts` gives
+  // the same field when it works out what the day has left.
+  const blocking = event.blocking !== false;
 
   const name = event.url
     ? el('a', { href: event.url, target: '_blank', rel: 'noopener noreferrer' }, event.title)
     : event.title;
 
+  // Said in words and not only in ink, for the reason the palette gives at the top
+  // of the stylesheet. Folded into the "until" line rather than added beneath it: a
+  // row that grows a third line to announce it wants less attention has taken more.
+  const until = !allDay && end ? `until ${formatTime(event.end)}` : null;
+  const sub = blocking ? until : [until, 'marked free'].filter(Boolean).join(' · ');
+
   return el(
     'li',
-    { class: 'agenda__row', dataset: { past: String(past) } },
+    { class: 'agenda__row', dataset: { past: String(past), blocking: String(blocking) } },
     el('span', { class: 'agenda__time' }, allDay ? 'all day' : formatTime(event.start)),
     el(
       'span',
       { class: 'agenda__name' },
       name,
       clashes ? el('span', { class: 'agenda__sub' }, '⚠ clashes with another meeting') : null,
-      !allDay && end ? el('span', { class: 'agenda__sub' }, `until ${formatTime(event.end)}`) : null,
+      sub ? el('span', { class: 'agenda__sub' }, sub) : null,
     ),
   );
 }

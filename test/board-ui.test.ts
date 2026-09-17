@@ -1,99 +1,24 @@
 /**
  * What one board row actually renders.
  *
- * The client is vanilla ES modules with no build step and no DOM in the test
- * runner, so the handful of `document` calls `el()` makes are stubbed here rather
- * than a browser being brought in. That is enough to answer the questions worth
- * asking of a row — does the reason appear, is the check's link clickable, is the
- * *Nudged* button offered — and those are exactly the ones a rule expressed only
- * in `render.js` would otherwise never be held to.
+ * The DOM stub lives in `./dom-stub.ts`, shared with the other client render
+ * test. What is worth asking of a board row is whether the reason appears, the
+ * check's link is clickable, and the *Nudged* button is offered — rules that live
+ * only in `render.js` and would otherwise never be held to anything.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+// Imported for its side effect before `render.js` is pulled in below: it installs
+// the `document` and `Node` globals that `el()` reaches for.
+import { byClass, byTag, buttonLabels, type StubElement, type StubNode } from './dom-stub.ts';
 import { resolveBoard } from '../src/prs.ts';
 import type { BoardRow, PullRequest } from '../src/types.ts';
 
-/* ---------- just enough DOM for `el()` ---------- */
-
-class StubNode {
-  childNodes: StubNode[] = [];
-  append(...kids: StubNode[]): void {
-    this.childNodes.push(...kids);
-  }
-  get textContent(): string {
-    return this.childNodes.map((kid) => kid.textContent).join('');
-  }
-  set textContent(text: string) {
-    this.childNodes = [new StubText(text)];
-  }
-}
-
-class StubText extends StubNode {
-  data: string;
-  constructor(data: string) {
-    super();
-    this.data = data;
-  }
-  override get textContent(): string {
-    return this.data;
-  }
-  override set textContent(text: string) {
-    this.data = text;
-  }
-}
-
-class StubElement extends StubNode {
-  readonly tagName: string;
-  className = '';
-  readonly dataset: Record<string, string> = {};
-  readonly attributes: Record<string, string> = {};
-  readonly listeners: Record<string, unknown[]> = {};
-  [key: string]: unknown;
-
-  constructor(tag: string) {
-    super();
-    this.tagName = tag.toUpperCase();
-  }
-  setAttribute(name: string, value: string): void {
-    this.attributes[name] = String(value);
-  }
-  addEventListener(type: string, fn: unknown): void {
-    (this.listeners[type] ??= []).push(fn);
-  }
-}
-
-Object.assign(globalThis, {
-  Node: StubNode,
-  document: {
-    createElement: (tag: string) => new StubElement(tag),
-    createTextNode: (text: string) => new StubText(text),
-  },
-});
-
-// Imported after the stubs are in place, since `el()` reaches for `document` and
-// `Node` the moment it is called.
 const { renderPullRow } = (await import('../public/render.js')) as {
   renderPullRow: (row: BoardRow, state: unknown, ui: unknown, handlers: unknown) => StubElement;
 };
-
-/* ---------- walking what came out ---------- */
-
-function* walk(node: StubNode): Generator<StubNode> {
-  for (const kid of node.childNodes) {
-    yield kid;
-    yield* walk(kid);
-  }
-}
-
-const byTag = (root: StubNode, tag: string): StubElement[] =>
-  [...walk(root)].filter((node): node is StubElement => (node as StubElement).tagName === tag);
-
-const byClass = (root: StubNode, name: string): StubElement[] =>
-  [...walk(root)].filter((node) => (node as StubElement).className?.split(' ').includes(name)) as StubElement[];
-
-const buttonLabels = (root: StubNode): string[] => byTag(root, 'BUTTON').map((button) => button.textContent);
 
 /* ---------- the fixtures ---------- */
 
