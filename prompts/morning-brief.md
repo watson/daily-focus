@@ -208,6 +208,11 @@ rather than transcribing rows the user has already ignored for a year. Promote a
 its own `task` item only when it advances the objective in `focus.md` or is genuinely the
 next move in the time left today.
 
+Give that whole-list item `https://tasks.google.com/` as its `url`, and **never the Drive
+export**. The export is how you read the list; it is not where the user prunes it, and a
+heading that opens a JSON file is a dead end at the moment they meant to act. There is no
+per-list link to use instead — `lists[].id` is an API id, not a URL.
+
 `assignedFrom` tells you a task came out of a Doc comment or a Chat message — **not who
 assigned it.** Someone assigning themselves an action item in their own meeting notes
 looks identical to a colleague assigning them one, so never name a person as waiting on
@@ -435,6 +440,7 @@ wrote, or a position in a list. Titles get edited upstream; ids must not move.
 | Calendar | `calendar:event:<event id>` | `calendar:event:6h1k2m3n4p` |
 | Workday | `workday:task:<task/inbox id>` | `workday:task:compliance-2026` |
 | Google Tasks | `gtasks:task:<task id>` — the task id **only**, never with the list id | `gtasks:task:MTU3NDkyODkwMjE2NDcx` |
+| Google Tasks, whole list | `gtasks:list:<list id>` — the prune-the-list `info` item only, never a single task | `gtasks:list:MDk4NzY1NDMyMTA5ODc2NTQzMjEwOjA6MA` |
 | Atlassian | `atlassian:<type>:<id>` | `atlassian:page:98213` |
 
 If a source genuinely gives you no stable key, hash the most stable thing you do have
