@@ -363,7 +363,16 @@ Three rules this has to keep:
 restaurant booking sits on the agenda without shortening the day. Only an explicit
 `false` frees the slot, for the same reason `advancesObjective` refuses a truthy
 string: over-reserving understates the time available, while the opposite mistake
-promises a focus block that isn't there.
+promises a focus block that isn't there. `calendar.ts` sets it from EventKit's
+`availability`, where only `free` clears it — `notSupported` means the calendar
+can't answer, and reserving time you didn't need is the cheaper mistake.
+
+The field is rendered as well as counted: `eventRow` in `public/render.js` marks the
+row `data-blocking="false"` and says "marked free" beneath it. Both halves matter.
+The emphasis step is one shade, not the `[data-past]` dimming, because a delivery
+someone has to be home for is not a row to hide — and the words carry it rather
+than the ink alone, for the reason the palette gives at the top of the stylesheet.
+`test/agenda-ui.test.ts` holds that, since neither rule is visible to `agenda.ts`.
 
 The server test sets `DAILY_FOCUS_GITHUB=off` and `DAILY_FOCUS_CALENDAR=off` so no
 test ever spawns `gh`, reaches GitHub, or trips a calendar permission prompt. Keep it that way: the fixtures in `test/github.test.ts` are invented, and

@@ -966,6 +966,18 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
 .agenda__row[data-past='true'] .agenda__time {
   color: var(--ink-3);
 }
+
+/*
+ * An event that sits on the day without taking any of it: a delivery window, a
+ * booking. One step down in emphasis and deliberately not the `[data-past]`
+ * dimming, because being home for the delivery is the entire point of it being
+ * on the agenda — a 14:30 slot that reads as already over is a worse mistake
+ * than one that reads as a meeting. The row also says "marked free" in text,
+ * since ink is never the only cue here.
+ */
+.agenda__row[data-blocking='false'] .agenda__name {
+  color: var(--ink-2);
+}
 .agenda__sub {
   display: block;
   color: var(--ink-3);
