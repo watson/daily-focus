@@ -11,12 +11,17 @@ interface Interval {
 }
 
 /**
- * An event's occupied span. All-day events (a bare YYYY-MM-DD start) return null:
- * they belong on the agenda but must not eat the day's free windows, or a public
- * holiday would blank out every focus block.
+ * An event's occupied span, or null when it belongs on the agenda without eating
+ * the day's free windows.
+ *
+ * Two cases return null. All-day events (a bare YYYY-MM-DD start), or a public
+ * holiday would blank out every focus block. And events explicitly marked
+ * `blocking: false` — a delivery window is a thing to know about, not a thing
+ * that stops you working.
  */
 function busySpan(item: ResolvedItem): Interval | null {
   if (isDateOnly(item.start)) return null;
+  if (item.blocking === false) return null;
 
   const start = parseISO(item.start);
   if (!start) return null;

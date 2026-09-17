@@ -377,6 +377,12 @@ Then the general editorial bar:
   free/focus windows itself from those events, so it stays accurate as the day passes
   — do **not** emit free-window or "focus block" items yourself. You may mention the
   best focus block in the `headline`.
+- **Mark an event `"blocking": false` when it takes none of the user's time.** A parcel
+  delivery window, a restaurant booking, a reminder someone else is doing something:
+  these belong on the agenda so the day reads correctly, but they do not stop the user
+  working, and counting them as busy invents a shorter day than the one they have.
+  A meeting they are expected to attend is always blocking — when in doubt, omit the
+  field, since reserving time you didn't need is the cheaper mistake.
 - **Holidays and general context are `kind: "info"`**, not events. They land in a
   "Heads up" section and can't be completed, only dismissed.
 - **Write a `headline`** of one or two sentences: the shape of the day. What is
@@ -412,6 +418,7 @@ Item fields — `id`, `title`, `source`, `kind` are required, the rest optional:
 | `priority` | `1`–`3`, at most three items total. |
 | `due` | ISO date or timestamp. |
 | `start`, `end` | Events only. ISO 8601 **with timezone offset**. A bare `YYYY-MM-DD` start means all-day. |
+| `blocking` | Events only. `false` when the event takes none of the user's time. Omit otherwise. |
 | `tags` | Short labels: `["ci-failing"]`, `["review-requested"]`, `["awaiting-review"]`, `["deadline"]`. |
 | `people` | `["@handle", "someone@example.com"]` |
 | `firstSeen` | ISO date you **first** raised it. Carried forward from the previous `items.json`. |

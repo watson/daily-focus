@@ -169,3 +169,46 @@ test('a short day leaves correspondingly less', () => {
   // 10:00-13:00 and 15:00-16:00 = 180 + 60.
   assert.equal(agenda.remainingFocusMinutes, 240);
 });
+
+test('an event marked blocking:false sits on the agenda without eating the day', () => {
+  const delivery = { ...event('delivery', at(12), at(14)), blocking: false };
+
+  const agenda = buildAgenda([delivery], NOW, OPTS);
+
+  // Still shown — the point is to know it is happening.
+  assert.deepEqual(agenda.events.map((e) => e.id), ['delivery']);
+  // ...but the day is one unbroken window rather than two halves around it.
+  assert.deepEqual(
+    agenda.freeWindows.map((w) => w.minutes),
+    [480],
+  );
+});
+
+test('blocking:false only frees the slot when it is exactly false', () => {
+  const window = (blocking: unknown) =>
+    buildAgenda(
+      [{ ...event('thing', at(12), at(14)), ...(blocking === undefined ? {} : { blocking }) } as never],
+      NOW,
+      OPTS,
+    ).freeWindows.map((w) => w.minutes);
+
+  assert.deepEqual(window(false), [480], 'false frees it');
+  assert.deepEqual(window(undefined), [180, 180], 'absent still blocks');
+  assert.deepEqual(window(true), [180, 180], 'true still blocks');
+});
+
+test('a non-blocking event never registers as a clash', () => {
+  // Same treatment all-day events already get: something that takes none of your
+  // time cannot collide with something that does. Flagging a parcel delivery as
+  // "clashes with another meeting" would be noise on every row it overlapped.
+  const agenda = buildAgenda(
+    [{ ...event('delivery', at(12), at(14)), blocking: false }, event('standup', at(13), at(13, 30))],
+    NOW,
+    OPTS,
+  );
+
+  assert.deepEqual(agenda.conflictIds, []);
+  // Two genuinely booked meetings still clash, so the check hasn't been defanged.
+  const real = buildAgenda([event('a', at(12), at(14)), event('b', at(13), at(13, 30))], NOW, OPTS);
+  assert.deepEqual(real.conflictIds.sort(), ['a', 'b']);
+});

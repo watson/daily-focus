@@ -79,6 +79,10 @@
           "description": "Events only. A bare YYYY-MM-DD means all-day."
         },
         "end": { "type": "string", "description": "Events only." },
+        "blocking": {
+          "type": "boolean",
+          "description": "Events only. False when the event belongs on the agenda but must not consume time \u2014 a delivery window, a booking, anything you are not sat inside. Absent means blocking; only an explicit false frees the slot."
+        },
         "tags": { "type": "array", "items": { "type": "string" } },
         "people": { "type": "array", "items": { "type": "string" } },
         "firstSeen": {

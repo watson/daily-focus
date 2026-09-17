@@ -56,6 +56,15 @@ export interface Item {
   /** ISO 8601. `kind: "event"` only — places the item on the agenda. */
   start?: string;
   end?: string;
+  /**
+   * False when an event belongs on the agenda but must not consume time — a
+   * delivery window, a restaurant booking, anything you are not sat inside.
+   *
+   * Absent reads as blocking, and the asymmetry is deliberate: over-reserving the
+   * day only understates the focus time available, while the opposite mistake
+   * promises a block that isn't there. Only an explicit `false` frees the slot.
+   */
+  blocking?: boolean;
   /** Free-form labels, e.g. ["ci-failing", "review-requested"]. */
   tags?: string[];
   /** People attached to the item, e.g. ["@alice", "bob@example.com"]. */

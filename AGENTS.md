@@ -130,6 +130,7 @@ And per item — `id`, `title`, `source`, `kind` required, the rest optional:
 | `priority` | `1`, `2`, `3` … lifts the item into the "Top priorities" band. The agent is capped at three. |
 | `due` | ISO date or timestamp. Drives the due / overdue pill. |
 | `start`, `end` | Events only. A bare `YYYY-MM-DD` start means all-day. |
+| `blocking` | Events only. `false` for something that belongs on the agenda but takes none of your time — a delivery window, a booking. Absent means it blocks, because over-reserving the day is the safe direction. |
 | `tags`, `people` | Short labels; handles or addresses. |
 | `firstSeen` | ISO date the item was **first** raised, carried forward by the agent across runs. |
 | `advancesObjective` | `true` only when finishing the item moves the objective in `focus.md`. |

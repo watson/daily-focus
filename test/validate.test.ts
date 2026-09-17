@@ -126,3 +126,25 @@ test('parses action lines and rejects junk', () => {
   assert.equal(parseActionLine('{"id":"a"}'), null);
   assert.equal(parseActionLine('{"id":"a","action":"explode"}'), null);
 });
+
+test('only a real false sets blocking, so a stray string cannot free the slot', () => {
+  const { brief } = parseBrief(
+    JSON.stringify({
+      version: 1,
+      generatedAt: '2026-09-10T06:00:00Z',
+      items: [
+        { id: '1', title: 'delivery', start: '2026-09-10T09:00:00Z', blocking: false },
+        { id: '2', title: 'string false', start: '2026-09-10T09:00:00Z', blocking: 'false' },
+        { id: '3', title: 'zero', start: '2026-09-10T09:00:00Z', blocking: 0 },
+        { id: '4', title: 'explicitly true', start: '2026-09-10T09:00:00Z', blocking: true },
+        { id: '5', title: 'absent', start: '2026-09-10T09:00:00Z' },
+      ],
+    }),
+  );
+
+  assert.equal(brief?.items[0]?.blocking, false);
+  // Everything else leaves the field unset, which reads as blocking downstream.
+  for (const i of [1, 2, 3, 4]) {
+    assert.equal(brief?.items[i]?.blocking, undefined, `items[${i}] should not be freed`);
+  }
+});
