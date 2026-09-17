@@ -43,6 +43,40 @@ export interface GitHubConfig {
 }
 
 /**
+ * How the agenda reaches Calendar.app. See `calendar.ts` and `calendarboard.ts`.
+ *
+ * The brief is written once at dawn, so a meeting declined at eleven leaves a gap
+ * the dashboard cannot see. This is the live read that closes it; when it is off,
+ * or has never succeeded, the agenda falls back to the events in the brief.
+ */
+export interface CalendarConfig {
+  /** `DAILY_FOCUS_CALENDAR=off` turns the live read off; the brief's events are used. */
+  enabled: boolean;
+  /**
+   * Calendar names exactly as **Calendar.app** spells them, which is not always how
+   * the briefing agent's source list spells them — the two reach the same calendars
+   * through different accounts. Deliberately not read from `sources.md`: that file
+   * is the agent's, the server has never opened it, and the two lists answer
+   * different questions now that neither depends on the other.
+   *
+   * A name matching several calendars keeps all of them, since a calendar shared
+   * from a second account appears once per account. Empty means nothing is read.
+   */
+  names: readonly string[];
+  /**
+   * The user's own addresses, used to find their own reply among an event's
+   * attendees. Needed because `isCurrentUser` is false for every attendee of every
+   * event on a Google account synced through Calendar.app, so an address is the
+   * only reliable way to tell a meeting you declined from one you're going to.
+   */
+  addresses: readonly string[];
+  /** Minutes between reads while a browser is watching. */
+  pollMinutes: number;
+  /** The helper bundle built by `npm run build:calendar`. */
+  appPath: string;
+}
+
+/**
  * All configuration is environment-driven so the agent and the dashboard can be
  * pointed at the same store without either one hardcoding a path. The environment
  * itself is the real one layered over the repo-root `.env`, see `env.ts`.
@@ -100,6 +134,10 @@ export interface Config {
   github: GitHubConfig;
   /** Where prs.json lives: the board's last good fetch, written by the server. */
   pullsFile: string;
+  /** The live agenda. */
+  calendar: CalendarConfig;
+  /** Where calendar.json lives: the last good calendar read, written by the server. */
+  calendarFile: string;
 }
 
 function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
@@ -173,6 +211,25 @@ function envGitHub(env: NodeJS.ProcessEnv): GitHubConfig {
   };
 }
 
+function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
+  const flag = (env.DAILY_FOCUS_CALENDAR ?? '').trim().toLowerCase();
+  const pollMinutes = envInt('DAILY_FOCUS_CALENDAR_POLL_MINUTES', 5, env);
+  if (pollMinutes < 1) {
+    throw new Error(`DAILY_FOCUS_CALENDAR_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
+  }
+  return {
+    enabled: !['off', 'false', '0', 'no'].includes(flag),
+    // Commas only, as for merge gate checks: calendar names contain spaces.
+    names: envNameList('DAILY_FOCUS_CALENDARS', env),
+    addresses: envNameList('DAILY_FOCUS_CALENDAR_ADDRESSES', env),
+    pollMinutes,
+    appPath: expandHome(
+      (env.DAILY_FOCUS_CALENDAR_APP ?? '').trim() ||
+        resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app'),
+    ),
+  };
+}
+
 /**
  * Copy the day-of-week field out of whatever runs the agent: `1-5`, `0-4`, `0,6`.
  *
@@ -222,6 +279,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     sessionFile: resolve(dataDir, 'session.json'),
     sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
     pullsFile: resolve(dataDir, 'prs.json'),
+    calendarFile: resolve(dataDir, 'calendar.json'),
     sessionMinutes: envInt('DAILY_FOCUS_SESSION_MINUTES', 25, env),
     awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', 10, env),
     port: envInt('DAILY_FOCUS_PORT', 4321, env),
@@ -232,5 +290,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     staleAfterHours: envInt('DAILY_FOCUS_STALE_AFTER_HOURS', 24, env),
     agentDays: envWeekdays('DAILY_FOCUS_AGENT_DAYS', env),
     github: envGitHub(env),
+    calendar: envCalendar(env),
   };
 }

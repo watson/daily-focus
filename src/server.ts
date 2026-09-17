@@ -8,6 +8,7 @@ import { loadConfig } from './config.ts';
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board } from './board.ts';
+import { CalendarBoard } from './calendarboard.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { readIdleSeconds } from './presence.ts';
@@ -126,6 +127,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // The board polls only while a tab is open, so it's told the audience below,
   // and it broadcasts on its own whenever a fetch starts or lands.
   const board = new Board(config, () => void broadcast());
+  const calendar = new CalendarBoard(config, () => void broadcast());
 
   /**
    * State plus the two things the store doesn't own: the asset fingerprint the
@@ -136,7 +138,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     // One read of the log, folded twice: the brief and the board must agree.
     const actions = await store.readActions();
     const now = new Date();
-    const state = await store.getState(now, actions);
+    const state = await store.getState(now, actions, calendar.state());
     return { ...state, board: board.view(actions, now), assetVersion };
   }
 
@@ -243,6 +245,12 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     console.error(`[daily-focus] pull request board failed to start: ${(err as Error).message}`);
   });
 
+  // Same treatment: a calendar that is slow, unbuilt or unpermitted must not hold
+  // up the dashboard listening. The agenda falls back to the brief until it lands.
+  void calendar.start().catch((err: unknown) => {
+    console.error(`[daily-focus] live agenda failed to start: ${(err as Error).message}`);
+  });
+
   const heartbeat = setInterval(() => {
     void broadcast();
   }, 60_000);
@@ -281,6 +289,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       res.write(`event: state\ndata: ${JSON.stringify(await buildState())}\n\n`);
       subscribers.add(res);
       board.setAudience(subscribers.size);
+      calendar.setAudience(subscribers.size);
 
       const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
       keepAlive.unref();
@@ -288,6 +297,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
         clearInterval(keepAlive);
         subscribers.delete(res);
         board.setAudience(subscribers.size);
+        calendar.setAudience(subscribers.size);
       });
       return;
     }
@@ -430,6 +440,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       clearInterval(presencePoll);
       if (sessionTick) clearTimeout(sessionTick);
       board.stop();
+      calendar.stop();
       stopWatching();
       stopWatchingAssets();
       for (const res of subscribers) res.end();

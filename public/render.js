@@ -834,11 +834,35 @@ export function renderAgenda(state) {
       'div',
       { class: 'agenda' },
       el('h2', { class: 'agenda__title' }, 'Today'),
+      agendaNotes(state.agendaSource),
       rows.length > 0
         ? el('ul', { class: 'agenda__list' }, rows)
         : el('p', { class: 'empty' }, 'No meetings today.'),
     ),
   );
+}
+
+/**
+ * Why this agenda says what it says, when that isn't simply "the calendar".
+ *
+ * Kept inside the pane rather than in the page banners on purpose: it is about
+ * these rows, and a global banner for a stale calendar would compete with the
+ * ones about the brief. But it is never silent when the source isn't live — an
+ * agenda quietly served from this morning looks exactly like a live one right up
+ * to the meeting you cancelled still sitting on it.
+ */
+function agendaNotes(source) {
+  if (!source) return [];
+  const notes = [];
+  if (source.problem) {
+    notes.push(
+      el('p', { class: `agenda__note agenda__note--${source.live ? 'warn' : 'stale'}` }, source.problem),
+    );
+  }
+  for (const warning of source.warnings ?? []) {
+    notes.push(el('p', { class: 'agenda__note agenda__note--warn' }, warning));
+  }
+  return notes;
 }
 
 function eventRow(event, now, conflictIds) {

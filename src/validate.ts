@@ -143,6 +143,11 @@ function parseItem(raw: unknown, index: number, warnings: string[]): Item | null
   const end = optionalString(raw.end);
   if (end) item.end = end;
 
+  // Only an explicit `false` frees the slot. Same reasoning as advancesObjective:
+  // a truthy string must not quietly change the day's arithmetic — and here the
+  // safe direction is to keep time reserved rather than invent a focus window.
+  if (raw.blocking === false) item.blocking = false;
+
   const tags = optionalStringArray(raw.tags);
   if (tags) item.tags = tags;
   const people = optionalStringArray(raw.people);

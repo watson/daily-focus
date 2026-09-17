@@ -121,3 +121,34 @@ test('parseScope understands bare names and written-out qualifiers', () => {
 test('a poll interval under a minute is refused', () => {
   assert.throws(() => loadConfig({ DAILY_FOCUS_DATA: '/tmp/x', DAILY_FOCUS_GITHUB_POLL_MINUTES: '0' }), /at least 1/);
 });
+
+test('the live agenda is on by default but reads nothing until calendars are named', () => {
+  const { calendar } = loadConfig({});
+
+  assert.equal(calendar.enabled, true);
+  assert.deepEqual(calendar.names, [], 'no names means no calendar is read');
+  assert.deepEqual(calendar.addresses, []);
+  assert.equal(calendar.pollMinutes, 5);
+});
+
+test('calendar names split on commas only, since they contain spaces', () => {
+  const { calendar } = loadConfig({
+    DAILY_FOCUS_CALENDARS: 'Work Calendar, Family ❤️ ,, Work Calendar ',
+    DAILY_FOCUS_CALENDAR_ADDRESSES: 'a@example.com, b@example.com',
+  });
+
+  // Trimmed, empties dropped, duplicates dropped — and a two-word name stays one name.
+  assert.deepEqual(calendar.names, ['Work Calendar', 'Family ❤️']);
+  assert.deepEqual(calendar.addresses, ['a@example.com', 'b@example.com']);
+});
+
+test('DAILY_FOCUS_CALENDAR=off disables the live agenda', () => {
+  for (const off of ['off', 'OFF', 'false', '0', 'no']) {
+    assert.equal(loadConfig({ DAILY_FOCUS_CALENDAR: off }).calendar.enabled, false, off);
+  }
+  assert.equal(loadConfig({ DAILY_FOCUS_CALENDAR: 'on' }).calendar.enabled, true);
+});
+
+test('a calendar poll interval under a minute is refused at startup', () => {
+  assert.throws(() => loadConfig({ DAILY_FOCUS_CALENDAR_POLL_MINUTES: '0' }), /at least 1/);
+});

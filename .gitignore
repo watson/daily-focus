@@ -7,3 +7,6 @@ data/
 
 # Local configuration. Holds org names and logins, so it never goes in.
 .env
+
+# Built calendar helper. A signed .app, rebuilt by `npm run build:calendar`.
+tools/dfcal/build/

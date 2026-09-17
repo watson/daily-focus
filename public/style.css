@@ -902,6 +902,26 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
   color: var(--ink-2);
 }
 
+/*
+ * Why the agenda reads the way it does, when the calendar isn't the source.
+ * Sits under the heading rather than in the page banners: it is about these rows.
+ */
+.agenda__note {
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  background: var(--surface-sunken);
+  border-left: 2px solid var(--ink-3);
+}
+
+/* Falling back to the brief is a louder thing than a merely stale read. */
+.agenda__note--stale {
+  border-left-color: var(--warning);
+}
+
 .agenda__list {
   list-style: none;
   margin: 0;

@@ -56,6 +56,15 @@ export interface Item {
   /** ISO 8601. `kind: "event"` only — places the item on the agenda. */
   start?: string;
   end?: string;
+  /**
+   * False when an event belongs on the agenda but must not consume time — a
+   * delivery window, a restaurant booking, anything you are not sat inside.
+   *
+   * Absent reads as blocking, and the asymmetry is deliberate: over-reserving the
+   * day only understates the focus time available, while the opposite mistake
+   * promises a block that isn't there. Only an explicit `false` frees the slot.
+   */
+  blocking?: boolean;
   /** Free-form labels, e.g. ["ci-failing", "review-requested"]. */
   tags?: string[];
   /** People attached to the item, e.g. ["@alice", "bob@example.com"]. */
@@ -160,6 +169,30 @@ export interface FreeWindow {
   start: string;
   end: string;
   minutes: number;
+}
+
+/**
+ * Where the agenda's events came from.
+ *
+ * The events are read live from Calendar.app when that is set up and working,
+ * and taken from the brief otherwise. Which one is in force has to reach the
+ * screen: an agenda quietly served from this morning's brief looks exactly like
+ * a live one, right up to the meeting you cancelled still sitting on it.
+ */
+export interface AgendaSource {
+  /** True when these events came from the calendar rather than the brief. */
+  live: boolean;
+  /** When the calendar was last read. Null when the brief is the source. */
+  fetchedAt: string | null;
+  /** Why the live agenda isn't in use, or why it may be stale. */
+  problem: string | null;
+  /** Setup problems worth fixing that aren't stopping it working. */
+  warnings: string[];
+}
+
+/** What the calendar poller knows: where the events came from, and the events. */
+export interface CalendarState extends AgendaSource {
+  events: Item[];
 }
 
 /** Today's schedule, derived from `kind: "event"` items. */
@@ -465,6 +498,8 @@ export interface DashboardState {
   objectiveProgress: ObjectiveProgress | null;
   /** Focus timer: the running session, plus today's tally. */
   session: SessionState;
+  /** Whether the agenda is live from the calendar, or the brief's own events. */
+  agendaSource: AgendaSource;
   /**
    * Which weekdays the briefing agent runs on — the dashboard's whole notion of a
    * weekend, which is why it's resolved once and sent rather than assumed twice.

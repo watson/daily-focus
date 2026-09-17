@@ -20,6 +20,7 @@
     "init": "node scripts/init.ts",
     "seed": "node scripts/seed.ts",
     "audit": "node scripts/audit.ts",
+    "build:calendar": "sh tools/dfcal/build.sh",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\""
   },
