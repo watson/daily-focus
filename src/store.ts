@@ -1,7 +1,15 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import type { Action, Brief, DashboardState, ItemStatus, ResolvedItem } from './types.ts';
+import type {
+  Action,
+  AgendaSource,
+  Brief,
+  CalendarState,
+  DashboardState,
+  ItemStatus,
+  ResolvedItem,
+} from './types.ts';
 import type { Config } from './config.ts';
 import { archiveBrief, computeObjectiveProgress, readArchiveIndex } from './archive.ts';
 import { buildAgenda } from './agenda.ts';
@@ -151,6 +159,7 @@ export class Store {
   async getState(
     now: Date = new Date(),
     actions?: readonly Action[],
+    calendar?: CalendarState,
   ): Promise<Omit<DashboardState, 'assetVersion' | 'board'>> {
     const [{ brief, error, warnings }, readActions, focus, schedule] = await Promise.all([
       this.readBrief(),
@@ -168,7 +177,22 @@ export class Store {
     const isRunDay = (d: Date) => runsOn(schedule, d);
 
     const items = brief ? resolveItems(brief.items, actions, now) : [];
-    const agenda = buildAgenda(items, now, {
+
+    // The calendar wins when it has a real answer, including a real answer of
+    // "nothing today". The brief's own events are the fallback, which is what
+    // runs before the helper is built, when the permission is refused, and off
+    // macOS entirely. They are folded through the same action log either way, so
+    // dismissing an event sticks whichever source produced it.
+    const live = calendar?.live === true;
+    const agendaItems = live ? resolveItems(calendar!.events, actions, now) : items;
+    const agendaSource: AgendaSource = {
+      live,
+      fetchedAt: calendar?.fetchedAt ?? null,
+      problem: calendar?.problem ?? null,
+      warnings: calendar?.warnings ?? [],
+    };
+
+    const agenda = buildAgenda(agendaItems, now, {
       workStartHour: this.config.workStartHour,
       workEndHour: this.config.workEndHour,
       minFreeWindowMinutes: this.config.minFreeWindowMinutes,
@@ -243,6 +267,7 @@ export class Store {
       },
       items,
       agenda,
+      agendaSource,
       stats: {
         open: visible.filter((item) => item.kind !== 'event').length,
         topPriority: visible.filter((item) => item.priority !== undefined).length,

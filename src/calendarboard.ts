@@ -16,7 +16,8 @@
 import type { Config } from './config.ts';
 import { CalendarHelperError, parseCalendarFacts, runHelper, selectEvents, type CalendarFacts } from './calendar.ts';
 import { writeJsonAtomic } from './fs.ts';
-import type { Item } from './types.ts';
+import type { CalendarState } from './types.ts';
+
 import { readFile } from 'node:fs/promises';
 
 /** Never re-read more often than this once reads start failing. */
@@ -28,22 +29,6 @@ export interface CalendarDeps {
 }
 
 const realDeps: CalendarDeps = { run: runHelper };
-
-/** What the dashboard needs to know about the agenda's source. */
-export interface CalendarState {
-  /** Events from the calendar. Meaningless unless `live`. */
-  events: Item[];
-  /**
-   * True when these events are a real answer — including a real answer of "no
-   * meetings today". False means the brief's own events should be shown instead.
-   */
-  live: boolean;
-  /** When the read these events came from happened. */
-  fetchedAt: string | null;
-  /** Why the live agenda isn't being used, phrased for the banner. */
-  problem: string | null;
-  warnings: string[];
-}
 
 export class CalendarBoard {
   readonly #config: Config;
