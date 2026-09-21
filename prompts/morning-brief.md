@@ -118,10 +118,15 @@ a recent query alone make unfinished work disappear.
 
 #### Across every source
 
-**Don't count on a browser when a connector fails.** A link opens in whichever Chrome
-profile was last active, which need not be the one signed in to work, and the work
-profile is often asking for a sign-in again by morning. One look is fine; never try to
-sign in, and never wait on a login screen.
+**Use a connector, API or CLI as the evidence source.** A browser may only help you
+discover a missing stable identifier after direct access has failed. Once you find the
+identifier, return to the source tool and query it there. Never create an item or an
+upstream id from browser-only data.
+
+A browser link opens in whichever Chrome profile was last active, which need not be
+the one signed in to work, and the work profile is often asking for a sign-in again by
+morning. One look is fine for identifier discovery; never try to sign in, and never wait
+on a login screen.
 
 **And a sign-in page, a 404 or a permission error tells you nothing about the source.**
 It is not an empty calendar, not a document the user lacks access to, and not a meeting
@@ -138,10 +143,16 @@ a GitHub review request beats a task restating it, and a `gtasks:task:` id beats
 
 #### Google Calendar
 
-Query the calendars `sources.md` lists, and honour any it tells you to exclude. If
-the Calendar connector cannot enumerate them, name the ones you could not read in
-step 5 rather than silently falling back to the primary calendar only — a brief that
-quietly dropped a calendar is worse than one that says it couldn't read it.
+Query the calendars `sources.md` lists, and honour any it tells you to exclude. A
+connector that cannot enumerate calendars may still query one by id. When a calendar
+entry in `sources.md` includes an id, query that id directly and do not open the browser
+for that calendar. If the id is absent, one browser look may only be used to discover
+it; then return to the connector and query the id. Do not emit an event until the
+connector returns the event's real id, and never synthesise a `calendar:event:` id.
+
+If a direct-id query still fails, name that calendar in step 5 rather than silently
+falling back to the primary calendar only. A brief that quietly dropped a calendar is
+worse than one that says it couldn't read it.
 
 `sources.md` also names the holiday calendars worth watching: typically one for the
 region whose public holidays decide which colleagues are reachable today, and one for
@@ -330,11 +341,25 @@ issue type and whether it has open children before raising it.
 
 #### GitHub
 
-Use the `gh` CLI. Some commands may need to run outside the sandbox; if one fails,
-read the actual error and try to heal rather than assuming `gh` is unavailable.
+Use the `gh` CLI. Run each probe separately; never make all GitHub gathering
+conditional on one compound `&&` chain. Bare `gh auth status` checks every stored
+account and exits unsuccessfully if any account has an authentication problem. Check
+only the active GitHub.com account with `gh auth status --active --hostname github.com`,
+or identify it with `gh api user --jq .login`.
+
+Let `gh` use its active keyring-backed login. Do not set `GH_TOKEN` from
+`gh auth token --user`. If a read-only command reports an invalid token, keyring or
+SSH-agent problem, network failure or sandbox failure, retry that smallest command
+outside the sandbox before declaring GitHub unavailable.
+
+To query as a different configured login, record the current active login, run
+`gh auth switch --hostname github.com --user <login>`, perform that login's queries,
+and restore the original login even when a query fails. A failure for one login must
+not stop the other logins. Report GitHub as unavailable only when the smallest relevant
+read-only probe also fails outside the sandbox.
 
 Judge authorship and review requests against the GitHub login in `sources.md`; if that
-file is absent, fall back to the login `gh auth status` reports. Look for:
+file is absent, fall back to the active login from `gh api user --jq .login`. Look for:
 
 - PRs where the user was requested as a reviewer **individually** and hasn't reviewed.
   Exclude PRs that only request review from a team the user belongs to.
@@ -464,6 +489,9 @@ wrote, or a position in a list. Titles get edited upstream; ids must not move.
 If a source genuinely gives you no stable key, hash the most stable thing you do have
 (permalink, thread id) — never the text you generated.
 
+Calendar is not such a source. If the connector does not return the event id, report
+the calendar as unread rather than inventing an id from browser text.
+
 **One narrow exception.** If something previously marked `done` recurs as a *genuinely
 new* obligation — a PR the user reviewed comes back with a fresh review request after new
 commits — raise it under a **new, meaningfully suffixed id**
@@ -504,6 +532,13 @@ Check all of these, and fix anything that fails:
    route to the objective and no acknowledgement of that fact is a failed run.
 10. **No text from the `<!-- agent-only -->` section appears anywhere in
     `items.json`.** Grep your own output for it before you rename.
+11. Every calendar in `sources.md` is accounted for as queried, empty or unavailable,
+    and every known calendar id was tried directly.
+12. Every `calendar:event:` id came from the Calendar connector. None was synthesised
+    from a title, time, URL or browser page.
+13. If you report GitHub as unavailable, the smallest relevant read-only `gh` probe
+    failed outside the sandbox; a sandbox-only failure is not enough.
+14. No item or upstream id relies only on browser data.
 
 Then report back, briefly: how many items you wrote, which got a priority, what you
 dropped because the action log said it was handled, and anything you could not reach
