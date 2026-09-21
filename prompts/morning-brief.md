@@ -358,8 +358,10 @@ and restore the original login even when a query fails. A failure for one login 
 not stop the other logins. Report GitHub as unavailable only when the smallest relevant
 read-only probe also fails outside the sandbox.
 
-Judge authorship and review requests against the GitHub login in `sources.md`; if that
-file is absent, fall back to the active login from `gh api user --jq .login`. Look for:
+Query every GitHub identity listed in `sources.md` using its corresponding authenticated
+account. Judge authorship and review requests against the identity listed for that
+organization. If the file is absent, fall back to the active login from
+`gh api user --jq .login`. Look for:
 
 - PRs where the user was requested as a reviewer **individually** and hasn't reviewed.
   Exclude PRs that only request review from a team the user belongs to.
