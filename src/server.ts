@@ -9,6 +9,7 @@ import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board } from './board.ts';
 import { CalendarBoard } from './calendarboard.ts';
+import { TicketBoard } from './ticketboard.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { readIdleSeconds } from './presence.ts';
@@ -128,18 +129,20 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // and it broadcasts on its own whenever a fetch starts or lands.
   const board = new Board(config, () => void broadcast());
   const calendar = new CalendarBoard(config, () => void broadcast());
+  const tickets = new TicketBoard(config, () => void broadcast());
 
   /**
-   * State plus the two things the store doesn't own: the asset fingerprint the
-   * client watches for self-reload, and the board, which is fetched rather than
-   * read but joins the same action log.
+   * State plus the things the store doesn't own: the asset fingerprint the client
+   * watches for self-reload, and the two boards, which are fetched rather than
+   * read but join the same action log.
    */
   async function buildState(): Promise<DashboardState> {
-    // One read of the log, folded twice: the brief and the board must agree.
+    // One read of the log, folded for each surface: the brief and both boards
+    // have to agree about what has been handled.
     const actions = await store.readActions();
     const now = new Date();
     const state = await store.getState(now, actions, calendar.state());
-    return { ...state, board: board.view(actions, now), assetVersion };
+    return { ...state, board: board.view(actions, now), tickets: tickets.view(actions, now), assetVersion };
   }
 
   /** Push state to every open tab. A caller that just built one can hand it over. */
@@ -167,15 +170,17 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       // snapshot the progress metric reads from.
       void store.archiveCurrentBrief().then(() => broadcast());
     },
-    // The timer re-stamps its own file every poll and the board rewrites prs.json
-    // every fetch; that's this process talking to itself, and both already
-    // broadcast when something actually changed.
+    // The timer re-stamps its own file every poll and the two boards rewrite
+    // prs.json and tickets.json every fetch; that's this process talking to
+    // itself, and all three already broadcast when something actually changed.
     {
       ignore: [
         basename(config.sessionFile),
         basename(tempPathFor(config.sessionFile)),
         basename(config.pullsFile),
         basename(tempPathFor(config.pullsFile)),
+        basename(config.ticketsFile),
+        basename(tempPathFor(config.ticketsFile)),
       ],
     },
   );
@@ -251,6 +256,12 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     console.error(`[daily-focus] live agenda failed to start: ${(err as Error).message}`);
   });
 
+  // And again: three Jira searches through a CLI that may have to refresh an
+  // OAuth token first is the slowest of the three starts, and the least urgent.
+  void tickets.start().catch((err: unknown) => {
+    console.error(`[daily-focus] jira ticket board failed to start: ${(err as Error).message}`);
+  });
+
   const heartbeat = setInterval(() => {
     void broadcast();
   }, 60_000);
@@ -290,6 +301,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       subscribers.add(res);
       board.setAudience(subscribers.size);
       calendar.setAudience(subscribers.size);
+      tickets.setAudience(subscribers.size);
 
       const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
       keepAlive.unref();
@@ -298,6 +310,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
         subscribers.delete(res);
         board.setAudience(subscribers.size);
         calendar.setAudience(subscribers.size);
+        tickets.setAudience(subscribers.size);
       });
       return;
     }
@@ -307,6 +320,58 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       // already in flight is joined rather than doubled.
       await board.refresh();
       sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/tickets/refresh' && req.method === 'POST') {
+      // Waits for the read, as the board's refresh does, so the reply carries it.
+      await tickets.refresh();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/tickets/transition' && req.method === 'POST') {
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (err) {
+        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      if (typeof body !== 'object' || body === null) {
+        sendJSON(res, 400, { error: 'body must be an object' });
+        return;
+      }
+
+      const { key, status } = body as Record<string, unknown>;
+      // The only endpoint here that changes anything outside this machine, so it
+      // is the strictest about what it accepts. The key is matched against Jira's
+      // own `<PROJECT>-<number>` shape rather than merely being non-empty: `acli`
+      // would take a JQL query in this position just as happily, and a bulk
+      // transition is not something this dashboard should be able to express.
+      if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(key.trim())) {
+        sendJSON(res, 400, { error: '"key" must be a single Jira work item key, e.g. PROJ-8842' });
+        return;
+      }
+      if (typeof status !== 'string' || status.trim() === '') {
+        sendJSON(res, 400, { error: '"status" is required' });
+        return;
+      }
+
+      try {
+        await tickets.transition(key.trim(), status.trim());
+      } catch (err) {
+        // Jira's own words, and a 409: the request was well-formed and the
+        // workflow refused it, which is a conflict rather than our mistake. It
+        // is also the expected outcome for a move this board could not know was
+        // illegal, so it must reach the user rather than being logged.
+        sendJSON(res, 409, { error: (err as Error).message });
+        return;
+      }
+
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
       return;
     }
 
@@ -441,6 +506,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       if (sessionTick) clearTimeout(sessionTick);
       board.stop();
       calendar.stop();
+      tickets.stop();
       stopWatching();
       stopWatchingAssets();
       for (const res of subscribers) res.end();

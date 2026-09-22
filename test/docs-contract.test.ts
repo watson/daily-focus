@@ -171,6 +171,64 @@ test('the server, the client and the README agree on the board\'s courts', async
 });
 
 /**
+ * And the ticket board's courts, which are written down in the same three places
+ * for the same reason: a court the server can produce and the client can't name
+ * renders as a missing section, and the rows simply vanish.
+ */
+test("the server, the client and the README agree on the ticket board's courts", async () => {
+  const types = await readFile(resolve(root, 'src/types.ts'), 'utf8');
+  const client = await readFile(resolve(root, 'public/render.js'), 'utf8');
+
+  const union = /export type TicketCourt = ([^;]+);/.exec(types);
+  assert.ok(union, 'TicketCourt is no longer declared where this test looks for it');
+  const courts = [...union[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
+  assert.ok(courts.length >= 2, 'expected a union of string literals');
+
+  const titles = /const TICKET_COURT_TITLE = \{([^}]+)\}/.exec(client);
+  assert.ok(titles, 'render.js no longer declares TICKET_COURT_TITLE where this test looks');
+  const titled = new Map([...titles[1]!.matchAll(/(\w+):\s*'([^']+)'/g)].map((m) => [m[1]!, m[2]!]));
+
+  const order = /const TICKET_COURT_ORDER = \[([^\]]+)\]/.exec(client);
+  assert.ok(order, 'render.js no longer declares TICKET_COURT_ORDER where this test looks');
+  const ordered = [...order[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
+
+  assert.deepEqual([...titled.keys()].sort(), [...courts].sort(), 'TICKET_COURT_TITLE must name every court, and no others');
+  assert.deepEqual([...ordered].sort(), [...courts].sort(), 'TICKET_COURT_ORDER must place every court, and no others');
+
+  // Every court also needs the line saying what to do about it, since the
+  // heading alone says only what is wrong.
+  const hints = /const TICKET_COURT_HINT = \{([\s\S]+?)\n\};/.exec(client);
+  assert.ok(hints, 'render.js no longer declares TICKET_COURT_HINT where this test looks');
+  for (const court of courts) {
+    assert.match(hints[1]!, new RegExp(`\\b${court}:`), `TICKET_COURT_HINT says nothing about ${court}`);
+  }
+
+  const readme = await readFile(resolve(root, 'README.md'), 'utf8');
+  for (const title of titled.values()) {
+    assert.ok(readme.includes(title), `the README never describes the "${title}" bucket`);
+  }
+  const spelled = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'][courts.length];
+  assert.match(
+    readme,
+    new RegExp(`\\b(${courts.length}|${spelled}) buckets\\b`, 'i'),
+    `the README should say there are ${courts.length} buckets`,
+  );
+});
+
+/**
+ * The store's files each have exactly one writer, and `AGENTS.md` carries the table
+ * that says which. A file the server writes and that table doesn't mention is how a
+ * second writer gets added by accident, which is the one thing the no-locking design
+ * cannot survive.
+ */
+test('AGENTS.md accounts for every file the config knows about', async () => {
+  const agents = docs['AGENTS.md'];
+  for (const file of ['items.json', 'actions.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
+    assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
+  }
+});
+
+/**
  * Configuration is documented twice — the README table and `.env.example` — and read
  * once, in `src/config.ts`. A knob in any one of the three but not the others is a
  * setting nobody can find or one nobody can set, so the three lists have to match.

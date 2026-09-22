@@ -1,6 +1,14 @@
 /** Wiring: state, optimistic actions, keyboard. */
 
-import { fetchState, postAction, postBoardRefresh, postSession, subscribe } from './api.js';
+import {
+  fetchState,
+  postAction,
+  postBoardRefresh,
+  postSession,
+  postTicketTransition,
+  postTicketsRefresh,
+  subscribe,
+} from './api.js';
 import { localDateKey } from './format.js';
 import {
   clock,
@@ -14,12 +22,20 @@ import {
   renderSections,
   renderStats,
   renderTabs,
+  renderTicketBoard,
 } from './render.js';
 
 let state = null;
 
 /** Which view the page is on. Persisted: a pinned tab should come back where it was. */
 const VIEW_KEY = 'daily-focus:view';
+
+/**
+ * The panels, by name. Each name is also the id of its panel element, which is
+ * what `visibleItemIds` and the scroll-into-view selector depend on, and what the
+ * stylesheet keys `body[data-view]` off.
+ */
+const VIEWS = ['today', 'board', 'tickets'];
 
 /**
  * Which self-closed session has already been acknowledged, by its end time.
@@ -35,6 +51,9 @@ const ui = {
   selectedId: null,
   pending: new Set(),
   menuFor: null,
+  /** Which ticket has its status menu open. Separate from `menuFor`, so the park
+   *  menu and the status menu can never be open on the same row at once. */
+  statusFor: null,
   noteFor: null,
   /** Text typed into the open note form but not saved yet. See `discardNote`. */
   noteDraft: '',
@@ -43,7 +62,7 @@ const ui = {
   activeSessionId: null,
   sessionOverrun: false,
   unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
-  view: localStorage.getItem(VIEW_KEY) === 'board' ? 'board' : 'today',
+  view: VIEWS.includes(localStorage.getItem(VIEW_KEY)) ? localStorage.getItem(VIEW_KEY) : 'today',
 };
 
 /** Last completed action, for the `u` shortcut. */
@@ -88,14 +107,23 @@ const handlers = {
   },
   toggleMenu: (id) => {
     ui.menuFor = ui.menuFor === id ? null : id;
+    ui.statusFor = null;
     discardNote();
     render();
   },
+  toggleStatus: (id) => {
+    ui.statusFor = ui.statusFor === id ? null : id;
+    ui.menuFor = null;
+    discardNote();
+    render();
+  },
+  moveTicket: (key, status, from) => void moveTicket(key, status, from),
   toggleNote: (id) => {
     const opening = ui.noteFor !== id;
     discardNote();
     ui.noteFor = opening ? id : null;
     ui.menuFor = null;
+    ui.statusFor = null;
     render();
   },
   // Deliberately doesn't render: the field is already showing the character that
@@ -119,6 +147,7 @@ const handlers = {
   nudge: (id) => void applyAction(id, 'note', { text: 'Nudged reviewers' }),
   unpark: (id) => void unpark(id),
   refreshBoard: () => void refreshBoard(),
+  refreshTickets: () => void refreshTickets(),
 };
 
 function render() {
@@ -136,6 +165,8 @@ function render() {
   // other one is rebuilt the moment it's looked at, and never for a hidden panel.
   if (ui.view === 'board') {
     renderBoard(state, ui, handlers);
+  } else if (ui.view === 'tickets') {
+    renderTicketBoard(state, ui, handlers);
   } else {
     renderObjective(state);
     renderStats(state);
@@ -155,6 +186,7 @@ function setView(view) {
   // The selection belongs to the list it was made in.
   ui.selectedId = null;
   ui.menuFor = null;
+  ui.statusFor = null;
   discardNote();
   render();
 }
@@ -182,6 +214,50 @@ async function refreshBoard() {
   }
 }
 
+/** The same, for Jira. Three searches through a CLI, so this one really does wait. */
+async function refreshTickets() {
+  if (!state?.tickets?.enabled || state.tickets.fetching) return;
+  try {
+    adoptState(await postTicketsRefresh());
+  } catch (err) {
+    showToast(`Could not refresh: ${err.message}`);
+  }
+}
+
+/**
+ * Move a ticket to another status, in Jira.
+ *
+ * The one thing this dashboard does that changes something outside it, so it is
+ * deliberately not optimistic: the row only moves once Jira has accepted it and
+ * the server has read the board back. Guessing here would show a status Jira
+ * might have refused, which on the one tab whose whole job is "your statuses are
+ * wrong" would be a lie of exactly the kind it exists to catch.
+ *
+ * The undo is a transition back rather than a rollback, and says so: Jira's
+ * history keeps both moves. That is the honest offer — the alternative is
+ * pretending a write can be taken back.
+ */
+async function moveTicket(key, status, from) {
+  const id = `jira:${key}`;
+  if (ui.pending.has(id)) return;
+  ui.statusFor = null;
+  ui.pending.add(id);
+  render();
+
+  try {
+    adoptState(await postTicketTransition(key, status));
+    showToast(`${key} moved to ${status}`, from ? () => void moveTicket(key, from, null) : null);
+  } catch (err) {
+    // Jira refusing the move is the expected failure, not an exception: the board
+    // offers the statuses it has seen, never the transitions the workflow allows.
+    showToast(`Jira would not move ${key} to ${status}: ${err.message}`);
+    await refresh();
+  } finally {
+    ui.pending.delete(id);
+    render();
+  }
+}
+
 /**
  * Take a state the server built on its own clock, not in reply to a click.
  *
@@ -195,9 +271,11 @@ function adoptState(next) {
     const optimistic = state?.items.find((item) => item.id === id);
     const incoming = next.items.find((item) => item.id === id);
     if (optimistic && incoming) Object.assign(incoming, { status: optimistic.status });
-    const optimisticRow = state?.board?.rows.find((row) => row.id === id);
-    const incomingRow = next.board?.rows.find((row) => row.id === id);
-    if (optimisticRow && incomingRow) Object.assign(incomingRow, { status: optimisticRow.status });
+    for (const rows of ['board', 'tickets']) {
+      const optimisticRow = state?.[rows]?.rows.find((row) => row.id === id);
+      const incomingRow = next[rows]?.rows.find((row) => row.id === id);
+      if (optimisticRow && incomingRow) Object.assign(incomingRow, { status: optimisticRow.status });
+    }
   }
   state = next;
   ui.connectionError = null;
@@ -225,6 +303,7 @@ const PAST_TENSE = {
  */
 async function applyAction(id, action, extra = {}) {
   ui.menuFor = null;
+  ui.statusFor = null;
   discardNote();
   ui.pending.add(id);
 
@@ -233,7 +312,9 @@ async function applyAction(id, action, extra = {}) {
   // and the log is shared, so a park from the board is a snooze on that item as
   // well — deliberately, so the agent leaves the PR alone until the date. What
   // the park replaces is remembered so unparking can put it back.
-  const row = state?.board?.rows.find((candidate) => candidate.id === id);
+  const row =
+    state?.board?.rows.find((candidate) => candidate.id === id) ??
+    state?.tickets?.rows.find((candidate) => candidate.id === id);
   if (row && action === 'snooze' && item && (item.status === 'done' || item.status === 'dismissed')) {
     parkedFrom.set(id, item.status === 'done' ? 'done' : 'dismiss');
   }
@@ -420,7 +501,12 @@ function moveSelection(delta) {
 /** The selected brief item or board row. Rows carry `court`, items carry `kind`. */
 function selectedItem() {
   if (!state || ui.selectedId === null) return null;
-  const list = ui.view === 'board' ? (state.board?.rows ?? []) : state.items;
+  const list =
+    ui.view === 'board'
+      ? (state.board?.rows ?? [])
+      : ui.view === 'tickets'
+        ? (state.tickets?.rows ?? [])
+        : state.items;
   return list.find((entry) => entry.id === ui.selectedId) ?? null;
 }
 
@@ -434,8 +520,9 @@ document.addEventListener('keydown', (event) => {
   const help = document.getElementById('help');
 
   if (event.key === 'Escape') {
-    if (ui.menuFor || ui.noteFor) {
+    if (ui.menuFor || ui.statusFor || ui.noteFor) {
       ui.menuFor = null;
+      ui.statusFor = null;
       discardNote();
       render();
     }
@@ -472,10 +559,17 @@ document.addEventListener('keydown', (event) => {
       event.preventDefault();
       setView('board');
       return;
+    case '3':
+      event.preventDefault();
+      setView('tickets');
+      return;
     case 'r':
       if (ui.view === 'board') {
         event.preventDefault();
         void refreshBoard();
+      } else if (ui.view === 'tickets') {
+        event.preventDefault();
+        void refreshTickets();
       }
       return;
     case '?':
@@ -492,13 +586,15 @@ document.addEventListener('keydown', (event) => {
 
   const item = selectedItem();
   if (!item) return;
-  // A pull request can be parked and annotated, but not done, dismissed or timed.
-  const pull = ui.view === 'board';
+  // A board row — pull request or ticket — can be parked and annotated, but not
+  // done, dismissed or timed. Both show what is still true upstream, and neither
+  // is put right from here.
+  const boardRow = ui.view !== 'today';
 
   switch (event.key) {
     case 'e':
       event.preventDefault();
-      if (!pull && item.status === 'open') void applyAction(item.id, 'done');
+      if (!boardRow && item.status === 'open') void applyAction(item.id, 'done');
       break;
     case 's':
       event.preventDefault();
@@ -506,7 +602,7 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'x':
       event.preventDefault();
-      if (!pull && item.status === 'open') void applyAction(item.id, 'dismiss');
+      if (!boardRow && item.status === 'open') void applyAction(item.id, 'dismiss');
       break;
     case 'n':
       event.preventDefault();
@@ -514,7 +610,7 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'p':
       event.preventDefault();
-      if (pull) break;
+      if (boardRow) break;
       if (ui.activeSessionId === item.id) handlers.stopSession();
       else if (item.status === 'open' && item.kind === 'task') handlers.startSession(item.id);
       break;
@@ -530,10 +626,11 @@ document.addEventListener('keydown', (event) => {
 // Click-away closes the snooze menu. The toggle button is excluded so its own
 // click doesn't immediately undo itself as the event bubbles up here.
 document.addEventListener('click', (event) => {
-  if (!ui.menuFor) return;
+  if (!ui.menuFor && !ui.statusFor) return;
   const target = event.target;
   if (target instanceof HTMLElement && (target.closest('.menu') || target.closest('[aria-expanded]'))) return;
   ui.menuFor = null;
+  ui.statusFor = null;
   render();
 });
 

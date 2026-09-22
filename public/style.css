@@ -836,6 +836,14 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
   background: var(--surface-sunken);
   color: var(--ink-1);
 }
+
+/* The resolved date on the long-range presets, trailing its label. */
+.menu__when {
+  float: right;
+  padding-left: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
 .menu__date {
   display: flex;
   gap: 5px;
@@ -1169,16 +1177,41 @@ kbd {
   line-height: 1;
 }
 
-/* Which view is showing. Focus mode is scoped to Today (see the rules above). */
+/*
+ * Which view is showing. Focus mode is scoped to Today (see the rules above).
+ *
+ * One rule per panel per view rather than `:not()`, because a view name nobody
+ * has written a rule for should show nothing rather than everything at once.
+ */
 body[data-view='board'] #today,
-body[data-view='board'] .layout__side {
+body[data-view='tickets'] #today,
+body[data-view='board'] .layout__side,
+body[data-view='tickets'] .layout__side {
   display: none;
 }
-body[data-view='today'] #board {
+body[data-view='today'] #board,
+body[data-view='tickets'] #board {
   display: none;
 }
-body[data-view='board'] .layout {
+body[data-view='today'] #tickets,
+body[data-view='board'] #tickets {
+  display: none;
+}
+body[data-view='board'] .layout,
+body[data-view='tickets'] .layout {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+ * The ticket board is the one view allowed past the shared page width, because
+ * it is the one view that is not prose. Everything else caps at 1280px so a line
+ * of a title or a headline stays readable; these rows are a fixed status gutter
+ * and a short summary, and a third column is worth more here than a consistent
+ * right margin. 1600px is where that stops: a fourth column would need 1870 and
+ * would put the summaries back to wrapping every time.
+ */
+body[data-view='tickets'] .layout {
+  max-width: 1600px;
 }
 
 /* ---------- the pull request board ---------- */
@@ -1228,8 +1261,169 @@ body[data-view='board'] .layout {
   font-weight: 500;
 }
 
-.item--pull[data-status='snoozed'] .item__title {
+.item--pull[data-status='snoozed'] .item__title,
+.item--ticket[data-status='snoozed'] .item__title {
   color: var(--ink-3);
+}
+
+/* ---------- the Jira ticket board ---------- */
+
+/*
+ * Two or three columns, by measurement rather than by taste: the rows were
+ * 1200px wide for a summary that runs 520px at the median and 683px at the
+ * longest, so half of every card was empty and thirty of them came to 2527px of
+ * scrolling. At 460px a column the same thirty fit in half that.
+ *
+ * Grid rather than `columns: 2`, which would give the nicer top-to-bottom
+ * reading order, because `.item__actions` and the snooze `.menu` are both
+ * absolutely positioned — and an absolutely positioned child inside a multicol
+ * fragment resolves against the whole container, not the fragment, so the menu
+ * would open next to the wrong row.
+ *
+ * `align-items: start` rather than the default stretch: a card carrying a note
+ * is several times the height of a bare one, and stretching its neighbour to
+ * match would hand back the space this whole rule is here to save.
+ */
+#tickets .list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  gap: 4px 10px;
+  align-items: start;
+}
+
+/*
+ * A fixed gutter for the status, so every summary starts at the same x and the
+ * statuses read as a column you can run an eye down. Wide enough for the longest
+ * status seen (79px) with room; a longer one shrinks its own pill rather than
+ * moving the summaries, which is the right way round for a board scanned by
+ * column.
+ */
+#tickets .item--ticket {
+  padding: 8px 11px;
+}
+#tickets .item__body {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 9px;
+}
+#tickets .item__meta--status {
+  grid-column: 1;
+  grid-row: 1;
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+/*
+ * The reserve on the right is the action strip's width. `.item__actions` is
+ * absolutely positioned over the card's top right and opaque, so without this it
+ * covers the tail of any summary long enough to reach it — on hover, and
+ * permanently on the selected row, which is the row being read. Measured rather
+ * than guessed: reserving the pull request board's three buttons cost 142px of
+ * board height, and dropping Open — which only duplicated the link the summary
+ * already is — brought it to 87px for the same "nothing is ever hidden".
+ */
+#tickets .item__title {
+  grid-column: 2;
+  grid-row: 1;
+  padding-right: 104px;
+  font-size: 13.5px;
+}
+/* The exceptions, the notes and the note form all span both columns. */
+#tickets .item__meta--extra,
+#tickets .item__notes,
+#tickets .note-form {
+  grid-column: 1 / -1;
+}
+
+/*
+ * The key to the dots. Sits under the status line, read once — and carries each
+ * type's name in text beside its swatch, which is what lets the dot be the only
+ * place the type appears on a row.
+ */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -6px 0 14px;
+  padding-left: 2px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.legend__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: block;
+}
+
+/*
+ * A count, not an alarm. The board's badge is red because something is waiting
+ * on you; nothing on the ticket tab ever is, and a red number that is there
+ * every single morning is one you stop reading by the end of the week.
+ */
+.tab__badge--quiet {
+  background: var(--surface-sunken);
+  border: 1px solid var(--hairline);
+  color: var(--ink-2);
+}
+
+/*
+ * What to do about a court, under its rows rather than above them.
+ *
+ * Above the list it would be read once and then skipped past every morning on
+ * the way to the rows; below, it is where the eye lands after running out of
+ * rows, which is when "a pull request nobody has written yet is invisible from
+ * here" is actually worth knowing.
+ */
+.court-hint {
+  margin: -6px 0 18px;
+  padding-left: 26px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  max-width: 68ch;
+}
+
+/*
+ * The status doubles as the control that changes it, and looks exactly like the
+ * pill it replaced — no underline, no marker. A persistent "this is clickable"
+ * hint is ink spent every row of every morning to say something the row only
+ * needs to say when you go looking for it, so the cursor and the hover carry it
+ * instead. The rows are dense enough that finding out costs one hover.
+ */
+.pill--button {
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.pill--button:hover {
+  border-color: var(--ink-3);
+  color: var(--ink-1);
+}
+
+/*
+ * Anchored to the gutter rather than the card's right edge, unlike the park
+ * menu: it belongs to the pill that opened it, and the two menus must not be
+ * able to appear in the same place.
+ */
+.menu--status {
+  top: 26px;
+  right: auto;
+  left: 0;
+  min-width: 9rem;
+}
+
+/* The status the ticket claims — the row's own subject, so it carries weight. */
+.pill--status {
+  border-color: var(--hairline);
+  background: var(--surface-sunken);
+  color: var(--ink-1);
+  font-weight: 500;
 }
 
 /* An anchor styled as a button sits a hair lower than a real one; align them. */

@@ -18,6 +18,8 @@ before(async () => {
   process.env.DAILY_FOCUS_GITHUB = 'off';
   // ...nor for the real calendar, which would mean a TCC prompt in CI.
   process.env.DAILY_FOCUS_CALENDAR = 'off';
+  // ...nor for acli, which would spawn a CLI and hit a real Jira.
+  process.env.DAILY_FOCUS_JIRA = 'off';
 
   await writeFile(
     join(dataDir, 'items.json'),
