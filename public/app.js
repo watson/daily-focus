@@ -1,4 +1,4 @@
-/** Wiring: state, optimistic actions, keyboard. */
+/** Wiring: state, optimistic actions, keyboard, theme. */
 
 import {
   fetchState,
@@ -677,6 +677,81 @@ function setFocusMode(on) {
 
 setFocusMode(localStorage.getItem('daily-focus:focus-mode') === '1');
 document.getElementById('focus-exit').addEventListener('click', () => setFocusMode(false));
+
+/* ---------- theme ---------- */
+
+/**
+ * Cycle system → light → dark.
+ *
+ * There was a toggle here once, and it was removed for two reasons that both had
+ * to be answered before it could come back.
+ *
+ * The first was a bug. It stored light or dark and offered no way back, and the
+ * page re-stamped that choice before every paint — so a machine set to follow the
+ * clock stayed pinned to whichever mode had been chosen once, months earlier. The
+ * answer is that "system" is a state in the cycle and the default, so handing the
+ * decision back to the OS is one press rather than a storage edit. It clears the
+ * stored value instead of recording itself, which is also what a browser that has
+ * never been told does, and the stylesheet reaches it through
+ * `color-scheme: light dark`, which re-evaluates itself when the OS flips.
+ *
+ * The second was that a three-state cycle has a press that changes nothing on
+ * screen, because "system" renders identically to whichever mode the OS is
+ * already in — and a button that appears dead gets pressed again. So the button
+ * reports the state as well as changing it: one glyph per state, and a label
+ * naming both where you are and where the next press goes. That makes it the
+ * icon's job to be legible in all three, which is why `system` is the sliced
+ * sun-and-moon rather than a third shade of the same shape.
+ *
+ * Nothing here listens to `prefers-color-scheme`. The old version had to, to keep
+ * a label reading "switch to dark" honest while the OS flipped underneath it; a
+ * label naming the state rather than the rendering has nothing to keep up with.
+ */
+
+const THEME_KEY = 'daily-focus:theme';
+const THEME_CYCLE = ['system', 'light', 'dark'];
+
+/** The action the next press performs, and the state you are in now. */
+const THEME_NEXT = {
+  system: 'Follow the system theme',
+  light: 'Switch to light mode',
+  dark: 'Switch to dark mode',
+};
+const THEME_NOW = {
+  system: 'now following the system',
+  light: 'now light',
+  dark: 'now dark',
+};
+
+const themeToggle = document.getElementById('theme-toggle');
+
+function currentTheme() {
+  const stamped = document.documentElement.dataset.theme;
+  return THEME_CYCLE.includes(stamped) ? stamped : 'system';
+}
+
+function nextTheme(mode) {
+  return THEME_CYCLE[(THEME_CYCLE.indexOf(mode) + 1) % THEME_CYCLE.length];
+}
+
+function describeTheme() {
+  const mode = currentTheme();
+  const label = `${THEME_NEXT[nextTheme(mode)]} (${THEME_NOW[mode]})`;
+  themeToggle.title = label;
+  themeToggle.setAttribute('aria-label', label);
+}
+
+themeToggle.addEventListener('click', () => {
+  const mode = nextTheme(currentTheme());
+  document.documentElement.dataset.theme = mode;
+  // Storing `system` would render the same, but leaving nothing behind is what
+  // makes it the same state a browser that has never been told is already in.
+  if (mode === 'system') localStorage.removeItem(THEME_KEY);
+  else localStorage.setItem(THEME_KEY, mode);
+  describeTheme();
+});
+
+describeTheme();
 
 document.getElementById('help-toggle').addEventListener('click', () => {
   document.getElementById('help').showModal();
