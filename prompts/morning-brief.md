@@ -19,8 +19,8 @@ not for you.
 - `sources.md` — **you only ever read this.** The personal specifics this prompt
   deliberately doesn't carry: who the user is, which calendars to query, which
   accounts to judge review requests and authorship against, which recurring documents
-  to read. This prompt says *what* to gather and how to judge it; that file says *who*
-  and *where*.
+  to read and which document IDs to exclude. This prompt says *what* to gather and
+  how to judge it; that file says *who* and *where*.
 - `items.schema.json` — **you only ever read this.** The machine-readable shape of
   `items.json`. Validate against it in step 5 if you can.
 
@@ -259,11 +259,19 @@ join details; drop those without comment. Check every meeting on today's calenda
 every meeting from the last seven days, and the documents `sources.md` names on the
 terms it gives them.
 
+**Apply document exclusions before fetching.** Match the stable document ID against
+the exclusions in `sources.md`, whether discovered through an attachment, a
+description link or a recurring source. Do not fetch excluded documents, seek them
+through another source or report them as unavailable. Keep the meeting on the agenda
+and continue checking its other documents. Failed reads alone do not establish that
+a document is retired.
+
 **Invites often carry more than one, and old links go dead.** A link that 404s while
 another opens fine is a dead link, not a lost source: read the one that opens and say
-nothing about the other. Only when *nothing* on the invite opens are you looking at
-your own access rather than a stale link. Where two both hold minutes, the one with
-the newer dated section at the top is the live one.
+nothing about the other. If none of the remaining documents opens, report the gap
+without assuming whether the documents are stale or access is missing. An invite
+whose documents are all explicitly excluded has no document gap to report. Where
+two both hold minutes, the one with the newer dated section at the top is the live one.
 
 **Read from the top and stop.** A year of a weekly meeting runs to hundreds of
 thousands of characters. The newest occurrence sits at the top and each one is its own
@@ -315,9 +323,9 @@ From either source, surface only:
 - a blocker the user owns or can unblock; or
 - a deadline or person now waiting on the user.
 
-If the Google Drive connector cannot read a notes document, name it and its link in
-step 5. An unread document is a gap the user can close in a minute; a guess about what
-a meeting decided is one they cannot.
+If a notes document remains unread after applying the exclusions and alternate-link
+rules above, name it and its link in step 5. Report what could not be read without
+guessing what the meeting decided.
 
 **An action item assigned to the user inside one of these documents is already a Google
 Task**, carrying an `assignedFrom.link` back to it — so it is a `gtasks:task:` item with
@@ -341,6 +349,11 @@ issue type and whether it has open children before raising it.
 
 #### GitHub
 
+**Run every `gh` command outside the sandbox from the start**, including account
+identification, switching, queries and restoration. Use the permitted execution
+mechanism; if outside-sandbox execution is denied, report that restriction rather
+than declaring the credentials invalid. This rule applies to `gh`, not unrelated work.
+
 Use the `gh` CLI. Run each probe separately; never make all GitHub gathering
 conditional on one compound `&&` chain. Bare `gh auth status` checks every stored
 account and exits unsuccessfully if any account has an authentication problem. Check
@@ -348,15 +361,18 @@ only the active GitHub.com account with `gh auth status --active --hostname gith
 or identify it with `gh api user --jq .login`.
 
 Let `gh` use its active keyring-backed login. Do not set `GH_TOKEN` from
-`gh auth token --user`. If a read-only command reports an invalid token, keyring or
-SSH-agent problem, network failure or sandbox failure, retry that smallest command
-outside the sandbox before declaring GitHub unavailable.
+`gh auth token --user`.
 
 To query as a different configured login, record the current active login, run
 `gh auth switch --hostname github.com --user <login>`, perform that login's queries,
 and restore the original login even when a query fails. A failure for one login must
-not stop the other logins. Report GitHub as unavailable only when the smallest relevant
-read-only probe also fails outside the sandbox.
+not stop the other logins. Report an account or repository as unavailable only when
+the smallest relevant read-only probe fails outside the sandbox under the intended
+login. Name the affected scope rather than declaring all GitHub unavailable.
+
+A successful CLI read establishes access to that resource. A GitHub connector
+failure must not override it or become a source gap when the CLI supplies the needed
+data. Successful access to one resource does not establish access to every repository.
 
 Query every GitHub identity listed in `sources.md` using its corresponding authenticated
 account. Judge authorship and review requests against the identity listed for that
@@ -538,8 +554,10 @@ Check all of these, and fix anything that fails:
     and every known calendar id was tried directly.
 12. Every `calendar:event:` id came from the Calendar connector. None was synthesised
     from a title, time, URL or browser page.
-13. If you report GitHub as unavailable, the smallest relevant read-only `gh` probe
-    failed outside the sandbox; a sandbox-only failure is not enough.
+13. Every `gh` command ran outside the sandbox. Any GitHub gap names the affected
+    account or repository and is supported by a failed read-only probe under the
+    intended login, or explicitly reports an execution restriction. Connector
+    failures do not override successful CLI reads of the same resource.
 14. No item or upstream id relies only on browser data.
 
 Then report back, briefly: how many items you wrote, which got a priority, what you
