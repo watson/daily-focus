@@ -624,6 +624,17 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
   text-decoration-color: var(--accent);
 }
 
+/*
+ * The `owner/repo` (and, on the board, `#number`) ahead of a title. Lighter than
+ * the title it sits on so it reads as an address rather than as the first words
+ * of the sentence — you find the row by its title and confirm it by this.
+ */
+.item__ref {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 .item__meta {
   display: flex;
   flex-wrap: wrap;
@@ -1187,12 +1198,6 @@ body[data-view='board'] .layout {
 }
 .board__status-text {
   overflow-wrap: anywhere;
-}
-
-.item__ref {
-  color: var(--ink-3);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
 }
 
 /* The line under a waiting-on-you row that says why. Reads as the row's detail. */

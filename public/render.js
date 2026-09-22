@@ -515,12 +515,81 @@ function drawer(title, items, state, ui, handlers, row = renderItem) {
 
 /* ---------- one item ---------- */
 
-function renderItem(item, state, ui, handlers) {
+/**
+ * Path segments github.com spends on itself. `/orgs/acme/projects/5` is not a
+ * repository called `acme` owned by `orgs`, and a row claiming it was would be
+ * worse than a row that said nothing.
+ */
+const GITHUB_NON_OWNER = new Set([
+  'account',
+  'apps',
+  'codespaces',
+  'collections',
+  'dashboard',
+  'explore',
+  'issues',
+  'login',
+  'marketplace',
+  'new',
+  'notifications',
+  'organizations',
+  'orgs',
+  'pulls',
+  'search',
+  'settings',
+  'sponsors',
+  'topics',
+  'users',
+]);
+
+/**
+ * Which repository a GitHub row belongs to, read off its link.
+ *
+ * The title is prose an agent wrote, so it names the repository when it happens
+ * to read well and not otherwise — and the organisation almost never, which is
+ * the half that matters when two of them own a `web-ui`.
+ *
+ * Off the URL rather than off the id: the id's `github:pr:<owner>/<repo>#<n>`
+ * shape is the prompt's to spell, and this file treats it as opaque on purpose.
+ * A link naming no repository yields nothing rather than a guess, for the same
+ * reason — the row can be quiet about where it lives, but it must not be wrong.
+ */
+function githubRepo(item) {
+  if (item.source !== 'github' || !item.url) return null;
+
+  let url;
+  try {
+    url = new URL(item.url);
+  } catch {
+    return null;
+  }
+
+  // github.com, or an enterprise host spelled github.<company>.com. A gist lives
+  // on gist.github.com and its second segment is a hash, not a repository name.
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (host !== 'github.com' && !host.startsWith('github.')) return null;
+
+  const [owner, repo] = url.pathname.split('/').filter(Boolean);
+  if (!owner || !repo || GITHUB_NON_OWNER.has(owner.toLowerCase())) return null;
+  return `${owner}/${repo}`;
+}
+
+/** Exported for `test/items-ui.test.ts`, which renders one brief row against a DOM stub. */
+export function renderItem(item, state, ui, handlers) {
   const now = new Date(state.now);
   const selected = ui.selectedId === item.id;
 
+  // Ahead of the title and inside the link, which is where the board tab puts the
+  // same fact. Always, even when the title says it too: a column you can run an
+  // eye down is worth more than the odd repeated word.
+  const repo = githubRepo(item);
   const title = item.url
-    ? el('a', { href: item.url, target: '_blank', rel: 'noopener noreferrer' }, item.title)
+    ? el(
+        'a',
+        { href: item.url, target: '_blank', rel: 'noopener noreferrer' },
+        repo ? [el('span', { class: 'item__ref' }, repo), ' '] : null,
+        item.title,
+      )
     : item.title;
 
   const node = el(

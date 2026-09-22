@@ -160,6 +160,12 @@ Ids are namespaced by source (`github:pr:acme/webapp#3421`, `email:thread:18f2a9
 `gtasks:task:…`). Nothing in the dashboard parses that structure — treat it as an
 opaque string and leave the recipes to the prompt.
 
+That includes the one place the structure looks tempting. A GitHub row shows the
+`owner/repo` it belongs to, because the title is prose and names the organisation
+almost never — but `githubRepo` in `public/render.js` reads it off `url`, not off
+the id, and a link that names no repository renders nothing rather than a guess.
+`test/items-ui.test.ts` holds both halves.
+
 ### Folding the action log
 
 `actions.jsonl` is one JSON object per line, appended chronologically. `resolveItems`
