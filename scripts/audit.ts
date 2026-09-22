@@ -22,7 +22,7 @@ import { runContractChecks } from '../src/checks.ts';
 import { readArchiveIndex } from '../src/archive.ts';
 import { fingerprintId } from '../src/ids.ts';
 import { workingMsBetween } from '../src/time.ts';
-import { describeSchedule, nextRunDate, resolveSchedule, runsOn } from '../src/schedule.ts';
+import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, nextRunDate, resolveSchedule, runsOn } from '../src/schedule.ts';
 import { resolveItems } from '../src/store.ts';
 import type { Brief } from '../src/types.ts';
 
@@ -109,7 +109,7 @@ const ranAt = new Date(brief.generatedAt);
 const ageHours = (auditedAt.getTime() - ranAt.getTime()) / 3_600_000;
 const scheduledAgeHours = workingMsBetween(ranAt, auditedAt, isRunDay) / 3_600_000;
 const age = `${Math.round(ageHours * 10) / 10}h old`;
-if (scheduledAgeHours > config.staleAfterHours) fail('brief is fresh', `${Math.round(ageHours)}h old`);
+if (scheduledAgeHours >= config.staleAfterHours + BRIEF_REFRESH_GRACE_HOURS) fail('brief is fresh', `${Math.round(ageHours)}h old`);
 else {
   const next = nextRunDate(schedule, auditedAt);
   pass('brief is fresh', isRunDay(auditedAt) ? age : `${age}, and no run was due today (next: ${next})`);

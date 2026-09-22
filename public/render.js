@@ -95,9 +95,11 @@ export function renderBanners(state, connectionError) {
       banner(
         'warning',
         '!',
-        `This brief is ${state.brief.ageHours} hours old — the morning agent may not have run.`,
+        `This brief is ${state.brief.ageHours} hours old. The morning agent may not have run.`,
       ),
     );
+  } else if (state.brief.refreshPending && !state.problem) {
+    banners.push(banner('info', 'i', "The morning agent may still be preparing today's brief."));
   } else if (!state.problem && isHeldOverDayOff(state)) {
     // Not a warning: nothing has gone wrong. No run was scheduled today, so the
     // answer to "why is this yesterday's?" is the schedule, and saying so is the

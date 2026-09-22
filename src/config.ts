@@ -123,7 +123,7 @@ export interface Config {
   workEndHour: number;
   /** A gap this long or longer counts as a focus window. */
   minFreeWindowMinutes: number;
-  /** Working hours after which the brief is flagged as stale in the UI. */
+  /** Scheduled hours before a refresh is expected, followed by a 45-minute grace period. */
   staleAfterHours: number;
   /**
    * Weekdays the briefing agent is scheduled on, 0 = Sunday. Null when it hasn't

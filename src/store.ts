@@ -23,7 +23,7 @@ import {
   startOfLocalDay,
   workingMsBetween,
 } from './time.ts';
-import { describeSchedule, nextRunDate, resolveSchedule, runsOn } from './schedule.ts';
+import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, nextRunDate, resolveSchedule, runsOn } from './schedule.ts';
 import { canonicalId } from './ids.ts';
 import { runContractChecks } from './checks.ts';
 import { readSessionState } from './sessions.ts';
@@ -209,10 +209,14 @@ export class Store {
     // so flagging it warns about the calendar rather than about a missed run — and a
     // banner that fires every weekend by construction is one you stop reading by the
     // third. Discounting the days off puts the warning on the next scheduled morning,
-    // at the hour the agent should have replaced the file.
+    // at the hour a refresh is expected, followed by a short grace period.
     const scheduledAgeHours = generatedAt
-      ? Math.floor(workingMsBetween(generatedAt, now, isRunDay) / 3_600_000)
+      ? workingMsBetween(generatedAt, now, isRunDay) / 3_600_000
       : null;
+
+    const refreshDue = scheduledAgeHours !== null && scheduledAgeHours >= this.config.staleAfterHours;
+    const stale = scheduledAgeHours !== null &&
+      scheduledAgeHours >= this.config.staleAfterHours + BRIEF_REFRESH_GRACE_HOURS;
 
     const visible = items.filter((item) => item.status === 'open');
     const todayStart = startOfLocalDay(now);
@@ -263,7 +267,8 @@ export class Store {
         date: brief?.date ?? (generatedAt ? localDateKey(generatedAt) : null),
         headline: brief?.headline ?? null,
         ageHours,
-        stale: scheduledAgeHours !== null && scheduledAgeHours >= this.config.staleAfterHours,
+        refreshPending: refreshDue && !stale && isRunDay(now),
+        stale,
       },
       items,
       agenda,
