@@ -625,6 +625,14 @@ React later is mechanical rather than a rewrite.
   the ranking. A test asserts it never survives serialisation.
 - **Colour never carries meaning alone.** Source hues come from a CVD-validated
   palette and always sit beside the source name in text.
+- **Dark mode follows the OS, until you say otherwise.** The toggle in the header
+  cycles system → light → dark, and "system" is a state you can get back to rather
+  than a default you leave once: it stores nothing and hands the decision to
+  `prefers-color-scheme`, which keeps up with a machine set to follow the clock. One
+  press in three therefore changes no colour at all, so the button reports where it
+  is as well as moving — a glyph per state, sun and moon cut on the diagonal for
+  the third — and the dark palette lives in the same `light-dark()` pairs as the
+  light one rather than in a second copy of the list.
 - **The board is state, not judgement.** The agent decides what deserves attention;
   the server only reads what GitHub can say for certain, and reads it deterministically
   so two accounts either both work or fail visibly. Whose court a PR is in is computed

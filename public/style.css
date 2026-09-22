@@ -6,40 +6,57 @@
  * Source colour is never the only cue: every dot sits beside its source name in
  * text, which is what lets the lighter light-mode hues (aqua, yellow, magenta)
  * sit below 3:1 contrast without losing meaning.
+ *
+ * Each token names both its steps and `light-dark()` picks one, so the dark
+ * palette lives here and nowhere else. It used to be a second, hand-kept copy of
+ * this list inside a `prefers-color-scheme` block — twenty-two values one edit
+ * away from disagreeing with the ones above them, with nothing to notice.
  */
 
 :root {
-  color-scheme: light;
+  /*
+   * Both keywords, which is the state the toggle calls "system": `light-dark()`
+   * follows `prefers-color-scheme` and re-evaluates the moment the OS flips.
+   * This is also what renders before `index.html`'s stamp has run.
+   */
+  color-scheme: light dark;
 
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --surface-sunken: #f2f1ed;
-  --ink-1: #0b0b0b;
-  --ink-2: #52514e;
-  --ink-3: #898781;
-  --hairline: #e1e0d9;
-  --border: rgba(11, 11, 11, 0.1);
-  --shadow: 0 1px 2px rgba(11, 11, 11, 0.05), 0 4px 16px rgba(11, 11, 11, 0.04);
+  --page: light-dark(#f9f9f7, #0d0d0d);
+  --surface: light-dark(#fcfcfb, #1a1a19);
+  --surface-sunken: light-dark(#f2f1ed, #131312);
+  --ink-1: light-dark(#0b0b0b, #ffffff);
+  --ink-2: light-dark(#52514e, #c3c2b7);
+  --ink-3: #898781; /* Shared deliberately: the muted step clears both pages. */
+  --hairline: light-dark(#e1e0d9, #2c2c2a);
+  --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
+  /*
+   * Dark wants no shadow at all. Written as transparent steps rather than as a
+   * `none` somewhere else, because anywhere else means a selector that knows
+   * which mode it is in — and that is the duplicate copy coming back for one
+   * property.
+   */
+  --shadow: 0 1px 2px light-dark(rgba(11, 11, 11, 0.05), transparent),
+    0 4px 16px light-dark(rgba(11, 11, 11, 0.04), transparent);
 
   --good: #0ca30c;
   --warning: #fab219;
   --serious: #ec835a;
   --critical: #d03b3b;
-  --good-ink: #006300;
+  --good-ink: light-dark(#006300, #0ca30c);
 
-  --src-github: #2a78d6;
-  --src-email: #eb6834;
-  --src-calendar: #1baf7a;
-  --src-jira: #eda100;
-  --src-slack: #e87ba4;
-  --src-workday: #008300;
-  --src-tasks: #0b8ea8;
-  --src-atlassian: #4a3aa7;
+  --src-github: light-dark(#2a78d6, #3987e5);
+  --src-email: light-dark(#eb6834, #d95926);
+  --src-calendar: light-dark(#1baf7a, #199e70);
+  --src-jira: light-dark(#eda100, #c98500);
+  --src-slack: light-dark(#e87ba4, #d55181);
+  --src-workday: #008300; /* Shared: the green reads on both. */
+  --src-tasks: light-dark(#0b8ea8, #2ba8c4);
+  --src-atlassian: light-dark(#4a3aa7, #9085e9);
   --src-other: #898781;
 
-  --accent: #2a78d6;
-  --accent-wash: #e8f1fd;
-  --focus-ring: #2a78d6;
+  --accent: light-dark(#2a78d6, #3987e5);
+  --accent-wash: light-dark(#e8f1fd, #14263a);
+  --focus-ring: light-dark(#2a78d6, #3987e5);
 
   --radius: 10px;
   --radius-sm: 6px;
@@ -47,39 +64,15 @@
 }
 
 /*
- * Dark is the system's call and only the system's: there is no in-app override,
- * so this needs no scope to out-specify and re-evaluates the moment the OS flips.
+ * The two overrides, and the whole of what the toggle does. `data-theme="system"`
+ * matches neither and keeps both keywords above, so the third state is the
+ * absence of a choice rather than a third palette to maintain.
  */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --surface-sunken: #131312;
-    --ink-1: #ffffff;
-    --ink-2: #c3c2b7;
-    --ink-3: #898781;
-    --hairline: #2c2c2a;
-    --border: rgba(255, 255, 255, 0.1);
-    --shadow: none;
-
-    --good-ink: #0ca30c;
-
-    --src-github: #3987e5;
-    --src-email: #d95926;
-    --src-calendar: #199e70;
-    --src-jira: #c98500;
-    --src-slack: #d55181;
-    --src-workday: #008300;
-    --src-tasks: #2ba8c4;
-    --src-atlassian: #9085e9;
-    --src-other: #898781;
-
-    --accent: #3987e5;
-    --accent-wash: #14263a;
-    --focus-ring: #3987e5;
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 *,
@@ -189,6 +182,24 @@ a {
 .icon-button:hover {
   color: var(--ink-1);
   border-color: var(--ink-3);
+}
+
+/*
+ * One glyph per theme state, picked by the attribute the pre-paint stamp sets.
+ * Keyed off `:root` rather than off something the client writes later, so the
+ * icon arrives in the same paint as the colours it is describing.
+ */
+.theme-toggle__icon {
+  display: none;
+  width: 15px;
+  height: 15px;
+}
+:root[data-theme='system'] .theme-toggle__icon[data-theme-icon='system'],
+:root[data-theme='light'] .theme-toggle__icon[data-theme-icon='light'],
+:root[data-theme='dark'] .theme-toggle__icon[data-theme-icon='dark'],
+/* No stamp at all means no script ran, and the OS is still deciding. */
+:root:not([data-theme]) .theme-toggle__icon[data-theme-icon='system'] {
+  display: block;
 }
 
 /* ---------- focus timer ---------- */
