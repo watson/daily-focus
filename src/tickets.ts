@@ -48,11 +48,18 @@ function onHold(ticket: Ticket, holdStatuses: readonly string[]): boolean {
  *
  * What is deliberately *not* asked: whether an open pull request is still a draft,
  * which is the difference between "In Progress" and "In Review" and the one
- * transition this board says nothing about. Jira's counts treat a draft as open
- * and the pull request board is the only thing here that knows otherwise, joined
- * to tickets by a key in a branch name that more than a third of real pull
- * requests don't carry. A court resting on that would be wrong often enough to
- * teach the user to ignore the board.
+ * transition this board says nothing about. A draft counts as open here, so the
+ * first question passes over it — but that is a fact `jira.ts` has to go and
+ * establish rather than one JQL hands over, since `.open` excludes drafts. What
+ * stays out of scope is the *court*: saying "this is still a draft, so you are
+ * not really In Review" would need to know which pull request, and the only join
+ * to one is a key in a branch name that more than a third of real pull requests
+ * don't carry.
+ *
+ * The first question also demands `allPrsClosed` rather than reading it off
+ * `hasAnyPr && !hasOpenPr`. Those two cannot distinguish "every pull request is
+ * closed" from "the panel could not be read", and this court is the one that
+ * tells the user to go and finish something.
  *
  * `holdStatuses` silences the third question only. A status the user has named as
  * a deliberate hold — Blocked, On Hold, Waiting — is an answer to "why isn't this
@@ -62,7 +69,7 @@ function onHold(ticket: Ticket, holdStatuses: readonly string[]): boolean {
  */
 export function judge(ticket: Ticket, holdStatuses: readonly string[] = []): TicketCourt | null {
   if (ticket.statusCategory === 'done') return null;
-  if (ticket.hasAnyPr && !ticket.hasOpenPr) return 'settled';
+  if (ticket.hasAnyPr && !ticket.hasOpenPr && ticket.allPrsClosed) return 'settled';
   if (ticket.statusCategory === 'new' && ticket.hasOpenPr) return 'started';
   if (ticket.statusCategory === 'indeterminate' && !ticket.hasAnyPr && !onHold(ticket, holdStatuses)) return 'idle';
   return null;

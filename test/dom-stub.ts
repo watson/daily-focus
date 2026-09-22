@@ -17,7 +17,18 @@
 export class StubNode {
   childNodes: StubNode[] = [];
   append(...kids: StubNode[]): void {
-    this.childNodes.push(...kids);
+    // A fragment is spliced rather than nested, as a real one is. Without that a
+    // `byTag` walk would still find what `renderMarkdown` built, but the tree it
+    // walked would not be the tree the browser gets — and the whole point of these
+    // tests is that the rule they hold lives only in `render.js`.
+    for (const kid of kids) {
+      if (kid instanceof StubFragment) this.childNodes.push(...kid.childNodes);
+      else this.childNodes.push(kid);
+    }
+  }
+  replaceChildren(...kids: StubNode[]): void {
+    this.childNodes = [];
+    this.append(...kids);
   }
   get textContent(): string {
     return this.childNodes.map((kid) => kid.textContent).join('');
@@ -41,6 +52,8 @@ export class StubText extends StubNode {
   }
 }
 
+export class StubFragment extends StubNode {}
+
 export class StubElement extends StubNode {
   readonly tagName: string;
   className = '';
@@ -53,6 +66,29 @@ export class StubElement extends StubNode {
     super();
     this.tagName = tag.toUpperCase();
   }
+  /**
+   * Enough of a selector engine for the one query `render.js` makes of a
+   * container: a space-separated run of class and tag steps, each matched
+   * against a descendant rather than a child. Anything fancier would be a
+   * second DOM implementation, and the point of this file is to not have one.
+   */
+  querySelector(selector: string): StubElement | null {
+    let nodes: StubNode[] = [this];
+    for (const step of selector.trim().split(/\s+/)) {
+      const next: StubNode[] = [];
+      for (const node of nodes) {
+        for (const kid of walk(node)) {
+          const element = kid as StubElement;
+          const hit = step.startsWith('.')
+            ? element.className?.split(' ').includes(step.slice(1))
+            : element.tagName === step.toUpperCase();
+          if (hit) next.push(kid);
+        }
+      }
+      nodes = next;
+    }
+    return (nodes[0] as StubElement) ?? null;
+  }
   setAttribute(name: string, value: string): void {
     this.attributes[name] = String(value);
   }
@@ -61,11 +97,28 @@ export class StubElement extends StubNode {
   }
 }
 
+/**
+ * The containers a whole-region render replaces into. Created on demand and kept,
+ * so a test can ask for the same one back and read what was put in it.
+ */
+const mounts = new Map<string, StubElement>();
+
+export function mount(id: string): StubElement {
+  let node = mounts.get(id);
+  if (!node) {
+    node = new StubElement('div');
+    mounts.set(id, node);
+  }
+  return node;
+}
+
 Object.assign(globalThis, {
   Node: StubNode,
   document: {
     createElement: (tag: string) => new StubElement(tag),
     createTextNode: (text: string) => new StubText(text),
+    createDocumentFragment: () => new StubFragment(),
+    getElementById: (id: string) => mount(id),
   },
 });
 

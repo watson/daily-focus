@@ -455,13 +455,54 @@ Five rules this board must keep:
 - **A ticket can need more than one pull request, and this is why it asks Jira.** The
   naive reading — every linked pull request merged, so the ticket must be done — is
   wrong for work spanning several repositories, and wrong in the direction that teaches
-  the user to distrust the board. What makes it safe is that **Jira counts a draft as
-  open**, so the habit of opening all of a ticket's pull requests up front keeps the
-  ticket out of the settled court until the last one merges, with no judgement applied
-  at all. Asking Jira also avoids a join that does not work: Jira links pull requests
-  itself from branches and commits and is right about all of them, while matching from
-  the GitHub side needs a ticket key in the pull request — measured at one title and
+  the user to distrust the board. What makes it safe is that **a draft counts as open**,
+  so the habit of opening all of a ticket's pull requests up front keeps the ticket out
+  of the settled court until the last one merges, with no judgement applied at all.
+  Asking Jira also avoids a join that does not work: Jira links pull requests itself
+  from branches and commits and is right about all of them, while matching from the
+  GitHub side needs a ticket key in the pull request — measured at one title and
   eighteen branches out of thirty-three open pull requests on one real board.
+
+  **JQL does not supply that on its own, and believing it did was a real bug.**
+  `development[pullrequests].open` counts only what GitHub calls `OPEN`; its Jira
+  integration reports `DRAFT` as a state *beside* `OPEN` and sets `open: false` on the
+  rollup. So a ticket whose every pull request was still a draft matched `.all > 0` and
+  not `.open > 0` — through JQL alone, indistinguishable from one whose every pull
+  request had merged, and duly filed under "no open pull requests left". Five of
+  nineteen settled rows on a real board were draft-only. `.draft` is not a predicate
+  either; Jira's parser names the whole whitelist when asked for one.
+
+  So `fetchTickets` reads the development panel itself for the settled candidates
+  only — `customfield_10000`, which `acli jira workitem search` refuses and `acli jira
+  workitem view` returns — and repairs the count. The field carrying the answer is
+  `allPrsClosed`, and the settled court demands it rather than inferring it from
+  `hasAnyPr && !hasOpenPr`, because those two cannot tell "every pull request is
+  closed" from "the panel could not be read". Unlike the three searches, one panel
+  read failing costs its row and not the round: the fallback withholds a verdict
+  instead of inventing one, so the ticket drops out of the court rather than being
+  judged on counts already known to be misleading. The panel's `isStale` flag is
+  deliberately ignored — it is true on every panel read this way, including ones
+  verified correct by hand.
+
+  **The two ways of learning nothing get two different warnings**, because they say
+  different things: this machine could not get an answer out of `acli`, or it got
+  one that contradicts the search. The second is Jira disagreeing with itself — the
+  panel answers and names no pull requests at all while the JQL index counts some.
+  One real ticket read that way carrying six repositories, 22 builds and no pull
+  request summary, and answered with a plain `OPEN` rollup hours later, so neither
+  message claims to be permanent and the second says the row returns when one of
+  Jira's caches catches up. Both hold the row out of the settled court; what a
+  single "could not read the panel" got wrong was which of the two had happened, on
+  a board whose whole job is not saying untrue things.
+
+  These warnings name keys, and a warning is the one place this board talks about a
+  ticket without rendering a row for it — so the keys are written as inline
+  Markdown links through the same `browseUrl` the rows use, and are plain text when
+  `acli` never said which site it is. `render.js` puts board warnings through
+  `renderMarkdown` for that, which the brief's warnings deliberately don't get:
+  those quote titles and ids an LLM wrote, and a stray bracket in one should read as
+  a stray bracket. `test/tickets-ui.test.ts` holds the anchor, since it exists only
+  in `render.js`.
 - **A pull request nobody has written yet is invisible, and the board says so.** No
   source can tell an unfinished ticket from a finished one when the remaining work has
   not been started, so the court claims only *no open pull requests left*, and the note

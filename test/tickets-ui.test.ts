@@ -12,11 +12,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 // Imported for its side effect before `render.js` is pulled in below.
-import { byClass, byTag, buttonLabels, type StubElement } from './dom-stub.ts';
+import { byClass, byTag, buttonLabels, mount, type StubElement } from './dom-stub.ts';
 import { resolveTickets } from '../src/tickets.ts';
 import type { Ticket, TicketRow } from '../src/types.ts';
 
-const { renderTicketRow, typeLegend } = (await import('../public/render.js')) as {
+const { renderTicketBoard, renderTicketRow, typeLegend } = (await import('../public/render.js')) as {
+  renderTicketBoard: (state: unknown, ui: unknown, handlers: unknown) => void;
   renderTicketRow: (row: TicketRow, state: unknown, ui: unknown, handlers: unknown) => StubElement;
   typeLegend: (rows: readonly TicketRow[]) => StubElement | null;
 };
@@ -33,7 +34,7 @@ const HANDLERS = {
 };
 
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
-  return {
+  const base: Ticket = {
     id: 'jira:PROJ-8842',
     key: 'PROJ-8842',
     summary: 'Drop the retry loop from the ingest path',
@@ -43,8 +44,12 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
     url: 'https://acme.atlassian.net/browse/PROJ-8842',
     hasAnyPr: true,
     hasOpenPr: false,
+    allPrsClosed: true,
     ...overrides,
   };
+  // Coherent with the two counts unless a test says otherwise, which is what a
+  // confirmed development panel read produces.
+  return { ...base, allPrsClosed: overrides.allPrsClosed ?? (base.hasAnyPr && !base.hasOpenPr) };
 }
 
 function render(overrides: Partial<Ticket> = {}, actions: Parameters<typeof resolveTickets>[1] = []): StubElement {
@@ -371,4 +376,55 @@ test('the status control carries no persistent clickable marker', async () => {
   assert.ok(rule, 'style.css no longer declares .pill--button where this test looks');
   assert.ok(!/text-decoration/.test(rule[1]!), 'no underline on the resting pill');
   assert.ok(/cursor:\s*pointer/.test(rule[1]!), 'the cursor is what says it does something');
+});
+
+
+/* ---------- the warnings ---------- */
+
+/**
+ * A warning is the one place this board talks about a ticket without rendering a
+ * row for it, and the held-out ones are exactly the rows somebody will want to go
+ * and look at — so the key has to be clickable. `jira.ts` writes the link as
+ * inline Markdown and only `render.js` turns it into an anchor, which is why this
+ * is asserted here.
+ */
+function boardWith(warnings: readonly string[]): StubElement {
+  const board = {
+    enabled: true,
+    reason: null,
+    fetchedAt: null,
+    fetching: false,
+    account: null,
+    projects: [],
+    warnings: [...warnings],
+    pollMinutes: 15,
+    rows: [],
+    counts: { settled: 0, started: 0, idle: 0, parked: 0 },
+    checked: 0,
+    statuses: {},
+  };
+  renderTicketBoard({ ...STATE, tickets: board }, UI, { ...HANDLERS, refreshTickets: () => {} });
+  return mount('tickets');
+}
+
+test('a key named in a warning is rendered as a link to it', () => {
+  const node = boardWith([
+    "Jira's search says [PROJ-8842](https://acme.atlassian.net/browse/PROJ-8842) has pull requests, " +
+      'but its own development panel does not account for them.',
+  ]);
+  const banner = byClass(node, 'banner--warning')[0];
+  assert.ok(banner, 'the warning is on the board');
+  const links = byTag(banner, 'A');
+  assert.equal(links.length, 1);
+  assert.equal(links[0]!.href, 'https://acme.atlassian.net/browse/PROJ-8842');
+  assert.equal(links[0]!.textContent, 'PROJ-8842');
+  // The sentence around it survives being linkified.
+  assert.match(banner.textContent, /does not account for them\.$/);
+});
+
+test('a warning with no link in it is still just words', () => {
+  const node = boardWith(['Could not read how work gets finished in PROJ.']);
+  const banner = byClass(node, 'banner--warning')[0]!;
+  assert.deepEqual(byTag(banner, 'A'), [], 'nothing invents a link for a key with no site behind it');
+  assert.match(banner.textContent, /Could not read how work gets finished in PROJ\./);
 });

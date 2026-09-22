@@ -279,6 +279,10 @@ export function normalizeStoredTicket(raw: unknown): Ticket | null {
     site,
     raw.hasAnyPr === true,
     raw.hasOpenPr === true,
+    // Absent in a file written before the development panel was read — which
+    // must come back as "not confirmed" rather than as confirmed, since those
+    // files are exactly the ones whose settled court counted drafts as merges.
+    raw.allPrsClosed === true,
   );
 }
 

@@ -149,6 +149,13 @@ function nextRunPhrase(state) {
   return ` — the next one arrives ${when}`;
 }
 
+/**
+ * `text` may be a string or a node, which is how the two boards' warnings come to
+ * carry links: theirs name a pull request or a ticket key and are written by this
+ * repo, so they are handed over through `renderMarkdown`. The brief's warnings are
+ * deliberately not — they quote titles and ids an LLM wrote, and a stray bracket
+ * in one should read as the stray bracket it is rather than become a link.
+ */
 function banner(tone, icon, text) {
   return el(
     'div',
@@ -1098,7 +1105,7 @@ export function renderBoard(state, ui, handlers) {
   parts.push(boardStatus(board, now, handlers));
 
   if (board.reason) parts.push(banner('critical', '!', board.reason));
-  for (const warning of board.warnings) parts.push(banner('warning', '!', warning));
+  for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
   const open = board.rows.filter((row) => row.status === 'open');
   for (const court of COURT_ORDER) {
@@ -1534,7 +1541,7 @@ export function renderTicketBoard(state, ui, handlers) {
   if (legend) parts.push(legend);
 
   if (board.reason) parts.push(banner('critical', '!', board.reason));
-  for (const warning of board.warnings) parts.push(banner('warning', '!', warning));
+  for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
   const open = board.rows.filter((row) => row.status === 'open');
   for (const court of TICKET_COURT_ORDER) {
