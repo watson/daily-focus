@@ -1,4 +1,7 @@
-node_modules/
+# No trailing slash: that would match only real directories, and a symlinked
+# node_modules — the obvious shortcut when working in a git worktree — would show
+# up as an untracked file for `git add -A` to commit.
+node_modules
 *.log
 .DS_Store
 

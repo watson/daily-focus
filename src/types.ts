@@ -541,12 +541,33 @@ export interface Ticket {
    */
   hasAnyPr: boolean;
   /**
-   * Whether at least one of those pull requests is still open. **A draft counts as
-   * open**, which is what makes `hasAnyPr && !hasOpenPr` a safe reading of "the
-   * code side is finished" even for a ticket that needed four pull requests: while
-   * any of them is still a draft, this stays true and the ticket is left alone.
+   * Whether at least one of those pull requests is still open, **a draft counting
+   * as open** — which is the property that makes a ticket needing four pull
+   * requests safe to reason about, since the habit of opening them all up front
+   * keeps the ticket out of the settled court until the last one merges.
+   *
+   * Jira does not answer this on its own. `development[pullrequests].open` counts
+   * only pull requests GitHub calls `OPEN`, and its integration reports a draft as
+   * a state *beside* `OPEN` rather than a kind of it, with `open: false` — so a
+   * ticket whose every pull request is a draft looked, through JQL alone, exactly
+   * like one whose every pull request had merged. Measured on a real board, five
+   * of nineteen settled rows were draft-only. `fetchTickets` repairs the count
+   * from the development panel; see `readDevPullRequests`.
    */
   hasOpenPr: boolean;
+  /**
+   * Whether Jira's development panel was read and **positively said** every pull
+   * request it knows about is merged or declined.
+   *
+   * The settled court requires this rather than inferring it from
+   * `hasAnyPr && !hasOpenPr`, because those two booleans cannot distinguish "all
+   * closed" from "we could not find out". The panel read is per-ticket and allowed
+   * to fail on its own, and a ticket it could not answer for must not fall back to
+   * the reading that caused this field to exist. Same polarity as
+   * `readTransitionReport`: being told the work is finished, rather than merely
+   * failing to find work outstanding.
+   */
+  allPrsClosed: boolean;
 }
 
 /**

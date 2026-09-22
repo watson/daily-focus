@@ -164,10 +164,19 @@ export async function acliIdentity(acliPath: string): Promise<JiraIdentity> {
  * The two development-panel predicates the whole board rests on.
  *
  * Jira exposes exactly these two counts to JQL — `.all` and `.open`, and nothing
- * else: `.merged` and `.declined` are parse errors, so "closed" here means merged
- * or abandoned and the board is careful never to claim which. A draft pull request
- * counts as open, which is the property that makes a ticket needing four pull
- * requests safe to reason about.
+ * else. Its parser says so itself when asked for a third: *for
+ * "development[pullrequests]" use "development[pullrequests].all" or
+ * "development[pullrequests].open"*. So `.merged`, `.declined` and `.draft` are
+ * all parse errors, "closed" here means merged or abandoned, and the board is
+ * careful never to claim which.
+ *
+ * **`.open` does not count a draft**, which is the trap this board fell into.
+ * GitHub's Jira integration reports `DRAFT` as a state *beside* `OPEN` rather
+ * than a kind of it, and sets `open: false` on the rollup — so a ticket whose
+ * every pull request is a draft matches `.all > 0` and not `.open > 0`, which is
+ * indistinguishable through JQL alone from a ticket whose every pull request has
+ * merged. `fetchTickets` repairs the count from the development panel itself;
+ * see `readDevPullRequests`.
  */
 export const ANY_PR = 'development[pullrequests].all > 0';
 export const OPEN_PR = 'development[pullrequests].open > 0';
@@ -268,6 +277,15 @@ function issueKey(raw: unknown): string | null {
 }
 
 /**
+ * The browse link for a work item, or null when `acli` never said which site it
+ * is logged in to. Shared with the warnings, which name keys and are the one
+ * place in this board a row is talked about without being rendered as one.
+ */
+function browseUrl(site: string | null, key: string): string | null {
+  return site ? `https://${site}/browse/${encodeURIComponent(key)}` : null;
+}
+
+/**
  * One issue, reduced to facts. Null for anything unreadable, one issue at a time
  * rather than all or nothing — the same rule `validate.ts` applies to the brief.
  *
@@ -278,7 +296,13 @@ function issueKey(raw: unknown): string | null {
  * names, so a site's own extra tier above Epic — an Initiative, a Theme — is
  * excluded without being named.
  */
-export function toTicket(raw: unknown, site: string | null, hasAnyPr: boolean, hasOpenPr: boolean): Ticket | null {
+export function toTicket(
+  raw: unknown,
+  site: string | null,
+  hasAnyPr: boolean,
+  hasOpenPr: boolean,
+  allPrsClosed = false,
+): Ticket | null {
   const key = issueKey(raw);
   if (key === null || !isRecord(raw)) return null;
   const fields = isRecord(raw.fields) ? raw.fields : {};
@@ -297,11 +321,190 @@ export function toTicket(raw: unknown, site: string | null, hasAnyPr: boolean, h
     workflowStatus: typeof status.name === 'string' ? status.name : '',
     statusCategory: toCategory(category.key),
     issueType: typeof issuetype.name === 'string' ? issuetype.name : '',
-    url: site ? `https://${site}/browse/${encodeURIComponent(key)}` : null,
+    url: browseUrl(site, key),
     // An open pull request is a pull request, whatever the other count said.
     hasAnyPr: hasAnyPr || hasOpenPr,
     hasOpenPr,
+    // Never inferred from the two above, which is the whole point of the field:
+    // they cannot tell "all closed" from "could not find out".
+    allPrsClosed: allPrsClosed && !hasOpenPr,
   };
+}
+
+/* ---------- the development panel ---------- */
+
+/**
+ * Jira's own id for the development panel field. The same on every Cloud site,
+ * and the only route to what JQL will not select.
+ *
+ * `acli jira workitem search` refuses it — *field 'customfield_10000' is not
+ * allowed* — which is presumably why the board went so long reading drafts as
+ * merges. `acli jira workitem view` has no such whitelist and returns it.
+ */
+export const DEV_FIELD = 'customfield_10000';
+
+/** What the development panel rolls a ticket's pull requests up to. */
+export interface DevPullRequests {
+  /** How many pull requests Jira has linked to the ticket. */
+  count: number;
+  /** The state it rolls them up to: `OPEN`, `DRAFT`, `MERGED` or `DECLINED`. */
+  state: string;
+  /** How many of `count` are in that state. Below it, the rest are unnamed. */
+  stateCount: number;
+}
+
+/**
+ * Pull request states that mean the code side of a ticket is over.
+ *
+ * `DRAFT` and `OPEN` are the other two, and both mean work is still in flight.
+ * `DRAFT`'s absence from this list is the entire fix: it used to be absent from
+ * the *question* instead, which read it as closed by default.
+ */
+const CLOSED_PR_STATES: readonly string[] = ['MERGED', 'DECLINED'];
+
+/**
+ * How many panels to read at once. One measured 1.2 seconds, and only the
+ * settled candidates are asked about — nineteen on the heaviest real board seen,
+ * usually a handful. Five keeps the repair inside a few seconds without opening
+ * a process per ticket.
+ */
+const DEV_CONCURRENCY = 5;
+
+/**
+ * The JSON object starting at `from`, found by matching braces.
+ *
+ * The panel arrives as Java's rendering of a map rather than as JSON —
+ * `{pullrequest={…}, build={…}, json={…}}` — and only its `json=` member is
+ * readable. Slicing to the last `}` would take the outer map's brace with it, so
+ * the extent is matched; braces inside strings are skipped, since a branch or
+ * repository name carrying one would otherwise end the object early.
+ */
+function jsonObjectAt(text: string, from: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return text.slice(from, i + 1);
+  }
+  return null;
+}
+
+/**
+ * The pull request rollup out of one development panel field, or null when the
+ * panel did not answer.
+ *
+ * Null is not "no pull requests" — it is "we did not find out", and the caller
+ * keeps those apart. A ticket matching `.all > 0` whose panel carries no
+ * `pullrequest` summary at all is a real case rather than a hypothetical: one was
+ * measured carrying six repositories and twenty-two builds and no pull requests,
+ * disagreeing with the JQL that selected it.
+ *
+ * **`isStale` is deliberately not consulted.** Every panel read through this
+ * route reports it true, including ones whose contents were checked by hand and
+ * found correct, so gating on it would empty the settled court entirely rather
+ * than guard anything. `errors` is consulted, because a panel that failed to
+ * reach a provider may be missing a pull request — the one way this read can be
+ * wrong in the unsafe direction.
+ */
+export function readDevPullRequests(field: unknown): DevPullRequests | null {
+  if (typeof field !== 'string') return null;
+  const marker = field.indexOf('json=');
+  if (marker === -1) return null;
+  const opens = field.indexOf('{', marker);
+  if (opens === -1) return null;
+  const body = jsonObjectAt(field, opens);
+  if (body === null) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+
+  const cached = isRecord(parsed) && isRecord(parsed.cachedValue) ? parsed.cachedValue : null;
+  if (!cached) return null;
+  if (Array.isArray(cached.errors) && cached.errors.length > 0) return null;
+
+  const summary = isRecord(cached.summary) ? cached.summary : null;
+  const pullrequest = summary && isRecord(summary.pullrequest) ? summary.pullrequest : null;
+  const overall = pullrequest && isRecord(pullrequest.overall) ? pullrequest.overall : null;
+  if (!overall) return null;
+
+  const { count, stateCount, state } = overall;
+  if (typeof count !== 'number' || typeof stateCount !== 'number' || typeof state !== 'string') return null;
+  return { count, state, stateCount };
+}
+
+/**
+ * Whether the panel **positively said** every linked pull request is closed.
+ *
+ * Everything unknown answers false, which is the polarity `readTransitionReport`
+ * argues for and for the same reason: on a board whose whole job is catching
+ * statuses that say untrue things, a false "finished" is a lie the user has no
+ * way to catch, while a false "don't know" costs one row that the next read
+ * restores.
+ */
+export function allPullRequestsClosed(dev: DevPullRequests | null): boolean {
+  if (dev === null || dev.count < 1) return false;
+  // The rollup names one state and how many sit in it. Fewer than the total
+  // means the rest are in states it did not name, and any of them could be a
+  // draft, so the only honest answer is that we do not know.
+  if (dev.stateCount !== dev.count) return false;
+  return CLOSED_PR_STATES.includes(dev.state.toUpperCase());
+}
+
+/**
+ * Read one ticket's development panel.
+ *
+ * Throws when `acli` could not be asked, returns null when it answered without
+ * naming any pull requests. Both end in the same place — the ticket is not
+ * confirmed settled — but only the first is a fault worth a different warning.
+ */
+export async function fetchDevPullRequests(acliPath: string, key: string): Promise<DevPullRequests | null> {
+  const { stdout, stderr, code } = await acli(acliPath, [
+    'jira', 'workitem', 'view', key,
+    '--fields', DEV_FIELD,
+    '--json',
+  ]);
+  if (code !== 0) {
+    throw new JiraSearchError(
+      firstLine(stderr) || firstLine(stdout) || `could not read the development panel for ${key}`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new JiraSearchError(`could not read acli's development panel answer for ${key} as JSON`);
+  }
+  const fields = isRecord(parsed) && isRecord(parsed.fields) ? parsed.fields : null;
+  if (!fields) throw new JiraSearchError(`acli's answer for ${key} carried no fields`);
+  return readDevPullRequests(fields[DEV_FIELD]);
+}
+
+/** Run `fn` over `items`, at most `limit` at a time, keeping the input order. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 /* ---------- the fetch ---------- */
@@ -335,6 +538,13 @@ export interface TicketFetch {
  * quietly empty the settled court and flood the idle one, so the round fails and
  * the poller keeps the rows it had. The same reasoning `github.ts` applies to its
  * checks request, for the same reason: nothing is what a quiet board looks like.
+ *
+ * **Then one development panel read per settled candidate**, because the third
+ * search answers a subtly different question from the one the settled court
+ * needs: `.open` excludes drafts. That repair is per-ticket and allowed to fail
+ * per-ticket, which is the opposite rule from the three above and safe for the
+ * opposite reason — a panel that cannot be read withholds a verdict instead of
+ * inventing one.
  */
 export async function fetchTickets(
   acliPath: string,
@@ -381,6 +591,75 @@ export async function fetchTickets(
   }
   if (unreadable > 0) {
     warnings.push(`Skipped ${unreadable} work ${unreadable === 1 ? 'item' : 'items'} Jira described in a way this board could not read.`);
+  }
+
+  // **Repair the open count from the development panel**, because JQL's `.open`
+  // does not count a draft — see the note above `ANY_PR`. Only the settled
+  // candidates are worth asking about: every other ticket either already has an
+  // open pull request or has none at all, and neither reading can change.
+  //
+  // Unlike the three searches above, one of these failing costs one row rather
+  // than the round, and the difference is that the fallback here is honest. A
+  // failed search would silently move tickets between courts; a failed panel
+  // read only withholds the settled verdict, which drops the row rather than
+  // making a claim about it.
+  const candidates = tickets.filter((ticket) => ticket.hasAnyPr && !ticket.hasOpenPr);
+  const panels = await mapLimit(candidates, DEV_CONCURRENCY, (ticket) =>
+    fetchDevPullRequests(acliPath, ticket.key).then(
+      (dev) => ({ asked: true, dev }),
+      () => ({ asked: false, dev: null }),
+    ),
+  );
+  // Two ways to learn nothing, kept apart because they say different things to
+  // whoever reads the banner: this machine could not get an answer, or it got one
+  // that contradicts the search. Neither is claimed to be permanent — one real
+  // ticket read as unaccounted for with six repositories, 22 builds and no pull
+  // request summary at all, and answered with a plain `OPEN` rollup hours later.
+  const unanswered: string[] = [];
+  const unaccounted: string[] = [];
+  candidates.forEach((ticket, i) => {
+    const { asked, dev } = panels[i]!;
+    if (allPullRequestsClosed(dev)) {
+      ticket.allPrsClosed = true;
+    } else if (!asked) {
+      // Nothing was learned, so nothing is claimed. The ticket keeps Jira's own
+      // counts and simply fails the settled court's positive test.
+      unanswered.push(ticket.key);
+    } else if (dev === null) {
+      // `acli` answered and the panel offered no pull request rollup, though the
+      // JQL index counted one. Held out for the same reason and reported
+      // differently, because the user can see both halves of the disagreement and
+      // "could not read the panel" is not what happened.
+      unaccounted.push(ticket.key);
+    } else {
+      // The panel named a state that is not closed — a draft, or an open pull
+      // request `.open` somehow disagreed about. Either way work is in flight,
+      // which is what `hasOpenPr` is supposed to mean.
+      ticket.hasOpenPr = true;
+    }
+  });
+  // Keys the user can actually open. A warning is the one place this board talks
+  // about a ticket without rendering a row for it, so the link has to come from
+  // here — and it is the held-out rows in particular that someone will want to
+  // go and look at, since the board is declining to say anything about them.
+  const listed = (keys: readonly string[]): string =>
+    keys
+      .map((key) => {
+        const url = browseUrl(opts.site, key);
+        return url === null ? key : `[${key}](${url})`;
+      })
+      .join(', ');
+  const heldOut = (keys: readonly string[]): string =>
+    `${keys.length === 1 ? 'it is' : 'they are'} held out of "no open pull requests left" rather than guessed at`;
+  if (unanswered.length > 0) {
+    warnings.push(
+      `Could not read Jira's development panel for ${listed(unanswered)}, so ${heldOut(unanswered)}. The next read may well manage it.`,
+    );
+  }
+  if (unaccounted.length > 0) {
+    warnings.push(
+      `Jira's search says ${listed(unaccounted)} ${unaccounted.length === 1 ? 'has' : 'have'} pull requests, but its own development panel names none, so ${heldOut(unaccounted)}. Jira is disagreeing with itself; the row comes back when one of its caches catches up.`,
+    );
   }
   if (!opts.site) {
     warnings.push(

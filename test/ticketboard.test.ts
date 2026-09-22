@@ -37,7 +37,7 @@ async function config(env: NodeJS.ProcessEnv = {}): Promise<Config> {
 }
 
 function ticket(key: string, overrides: Partial<Ticket> = {}): Ticket {
-  return {
+  const base: Ticket = {
     id: `jira:${key}`,
     key,
     summary: `Something about ${key}`,
@@ -47,8 +47,12 @@ function ticket(key: string, overrides: Partial<Ticket> = {}): Ticket {
     url: `https://acme.atlassian.net/browse/${key}`,
     hasAnyPr: true,
     hasOpenPr: false,
+    allPrsClosed: true,
     ...overrides,
   };
+  // Coherent with the two counts unless a test says otherwise, which is what a
+  // confirmed development panel read produces.
+  return { ...base, allPrsClosed: overrides.allPrsClosed ?? (base.hasAnyPr && !base.hasOpenPr) };
 }
 
 const IDENTITY: JiraIdentity = { site: 'acme.atlassian.net', account: 'alice@example.com' };

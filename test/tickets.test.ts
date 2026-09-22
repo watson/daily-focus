@@ -6,6 +6,13 @@
  * a ticket needing several pull requests must not be called finished while any
  * of them is still open, *including* while one is still a draft. That is what
  * `hasOpenPr` carries, and three tests below pin it from both sides.
+ *
+ * `allPrsClosed` is the second half of that, and it exists because the first
+ * half was silently untrue for a year: JQL's `.open` does not count a draft, so
+ * `hasOpenPr` alone said "finished" about a ticket whose every pull request was
+ * still being written. The settled court now demands a positive confirmation,
+ * and the tests at the end of the judge section pin the three ways it can be
+ * withheld.
  */
 
 import assert from 'node:assert/strict';
@@ -17,7 +24,7 @@ import type { Action, Ticket } from '../src/types.ts';
 const NOW = new Date('2026-09-22T09:00:00Z');
 
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
-  return {
+  const base: Ticket = {
     id: 'jira:PROJ-8842',
     key: 'PROJ-8842',
     summary: 'Drop the retry loop from the ingest path',
@@ -27,8 +34,14 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
     url: 'https://acme.atlassian.net/browse/PROJ-8842',
     hasAnyPr: true,
     hasOpenPr: false,
+    allPrsClosed: true,
     ...overrides,
   };
+  // `allPrsClosed` defaults to whatever would be coherent with the two counts,
+  // which is what a confirmed panel read produces, so every case that predates
+  // the field keeps meaning what it did. A test wanting the unconfirmed ticket —
+  // closed counts, no panel — sets it to false explicitly.
+  return { ...base, allPrsClosed: overrides.allPrsClosed ?? (base.hasAnyPr && !base.hasOpenPr) };
 }
 
 /* ---------- judge ---------- */
@@ -49,16 +62,43 @@ test('a ticket with a pull request still open is left alone', () => {
 
 /**
  * The multi-pull-request case, which is the reason this board reads Jira's own
- * counts rather than joining to GitHub. Jira counts a draft as open, so the
- * habit of opening every pull request up front — most of them drafts — is what
- * keeps a half-finished ticket out of `settled` on its own.
+ * counts rather than joining to GitHub. A draft counts as open, so the habit of
+ * opening every pull request up front — most of them drafts — is what keeps a
+ * half-finished ticket out of `settled` on its own. Jira's JQL does not supply
+ * that on its own; `jira.ts` reads the development panel to make it true.
  */
 test('a ticket is not settled while one of several pull requests is still a draft', () => {
   const stillDrafting = ticket({ workflowStatus: 'In Review', hasAnyPr: true, hasOpenPr: true });
   assert.equal(judge(stillDrafting), null);
 
-  // The last draft merges, and only then does it read as finished.
-  assert.equal(judge({ ...stillDrafting, hasOpenPr: false }), 'settled');
+  // The last draft merges, the panel confirms it, and only then does it read as
+  // finished. Both halves are needed: `hasOpenPr` alone going false is exactly
+  // the state a draft-only ticket used to arrive in.
+  assert.equal(judge({ ...stillDrafting, hasOpenPr: false, allPrsClosed: true }), 'settled');
+  assert.equal(judge({ ...stillDrafting, hasOpenPr: false, allPrsClosed: false }), null);
+});
+
+/**
+ * The settled court is the one that tells the user to go and finish something,
+ * so it is the one that has to be told, rather than left to infer. A panel that
+ * could not be read leaves the two counts saying exactly what a draft-only
+ * ticket's counts say, which is why the verdict is a field of its own.
+ */
+test('the settled court needs the panel to have confirmed it, not merely not denied it', () => {
+  assert.equal(judge(ticket({ hasAnyPr: true, hasOpenPr: false, allPrsClosed: true })), 'settled');
+  assert.equal(judge(ticket({ hasAnyPr: true, hasOpenPr: false, allPrsClosed: false })), null);
+});
+
+test('an unconfirmed ticket is dropped rather than pushed into another court', () => {
+  // Withholding the settled verdict must not invent a different complaint: the
+  // row disappears for the round and comes back when the panel can be read.
+  for (const statusCategory of ['new', 'indeterminate', 'undefined'] as const) {
+    assert.equal(
+      judge(ticket({ statusCategory, hasAnyPr: true, hasOpenPr: false, allPrsClosed: false })),
+      null,
+      statusCategory,
+    );
+  }
 });
 
 test('a ticket in a To Do status with an open pull request has started without saying so', () => {

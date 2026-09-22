@@ -367,12 +367,25 @@ matters: a ticket whose work spans four repositories has one pull request merged
 long before it is finished, and a board telling you to close it is a board you learn
 to distrust.
 
-What makes it safe is that the question is asked of Jira rather than of GitHub.
-Jira exposes two counts of a ticket's pull requests to JQL — how many there are and
-how many are open — and **counts a draft as open**. So the habit of opening all of a
-ticket's pull requests up front, most of them drafts, is itself the thing that keeps
-the ticket out of this bucket: while any draft is open the count is non-zero, and the
-ticket is left alone until the last one merges.
+What makes it safe is that the question is asked of Jira rather than of GitHub, and
+that **a draft counts as open**. So the habit of opening all of a ticket's pull
+requests up front, most of them drafts, is itself the thing that keeps the ticket out
+of this bucket: while any draft is still open the ticket is left alone, until the last
+one merges.
+
+Getting that second part right takes one more question than it looks. Jira exposes
+exactly two counts of a ticket's pull requests to JQL — how many there are and how
+many are open — and the open one **does not count a draft**: GitHub's Jira integration
+files `DRAFT` as a state beside `OPEN`, not as a kind of it. So a ticket whose every
+pull request was still a draft used to land in this bucket claiming its code was
+finished, which is precisely the mistake the bucket exists to avoid. The board now
+reads Jira's development panel for the tickets that look settled and confirms every
+pull request really is merged or declined before saying so; a ticket whose panel
+can't be read is left out of the bucket rather than guessed at, and says so in a
+banner that links the ticket. Occasionally Jira disagrees with itself — the search
+counts pull requests its own development panel names none of — and that gets its
+own wording, because "couldn't read it" is not what happened and the row comes back
+on its own once the two agree.
 
 Asking Jira also sidesteps a join that doesn't work. Jira links pull requests itself,
 from branch names and commits, and it is right about all of them; matching them up

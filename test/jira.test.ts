@@ -13,7 +13,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ANY_PR, OPEN_PR, buildJql, projectOf, readTransitionReport, statusesByProject, toTicket } from '../src/jira.ts';
+import {
+  ANY_PR,
+  OPEN_PR,
+  allPullRequestsClosed,
+  buildJql,
+  projectOf,
+  readDevPullRequests,
+  readTransitionReport,
+  statusesByProject,
+  toTicket,
+} from '../src/jira.ts';
 
 /* ---------- the JQL ---------- */
 
@@ -86,6 +96,8 @@ test('an issue is reduced to the facts, with the brief\'s own id scheme', () => 
     url: 'https://acme.atlassian.net/browse/PROJ-8842',
     hasAnyPr: true,
     hasOpenPr: false,
+    // Not asked for, so not claimed — the caller repairs this from the panel.
+    allPrsClosed: false,
   });
 });
 
@@ -145,6 +157,108 @@ test('missing fields fall back rather than taking the row down', () => {
   assert.equal(ticket?.workflowStatus, '');
   assert.equal(ticket?.statusCategory, 'undefined');
   assert.equal(ticket?.issueType, '');
+});
+
+/* ---------- the development panel ---------- */
+
+/**
+ * The panel as Jira actually hands it over: a Java map rendering whose only
+ * readable member is `json=`, wrapped in a trailing brace that is not part of
+ * it. The shape is real; the repository and branch names are invented, as the
+ * GitHub fixtures are.
+ */
+function devField(
+  pullrequest: Record<string, unknown> | null,
+  { errors = [] as unknown[], isStale = true } = {},
+): string {
+  const summary = pullrequest
+    ? { pullrequest: { overall: pullrequest, byInstanceType: { 'oAuth-com.github.integration.production': { count: 1, name: 'GitHub' } } } }
+    : { repository: { overall: { count: 6, dataType: 'repository' } } };
+  const json = JSON.stringify({ cachedValue: { errors, summary }, isStale });
+  return `{pullrequest={dataType=pullrequest}, build={count=6}, json=${json}}`;
+}
+
+function overall(state: string, count: number, stateCount = count): Record<string, unknown> {
+  // `open` is carried because the real payload carries it, and to document that
+  // nothing here reads it: it is false for a draft, which is the whole bug.
+  return { count, stateCount, state, dataType: 'pullrequest', open: state === 'OPEN' };
+}
+
+test('the rollup is read out of the panel\'s one readable member', () => {
+  assert.deepEqual(readDevPullRequests(devField(overall('MERGED', 3))), {
+    count: 3,
+    state: 'MERGED',
+    stateCount: 3,
+  });
+});
+
+/**
+ * The regression this field exists for. Jira reports a draft as a state beside
+ * `OPEN` with `open: false`, so `development[pullrequests].open` excludes it and
+ * a draft-only ticket reaches the board looking exactly like a merged one.
+ * Measured on a real board: five of nineteen settled rows were draft-only.
+ */
+test('a ticket whose pull requests are all drafts is not confirmed closed', () => {
+  const dev = readDevPullRequests(devField(overall('DRAFT', 2)));
+  assert.deepEqual(dev, { count: 2, state: 'DRAFT', stateCount: 2 });
+  assert.equal(allPullRequestsClosed(dev), false);
+});
+
+test('merged and declined are the only states that mean the code side is over', () => {
+  for (const state of ['MERGED', 'DECLINED']) {
+    assert.equal(allPullRequestsClosed(readDevPullRequests(devField(overall(state, 2)))), true, state);
+  }
+  for (const state of ['DRAFT', 'OPEN', 'SOMETHING_NEW']) {
+    assert.equal(allPullRequestsClosed(readDevPullRequests(devField(overall(state, 2)))), false, state);
+  }
+});
+
+test('a rollup that does not account for every pull request confirms nothing', () => {
+  // Two merged out of three: the third is in a state the rollup did not name,
+  // and it could be a draft. Not knowing is the only honest answer.
+  assert.equal(allPullRequestsClosed(readDevPullRequests(devField(overall('MERGED', 3, 2)))), false);
+});
+
+test('a panel naming no pull requests at all says nothing, rather than "none open"', () => {
+  // A real case rather than a hypothetical: one ticket matched
+  // `development[pullrequests].all > 0` while its panel carried six
+  // repositories, twenty-two builds and no pull request summary whatsoever.
+  assert.equal(readDevPullRequests(devField(null)), null);
+  assert.equal(allPullRequestsClosed(null), false);
+});
+
+test('a panel that reported an error is not trusted to be complete', () => {
+  // It may be missing a pull request, which is the one way this read can be
+  // wrong in the unsafe direction.
+  assert.equal(readDevPullRequests(devField(overall('MERGED', 2), { errors: ['github timed out'] })), null);
+});
+
+test('staleness is not consulted, because every panel claims it', () => {
+  // Measured: `isStale` is true on every panel read through `acli`, including
+  // ones checked by hand and found correct. Gating on it would empty the
+  // settled court rather than guard anything.
+  const fresh = readDevPullRequests(devField(overall('MERGED', 1), { isStale: false }));
+  const stale = readDevPullRequests(devField(overall('MERGED', 1), { isStale: true }));
+  assert.deepEqual(fresh, stale);
+  assert.equal(allPullRequestsClosed(stale), true);
+});
+
+test('a brace inside a name cannot end the object early', () => {
+  // The extent is matched rather than sliced to the last `}`, and strings are
+  // skipped while matching, so a repository called something unfortunate still
+  // parses.
+  const field = devField({ ...overall('MERGED', 1), lastRepo: 'acme/we{ird}' });
+  assert.deepEqual(readDevPullRequests(field)?.state, 'MERGED');
+});
+
+test('a panel that cannot be read answers nothing rather than throwing', () => {
+  for (const field of [null, undefined, 42, '', '{}', '{json=}', '{json=not json}', '{json={"cachedValue":{}}}']) {
+    assert.equal(readDevPullRequests(field), null, String(field));
+  }
+});
+
+test('a rollup counting no pull requests is not a closed one', () => {
+  assert.equal(allPullRequestsClosed(readDevPullRequests(devField(overall('MERGED', 0)))), false);
 });
 
 /* ---------- the status vocabulary ---------- */
