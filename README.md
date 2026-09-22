@@ -326,7 +326,7 @@ logins. Restart to apply.
 | `DAILY_FOCUS_WORK_START` | `9` | Local hour the working day starts, when the brief doesn't say |
 | `DAILY_FOCUS_WORK_END` | `17` | Same. The brief's `dayEnd` wins, since the agent read today's calendar |
 | `DAILY_FOCUS_MIN_FREE_WINDOW` | `45` | Minutes before a gap counts as a focus window |
-| `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to warn that the agent hasn't run. Counted only in hours a run was due, so days off never trip it |
+| `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to expect a refresh. Shows an informational message for 45 minutes before warning that the agent may not have run. Counted only in hours a run was due, so days off never trip it |
 | `DAILY_FOCUS_AGENT_DAYS` | *inferred* | Weekdays the agent is scheduled on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
 | `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
 | `DAILY_FOCUS_AWAY_AFTER` | `10` | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |

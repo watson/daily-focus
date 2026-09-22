@@ -524,8 +524,11 @@ export interface DashboardState {
     headline: string | null;
     /** Whole hours since generatedAt. Null when there is no brief yet. */
     ageHours: number | null;
+    /** Within the refresh grace period on a run day, not proof the agent is running. */
+    refreshPending: boolean;
     /**
-     * True once the brief is old enough that the agent has probably missed a run.
+     * True once the refresh threshold and 45-minute grace period have elapsed.
+     * The brief is old enough that the agent has probably missed a run.
      * Counted only in hours the agent was scheduled for — see `workingMsBetween` —
      * so days off never make a brief look neglected.
      */

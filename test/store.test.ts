@@ -137,7 +137,7 @@ test("Friday's brief is not stale at the weekend, when no run was due", async ()
   assert.equal(sunday.brief.ageHours, 63);
 });
 
-test("Friday's brief goes stale on Monday, at the hour the run was due", async () => {
+test("Friday's brief goes stale on Monday after the refresh grace period", async () => {
   const store = await makeStore();
   await writeFile(store.config.itemsFile, JSON.stringify(brief([], fridayRun)));
 
@@ -145,7 +145,7 @@ test("Friday's brief goes stale on Monday, at the hour the run was due", async (
   assert.equal(beforeTheRun.brief.stale, false);
   assert.equal(beforeTheRun.schedule.runsToday, true);
 
-  const afterIt = await store.getState(new Date(2026, 8, 14, 7, 0));
+  const afterIt = await store.getState(new Date(2026, 8, 14, 7, 15));
   assert.equal(afterIt.brief.stale, true);
   assert.equal(afterIt.brief.ageHours, 72);
 });
@@ -165,8 +165,8 @@ test('on a Sun–Thu week the weekend moves with the schedule', async () => {
   const saturday = await store.getState(new Date(2026, 8, 12, 20, 0));
   assert.equal(saturday.brief.stale, false);
 
-  // Sunday is a working morning: by 07:00 the run is overdue.
-  const sunday = await store.getState(new Date(2026, 8, 13, 7, 0));
+  // Sunday is a working morning: by 07:15 the grace period has ended.
+  const sunday = await store.getState(new Date(2026, 8, 13, 7, 15));
   assert.equal(sunday.brief.stale, true);
   assert.equal(sunday.schedule.runsToday, true);
 });
@@ -311,4 +311,35 @@ test('counts overdue items against local today', async () => {
 
   const state = await store.getState();
   assert.equal(state.stats.overdue, 1);
+});
+
+
+test('a refresh gets 45 minutes of grace at the configured threshold', async () => {
+  for (const threshold of [24, 12]) {
+    const store = await makeStore({ staleAfterHours: threshold });
+    await writeFile(store.config.itemsFile, JSON.stringify(brief([], thursdayRun)));
+    for (const [offset, pending, stale] of [
+      [-1, false, false], [0, true, false], [44 * 60_000 + 59_999, true, false],
+      [45 * 60_000, false, true],
+    ] as const) {
+      const now = new Date(new Date(thursdayRun).getTime() + threshold * 3_600_000 + offset);
+      const state = await store.getState(now);
+      assert.equal(state.brief.refreshPending, pending);
+      assert.equal(state.brief.stale, stale);
+    }
+  }
+});
+
+test('refresh grace skips days off and resumes on the next run day', async () => {
+  const store = await makeStore();
+  await writeFile(store.config.itemsFile, JSON.stringify(brief([], fridayRun)));
+  const weekend = await store.getState(new Date(2026, 8, 13, 7, 0));
+  assert.equal(weekend.brief.refreshPending, false);
+  const monday = await store.getState(new Date(2026, 8, 14, 7, 0));
+  assert.equal(monday.brief.refreshPending, true);
+  assert.equal(monday.brief.stale, false);
+  await writeFile(store.config.itemsFile, JSON.stringify(brief([], new Date(2026, 8, 14, 7, 0).toISOString())));
+  const refreshed = await store.getState(new Date(2026, 8, 14, 7, 1));
+  assert.equal(refreshed.brief.refreshPending, false);
+  assert.equal(refreshed.brief.stale, false);
 });

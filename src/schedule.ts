@@ -29,6 +29,9 @@ import { calendarDaysBetween, localDateKey, parseISO, startOfLocalDay } from './
 /** 0 = Sunday … 6 = Saturday, matching `Date.getDay()` and cron's day-of-week. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
+// Allow time for source gathering and publication after a refresh is expected.
+export const BRIEF_REFRESH_GRACE_HOURS = 45 / 60;
+
 export const MONDAY_TO_FRIDAY: readonly Weekday[] = [1, 2, 3, 4, 5];
 
 export interface Schedule {
