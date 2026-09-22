@@ -1274,21 +1274,32 @@ body[data-view='tickets'] .layout {
  * longest, so half of every card was empty and thirty of them came to 2527px of
  * scrolling. At 460px a column the same thirty fit in half that.
  *
- * Grid rather than `columns: 2`, which would give the nicer top-to-bottom
- * reading order, because `.item__actions` and the snooze `.menu` are both
- * absolutely positioned — and an absolutely positioned child inside a multicol
- * fragment resolves against the whole container, not the fragment, so the menu
- * would open next to the wrong row.
+ * Multicol rather than a grid, which is what this was and which was wrong for a
+ * board whose cards disagree about height. A grid lays out in *rows*, so a
+ * one-line card beside a card carrying a note gets the note's height reserved
+ * next to it and left empty — `align-items: start` stops it stretching but
+ * cannot reclaim the row, and one noted card on a real board cost about a
+ * hundred pixels of nothing. A column flow has no rows to align against: each
+ * card starts where the one above it ended.
  *
- * `align-items: start` rather than the default stretch: a card carrying a note
- * is several times the height of a bare one, and stretching its neighbour to
- * match would hand back the space this whole rule is here to save.
+ * `break-inside: avoid` so a card is never split down the middle of a column,
+ * and the vertical rhythm is a margin rather than `gap`, which a multicol
+ * container does not have. `column-width` rather than a count, so the number of
+ * columns is still the measured 460px answered against whatever width there is.
+ *
+ * The abspos worry that picked the grid does not apply: `.item` is
+ * `position: relative`, so `.item__actions` and the snooze `.menu` resolve
+ * against the card and travel with it into its column. Only a child resolving
+ * against the multicol container itself would land beside the wrong row.
  */
 #tickets .list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
-  gap: 4px 10px;
-  align-items: start;
+  display: block;
+  columns: 460px;
+  column-gap: 10px;
+}
+#tickets .list > .item {
+  break-inside: avoid;
+  margin-bottom: 4px;
 }
 
 /*

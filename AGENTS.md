@@ -490,14 +490,24 @@ Five rules this board must keep:
 
 The layout is the one place this view departs from the other two, and both departures
 are measured rather than stylistic. The rows were 1200px wide for a summary running
-520px at the median, so `#tickets .list` is a grid of `minmax(460px, 1fr)` columns —
-two at the shared page width, three on a wide display, which is also why the tickets
-view is the only one allowed past the 1280px cap. Grid rather than `columns: 2`,
-which would read better top-to-bottom, because `.item__actions` and the snooze
-`.menu` are absolutely positioned and an abspos child inside a multicol fragment
-resolves against the whole container — the menu would open beside the wrong row. A
-fixed `6rem` gutter holds the status so every summary starts at the same x, and
-`align-items: start` keeps a card carrying a note from stretching its neighbour.
+520px at the median, so `#tickets .list` is `columns: 460px` — two columns at the
+shared page width, three on a wide display, which is also why the tickets view is the
+only one allowed past the 1280px cap. A fixed `6rem` gutter holds the status so every
+summary starts at the same x.
+
+**Columns rather than a grid, because a grid has rows and this board has none.** Cards
+here disagree about height — one carrying a note is several times a bare one — and a
+grid reserves the tallest card's height across the whole row, so the short card beside
+it gets that space left blank underneath. `align-items: start` stops the short card
+stretching but cannot reclaim the row, which is why this was a visible band of nothing
+on a real board. A column flow places each card where the one above it ended and never
+aligns across columns, so the space is simply not created; `break-inside: avoid` keeps
+a card whole and the vertical rhythm is a margin, since a multicol container has no
+`gap`. The earlier note here said multicol would break the absolutely positioned
+`.item__actions` and snooze `.menu` — it does not, because `.item` is
+`position: relative` and they resolve against their own card. Only a descendant whose
+containing block is the multicol container itself lands beside the wrong row, and this
+view has none.
 
 **The dot is the one place in this dashboard where colour carries a cue on its own**,
 and the stylesheet's rule at the top says source colour never does. The exception is
