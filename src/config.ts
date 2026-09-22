@@ -77,6 +77,46 @@ export interface CalendarConfig {
 }
 
 /**
+ * How the ticket board reaches Jira. See `jira.ts`, `tickets.ts` and
+ * `ticketboard.ts`.
+ *
+ * The third thing the dashboard gathers itself, and for the pull request board's
+ * reason: whether a ticket's status matches its pull requests is state rather
+ * than judgement, and the point of a row is that the user goes and fixes it — so
+ * it has to disappear when they do, which a morning brief written at dawn can
+ * never do.
+ */
+export interface JiraConfig {
+  /** `DAILY_FOCUS_JIRA=off` turns the board off entirely; nothing is read. */
+  enabled: boolean;
+  /**
+   * Project keys to limit the search to. Empty means every project the account
+   * can see, which is the zero-config case and usually right — the candidate set
+   * is already narrowed to tickets assigned to the user.
+   */
+  projects: readonly string[];
+  /**
+   * Statuses in which standing still is deliberate rather than an oversight,
+   * exactly as this Jira spells them: Blocked, On Hold, Waiting for customer.
+   *
+   * A ticket in one of these is already answering "why isn't this moving", so it
+   * is not also asked. Which statuses those are is a property of the user's
+   * workflow and never of this project, so nothing is recognised unless it is
+   * configured here, and an empty list simply leaves every row in place.
+   */
+  holdStatuses: readonly string[];
+  /** Minutes between reads while a browser is watching. */
+  pollMinutes: number;
+  /**
+   * The Atlassian site host browse links are built from, when `acli`'s own answer
+   * isn't the one wanted. Null means use whichever site `acli` authenticated to.
+   */
+  site: string | null;
+  /** The acli binary. Overridable for the reason `ghPath` is. */
+  acliPath: string;
+}
+
+/**
  * All configuration is environment-driven so the agent and the dashboard can be
  * pointed at the same store without either one hardcoding a path. The environment
  * itself is the real one layered over the repo-root `.env`, see `env.ts`.
@@ -138,6 +178,10 @@ export interface Config {
   calendar: CalendarConfig;
   /** Where calendar.json lives: the last good calendar read, written by the server. */
   calendarFile: string;
+  /** The Jira ticket board. */
+  jira: JiraConfig;
+  /** Where tickets.json lives: the board's last good read, written by the server. */
+  ticketsFile: string;
 }
 
 function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
@@ -230,6 +274,28 @@ function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
   };
 }
 
+function envJira(env: NodeJS.ProcessEnv): JiraConfig {
+  const flag = (env.DAILY_FOCUS_JIRA ?? '').trim().toLowerCase();
+  // Fifteen rather than the boards' five: status hygiene is never urgent, and
+  // three searches a poll is a cost worth paying three times less often.
+  const pollMinutes = envInt('DAILY_FOCUS_JIRA_POLL_MINUTES', 15, env);
+  if (pollMinutes < 1) {
+    throw new Error(`DAILY_FOCUS_JIRA_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
+  }
+  return {
+    enabled: !['off', 'false', '0', 'no'].includes(flag),
+    projects: envList('DAILY_FOCUS_JIRA_PROJECTS', env),
+    // Commas only, as for merge gate checks and calendars: status names contain
+    // spaces almost by default — "In Review", "Waiting for customer".
+    holdStatuses: envNameList('DAILY_FOCUS_JIRA_HOLD_STATUSES', env),
+    pollMinutes,
+    // Tolerates a pasted URL, since that is what is on screen when someone goes
+    // looking for their site's name.
+    site: envString('DAILY_FOCUS_JIRA_SITE', '', env).replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || null,
+    acliPath: expandHome((env.DAILY_FOCUS_ACLI ?? '').trim() || 'acli'),
+  };
+}
+
 /**
  * Copy the day-of-week field out of whatever runs the agent: `1-5`, `0-4`, `0,6`.
  *
@@ -280,6 +346,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
+    ticketsFile: resolve(dataDir, 'tickets.json'),
     sessionMinutes: envInt('DAILY_FOCUS_SESSION_MINUTES', 25, env),
     awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', 10, env),
     port: envInt('DAILY_FOCUS_PORT', 4321, env),
@@ -291,5 +358,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     agentDays: envWeekdays('DAILY_FOCUS_AGENT_DAYS', env),
     github: envGitHub(env),
     calendar: envCalendar(env),
+    jira: envJira(env),
   };
 }

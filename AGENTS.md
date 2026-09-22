@@ -72,6 +72,7 @@ writer needs to be a deliberate decision rather than a convenience:
 | `sources.md` | the user, by hand | the agent only — the server never opens it |
 | `archive/items-<date>.json` | the server | the agent, and `archive.ts` |
 | `prs.json` | the server, from GitHub | the dashboard; the agent may read it |
+| `tickets.json` | the server, from Jira via `acli` | the dashboard; the agent may read it |
 | `calendar.json` | the server, from Calendar.app | the dashboard |
 | `prompt.md`, `items.schema.json` | `npm run init`, as symlinks into this repo | the agent only |
 
@@ -80,11 +81,13 @@ The server never writes `items.json`, and nothing in this repo writes `actions.j
 behalf. The action log in particular is append-only and unreproducible — it is the only
 record that a thing was dealt with, so nothing may compact or rewrite it.
 
-`prs.json` is the one file here that comes from outside the store: the server's last
-successful fetch of the user's open pull requests, written via a sibling temp file and
-rename so a reader never sees half of it. It is a cache, not a record — losing it costs
-a restart its first paint and nothing else — and `board.ts` reads it back defensively
-for the same reason `validate.ts` is forgiving.
+`prs.json`, `tickets.json` and `calendar.json` are the files here that come from
+outside the store: the server's last successful read of the user's open pull requests,
+of the Jira tickets whose status looks wrong, and of today's calendar. Each is written
+via a sibling temp file and rename so a reader never sees half of it. All three are
+caches rather than records — losing one costs a restart its first paint and nothing
+else — and `board.ts`, `ticketboard.ts` and `calendarboard.ts` each read theirs back
+defensively for the same reason `validate.ts` is forgiving.
 
 `sources.md` is the one file here the dashboard never opens at all. It is the personal
 half of the brief — who the user is, which calendars to query, which accounts to judge
@@ -357,6 +360,168 @@ have to list the same seven.
   reading of the check's own output. Parsing a check-run title, summary or app name to
   guess at the policy behind it is specifically out of scope; if that text is ever
   wanted it goes below the row as plain text and never changes a court.
+
+### The ticket board is fetched too, and asks Jira rather than GitHub
+
+The third tab is the Jira tickets whose status doesn't match what their pull requests
+say. It is on a board rather than in the brief for the pull request board's reason and
+a sharper one: the point of a row is that the user goes and changes the status, so the
+row has to disappear when they do, which a brief written once at dawn can never do.
+There are also roughly twenty of these on a real backlog at any time, which is an
+order of magnitude past the brief's editorial bar and exactly the sort of list that
+belongs somewhere visible and undemanding.
+
+Three modules, split as the pull request board is:
+
+- `jira.ts` — borrows `acli`'s own OAuth session rather than storing a credential,
+  which is the same bargain `github.ts` strikes with `gh` and the thing that made this
+  board worth building. Builds the JQL, runs the searches, reduces each issue to a
+  `Ticket` of facts.
+
+  **`transitionTicket` is the only thing in this repo that writes to anything
+  outside this machine**, and the boundary is drawn as narrowly as it can be: it
+  moves one work item to one named status and does nothing else — no field edits,
+  no comments, no deletes — and it runs only from a click a user made on a row.
+  `--key` takes a single key rather than the JQL `acli` would equally accept, so a
+  bulk transition is not something this dashboard can express. Every other call is
+  a search or a status read. A second writing function needs to be a deliberate
+  decision rather than a convenience, and so does widening this one.
+
+  **The board cannot know which transitions are legal.** `acli` returns a work
+  item's `transitions` as null and has no command for them, so the status menu is
+  built from the statuses the user's *own* tickets are seen in — `statusesByProject`,
+  fed by the candidate search plus one more for the finished ones, since the
+  candidate search excludes that category by construction and "done" is the move
+  most often wanted from a settled row. That makes the menu an offer and not a
+  promise: Jira is the authority and says so by refusing, which is why a refusal is
+  an expected outcome carried in `JiraTransitionError` with Jira's own words, and
+  reaches the user as a 409 rather than being logged. Only observed statuses are
+  offered and nothing takes a typed one, which is a deliberate limitation: a project
+  whose workflow has never been seen reaching an end cannot be finished from this
+  tab, and that is preferred to a field inviting names that don't exist.
+
+  **`acli` exits 0 whether or not the move happened.** A refused transition reports
+  `{"results":[{"status":"FAILURE","message":"…"}],"successCount":0}` with an empty
+  stderr and a zero exit, so `readTransitionReport` demands to be *told* the move
+  succeeded rather than merely failing to find a complaint — an earlier version
+  looked for an `error` key, found none in that payload, and reported a refusal as a
+  success. The polarity is the point: a false failure costs a confusing toast beside
+  a row the refresh has already corrected, while a false success is a lie the user
+  has no way to catch, on the one tab whose whole job is catching statuses that say
+  untrue things. `test/jira.test.ts` records the real payloads. Grouped by project because
+  projects disagree — one real board ran "In Progress" and "In progress" in two of
+  them, and a third called its finished state "Done (ZD Automation)".
+
+  A transition never touches the cache directly: `TicketBoard.transition` awaits
+  `refresh()` afterwards, so the row on screen comes from Jira having accepted the
+  move rather than from the click. On the one tab whose whole job is "your statuses
+  are wrong", an optimistic status would be the exact lie it exists to catch.
+
+  Three searches per read, and the split is forced rather than chosen. Jira exposes
+  exactly two counts of a ticket's pull requests to JQL — `development[pullrequests].all`
+  and `.open`, with `.merged` and `.declined` being parse errors — and they can be
+  *filtered* on but never *selected*: no field returns them. So membership of a
+  predicate is the only way to learn it, and the two extra searches ask for one field
+  each and are read as sets of keys. `test/jira.test.ts` asserts the JQL rather than
+  trusting it, because every clause in it is load-bearing and invisible in the output:
+  drop `statusCategory != Done` and the board fills with finished work.
+
+  **Any of the three failing takes the whole round with it.** Losing the base search
+  is obvious; losing either set is worse than it looks, because a ticket missing from
+  both reads as *no code was ever linked to this* — a perfectly plausible ticket rather
+  than an error. One failed request would quietly empty one court and flood another, so
+  the round fails and the poller keeps the rows it had. Same reasoning as the checks
+  request in `github.ts`, and the same trap: nothing is what a quiet board looks like.
+
+  Branching is on Jira's `statusCategory` (`new`, `indeterminate`, `done`) and never on
+  a status name. The names are a site's own — Committed, In Review — and this repo is
+  published; the categories are in every Jira whatever its columns are called. Tickets
+  above the base issue-type hierarchy level are dropped, which excludes epics and any
+  tier a site has above them without naming either.
+- `tickets.ts` — pure. `judge` decides the court from the facts and the configured hold
+  statuses; `resolveTickets` joins that with the action log. `test/tickets.test.ts` is
+  the spec. The order the questions are asked in is written out above `judge`, and what
+  is deliberately *not* asked is written out with it.
+- `ticketboard.ts` — the poller, the same shape as `board.ts` and with its calls
+  injectable, which is how `test/ticketboard.test.ts` drives it without an `acli`.
+
+The three courts are `TicketCourt` in `src/types.ts`; the client's
+`TICKET_COURT_TITLE`, `TICKET_COURT_ORDER` and `TICKET_COURT_HINT` in
+`public/render.js` have to list the same three, and `test/docs-contract.test.ts`
+fails when they don't.
+
+Five rules this board must keep:
+
+- **A ticket can need more than one pull request, and this is why it asks Jira.** The
+  naive reading — every linked pull request merged, so the ticket must be done — is
+  wrong for work spanning several repositories, and wrong in the direction that teaches
+  the user to distrust the board. What makes it safe is that **Jira counts a draft as
+  open**, so the habit of opening all of a ticket's pull requests up front keeps the
+  ticket out of the settled court until the last one merges, with no judgement applied
+  at all. Asking Jira also avoids a join that does not work: Jira links pull requests
+  itself from branches and commits and is right about all of them, while matching from
+  the GitHub side needs a ticket key in the pull request — measured at one title and
+  eighteen branches out of thirty-three open pull requests on one real board.
+- **A pull request nobody has written yet is invisible, and the board says so.** No
+  source can tell an unfinished ticket from a finished one when the remaining work has
+  not been started, so the court claims only *no open pull requests left*, and the note
+  button is where the rest goes. Judging it would mean reading the ticket's description
+  and comments to notice that four services were named and two have pull requests —
+  that is judgement, so it belongs to the agent and not here.
+- **Nothing computed is stored.** `tickets.json` holds facts and a timestamp; the court
+  is derived on every read from the facts and the hold statuses, so a row moves as the
+  user's configuration changes without a re-read. The hold statuses in particular are
+  the user's private configuration and have no business in a cache of Jira facts, which
+  is the same rule `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS` follows.
+- **A transition is not undone, it is reversed.** The toast's undo transitions the
+  ticket back to where it came from, and the wording says "moved" rather than
+  offering a rollback, because Jira's history keeps both moves and whatever
+  automations fired have already fired. Nothing is written to `actions.jsonl` for
+  it either: a status change is an upstream fact, the next read reflects it, and a
+  log entry would be a second record of the same thing with no reader.
+- **It joins the same action log under the same ids** (`jira:<KEY>`), which are the
+  ids the prompt already uses for Jira items, so a ticket the brief also raises is one
+  thing rather than two. Only `snooze` and `note` are honoured. `done` and `dismiss`
+  are ignored for the pull request board's reason — the brief may raise "answer the
+  question on PROJ-8842" and marking that done says nothing about the status — and for
+  one of this board's own: the fix is a status change in Jira, and the next read drops
+  the row without being told. A ticket that stops looking wrong is dropped even when
+  parked, since the park was about a complaint that no longer stands.
+
+The layout is the one place this view departs from the other two, and both departures
+are measured rather than stylistic. The rows were 1200px wide for a summary running
+520px at the median, so `#tickets .list` is a grid of `minmax(460px, 1fr)` columns —
+two at the shared page width, three on a wide display, which is also why the tickets
+view is the only one allowed past the 1280px cap. Grid rather than `columns: 2`,
+which would read better top-to-bottom, because `.item__actions` and the snooze
+`.menu` are absolutely positioned and an abspos child inside a multicol fragment
+resolves against the whole container — the menu would open beside the wrong row. A
+fixed `6rem` gutter holds the status so every summary starts at the same x, and
+`align-items: start` keeps a card carrying a note from stretching its neighbour.
+
+**The dot is the one place in this dashboard where colour carries a cue on its own**,
+and the stylesheet's rule at the top says source colour never does. The exception is
+narrow and deliberate: every row here is Jira, so the source dot repeats itself once
+per row and has no job, while the issue type had to leave the status gutter — in
+6rem it wrapped underneath and cost a line on every card. So the dot carries the
+type, Task keeping Jira's own amber so only the exceptions stand out. What keeps it
+honest is that nothing load-bearing depends on the hue: the key, summary and status
+are all text, each dot carries its type as an `aria-label` and a hover title rather
+than being `aria-hidden` like the source dots, and `typeLegend` names the types
+actually on screen — derived from the rows, so a type nobody anticipated gets a
+swatch and its own name instead of going quietly grey. `test/tickets-ui.test.ts`
+holds all three halves of that, since none of them are visible to `tickets.ts`.
+
+Two things the board is deliberately quiet about, and both are quiet by construction
+rather than by omission. It never says a pull request was *merged*, only that none is
+open, because JQL offers no count of merged ones and an abandoned pull request is
+indistinguishable from a landed one. And it says nothing about the **In Progress → In
+Review** transition, which needs to know whether an open pull request is still a draft:
+Jira's counts don't say, the pull request board does, and the only way to join them is
+the branch-name match that more than a third of real pull requests fail. Rows also
+carry no age pill — `acli`'s search permits a fixed handful of fields with no timestamp
+among them, though it will sort on one, so the ordering is real and inherited and a
+duration would have had to be invented.
 
 ### The agenda is read live, and falls back
 

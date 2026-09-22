@@ -66,3 +66,31 @@ export async function postBoardRefresh() {
   }
   return res.json();
 }
+
+/** Ask the server to read Jira now. Resolves with fresh state once it has. */
+export async function postTicketsRefresh() {
+  const res = await fetch('/api/tickets/refresh', { method: 'POST' });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/tickets/refresh returned ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Move a ticket to a status. Resolves with fresh state once Jira has accepted it
+ * and the board has been read back; rejects with Jira's own words when the
+ * workflow refuses, which is an outcome the board cannot rule out in advance.
+ */
+export async function postTicketTransition(key, status) {
+  const res = await fetch('/api/tickets/transition', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key, status }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/tickets/transition returned ${res.status}`);
+  }
+  return res.json();
+}

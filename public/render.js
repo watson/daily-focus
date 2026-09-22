@@ -10,6 +10,7 @@ import {
   daysFromToday,
   formatDay,
   formatDuration,
+  formatShortDay,
   formatTime,
   formatWeekday,
   localDateKey,
@@ -804,27 +805,49 @@ function renderActions(item, ui, handlers) {
  * means something on the brief — the board has no agent deciding anything, so a
  * parked pull request always carries a date or is parked outright.
  */
-function renderSnoozeMenu(item, now, handlers, { indefinite = true } = {}) {
+/**
+ * The park / snooze menu.
+ *
+ * `indefinite` offers "until the agent decides", which is a brief item's escape
+ * hatch and deliberately not a board's: `foldActionLog` keeps a dateless snooze
+ * parked forever, and a board row hidden forever with nothing to say so is the
+ * failure these boards exist to avoid.
+ *
+ * `longRange` adds months and quarters, for the boards where something can
+ * legitimately not be this month's problem. Both are calendar arithmetic from
+ * today rather than jumps to the 1st, which keeps them consistent with the three
+ * above — "Next week" is seven days, not next Monday — and avoids the collision
+ * that "the start of next quarter" would hit every time the quarter is nearly
+ * over: in late September it and "next month" would both be 1 October.
+ */
+function renderSnoozeMenu(item, now, handlers, { indefinite = true, longRange = false } = {}) {
   const presets = [
-    ['Tomorrow', 1],
-    ['In 3 days', 3],
-    ['Next week', 7],
+    ['Tomorrow', addDays(now, 1)],
+    ['In 3 days', addDays(now, 3)],
+    ['Next week', addDays(now, 7)],
   ];
+  if (longRange) {
+    presets.push(['Next month', addMonths(now, 1), true], ['Next quarter', addMonths(now, 3), true]);
+  }
 
   const dateInput = el('input', { type: 'date', 'aria-label': 'Snooze until a specific date' });
 
   return el(
     'div',
     { class: 'menu', role: 'menu' },
-    presets.map(([label, days]) =>
+    presets.map(([label, until, dated]) =>
       el(
         'button',
         {
           type: 'button',
           role: 'menuitem',
-          onclick: () => handlers.onAction(item.id, 'snooze', { until: addDays(now, days) }),
+          onclick: () => handlers.onAction(item.id, 'snooze', { until }),
         },
         label,
+        // Only the long ones show the date they resolve to. You know what date
+        // next Tuesday is; you do not know what date three months out is, and a
+        // park that long is worth being sure about before clicking it.
+        dated ? el('span', { class: 'menu__when' }, formatShortDay(until)) : null,
       ),
     ),
     indefinite
@@ -858,10 +881,23 @@ function renderSnoozeMenu(item, now, handlers, { indefinite = true } = {}) {
 }
 
 function addDays(from, days) {
-  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
+  return localDateKey(new Date(from.getFullYear(), from.getMonth(), from.getDate() + days));
+}
+
+/**
+ * The same day some months ahead, clamped to the end of a short month.
+ *
+ * The clamp is the whole reason this isn't a one-liner: `new Date(y, m + 1, 31)`
+ * for the 31st of January is the 3rd of March, because the day overflows February
+ * and rolls on. A park set from the last day of a long month would quietly land
+ * days into the month after the one it named.
+ */
+function addMonths(from, months) {
+  const target = new Date(from.getFullYear(), from.getMonth() + months, 1);
+  // Day 0 of the following month is the last day of the target one.
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(from.getDate(), lastDay));
+  return localDateKey(target);
 }
 
 /** CSS-safe id fragment — item ids contain ':', '#' and '/'. */
@@ -996,18 +1032,32 @@ function nowRow(now) {
 /* ---------- tabs ---------- */
 
 /**
- * Two views, one page. The badge is the one number the board pushes into the
- * Today view: how many pull requests are waiting on you, right now.
+ * Three views, one page.
+ *
+ * Each badge says the one number its tab wants read from the others. The board's
+ * is how many pull requests are waiting on you right now, which is urgent and
+ * styled as such. The ticket board's is how many statuses look wrong, which never
+ * is — nobody is blocked on a mislabelled ticket — so it is the whole flagged
+ * count rather than a subset, and quiet rather than red.
  */
 export function renderTabs(state, ui) {
   for (const tab of document.querySelectorAll('.tab')) {
     tab.setAttribute('aria-selected', String(tab.dataset.view === ui.view));
   }
-  const badge = document.getElementById('board-badge');
   const waiting = state.board?.enabled ? state.board.counts.you : 0;
-  badge.hidden = waiting === 0;
-  badge.textContent = String(waiting);
-  badge.setAttribute('aria-label', `${waiting} waiting on you`);
+  badge('board-badge', waiting, `${waiting} waiting on you`);
+
+  const tickets = state.tickets;
+  const flagged = tickets?.enabled ? tickets.rows.filter((row) => row.status === 'open').length : 0;
+  badge('tickets-badge', flagged, `${flagged} tickets whose status looks wrong`);
+}
+
+function badge(id, count, label) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  node.hidden = count === 0;
+  node.textContent = String(count);
+  node.setAttribute('aria-label', label);
 }
 
 /* ---------- the pull request board ---------- */
@@ -1354,6 +1404,384 @@ function renderPullActions(row, ui, handlers) {
         ),
       );
     }
+    buttons.push(
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'button',
+          title: 'Park this until a date',
+          'aria-expanded': String(ui.menuFor === row.id),
+          onclick: () => handlers.toggleMenu(row.id),
+        },
+        'Park',
+      ),
+    );
+  } else {
+    buttons.push(el('button', { type: 'button', class: 'button', onclick: () => handlers.unpark(row.id) }, 'Unpark'));
+  }
+
+  buttons.push(
+    el(
+      'button',
+      { type: 'button', class: 'button', title: 'Leave a note', onclick: () => handlers.toggleNote(row.id) },
+      'Note',
+    ),
+  );
+
+  return el('div', { class: 'item__actions' }, buttons);
+}
+
+/* ---------- the Jira ticket board ---------- */
+
+/**
+ * What each court claims, in the words the README uses for it.
+ *
+ * Each heading is the whole explanation, which is why there is no per-row reason
+ * line here as there is on the pull request board: a ticket in `settled` has
+ * exactly one thing wrong with it, and it is the heading.
+ */
+const TICKET_COURT_TITLE = {
+  settled: 'No open pull requests left',
+  started: 'Work has started, the ticket has not',
+  idle: 'In flight with nothing linked',
+};
+
+const TICKET_COURT_ORDER = ['settled', 'started', 'idle'];
+
+/** What to do about a row, under the heading that says what is wrong with it. */
+const TICKET_COURT_HINT = {
+  settled:
+    'Every pull request Jira has for these is closed. Move them on, or say what is still to come — ' +
+    'a pull request nobody has written yet is invisible from here.',
+  started: 'A pull request is open, so the work has begun. The status still says it has not.',
+  idle: 'Nothing in Jira links any code to these. Fine for work that is not code; worth a look otherwise.',
+};
+
+/**
+ * Issue type as a colour, because on this board the dot has nothing else to say.
+ *
+ * Everywhere else the dot carries the source, which is what lets the palette's
+ * lighter hues sit below 3:1 contrast — the source name is always in text beside
+ * it. Here every row is Jira, so the dot repeats itself once per row and the
+ * colour is free to mean something else.
+ *
+ * Which means this is the one place colour carries a cue on its own, so it is
+ * kept to the thing that changes the *least* about what you do: the load-bearing
+ * facts — key, summary, status — stay as text, every dot carries its type as an
+ * `aria-label` and a hover title, and `typeLegend` names the ones on screen.
+ *
+ * Task keeps Jira's own amber so the ordinary row looks exactly as it did and the
+ * exceptions are what stand out. The rest are drawn from the categorical hues and
+ * deliberately avoid red and the accent blue: red is this palette's "something is
+ * wrong" and blue is its "selected", and an issue type is neither.
+ */
+const TYPE_COLOR = {
+  task: 'var(--src-jira)',
+  bug: 'var(--src-atlassian)',
+  'sub-task': 'var(--src-tasks)',
+  subtask: 'var(--src-tasks)',
+  story: 'var(--src-calendar)',
+};
+
+const TYPE_FALLBACK = 'var(--src-other)';
+
+function typeColor(issueType) {
+  return TYPE_COLOR[issueType.trim().toLowerCase()] ?? TYPE_FALLBACK;
+}
+
+/**
+ * The key to the dots, built from the types actually on screen rather than from
+ * the list above — so it never names a type this board isn't showing, and a type
+ * nobody anticipated still gets a swatch and its own name rather than going
+ * silently grey.
+ */
+export function typeLegend(rows) {
+  const seen = [];
+  for (const row of rows) {
+    const label = row.issueType.trim();
+    if (label !== '' && !seen.includes(label)) seen.push(label);
+  }
+  if (seen.length < 2) return null;
+  return el(
+    'p',
+    { class: 'legend' },
+    seen.sort((a, b) => a.localeCompare(b)).map((label) =>
+      el(
+        'span',
+        { class: 'legend__entry' },
+        el('span', { class: 'legend__dot', style: `background:${typeColor(label)}`, 'aria-hidden': 'true' }),
+        label,
+      ),
+    ),
+  );
+}
+
+export function renderTicketBoard(state, ui, handlers) {
+  const container = document.getElementById('tickets');
+  const board = state.tickets;
+  const parts = [];
+
+  if (!board || !board.enabled) {
+    replace(container, el('p', { class: 'empty' }, 'The Jira ticket board is switched off (DAILY_FOCUS_JIRA=off).'));
+    return;
+  }
+
+  parts.push(ticketStatus(board, handlers));
+  // Under the status line rather than beside the rows: it is a key, read once,
+  // and a key repeated per court would be three copies of the same sentence.
+  const legend = typeLegend(board.rows);
+  if (legend) parts.push(legend);
+
+  if (board.reason) parts.push(banner('critical', '!', board.reason));
+  for (const warning of board.warnings) parts.push(banner('warning', '!', warning));
+
+  const open = board.rows.filter((row) => row.status === 'open');
+  for (const court of TICKET_COURT_ORDER) {
+    const rows = open.filter((row) => row.court === court);
+    if (rows.length === 0) continue;
+    // No dot on the heading, as on the pull request board. On the brief a section
+    // dot is its source, but here the row dots mean the issue type, and an amber
+    // one over a court heading reads as a claim that the court is Tasks.
+    parts.push(section(TICKET_COURT_TITLE[court], rows, state, ui, handlers, null, renderTicketRow));
+    parts.push(el('p', { class: 'court-hint' }, TICKET_COURT_HINT[court]));
+  }
+
+  if (open.length === 0 && !board.reason) {
+    parts.push(
+      el(
+        'p',
+        { class: 'empty' },
+        board.fetchedAt === null
+          ? board.fetching
+            ? 'Asking Jira…'
+            : 'Nothing read yet.'
+          : // Deliberately says how many were looked at. An empty board and a
+            // board that examined nothing look the same, and only one of them is
+            // good news — the same trap the agenda and the PR board each guard.
+            `Nothing looks mislabelled. ${board.checked} unfinished ${board.checked === 1 ? 'ticket' : 'tickets'} checked.`,
+      ),
+    );
+  }
+
+  const parked = board.rows.filter((row) => row.status === 'snoozed');
+  if (parked.length > 0) {
+    parts.push(drawer(`Parked (${parked.length})`, parked, state, ui, handlers, renderTicketRow));
+  }
+
+  const note = captureNoteField(container);
+  replace(container, parts);
+  restoreNoteField(container, ui, note);
+}
+
+/** "as of 10:42 · 19 of 86 unfinished tickets · reading as you@work every 15 min", and Refresh. */
+function ticketStatus(board, handlers) {
+  const bits = [];
+  // "refreshing…", as the pull request board says, so it cannot land beside the
+  // "reading … every 15 min" clause below and say the same word twice.
+  if (board.fetching) bits.push('refreshing…');
+  else if (board.fetchedAt) bits.push(`as of ${formatTime(board.fetchedAt)}`);
+  const flagged = board.rows.filter((row) => row.status === 'open').length;
+  if (board.fetchedAt) {
+    bits.push(`${flagged} of ${board.checked} unfinished ${board.checked === 1 ? 'ticket' : 'tickets'}`);
+  }
+  if (board.projects.length > 0) bits.push(`in ${board.projects.join(', ')}`);
+  // One clause, so "reading…" above doesn't land next to a second "reading".
+  bits.push(`reading ${board.account ? `as ${board.account} ` : ''}every ${board.pollMinutes} min`);
+
+  return el(
+    'div',
+    { class: 'board__status' },
+    el('span', { class: 'board__status-text' }, bits.join(' · ')),
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'button',
+        disabled: board.fetching,
+        title: 'Ask Jira now (r)',
+        onclick: () => handlers.refreshTickets(),
+      },
+      board.fetching ? 'Refreshing…' : 'Refresh',
+    ),
+  );
+}
+
+/** Exported for `test/tickets-ui.test.ts`, which renders one row against a DOM stub. */
+export function renderTicketRow(row, state, ui, handlers) {
+  const now = new Date(state.now);
+  const selected = ui.selectedId === row.id;
+
+  // The key rather than the title, and a link only when there is a site to link
+  // to: `url` is null when acli never named one, and `el()` drops a null href,
+  // which would leave an anchor going nowhere. So the reference degrades to text.
+  const reference = el('span', { class: 'item__ref' }, row.key);
+  const title = row.url
+    ? el('a', { href: row.url, target: '_blank', rel: 'noopener noreferrer' }, reference, ' ', row.summary)
+    : el('span', {}, reference, ' ', row.summary);
+
+  return el(
+    'li',
+    {
+      class: 'item item--ticket',
+      // Its own scheme, for `renderPullRow`'s reason: the same ticket can be a
+      // brief row too, and two elements with one id is an ambiguous target.
+      id: `ticket-${cssId(row.id)}`,
+      dataset: {
+        id: row.id,
+        status: row.status,
+        court: row.court,
+        selected: String(selected),
+        pending: String(ui.pending.has(row.id)),
+      },
+      onclick: (event) => {
+        if (event.target.closest('a, button, input, summary')) return;
+        handlers.onSelect(row.id);
+      },
+    },
+    el(
+      'span',
+      { class: 'item__mark' },
+      // Not aria-hidden, unlike the source dots: this one is the only place the
+      // issue type appears, so it has to be readable without seeing the colour.
+      el('span', {
+        class: 'item__dot',
+        style: `background:${typeColor(row.issueType)}`,
+        role: 'img',
+        'aria-label': row.issueType || 'unknown type',
+        title: row.issueType || 'unknown type',
+      }),
+    ),
+    el(
+      'div',
+      { class: 'item__body' },
+      renderTicketStatus(row, state, ui, handlers),
+      el('p', { class: 'item__title' }, title),
+      renderTicketMeta(row),
+      renderNotes(row),
+      ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
+    ),
+    renderTicketActions(row, ui, handlers),
+    ui.menuFor === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false, longRange: true }) : null,
+  );
+}
+
+/**
+ * The status the ticket is actually in — the other half of the sentence the court
+ * heading starts, and the thing the user is about to go and change. Always shown,
+ * even empty-handed, and alone in its own element because the stylesheet stands
+ * it in a fixed gutter so every summary on the board starts at the same x.
+ *
+ * The issue type used to sit beside it and now rides on the dot: in a gutter that
+ * narrow it wrapped underneath and cost a line on every card.
+ */
+/**
+ * The status, and — where there is anything to move it to — the control that
+ * changes it.
+ *
+ * Pressable only when the board has seen somewhere for this ticket to go. There
+ * is deliberately no way to type a status name here: the offer is limited to
+ * what has been observed, and a project whose workflow has never been seen
+ * reaching an end simply cannot be finished from this tab. That is a known
+ * limitation taken on purpose — a free-text field would invite naming statuses
+ * that don't exist, and the answer to those is a refusal nobody needed to see.
+ */
+function renderTicketStatus(row, state, ui, handlers) {
+  const offered = ticketStatusOptions(row, state);
+  if (offered.length === 0) {
+    return el('div', { class: 'item__meta item__meta--status' }, el('span', { class: 'pill pill--status' }, row.workflowStatus || '—'));
+  }
+
+  return el(
+    'div',
+    { class: 'item__meta item__meta--status' },
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'pill pill--status pill--button',
+        title: `Move ${row.key} to another status`,
+        'aria-expanded': String(ui.statusFor === row.id),
+        onclick: () => handlers.toggleStatus(row.id),
+      },
+      row.workflowStatus || '—',
+    ),
+    ui.statusFor === row.id ? renderStatusMenu(row, offered, ui, handlers) : null,
+  );
+}
+
+/**
+ * The statuses this row may be offered, which is *not* the same question as
+ * which transitions Jira will allow.
+ *
+ * `acli` cannot answer the second — a work item's `transitions` come back null
+ * and there is no command for them — so the offer is built from the statuses the
+ * user's own tickets in that project are seen in, and Jira is left to be the
+ * authority by refusing. Which means a refusal is an expected outcome here
+ * rather than a bug, and has to read as Jira's answer rather than as an error.
+ *
+ * Scoped to the row's own project, because projects disagree: one real board was
+ * running "In Progress" and "In progress" in two of them, and offering one
+ * project's vocabulary on another's ticket is offering a refusal for certain.
+ */
+function ticketStatusOptions(row, state) {
+  const project = /^([A-Za-z][A-Za-z0-9_]*)-\d+$/.exec(row.key.trim())?.[1]?.toUpperCase();
+  const all = (project && state.tickets?.statuses?.[project]) || [];
+  const current = row.workflowStatus.trim().toLowerCase();
+  return all.filter((status) => status.trim().toLowerCase() !== current);
+}
+
+function renderStatusMenu(row, offered, ui, handlers) {
+  const busy = ui.pending.has(row.id);
+  return el(
+    'div',
+    { class: 'menu menu--status', role: 'menu' },
+    offered.map((status) =>
+      el(
+        'button',
+        {
+          type: 'button',
+          role: 'menuitem',
+          disabled: busy,
+          onclick: () => handlers.moveTicket(row.key, status, row.workflowStatus),
+        },
+        status,
+      ),
+    ),
+  );
+}
+
+/**
+ * The pills that are worth a second line because they are exceptions: a pull
+ * request still open, or a row someone parked. Null when there are none, which is
+ * the ordinary case and why most cards are one line tall.
+ */
+function renderTicketMeta(row) {
+  const pills = [];
+  if (row.hasOpenPr) pills.push(el('span', { class: 'pill pill--tag' }, 'open PR'));
+  if (row.status === 'snoozed' && row.snoozedUntil) {
+    pills.push(el('span', { class: 'pill pill--tag' }, `parked until ${formatDay(row.snoozedUntil)}`));
+  }
+  return pills.length > 0 ? el('div', { class: 'item__meta item__meta--extra' }, pills) : null;
+}
+
+/**
+ * Park and note — and deliberately nothing else.
+ *
+ * No Done: the fix is a status change in Jira, and the next read drops the row on
+ * its own. No Nudged either, which the pull request board offers: there is nobody
+ * to nudge about your own ticket's status.
+ *
+ * And no Open, which the pull request board does have. The strip is absolutely
+ * positioned over the card's top right, so on a 460px column every button in it
+ * is width taken off the summary — and this one bought nothing, because the
+ * summary beside it is already an anchor to the same browse URL, as is `o`. The
+ * two that remain are the reason `.item__title` reserves the room it does.
+ */
+function renderTicketActions(row, ui, handlers) {
+  const buttons = [];
+
+  if (row.status === 'open') {
     buttons.push(
       el(
         'button',

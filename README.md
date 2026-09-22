@@ -15,15 +15,19 @@ morning agent  ──write──▶  ~/.daily-focus/items.json     ──read─
     ├────────read────────  ~/.daily-focus/actions.jsonl   ◀──append─────┤
     └────────read────────  ~/.daily-focus/sessions.jsonl  ◀──append─────┘
 dashboard      ──write──▶  ~/.daily-focus/prs.json       ──read──▶  dashboard
+dashboard      ──write──▶  ~/.daily-focus/tickets.json   ──read──▶  dashboard
 ```
 
 One owner per file. Nobody writes anybody else's file, so there is no locking, no
 clobbering, and no database.
 
-The one thing the dashboard gathers itself is the list of pull requests you have open,
-on a second tab. That is state rather than judgement, and it changes during the day,
-so it is polled live rather than left to the morning. See
-[The pull request board](#the-pull-request-board).
+Two things the dashboard gathers itself, each on a tab of its own: the pull requests
+you have open, and the Jira tickets whose status doesn't match them. Both are state
+rather than judgement, both change during the day, and the second has a sharper
+reason still — the point of a row is that you go and fix it, so it has to disappear
+when you do, which a brief written at dawn can never do. See
+[The pull request board](#the-pull-request-board) and
+[The Jira ticket board](#the-jira-ticket-board).
 
 `focus.md` is the standing objective, and it's the only input that isn't reactive.
 Everything else describes what other people did overnight, and a brief built from
@@ -99,7 +103,7 @@ append-only, like the log it lands in.
 
 | Key | |
 |---|---|
-| <kbd>1</kbd> / <kbd>2</kbd> | the Today tab / the pull request board |
+| <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | the Today tab / the pull request board / the Jira ticket board |
 | <kbd>j</kbd> / <kbd>k</kbd> | next / previous item |
 | <kbd>e</kbd> | done |
 | <kbd>s</kbd> | snooze until tomorrow |
@@ -109,7 +113,7 @@ append-only, like the log it lands in.
 | <kbd>u</kbd> | undo the last action |
 | <kbd>f</kbd> | focus mode |
 | <kbd>p</kbd> | start / stop a focus session on the selected item |
-| <kbd>r</kbd> | refresh the pull request board now |
+| <kbd>r</kbd> | refresh whichever board you are on now |
 | <kbd>?</kbd> | shortcuts |
 
 Focus mode (<kbd>f</kbd>) collapses the page to the objective, the single top-ranked
@@ -310,6 +314,161 @@ limit. The last good answer is kept in `prs.json` in the store, so a restart or 
 outage shows the board as of an hour ago rather than an empty one, and the status line
 says which. `DAILY_FOCUS_GITHUB=off` turns the whole thing off.
 
+## The Jira ticket board
+
+The third tab (<kbd>3</kbd>) is the tickets whose status doesn't match what their
+pull requests say. It exists because a ticket's status is the one part of finishing
+a piece of work that nothing reminds you about: the code merges, the pull request
+disappears off the second tab, and the ticket sits in whatever column it was in
+when you stopped looking at it. Like the pull request board it is fetched rather
+than read from the brief, and for the sharper version of the same reason — the
+point of a row here is that you go and fix it, so it has to disappear when you do.
+
+Three buckets:
+
+- **No open pull requests left.** Jira has pull requests for this ticket and every
+  one of them is closed, but the ticket isn't Done. Either it is finished and
+  nobody moved it, or something is still to come that nothing here can see.
+- **Work has started, the ticket has not.** A pull request is open, so the work has
+  begun, while the status still says it hasn't.
+- **In flight with nothing linked.** The status claims work in progress and Jira has
+  no pull request for it at all. Perfectly normal for work that isn't code, which is
+  what `DAILY_FOCUS_JIRA_HOLD_STATUSES` and the park button are for.
+
+Epics are left out, and so is anything above them — an epic with merged children is
+a project in progress rather than an oversight, and being told to close the epic
+tracking your current objective is worse than being told nothing. That is read off
+Jira's issue-type hierarchy level rather than a list of type names, so a site with
+its own tier above Epic gets the same treatment without naming it.
+
+**Click the status to change it.** The pill on each row is a control: it offers the
+other statuses your own tickets in that project are sitting in, and moving one writes
+the transition straight to Jira. The row then disappears or moves on its own, because
+the board re-reads Jira afterwards rather than believing the click — see below.
+
+Two more things you can do to a row, through the same action log as the brief and under
+the same `jira:` ids, so the morning agent sees them too:
+
+- **Park** it until a date, for a ticket you know about and don't want raised again
+  this week. This is also how you answer a row the board can't be right about.
+- **Note.** Free text, shown on the row and read by the agent. "Two more repos to
+  go" is the useful one.
+
+Done and dismiss don't apply, for the pull request board's reason and one of its
+own: the ids are shared with the brief, which may raise "answer the question on
+PROJ-8842", and marking that done says nothing about the ticket's status. There is
+nothing for them to mean here anyway — the fix is a status change in Jira, and the
+next read drops the row without being told.
+
+### A ticket can need more than one pull request
+
+The naive version of the first bucket is wrong, and wrong in the direction that
+matters: a ticket whose work spans four repositories has one pull request merged
+long before it is finished, and a board telling you to close it is a board you learn
+to distrust.
+
+What makes it safe is that the question is asked of Jira rather than of GitHub.
+Jira exposes two counts of a ticket's pull requests to JQL — how many there are and
+how many are open — and **counts a draft as open**. So the habit of opening all of a
+ticket's pull requests up front, most of them drafts, is itself the thing that keeps
+the ticket out of this bucket: while any draft is open the count is non-zero, and the
+ticket is left alone until the last one merges.
+
+Asking Jira also sidesteps a join that doesn't work. Jira links pull requests itself,
+from branch names and commits, and it is right about all of them; matching them up
+from the GitHub side would mean finding a ticket key in the pull request, and on one
+real board a single open pull request out of thirty-three named its ticket in the
+title while eighteen named it in the branch.
+
+What none of this can see is a pull request that hasn't been written yet. Nothing
+can — an unwritten pull request looks exactly like a finished ticket from every
+source there is. So the bucket claims only that nothing is open, and the note button
+is how you record the rest.
+
+Two things it is deliberately quiet about. It never says a pull request was *merged*,
+only that none is open: JQL offers no count of merged ones, so a ticket whose only
+pull request was abandoned looks identical to one whose work landed. And it says
+nothing about the **In Progress → In Review** transition, which would need to know
+whether an open pull request is still a draft — Jira's counts don't say, and the only
+thing here that knows is the pull request board, reachable solely through that branch
+name join. A bucket resting on that would be wrong often enough to teach you to
+ignore the tab.
+
+### Changing a status, and why the menu can be wrong
+
+This is the only thing the dashboard writes anywhere outside your machine. It is
+deliberately the narrowest write it could be: one ticket, one named status, from one
+click. No field edits, no comments, no bulk moves — `acli` would happily transition
+everything matching a JQL query, and the endpoint refuses anything that isn't a single
+work item key.
+
+The menu is an offer, not a promise. `acli` can't say which transitions a ticket
+allows — the field comes back null and there's no command for it — so the list is
+built from the statuses tickets in that project are actually sitting in, plus the ones
+recently finished ones ended up in. Jira is left to be the authority: if your workflow
+doesn't allow the move, it refuses, and you get Jira's own words in the toast — a
+`409` saying, for instance, *No allowed transitions found for given status*. That's a
+normal outcome here rather than a bug.
+
+**Only observed statuses are offered, and there's no way to type one.** The cost is
+that a project where nothing has ever been finished has no way to be finished from
+this tab: one real project's tickets were all still open, so no completion status had
+ever been seen there. That limitation is taken on purpose — a free-text field mostly
+invites naming statuses that don't exist, and the answer to those is a refusal nobody
+needed to see. Finish one such ticket in Jira and the next read learns the word.
+
+Two consequences worth knowing. A **Done** transition that requires a Resolution or
+another field may be refused, because there's nowhere here to fill that in — do those
+in Jira. And **undo is a transition back, not a rollback**: the toast offers it, but
+Jira's history keeps both moves and any automation that fired has fired.
+
+The board re-reads Jira after every transition rather than assuming it worked, so the
+row moves or vanishes only once Jira has agreed. On the one tab whose entire job is
+telling you your statuses are wrong, showing a status Jira might have refused would be
+the exact failure it exists to catch.
+
+### Three columns, and the type is a colour
+
+The rows were 1200px wide for a summary that runs 520px at the median, so half of
+every card was empty and thirty tickets came to three screens of scrolling. The board
+is a grid instead — two columns at the normal page width, three on a wide display,
+which is why this is the only tab allowed past the 1280px the rest of the page caps
+at. The status sits in a fixed gutter so every summary starts at the same place and
+the statuses read as a column you can run an eye down.
+
+The issue type is the colour of the dot rather than a word, because in that gutter it
+wrapped under the status and cost a line on every card. `Task` keeps Jira's amber, so
+an ordinary row looks as it always did and a Bug or a Sub-task is what stands out. The
+legend above the list names the types actually on screen, and every dot carries its
+type as a tooltip — colour is never the only way to read it.
+
+### No dates, on purpose
+
+Rows are ordered least recently touched first, and carry no "5 days on the list"
+pill. The Atlassian CLI's search permits a fixed handful of fields — key, status,
+issue type, summary, assignee, priority — and no timestamp among them, though it
+will happily *sort* on one. So the ordering is real and inherited from Jira, and a
+duration would have had to be invented.
+
+### Where it gets its access
+
+It borrows the Atlassian CLI's session rather than keeping a token of its own, which
+is the bargain that made this board worth building: `acli jira auth login` once, and
+there is no credential here to store, expire or leak. Every call it makes is a search
+or a status read; nothing in this repo writes to Jira.
+
+Three searches per read, and the split is forced rather than chosen. The two
+development-panel counts can be filtered on but not selected — no field returns
+them — so membership of a predicate is the only way to learn it, and the two extra
+searches ask for one field each and are read as sets of keys. Any of the three
+failing takes the whole round with it and the board keeps the rows it had, because a
+ticket missing from both sets reads as *no code was ever linked to this*, which is a
+perfectly plausible ticket rather than a visible failure.
+
+It reads once at startup and then every `DAILY_FOCUS_JIRA_POLL_MINUTES` while a
+browser tab holds the page open, backing off on failure. The last good read is kept
+in `tickets.json` in the store. `DAILY_FOCUS_JIRA=off` turns the whole thing off.
+
 ## Configuration
 
 Every setting is an environment variable, and every one can be put in a `.env` file at
@@ -341,6 +500,12 @@ logins. Restart to apply.
 | `DAILY_FOCUS_CALENDAR_ADDRESSES` | *none* | Your own email addresses, comma-separated, used to find your reply among an event's attendees |
 | `DAILY_FOCUS_CALENDAR_POLL_MINUTES` | `5` | Minutes between calendar reads while a tab is open |
 | `DAILY_FOCUS_CALENDAR_APP` | *built copy* | Path to the calendar helper bundle, if it isn't the one `npm run build:calendar` produces |
+| `DAILY_FOCUS_JIRA` | `on` | `off` disables the Jira ticket board; nothing is read |
+| `DAILY_FOCUS_JIRA_PROJECTS` | *everything* | Project keys to limit the search to, comma-separated |
+| `DAILY_FOCUS_JIRA_HOLD_STATUSES` | *none* | Statuses where standing still is deliberate, comma-separated and spelled as your Jira spells them. Their rows are exempt from *In flight with nothing linked*, and from nothing else |
+| `DAILY_FOCUS_JIRA_POLL_MINUTES` | `15` | Minutes between reads while a tab is open |
+| `DAILY_FOCUS_JIRA_SITE` | *acli's own* | Atlassian site host the browse links are built from. A pasted URL is fine |
+| `DAILY_FOCUS_ACLI` | `acli` | Path to the Atlassian CLI, for when the server's PATH lacks it. `~` is expanded |
 
 ### When is the weekend?
 
@@ -403,6 +568,9 @@ src/
   github.ts    tokens from gh, the GraphQL search, and what a PR node becomes
   prs.ts       whose court a pull request is in, joined with the action log
   board.ts     the poller, and prs.json
+  jira.ts      the acli session, the JQL, and what a Jira issue becomes
+  tickets.ts   whether a ticket's status matches its pull requests
+  ticketboard.ts  the poller, and tickets.json
   archive.ts   dated brief snapshots, and days-since-progress
   sessions.ts  focus sessions, and the session log
   presence.ts  whether anyone is at the machine
@@ -436,6 +604,8 @@ React later is mechanical rather than a rewrite.
 | `GET /api/events` | SSE stream, pushes `state` on every store change |
 | `POST /api/actions` | `{id, action, until?, text?}`. Appends to the log, returns fresh state |
 | `POST /api/board/refresh` | Polls GitHub now. Returns fresh state once it has |
+| `POST /api/tickets/refresh` | Reads Jira now. Returns fresh state once it has |
+| `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The only write to anything outside this machine |
 | `GET /api/health` | |
 
 ## Design notes

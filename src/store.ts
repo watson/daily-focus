@@ -151,16 +151,17 @@ export class Store {
   /**
    * Read the store and fold it into everything the client needs.
    *
-   * Everything except `assetVersion` and `board` — the first describes the served
-   * UI, not the data, and the second is fetched rather than read, so the server
-   * owns both and layers them on. Keeping them out here means the store has no
-   * opinion about how it's being displayed or about GitHub.
+   * Everything except `assetVersion`, `board` and `tickets` — the first describes
+   * the served UI, not the data, and the other two are fetched rather than read,
+   * so the server owns all three and layers them on. Keeping them out here means
+   * the store has no opinion about how it's being displayed, or about GitHub and
+   * Jira.
    */
   async getState(
     now: Date = new Date(),
     actions?: readonly Action[],
     calendar?: CalendarState,
-  ): Promise<Omit<DashboardState, 'assetVersion' | 'board'>> {
+  ): Promise<Omit<DashboardState, 'assetVersion' | 'board' | 'tickets'>> {
     const [{ brief, error, warnings }, readActions, focus, schedule] = await Promise.all([
       this.readBrief(),
       // The caller may have read the log already, to fold the board from the same

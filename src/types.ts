@@ -488,6 +488,128 @@ export interface BoardState {
   counts: Record<Court | 'parked', number>;
 }
 
+/* ---------- the Jira ticket board ---------- */
+
+/**
+ * Jira's own three-way grouping of a workflow status.
+ *
+ * Every Jira has these four keys whatever its statuses are called, which is the
+ * whole reason the board branches on them: "Committed", "In Progress" and "In
+ * Review" are one site's names for its columns, and this repo is published.
+ * `undefined` is Jira's own key for a status nobody categorised.
+ */
+export type TicketStatusCategory = 'new' | 'indeterminate' | 'done' | 'undefined';
+
+/**
+ * One unfinished Jira ticket, reduced to the facts a status can be judged against.
+ *
+ * Facts only, exactly as `PullRequest` is: which court a ticket lands in depends
+ * on the clock-free question "does this status match the code", but also on the
+ * user's configured hold statuses, which are private configuration and have no
+ * business in a cache of Jira facts. So the court is derived on every read, in
+ * `tickets.ts`, and a ticket here carries no verdict.
+ */
+export interface Ticket {
+  /**
+   * `jira:<KEY>` — deliberately the same id the brief uses for a Jira item, so a
+   * ticket the morning brief also raises is one thing and not two. See `ids.ts`.
+   */
+  id: string;
+  /** The issue key on its own, e.g. `PROJ-8842`. Shown as the row's reference. */
+  key: string;
+  summary: string;
+  /**
+   * The status as this site spells it — "Committed", "In Review". Shown on the
+   * row and never branched on, and deliberately not called `status`: everywhere
+   * else in this codebase that word means what the action log says, and a row
+   * carrying both would be one assignment away from a ticket that reads as
+   * parked because Jira happens to call its column something.
+   */
+  workflowStatus: string;
+  statusCategory: TicketStatusCategory;
+  /** `Task`, `Bug`, `Sub-task`. Shown, so a sub-task doesn't read as a stray task. */
+  issueType: string;
+  /** Browse link. Null when `acli` never told us which site it is logged in to. */
+  url: string | null;
+  /**
+   * Whether Jira has ever linked a pull request to this ticket.
+   *
+   * From Jira's own development panel rather than from a key in a branch or a
+   * title, because Jira is the side that actually knows: of one real board's 33
+   * open pull requests, one named its ticket in the title and eighteen in the
+   * branch, while Jira had the link for all of them.
+   */
+  hasAnyPr: boolean;
+  /**
+   * Whether at least one of those pull requests is still open. **A draft counts as
+   * open**, which is what makes `hasAnyPr && !hasOpenPr` a safe reading of "the
+   * code side is finished" even for a ticket that needed four pull requests: while
+   * any of them is still a draft, this stays true and the ticket is left alone.
+   */
+  hasOpenPr: boolean;
+}
+
+/**
+ * What looks wrong about a ticket's status. One word each, because the row's
+ * heading is the whole explanation.
+ *
+ * - `settled` every pull request Jira knows about is closed, and it isn't Done
+ * - `started` the status says the work hasn't begun; an open pull request disagrees
+ * - `idle`    the status claims work in flight with no code linked to it at all
+ */
+export type TicketCourt = 'settled' | 'started' | 'idle';
+
+/** A ticket plus everything the action log adds to it. */
+export interface TicketRow extends Ticket {
+  court: TicketCourt;
+  /**
+   * Only snooze is honoured, for the reason `BoardRow.status` gives: a hygiene row
+   * is fixed in Jira, not here, and the next read drops it on its own.
+   */
+  status: 'open' | 'snoozed';
+  snoozedUntil?: string;
+  notes: { text: string; at: string }[];
+}
+
+/** The ticket board as the client sees it. */
+export interface TicketBoardState {
+  enabled: boolean;
+  /** Why nothing can be read at all: no acli, or acli not logged in. */
+  reason: string | null;
+  fetchedAt: string | null;
+  fetching: boolean;
+  /** Whoever `acli` is authenticated as, for the status line. Null when unknown. */
+  account: string | null;
+  /** Projects the search is limited to. Empty means every project the user sees. */
+  projects: string[];
+  warnings: string[];
+  pollMinutes: number;
+  rows: TicketRow[];
+  counts: Record<TicketCourt | 'parked', number>;
+  /** How many unfinished tickets were examined to produce those rows. */
+  checked: number;
+  /**
+   * Statuses the status menu may offer, keyed by project — observed on the user's
+   * own tickets rather than read from a workflow, because `acli` exposes no way
+   * to ask which transitions a work item allows. So this is an offer and not a
+   * promise: Jira is the authority on whether a given move is legal, and says so
+   * by refusing.
+   */
+  statuses: Record<string, string[]>;
+}
+
+/** The last good read, as it sits in `tickets.json`. Facts and a timestamp only. */
+export interface TicketsFile {
+  version: 1;
+  fetchedAt: string;
+  account: string | null;
+  projects: string[];
+  warnings: string[];
+  tickets: Ticket[];
+  /** The status vocabulary, by project. Absent on a file written before it existed. */
+  statuses?: Record<string, string[]>;
+}
+
 /** Everything the client needs for one render. */
 export interface DashboardState {
   /**
@@ -538,6 +660,8 @@ export interface DashboardState {
   agenda: Agenda;
   /** The live pull request board. Present even when off, so the client can say why. */
   board: BoardState;
+  /** The Jira ticket board. Present even when off, for the same reason. */
+  tickets: TicketBoardState;
   stats: {
     open: number;
     topPriority: number;

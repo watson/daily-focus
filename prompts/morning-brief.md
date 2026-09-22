@@ -32,6 +32,14 @@ knows how long it has been since the objective moved.
   requests the user has open, refreshed while the dashboard is in use. Facts only —
   reviews, checks, who last acted — with no judgement attached; use it if it helps,
   never write it, and never treat its absence as meaning anything.
+- `tickets.json` — **you only ever read this.** The dashboard's own cache of the Jira
+  tickets whose status doesn't match their pull requests, refreshed while the
+  dashboard is in use. Facts only: each entry's `workflowStatus`, its
+  `statusCategory`, and whether Jira has any pull request for it (`hasAnyPr`) and any
+  still open (`hasOpenPr`). The dashboard shows this list on a tab of its own and the
+  user fixes the statuses there, **so do not copy it into the brief** — see the Jira
+  section of step 2. Use it if it helps, never write it, and never treat its absence
+  as meaning anything.
 
 Work through the five steps below in order. Do not start gathering before step 1 is
 done — what you find in step 1 changes what counts as worth raising.
@@ -339,13 +347,42 @@ Notifications needing attention or follow-up.
 
 #### Jira
 
-Tickets with one or more linked PRs that are *all* merged but where the ticket is not
-yet Done. Focus on tickets assigned to them, or created by them and unassigned.
+**Ticket status hygiene is the dashboard's job, not yours.** It has its own tab
+listing every ticket of the user's whose status doesn't match its pull requests —
+nothing open left but not Done, work started without the ticket moving, a ticket
+claiming to be in flight with no code linked at all — and it re-reads Jira through the
+day, so a status the user fixes at eleven stops being listed at eleven. A brief cannot
+do that. There are usually around twenty such tickets, and a brief that enumerates
+them is twenty items of housekeeping crowding out the handful of things that actually
+needed the user's morning.
 
-**Exclude epics and parent tickets from that rule.** An epic with merged child PRs
-is a project in progress, not an oversight — suggesting the user "close or reconcile" the
-very epic tracking the user's current objective is worse than saying nothing. Check the
-issue type and whether it has open children before raising it.
+So **do not raise a ticket merely for being mislabelled.** Raise one only when the
+wrong status is doing damage today, which is a judgement the board cannot make:
+
+- someone is blocked on it, or is about to act on a stale reading of it;
+- it is the last step of something that finishing would move the objective in
+  `focus.md`; or
+- it has been sitting wrong long enough that the user has evidently stopped seeing
+  it — and then once, not every morning.
+
+When you do raise one, say what is actually needed rather than "update the status".
+
+**Exclude epics and parent tickets.** An epic with merged child PRs is a project in
+progress, not an oversight — suggesting the user "close or reconcile" the very epic
+tracking the user's current objective is worse than saying nothing. Check the issue
+type and whether it has open children before raising it.
+
+**A ticket needing several PRs is not finished when the first ones merge.** Some work
+spans repositories, and the user usually opens all of its PRs up front as drafts. Every
+PR being merged is therefore weak evidence on its own, and PRs that have not been
+written yet are invisible from every source — if the ticket's description, comments or
+acceptance criteria name work with no PR against it, say *that* rather than suggesting
+it be closed. Check `actions.jsonl` for a note on the ticket's id before you judge: "two
+more repos to go" is exactly the thing the user leaves there, and it outranks anything
+you can observe.
+
+Other Jira worth raising is the ordinary kind: a ticket assigned to the user that is
+newly blocked, newly commented on by someone waiting, or carrying a deadline.
 
 #### GitHub
 
