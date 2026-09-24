@@ -1,19 +1,8 @@
 /**
- * The payload contract is written down three times, and it has to stay one contract.
+ * The briefing prompt must describe the schema because its reader works inside
+ * the store. Check payload fields and session end reasons against their definitions.
  *
- * `schema/items.schema.json` is the machine-readable version. `AGENTS.md` describes
- * it for whoever is changing the dashboard, and `prompts/morning-brief.md` describes
- * it to the briefing agent — which cannot follow a pointer out of its own directory,
- * so restating it there is the design rather than an oversight.
- *
- * The cost of that is silent drift, and it has already happened twice: `dayStart` /
- * `dayEnd` reached the prompt and the schema but never `AGENTS.md`, and the `endedBy`
- * trust table reached `AGENTS.md` and so never reached the agent at all. Judgement
- * can only be reviewed, but field names are facts, and facts can be checked.
- *
- * So: every field in the schema must appear in both documents, and neither document
- * may describe a field the schema doesn't have — that last direction is the one that
- * catches a rename leaving a stale row behind.
+ * AGENTS.md contains coding guardrails, so it need not repeat the payload reference.
  */
 
 import assert from 'node:assert/strict';
@@ -29,7 +18,6 @@ const schema = JSON.parse(await readFile(resolve(root, 'schema/items.schema.json
 };
 
 const docs = {
-  'AGENTS.md': await readFile(resolve(root, 'AGENTS.md'), 'utf8'),
   'prompts/morning-brief.md': await readFile(resolve(root, 'prompts/morning-brief.md'), 'utf8'),
 };
 
@@ -37,10 +25,10 @@ const topLevel = Object.keys(schema.properties);
 const itemFields = Object.keys(schema.$defs.item.properties);
 
 /**
- * Field names as the docs mention them, in either of the two forms they legitimately
+ * Field names as the prompt mentions them, in either of the two forms it can
  * use: `` `name` `` in prose, or `"name":` as a key in a worked JSON payload.
  *
- * Deliberately not matching on table rows. Both documents introduce some fields in a
+ * Deliberately not matching on table rows. The prompt introduces some fields in a
  * sentence and others in an example, and a check that insisted on one shape would be
  * a check about formatting rather than about the contract.
  */
@@ -71,7 +59,7 @@ for (const [name, markdown] of Object.entries(docs)) {
   });
 }
 
-test('both documents agree on the source and kind vocabularies', () => {
+test('the prompt lists the source and kind values from the schema', () => {
   const sources = (schema.$defs.item.properties as { source: { enum: string[] } }).source.enum;
   const kinds = (schema.$defs.item.properties as { kind: { enum: string[] } }).kind.enum;
 
@@ -92,7 +80,7 @@ test('both documents agree on the source and kind vocabularies', () => {
  * consequence — citing a `limit` session as a long focused stretch — is a brief that
  * quietly flatters the user, which is the one thing the session log exists to prevent.
  */
-test('both documents explain every way a session can end', async () => {
+test('the prompt explains every way a session can end', async () => {
   const types = await readFile(resolve(root, 'src/types.ts'), 'utf8');
   const union = /export type SessionEnd = ([^;]+);/.exec(types);
   assert.ok(union, 'SessionEnd is no longer declared where this test looks for it');
@@ -111,8 +99,8 @@ test('both documents explain every way a session can end', async () => {
   }
 });
 
-test('the required item fields are called out as required in both documents', () => {
-  // Loose on wording, strict on the set: whatever sentence each document uses, all
+test('the prompt calls out the required item fields', () => {
+  // Loose on wording, strict on the set: whatever sentence the prompt uses, all
   // four names have to be in it, because "which fields may I omit" is the question
   // an agent gets wrong in a way the forgiving parser then hides.
   for (const [name, markdown] of Object.entries(docs)) {
@@ -216,13 +204,10 @@ test("the server, the client and the README agree on the ticket board's courts",
 });
 
 /**
- * The store's files each have exactly one writer, and `AGENTS.md` carries the table
- * that says which. A file the server writes and that table doesn't mention is how a
- * second writer gets added by accident, which is the one thing the no-locking design
- * cannot survive.
+ * Keep file ownership in AGENTS.md so edits preserve the store's single writer rule.
  */
-test('AGENTS.md accounts for every file the config knows about', async () => {
-  const agents = docs['AGENTS.md'];
+test('AGENTS.md names the brief, action log, and integration caches', async () => {
+  const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
   for (const file of ['items.json', 'actions.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
   }

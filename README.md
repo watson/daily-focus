@@ -122,4 +122,3 @@ Press **?** in the dashboard to see the shortcuts.
 
 - [Set up your dashboard](SETUP.md), including accounts, calendar, and the morning agent.
 - [Contribute](CONTRIBUTING.md), with development commands, a code map, and API reference.
-- [Read the dashboard's design contract](AGENTS.md) for the detailed behavior behind the UI.

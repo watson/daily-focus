@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/watson/daily-focus/schema/items.schema.json",
   "title": "Daily Focus brief",
-  "description": "The payload the briefing agent writes to items.json. See AGENTS.md for the rules that a schema can't express — above all, that ids must be stable across runs.",
+  "description": "The payload the briefing agent writes to items.json. The morning briefing prompt covers rules a schema can't express, including stable ids across runs.",
   "type": "object",
   "required": ["version", "generatedAt", "items"],
   "additionalProperties": false,

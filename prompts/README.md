@@ -87,23 +87,21 @@ prints the schedule it's using and where it got it.
 
 ## Where the rules live
 
-This prompt is deliberately self-contained: it restates the parts of the contract the
-agent has to know, because it cannot follow a pointer out of the store. So the same
-rules are written down twice, in two voices, on purpose.
+The prompt must explain every rule the briefing agent needs because that agent
+works inside the store. Coding agents can read the implementation and tests, so
+`AGENTS.md` only keeps the constraints that are easy to miss.
 
 | | |
 |---|---|
 | `morning-brief.md` | **Authoritative for the agent.** What to gather, how to judge it, and every rule the agent must apply. Imperative, addressed to the agent, read verbatim every morning. |
-| [`../AGENTS.md`](../AGENTS.md) | **Authoritative for the dashboard.** The same contract described for whoever is changing `store.ts`, `validate.ts` or `archive.ts` — what the code may assume, and what it must tolerate. Never read by the morning agent. |
-| [`../schema/items.schema.json`](../schema/items.schema.json) | **Authoritative for the payload.** Field names, types and enums. Both documents above are prose renderings of this, and `test/docs-contract.test.ts` fails if either drifts from it. |
+| [`../AGENTS.md`](../AGENTS.md) | Coding guardrails for privacy, data ownership, and behavior to preserve. Never read by the morning agent. |
+| [`../schema/items.schema.json`](../schema/items.schema.json) | **Authoritative for the payload.** Field names, types and enums. `test/docs-contract.test.ts` checks that the prompt documents these fields. |
 | `~/.daily-focus/focus.md` | The standing objective. Not in this repo — it's personal state, and its lower half is deliberately never rendered. |
 | `~/.daily-focus/sources.md` | Which calendars, account and recurring documents are yours. Not in this repo, for the same reason: it's the half of the brief that names real things. |
 
-Two copies of a judgement call can't be tested, only reviewed — so when you change a
-rule that appears in both, change both, and let the test catch the field-level facts.
-The failure this replaced was `dayStart`/`dayEnd` living in the prompt and the schema
-but never reaching `AGENTS.md`, and the `endedBy` trust table living in `AGENTS.md`
-and so never reaching the agent at all.
+When code changes what the briefing agent must produce or understand, update the
+prompt too. The tests check field names, required fields, enum values, and session
+end reasons. Review changes to judgement rules directly.
 
 ## Why the personal specifics live outside the repo
 

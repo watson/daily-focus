@@ -6,7 +6,7 @@ The server is TypeScript running directly in Node.js. The frontend uses plain
 JavaScript modules. There is no build step or runtime package dependency.
 
 Read [AGENTS.md](AGENTS.md) before changing behavior. It covers file ownership,
-brief parsing, board rules, and privacy requirements. For installation and account
+privacy, and constraints that apply across the codebase. For installation and account
 setup, use [SETUP.md](SETUP.md).
 
 ## Run locally
@@ -67,7 +67,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 Each store file has one writer. The agent writes `items.json`; the dashboard
 appends actions and sessions, archives briefs, and maintains integration caches.
 The user edits `focus.md` and `sources.md`. See the
-[file ownership table](AGENTS.md#the-store-and-why-it-needs-no-locking) before adding
+[file ownership table](AGENTS.md#private-data-and-store-ownership) before adding
 another write path. Never compact or rewrite the action log.
 
 Keep new brief fields optional and parsing forgiving. One malformed item should
@@ -76,7 +76,7 @@ since they connect a brief to its action history.
 
 When changing a contract, update the documents that describe it:
 
-- Brief fields belong in the schema, `AGENTS.md`, and `prompts/morning-brief.md`.
+- Brief fields belong in the schema and `prompts/morning-brief.md`.
 - Agent instructions belong in `prompts/morning-brief.md`. Read
   [prompts/README.md](prompts/README.md) before editing it; an installed symlink can
   make changes live on the next scheduled run.
