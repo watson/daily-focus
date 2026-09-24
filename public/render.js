@@ -20,9 +20,23 @@ import {
   renderMarkdown,
 } from './format.js';
 
-// `tasks` sits second on purpose: every other source is a queue somebody else fills,
+// The user's own lists, `tasks` and `reminders`, sit right after the obligations that
+// come with a deadline attached: every other source is a queue somebody else fills,
 // and their own list ranking below everyone else's noise is how it ends up ignored.
-const SOURCE_ORDER = ['workday', 'tasks', 'email', 'github', 'slack', 'jira', 'atlassian', 'calendar', 'other'];
+const SOURCE_ORDER = [
+  'workday',
+  'eboks',
+  'tasks',
+  'reminders',
+  'email',
+  'messages',
+  'github',
+  'slack',
+  'jira',
+  'atlassian',
+  'calendar',
+  'other',
+];
 
 const SOURCE_LABEL = {
   workday: 'Workday',
@@ -33,6 +47,9 @@ const SOURCE_LABEL = {
   jira: 'Jira',
   atlassian: 'Atlassian',
   calendar: 'Calendar',
+  reminders: 'Reminders',
+  messages: 'Messages',
+  eboks: 'e-Boks',
   other: 'Other',
 };
 
@@ -1064,6 +1081,18 @@ function nowRow(now) {
 /* ---------- tabs ---------- */
 
 /**
+ * The views this instance offers. A switched-off board has nothing to show but a
+ * line saying so, so its tab goes too — a personal instance with no Jira shouldn't
+ * carry a Jira tab around.
+ */
+export function availableViews(state) {
+  const views = ['today'];
+  if (state?.board?.enabled) views.push('board');
+  if (state?.tickets?.enabled) views.push('tickets');
+  return views;
+}
+
+/**
  * Three views, one page.
  *
  * Each badge says the one number its tab wants read from the others. The board's
@@ -1076,6 +1105,9 @@ export function renderTabs(state, ui) {
   for (const tab of document.querySelectorAll('.tab')) {
     tab.setAttribute('aria-selected', String(tab.dataset.view === ui.view));
   }
+  const views = availableViews(state);
+  document.getElementById('tab-board').hidden = !views.includes('board');
+  document.getElementById('tab-tickets').hidden = !views.includes('tickets');
   const waiting = state.board?.enabled ? state.board.counts.you : 0;
   badge(
     'board-badge',

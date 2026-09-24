@@ -17,8 +17,10 @@ const schema = JSON.parse(await readFile(resolve(root, 'schema/items.schema.json
   $defs: { item: { properties: Record<string, unknown>; required: string[] } };
 };
 
+/** One prompt per profile; each is read verbatim by its own agent, so each is checked. */
 const docs = {
-  'prompts/morning-brief.md': await readFile(resolve(root, 'prompts/morning-brief.md'), 'utf8'),
+  'prompts/morning-brief-work.md': await readFile(resolve(root, 'prompts/morning-brief-work.md'), 'utf8'),
+  'prompts/morning-brief-personal.md': await readFile(resolve(root, 'prompts/morning-brief-personal.md'), 'utf8'),
 };
 
 const topLevel = Object.keys(schema.properties);

@@ -507,7 +507,7 @@ Item fields — `id`, `title`, `source`, `kind` are required, the rest optional:
 |---|---|
 | `id` | Stable across runs. See below — this is the one that matters. |
 | `title` | One line. |
-| `source` | `github` · `email` · `calendar` · `jira` · `slack` · `workday` · `tasks` · `atlassian` · `other` |
+| `source` | `github` · `email` · `calendar` · `jira` · `slack` · `workday` · `tasks` · `atlassian` · `reminders` · `messages` · `eboks` · `other`. Use the one the item came from; `sources.md` decides which sources you gather. |
 | `kind` | `task` (completable) · `event` (agenda) · `info` (context only) |
 | `detail` | A sentence or two. Inline Markdown. |
 | `url` | Deep link. **http(s) only** — anything else is dropped. |

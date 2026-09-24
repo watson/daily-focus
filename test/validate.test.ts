@@ -74,13 +74,16 @@ test('normalises the source aliases an agent is likely to emit', () => {
         { id: '3', source: 'confluence', title: 'c', kind: 'task' },
         { id: '4', source: 'something-else', title: 'd', kind: 'task' },
         { id: '5', source: 'google-tasks', title: 'e', kind: 'task' },
+        { id: '6', source: 'iMessage', title: 'f', kind: 'task' },
+        { id: '7', source: 'e-Boks', title: 'g', kind: 'task' },
+        { id: '8', source: 'apple-reminders', title: 'h', kind: 'task' },
       ],
     }),
   );
 
   assert.deepEqual(
     brief?.items.map((item) => item.source),
-    ['email', 'github', 'atlassian', 'other', 'tasks'],
+    ['email', 'github', 'atlassian', 'other', 'tasks', 'messages', 'eboks', 'reminders'],
   );
 });
 

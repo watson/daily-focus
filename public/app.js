@@ -11,6 +11,7 @@ import {
 } from './api.js';
 import { localDateKey } from './format.js';
 import {
+  availableViews,
   clock,
   renderAgenda,
   renderBanners,
@@ -183,6 +184,9 @@ function render() {
   ui.sessionOverrun = state.session?.active?.overrun === true;
   // Lets the stylesheet recede every row except the one being worked on.
   document.body.dataset.sessionActive = String(ui.activeSessionId !== null);
+  // A persisted view whose board has since been switched off falls back to Today.
+  // Not written back, so switching the board on again returns to it.
+  if (!availableViews(state).includes(ui.view)) ui.view = 'today';
   document.body.dataset.view = ui.view;
   renderTabs(state, ui);
   renderTimer(state, ui, handlers);
@@ -208,6 +212,8 @@ function render() {
 /** Which panel shows is decided by `body[data-view]` in the stylesheet, and nowhere else. */
 function setView(view) {
   if (ui.view === view) return;
+  // The number keys reach every view, including one whose tab is hidden.
+  if (state && !availableViews(state).includes(view)) return;
   ui.view = view;
   localStorage.setItem(VIEW_KEY, view);
   // The selection belongs to the list it was made in.

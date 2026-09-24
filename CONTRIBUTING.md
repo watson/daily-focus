@@ -76,10 +76,11 @@ since they connect a brief to its action history.
 
 When changing a contract, update the documents that describe it:
 
-- Brief fields belong in the schema and `prompts/morning-brief.md`.
-- Agent instructions belong in `prompts/morning-brief.md`. Read
-  [prompts/README.md](prompts/README.md) before editing it; an installed symlink can
-  make changes live on the next scheduled run.
+- Brief fields belong in the schema and both prompts, `prompts/morning-brief-work.md`
+  and `prompts/morning-brief-personal.md`.
+- Agent instructions belong in the prompt for the profile they apply to, or both.
+  Read [prompts/README.md](prompts/README.md) before editing one; an installed
+  symlink can make changes live on the next scheduled run.
 - Settings belong in `src/config.ts`, `.env.example`, and `SETUP.md`.
 - Board buckets belong in server types, the client renderer, and the README.
 

@@ -2,7 +2,18 @@
 
 | File | What it is |
 |---|---|
-| [`morning-brief.md`](./morning-brief.md) | The scheduled prompt for the external briefing agent, run once every workday morning. **Nothing but prompt** — the scheduled task reads it verbatim, so anything else in there is either noise the agent has to skip or, worse, an instruction it might try to act on. Notes about the prompt belong in this file instead. |
+| [`morning-brief-work.md`](./morning-brief-work.md) | The scheduled prompt for the work briefing agent, run once every workday morning. |
+| [`morning-brief-personal.md`](./morning-brief-personal.md) | The scheduled prompt for the personal briefing agent: email, family calendars, Apple Reminders, Apple Messages, e-Boks and the user's own GitHub projects. |
+
+Both are **nothing but prompt** — the scheduled task reads one verbatim, so anything
+else in there is either noise the agent has to skip or, worse, an instruction it
+might try to act on. Notes about the prompts belong in this file instead.
+
+`DAILY_FOCUS_PROFILE` decides which one `npm run init` links into a store. Each
+profile is its own instance, with its own store, server and agent, so a store only
+ever holds one. They are two complete files rather than a shared base with two
+overlays, because the agent must be able to follow its prompt from a single read.
+A rule both agents need goes into both.
 
 ## The agent's world is the store, not this repo
 
@@ -12,7 +23,7 @@ else. `npm run init` symlinks this prompt into it as `prompt.md`, alongside
 
 ```
 ~/.daily-focus/
-  prompt.md           → prompts/morning-brief.md   (symlink, installed by npm run init)
+  prompt.md           → prompts/morning-brief-work.md   (symlink, installed by npm run init)
   items.schema.json   → schema/items.schema.json   (symlink, installed by npm run init)
   focus.md            you write it
   sources.md          you write it
@@ -60,7 +71,7 @@ Finish by reporting back as that file asks you to.
 Those seven lines should never need editing again — the path is the only thing in them
 that is specific to anything, and they name the prompt by role rather than by position
 so renumbering its steps can't strand them. Everything that evolves lives in
-`morning-brief.md`, in git, where a change to it is reviewable. A scheduler has no
+the prompt, in git, where a change to it is reviewable. A scheduler has no
 history and no review, so a rule that ends up there is one nobody can change or check.
 
 Two things to sanity-check on the first scheduled run after switching:
@@ -93,7 +104,7 @@ works inside the store. Coding agents can read the implementation and tests, so
 
 | | |
 |---|---|
-| `morning-brief.md` | **Authoritative for the agent.** What to gather, how to judge it, and every rule the agent must apply. Imperative, addressed to the agent, read verbatim every morning. |
+| `morning-brief-*.md` | **Authoritative for the agent.** What to gather, how to judge it, and every rule the agent must apply. Imperative, addressed to the agent, read verbatim every morning. |
 | [`../AGENTS.md`](../AGENTS.md) | Coding guardrails for privacy, data ownership, and behavior to preserve. Never read by the morning agent. |
 | [`../schema/items.schema.json`](../schema/items.schema.json) | **Authoritative for the payload.** Field names, types and enums. `test/docs-contract.test.ts` checks that the prompt documents these fields. |
 | `~/.daily-focus/focus.md` | The standing objective. Not in this repo — it's personal state, and its lower half is deliberately never rendered. |
@@ -105,7 +116,7 @@ end reasons. Review changes to judgement rules directly.
 
 ## Why the personal specifics live outside the repo
 
-`morning-brief.md` is generic on purpose. Every real calendar name, account and
+The prompts are generic on purpose. Every real calendar name, account and
 document id lives in `~/.daily-focus/sources.md`, which the prompt reads before it
 gathers anything.
 
@@ -118,7 +129,7 @@ and connected accounts, and says so when it reports back.
 
 ## Editing the prompt
 
-Keep `morning-brief.md` free of anything that isn't addressed to the agent. In
+Keep the prompts free of anything that isn't addressed to the agent. In
 particular: no setup instructions, no changelog, no commentary about why a rule
 exists beyond what the agent needs to apply it well. The agent reads the whole file
 every morning, and every line that isn't doing work is competing with the lines

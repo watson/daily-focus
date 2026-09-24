@@ -12,6 +12,7 @@ import { CalendarBoard } from './calendarboard.ts';
 import { TicketBoard } from './ticketboard.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
+import { faviconSvg } from './favicon.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
@@ -475,6 +476,19 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
 
     if (path === '/api/health' && req.method === 'GET') {
       sendJSON(res, 200, { ok: true, dataDir: config.dataDir });
+      return;
+    }
+
+    // Served rather than inlined in index.html, because it comes from config and
+    // a pinned tab reads it before any script runs.
+    if (path === '/favicon.svg' && (req.method === 'GET' || req.method === 'HEAD')) {
+      const svg = faviconSvg(config.favicon);
+      res.writeHead(200, {
+        'content-type': 'image/svg+xml',
+        'content-length': Buffer.byteLength(svg),
+        'cache-control': 'no-cache',
+      });
+      res.end(req.method === 'HEAD' ? undefined : svg);
       return;
     }
 

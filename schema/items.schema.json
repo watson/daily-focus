@@ -52,8 +52,8 @@
         },
         "title": { "type": "string", "minLength": 1 },
         "source": {
-          "enum": ["github", "email", "calendar", "jira", "slack", "workday", "tasks", "atlassian", "other"],
-          "description": "Aliases such as gmail, gh, google-tasks and confluence are normalised by the dashboard."
+          "enum": ["github", "email", "calendar", "jira", "slack", "workday", "tasks", "atlassian", "reminders", "messages", "eboks", "other"],
+          "description": "Aliases such as gmail, gh, google-tasks, confluence, imessage and e-boks are normalised by the dashboard."
         },
         "kind": {
           "enum": ["task", "event", "info"],

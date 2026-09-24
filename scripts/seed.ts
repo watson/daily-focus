@@ -5,7 +5,7 @@
  *
  * Everything is dated relative to now, so the agenda and the "now" marker always
  * look sensible whenever you run it. This is also the best worked example of the
- * payload shape. See schema/items.schema.json and prompts/morning-brief.md for the rules.
+ * payload shape. See schema/items.schema.json and prompts/morning-brief-work.md for the rules.
  *
  * **It refuses to replace an existing `items.json`.** Against a live store that
  * would destroy a real brief, and since the agent recovers each item's `firstSeen`
