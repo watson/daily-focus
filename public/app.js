@@ -14,6 +14,7 @@ import {
   clock,
   renderAgenda,
   renderBanners,
+  renderConnection,
   renderBoard,
   renderHeadline,
   renderHeader,
@@ -174,6 +175,9 @@ const handlers = {
 };
 
 function render() {
+  // Before the guard: a server down at boot leaves no state, and that is exactly
+  // when the page most needs to say why it is empty.
+  renderConnection(ui.connectionError);
   if (!state) return;
   ui.activeSessionId = state.session?.active?.id ?? null;
   ui.sessionOverrun = state.session?.active?.overrun === true;
@@ -183,7 +187,7 @@ function render() {
   renderTabs(state, ui);
   renderTimer(state, ui, handlers);
   renderHeader(state);
-  renderBanners(state, ui.connectionError);
+  renderBanners(state);
   // Only the showing view is built. setView renders again after switching, so the
   // other one is rebuilt the moment it's looked at, and never for a hidden panel.
   if (ui.view === 'board') {
