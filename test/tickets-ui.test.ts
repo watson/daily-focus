@@ -3,7 +3,7 @@
  *
  * The rules worth holding to something are the ones that live only in
  * `render.js`: that a row shows the status it currently claims, that it offers
- * park and note but never done, and that a ticket with no site behind it renders
+ * park but never done, and that a ticket with no site behind it renders
  * as text rather than as an anchor going nowhere. None of those are visible to
  * `tickets.ts`, so nothing else would catch them going.
  */
@@ -16,7 +16,8 @@ import { byClass, byTag, buttonLabels, mount, type StubElement } from './dom-stu
 import { resolveInProgress, resolveTickets } from '../src/tickets.ts';
 import type { InProgressTicket, Ticket, TicketRow } from '../src/types.ts';
 
-const { renderTicketBoard, renderTicketRow, typeLegend } = (await import('../public/render.js')) as {
+const { renderFlyout, renderTicketBoard, renderTicketRow, typeLegend } = (await import('../public/render.js')) as {
+  renderFlyout: (row: TicketRow | InProgressTicket | null, state: unknown, ui: unknown, handlers: unknown) => void;
   renderTicketBoard: (state: unknown, ui: unknown, handlers: unknown) => void;
   renderTicketRow: (row: TicketRow | InProgressTicket, state: unknown, ui: unknown, handlers: unknown) => StubElement;
   typeLegend: (rows: readonly (TicketRow | InProgressTicket)[]) => StubElement | null;
@@ -24,12 +25,12 @@ const { renderTicketBoard, renderTicketRow, typeLegend } = (await import('../pub
 
 const NOW = new Date('2026-09-22T09:00:00Z');
 const STATE = { now: NOW.toISOString() };
-const UI = { selectedId: null, pending: new Set<string>(), noteFor: null, menuFor: null, noteDraft: '' };
+const UI = { selectedId: null, pending: new Set<string>(), menuFor: null, detailFor: null, noteDraft: '', assistantDraft: '' };
 const HANDLERS = {
   onSelect: () => {},
   onAction: () => {},
   toggleMenu: () => {},
-  toggleNote: () => {},
+  openDetail: () => {},
   unpark: () => {},
 };
 
@@ -178,11 +179,10 @@ test('there is no Open button, because the summary is the link', () => {
  * own — so there is nothing here for Done to mean. Nudged is absent for a
  * different reason: there is nobody to nudge about your own ticket.
  */
-test('park and note are offered; done, dismiss and nudge are not', () => {
+test('park is offered; done, dismiss, nudge and a note button are not', () => {
   const labels = buttonLabels(render());
   assert.ok(labels.includes('Park'), labels.join(','));
-  assert.ok(labels.includes('Note'), labels.join(','));
-  for (const absent of ['Done', 'Mark done', 'Dismiss', 'Nudged', 'Start', 'Open']) {
+  for (const absent of ['Done', 'Mark done', 'Dismiss', 'Nudged', 'Start', 'Open', 'Note', 'Ask']) {
     assert.ok(!labels.includes(absent), `${absent} should not be offered on a ticket row`);
   }
 });
@@ -196,11 +196,21 @@ test('a parked row says until when, and offers Unpark instead of Park', () => {
   assert.ok(!labels.includes('Park'), labels.join(','));
 });
 
-test('a note left on a ticket is shown on its row', () => {
-  const node = render({}, [
-    { id: 'jira:PROJ-8842', action: 'note', at: '2026-09-22T08:00:00Z', text: 'two more repos to go' },
-  ]);
-  assert.match(node.textContent, /two more repos to go/);
+test('a note left on a ticket is counted on its row, and read in the panel', () => {
+  const rows = resolveTickets(
+    [ticket()],
+    [{ id: 'jira:PROJ-8842', action: 'note', at: '2026-09-22T08:00:00Z', text: 'two more repos to go' }],
+    NOW,
+  );
+  const node = renderTicketRow(rows[0]!, STATE, UI, HANDLERS);
+  assert.equal(byClass(node, 'pill--notes')[0]?.textContent, '1 note');
+  assert.doesNotMatch(node.textContent, /two more repos to go/, 'the text is the panel\'s to show');
+
+  renderFlyout(rows[0]!, STATE, { ...UI, detailFor: 'jira:PROJ-8842' }, HANDLERS);
+  const panel = mount('flyout');
+  assert.match(panel.textContent, /two more repos to go/);
+  assert.match(panel.textContent, /PROJ-8842/);
+  assert.match(panel.textContent, /Committed/, 'the status the row is in, since the row is not beside it');
 });
 
 /**
@@ -452,8 +462,8 @@ function inProgress(overrides: Partial<Ticket> = {}): InProgressTicket {
  * A park silences a complaint until a date, and nothing on this row is
  * complaining — so there is neither Park nor the Unpark it would lead to.
  */
-test('a Working on row offers a note and nothing to park', () => {
-  assert.deepEqual(buttonLabels(renderTicketRow(inProgress(), STATE, UI, HANDLERS)), ['Note']);
+test('a Working on row has nothing to park, and no strip at all', () => {
+  assert.deepEqual(buttonLabels(renderTicketRow(inProgress(), STATE, UI, HANDLERS)), []);
 });
 
 /**
@@ -489,7 +499,7 @@ test('a Working on row shows its notes and its open pull request', () => {
     NOW,
   );
   const node = renderTicketRow(row!, STATE, UI, HANDLERS);
-  assert.match(node.textContent, /waiting on the schema review/);
+  assert.equal(byClass(node, 'pill--notes')[0]?.textContent, '1 note');
   assert.match(node.textContent, /open PR/);
 });
 

@@ -103,10 +103,12 @@ so both moves remain in Jira's history.
 
 Some items are a question away from being handled: is this review comment right,
 why is CI red, what does this thread actually want from me. With
-`DAILY_FOCUS_ASSISTANT` set to `claude` or `codex`, every row gets an Ask button that
-runs that CLI headless against the item, with quick actions for the common asks and
-a field for anything else. The reply streams in under the row, and you can follow up
-in the same conversation.
+`DAILY_FOCUS_ASSISTANT` set to `claude` or `codex`, every item's panel gets an
+assistant that runs that CLI headless against the item, with quick actions for the
+common asks and a field for anything else. Click a card to open its panel, where its
+notes live too; the reply streams in there, and you can follow up in the same
+conversation. The panel stays on the item it was opened for while you move through
+the list.
 
 It reads and drafts, and that is all. An email reply is created as a Gmail draft on
 the thread, so it is waiting there when you open the mail; a reply to a reviewer is
@@ -134,7 +136,8 @@ Press **?** in the dashboard to see the shortcuts.
 | `e` | Mark done |
 | `s` | Snooze until tomorrow |
 | `x` | Dismiss |
-| `n` | Leave a note |
+| `n` | Open the panel, ready for a note |
+| `a` | Open the panel, ready to ask the assistant |
 | `o` | Open the source link |
 | `u` | Undo the last action |
 | `f` | Toggle focus mode |
