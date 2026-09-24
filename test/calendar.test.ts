@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { parseCalendarFacts, selectEvents, type CalendarFacts } from '../src/calendar.ts';
+import { CalendarHelperError, parseCalendarFacts, runHelper, selectEvents, type CalendarFacts } from '../src/calendar.ts';
 
 /** Local ISO, so these tests don't depend on the runner's timezone. */
 function at(hour: number, minute = 0, day = 17): string {
@@ -146,4 +149,23 @@ test('a refusal is not facts', () => {
   // ...but a payload with no events at all is a genuinely empty day, not a failure.
   const empty = parseCalendarFacts({ generatedAt: at(7), calendars: [], events: [] });
   assert.deepEqual(empty?.events, []);
+});
+
+test('an unbuilt helper says how to build it, not what macOS said', async () => {
+  // Checked before `open` is ever spawned, so this runs anywhere and never launches
+  // anything or prompts for calendar access.
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-calendar-test-'));
+  try {
+    const appPath = join(dir, 'Daily Focus Calendar.app');
+    await assert.rejects(runHelper(appPath, ['bob@example.com']), (err: unknown) => {
+      assert.ok(err instanceof CalendarHelperError);
+      assert.match(err.message, /npm run build:calendar/);
+      assert.match(err.message, /DAILY_FOCUS_CALENDAR_APP/);
+      assert.ok(err.message.includes(appPath));
+      assert.doesNotMatch(err.message, /NSCocoaErrorDomain|daily-focus-calendar-\d|bob@example\.com/);
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
