@@ -427,7 +427,7 @@ export function renderSections(state, ui, handlers) {
 
   const snoozed = actionable.filter((item) => item.status === 'snoozed');
   if (snoozed.length > 0) {
-    sections.push(drawer(`Snoozed (${snoozed.length})`, snoozed, state, ui, handlers));
+    sections.push(drawer('today:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers));
   }
 
   const now = new Date(state.now);
@@ -438,7 +438,7 @@ export function renderSections(state, ui, handlers) {
       daysFromToday(item.statusAt, now) === 0,
   );
   if (cleared.length > 0) {
-    sections.push(drawer(`Cleared today (${cleared.length})`, cleared, state, ui, handlers));
+    sections.push(drawer('today:cleared', `Cleared today (${cleared.length})`, cleared, state, ui, handlers));
   }
 
   const note = captureNoteField(container);
@@ -510,10 +510,22 @@ function section(title, items, state, ui, handlers, source, row = renderItem) {
   );
 }
 
-function drawer(title, items, state, ui, handlers, row = renderItem) {
+/**
+ * A collapsed list, closed until somebody opens it.
+ *
+ * Whether it is open is kept in `ui.openDrawers` under `key`, not left to the
+ * element, because every render rebuilds the element: state arrives on a
+ * heartbeat, so a drawer that remembered for itself snapped shut within the
+ * minute — or the moment a row inside it was clicked, since selecting renders.
+ */
+function drawer(key, title, items, state, ui, handlers, row = renderItem) {
   return el(
     'details',
-    { class: 'drawer' },
+    {
+      class: 'drawer',
+      open: ui.openDrawers?.has(key),
+      ontoggle: (event) => handlers.toggleDrawer(key, event.currentTarget.open),
+    },
     el('summary', {}, title),
     el(
       'ul',
@@ -1132,7 +1144,7 @@ export function renderBoard(state, ui, handlers) {
 
   const parked = board.rows.filter((row) => row.status === 'snoozed');
   if (parked.length > 0) {
-    parts.push(drawer(`Parked (${parked.length})`, parked, state, ui, handlers, renderPullRow));
+    parts.push(drawer('board:parked', `Parked (${parked.length})`, parked, state, ui, handlers, renderPullRow));
   }
 
   const note = captureNoteField(container);
@@ -1524,6 +1536,23 @@ export function typeLegend(rows) {
   );
 }
 
+/**
+ * The two questions this tab answers, one at a time.
+ *
+ * "What here is out of sync with reality" is the one that asks for action, so it
+ * is where the tab opens and what its badge counts. "What am I working on" is a
+ * different frame of mind, looked for rather than acted on, and it used to sit in
+ * a drawer under Parked — styled like Parked, read like overflow from the list
+ * above it. So the two are separate views behind a switch, and neither is ever
+ * scrolled past on the way to the other.
+ */
+const TICKET_MODES = ['sync', 'working'];
+
+const TICKET_MODE_LABEL = {
+  sync: 'Out of sync',
+  working: 'Working on',
+};
+
 export function renderTicketBoard(state, ui, handlers) {
   const container = document.getElementById('tickets');
   const board = state.tickets;
@@ -1534,16 +1563,75 @@ export function renderTicketBoard(state, ui, handlers) {
     return;
   }
 
-  parts.push(ticketStatus(board, handlers));
+  // Absent from a server older than the page, which is what a tab sees between a
+  // renderer changing on disk and the process behind it restarting.
+  const inProgress = board.inProgress ?? [];
+  const open = board.rows.filter((row) => row.status === 'open');
+  const mode = ui.ticketMode === 'working' ? 'working' : 'sync';
+
+  parts.push(ticketModeSwitch(mode, { sync: open.length, working: inProgress.length }, handlers));
+  parts.push(ticketStatus(board, handlers, mode));
   // Under the status line rather than beside the rows: it is a key, read once,
   // and a key repeated per court would be three copies of the same sentence.
-  const legend = typeLegend(board.rows);
+  // Built from the rows this view shows, so it never names a type that isn't here.
+  const legend = typeLegend(mode === 'working' ? inProgress : board.rows);
   if (legend) parts.push(legend);
 
+  // In both views: they are about whether the read can be trusted, and that is
+  // as true of the list of work in progress as of the list of what is wrong.
   if (board.reason) parts.push(banner('critical', '!', board.reason));
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
-  const open = board.rows.filter((row) => row.status === 'open');
+  if (mode === 'working') parts.push(...workingOnView(board, inProgress, state, ui, handlers));
+  else parts.push(...outOfSyncView(board, open, state, ui, handlers));
+
+  const note = captureNoteField(container);
+  replace(container, parts);
+  restoreNoteField(container, ui, note);
+}
+
+/** The switch between the two views, each with how many tickets it holds. */
+function ticketModeSwitch(mode, counts, handlers) {
+  return el(
+    'div',
+    { class: 'mode-switch', role: 'tablist', 'aria-label': 'Which tickets to show' },
+    TICKET_MODES.map((option) =>
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'mode-switch__option',
+          role: 'tab',
+          'aria-selected': String(option === mode),
+          title: `${TICKET_MODE_LABEL[option]} (w switches)`,
+          onclick: () => handlers.setTicketMode(option),
+        },
+        TICKET_MODE_LABEL[option],
+        el('span', { class: 'mode-switch__count' }, String(counts[option])),
+      ),
+    ),
+  );
+}
+
+/** Nothing on screen, said so as to tell an empty answer from no answer yet. */
+function emptyTicketView(board, whenRead) {
+  return el(
+    'p',
+    { class: 'empty' },
+    board.fetchedAt === null
+      ? board.fetching
+        ? 'Asking Jira…'
+        : 'Nothing read yet.'
+      : // Deliberately says how many were looked at. An empty board and a
+        // board that examined nothing look the same, and only one of them is
+        // good news — the same trap the agenda and the PR board each guard.
+        `${whenRead} ${board.checked} unfinished ${board.checked === 1 ? 'ticket' : 'tickets'} checked.`,
+  );
+}
+
+/** The courts, what to do about each, and the rows parked out of them. */
+function outOfSyncView(board, open, state, ui, handlers) {
+  const parts = [];
   for (const court of TICKET_COURT_ORDER) {
     const rows = open.filter((row) => row.court === court);
     if (rows.length === 0) continue;
@@ -1554,43 +1642,54 @@ export function renderTicketBoard(state, ui, handlers) {
     parts.push(el('p', { class: 'court-hint' }, TICKET_COURT_HINT[court]));
   }
 
-  if (open.length === 0 && !board.reason) {
-    parts.push(
-      el(
-        'p',
-        { class: 'empty' },
-        board.fetchedAt === null
-          ? board.fetching
-            ? 'Asking Jira…'
-            : 'Nothing read yet.'
-          : // Deliberately says how many were looked at. An empty board and a
-            // board that examined nothing look the same, and only one of them is
-            // good news — the same trap the agenda and the PR board each guard.
-            `Nothing looks mislabelled. ${board.checked} unfinished ${board.checked === 1 ? 'ticket' : 'tickets'} checked.`,
-      ),
-    );
-  }
+  if (open.length === 0 && !board.reason) parts.push(emptyTicketView(board, 'Nothing looks mislabelled.'));
 
   const parked = board.rows.filter((row) => row.status === 'snoozed');
   if (parked.length > 0) {
-    parts.push(drawer(`Parked (${parked.length})`, parked, state, ui, handlers, renderTicketRow));
+    parts.push(drawer('tickets:parked', `Parked (${parked.length})`, parked, state, ui, handlers, renderTicketRow));
   }
+  return parts;
+}
 
-  const note = captureNoteField(container);
-  replace(container, parts);
-  restoreNoteField(container, ui, note);
+/**
+ * The tickets in progress, grouped by the status each one is in.
+ *
+ * Grouped because the category holds more than one kind of thing — In Progress
+ * and In Review, and a hold status if the user has one — and a heading per status
+ * says which is which without reading every gutter. Matched case-insensitively,
+ * since one real board spelled "In Progress" differently in two projects, and
+ * titled by the first spelling seen. Alphabetical, so the groups don't trade
+ * places as tickets move; within a group, Jira's own least-recently-touched order.
+ */
+function workingOnView(board, inProgress, state, ui, handlers) {
+  if (inProgress.length === 0) return board.reason ? [] : [emptyTicketView(board, 'Nothing in progress.')];
+
+  const groups = new Map();
+  for (const row of inProgress) {
+    const name = row.workflowStatus.trim() || '—';
+    const group = groups.get(name.toLowerCase()) ?? { title: name, rows: [] };
+    group.rows.push(row);
+    groups.set(name.toLowerCase(), group);
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map((group) => section(group.title, group.rows, state, ui, handlers, null, renderTicketRow));
 }
 
 /** "as of 10:42 · 19 of 86 unfinished tickets · reading as you@work every 15 min", and Refresh. */
-function ticketStatus(board, handlers) {
+function ticketStatus(board, handlers, mode = 'sync') {
   const bits = [];
   // "refreshing…", as the pull request board says, so it cannot land beside the
   // "reading … every 15 min" clause below and say the same word twice.
   if (board.fetching) bits.push('refreshing…');
   else if (board.fetchedAt) bits.push(`as of ${formatTime(board.fetchedAt)}`);
-  const flagged = board.rows.filter((row) => row.status === 'open').length;
   if (board.fetchedAt) {
-    bits.push(`${flagged} of ${board.checked} unfinished ${board.checked === 1 ? 'ticket' : 'tickets'}`);
+    const unfinished = `${board.checked} unfinished ${board.checked === 1 ? 'ticket' : 'tickets'}`;
+    bits.push(
+      mode === 'working'
+        ? `${(board.inProgress ?? []).length} of ${unfinished} in progress`
+        : `${board.rows.filter((row) => row.status === 'open').length} of ${unfinished}`,
+    );
   }
   if (board.projects.length > 0) bits.push(`in ${board.projects.join(', ')}`);
   // One clause, so "reading…" above doesn't land next to a second "reading".
@@ -1636,8 +1735,10 @@ export function renderTicketRow(row, state, ui, handlers) {
       id: `ticket-${cssId(row.id)}`,
       dataset: {
         id: row.id,
-        status: row.status,
-        court: row.court,
+        // Only a flagged row has either. One in Working on has no
+        // complaint to be filed under and nothing to be parked from, and a
+        // dataset handed `undefined` writes the word rather than leaving it out.
+        ...(row.court ? { status: row.status, court: row.court } : {}),
         selected: String(selected),
         pending: String(ui.pending.has(row.id)),
       },
@@ -1664,7 +1765,7 @@ export function renderTicketRow(row, state, ui, handlers) {
       { class: 'item__body' },
       renderTicketStatus(row, state, ui, handlers),
       el('p', { class: 'item__title' }, title),
-      renderTicketMeta(row),
+      renderTicketMeta(row, state, handlers),
       renderNotes(row),
       ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
     ),
@@ -1759,17 +1860,45 @@ function renderStatusMenu(row, offered, ui, handlers) {
 }
 
 /**
- * The pills that are worth a second line because they are exceptions: a pull
- * request still open, or a row someone parked. Null when there are none, which is
- * the ordinary case and why most cards are one line tall.
+ * The pills that are worth a second line because they are exceptions: a ticket
+ * in Working on that is also out of sync, a pull request still open, or a row
+ * someone parked. Null when there are none, which is the ordinary case and why
+ * most cards are one line tall.
  */
-function renderTicketMeta(row) {
+function renderTicketMeta(row, state, handlers) {
   const pills = [];
+  const flag = row.court ? null : outOfSyncFlag(row, state, handlers);
+  if (flag) pills.push(flag);
   if (row.hasOpenPr) pills.push(el('span', { class: 'pill pill--tag' }, 'open PR'));
   if (row.status === 'snoozed' && row.snoozedUntil) {
     pills.push(el('span', { class: 'pill pill--tag' }, `parked until ${formatDay(row.snoozedUntil)}`));
   }
   return pills.length > 0 ? el('div', { class: 'item__meta item__meta--extra' }, pills) : null;
+}
+
+/**
+ * On a Working on row, whether the same ticket is out of sync — and a way to go
+ * and see it there.
+ *
+ * This is how the more urgent of the two views reaches the other one. The row is
+ * never shown twice on one screen, so without this an In Progress ticket whose
+ * pull requests have all closed would read, in Working on, as work going fine.
+ * The words carry it and the colour only agrees with them. A parked row gets no
+ * flag: the park asked for exactly that complaint to stay quiet until its date.
+ */
+function outOfSyncFlag(row, state, handlers) {
+  const flagged = state.tickets?.rows?.find((candidate) => candidate.id === row.id && candidate.status === 'open');
+  if (!flagged) return null;
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'pill pill--button pill--flag',
+      title: 'Show it under Out of sync',
+      onclick: () => handlers.jumpToTicket(row.id),
+    },
+    `Out of sync: ${TICKET_COURT_TITLE[flagged.court]}`,
+  );
 }
 
 /**
@@ -1784,11 +1913,14 @@ function renderTicketMeta(row) {
  * is width taken off the summary — and this one bought nothing, because the
  * summary beside it is already an anchor to the same browse URL, as is `o`. The
  * two that remain are the reason `.item__title` reserves the room it does.
+ *
+ * A row in Working on gets Note alone. A park silences a complaint
+ * until a date, and nothing on that row is complaining.
  */
 function renderTicketActions(row, ui, handlers) {
   const buttons = [];
 
-  if (row.status === 'open') {
+  if (row.court && row.status === 'open') {
     buttons.push(
       el(
         'button',
@@ -1802,7 +1934,7 @@ function renderTicketActions(row, ui, handlers) {
         'Park',
       ),
     );
-  } else {
+  } else if (row.court) {
     buttons.push(el('button', { type: 'button', class: 'button', onclick: () => handlers.unpark(row.id) }, 'Unpark'));
   }
 

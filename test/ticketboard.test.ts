@@ -119,6 +119,53 @@ test('a successful read becomes rows, a file, and a timestamp', async () => {
   board.stop();
 });
 
+test('every ticket in progress comes back beside the rows, flagged or not', async () => {
+  const cfg = await config({ DAILY_FOCUS_JIRA_HOLD_STATUSES: 'Blocked' });
+  const deps = fakeDeps({
+    fetches: [
+      ok([
+        ticket('PROJ-1'),
+        ticket('PROJ-2', { hasOpenPr: true }),
+        ticket('PROJ-3', { workflowStatus: 'Blocked', hasAnyPr: false }),
+        ticket('PROJ-4', { workflowStatus: 'Committed', statusCategory: 'new', hasAnyPr: false }),
+      ]),
+    ],
+  });
+  const board = new TicketBoard(cfg, () => {}, deps);
+  await board.start();
+
+  const state = board.view([], NOW);
+  assert.deepEqual(state.rows.map((row) => row.key), ['PROJ-1']);
+  // PROJ-1 is flagged and in progress, so it is in both; PROJ-4 hasn't started.
+  assert.deepEqual(state.inProgress.map((entry) => entry.key), ['PROJ-1', 'PROJ-2', 'PROJ-3']);
+  assert.equal(state.checked, 4);
+  board.stop();
+});
+
+/** Private configuration, like the hold list: applied on read, and never stored. */
+test('the named in-progress statuses narrow Working on when the board is read', async () => {
+  const cfg = await config({ DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES: 'In Progress' });
+  const deps = fakeDeps({
+    fetches: [ok([ticket('PROJ-1', { hasOpenPr: true }), ticket('PROJ-2', { workflowStatus: 'In Review', hasOpenPr: true })])],
+  });
+  const board = new TicketBoard(cfg, () => {}, deps);
+  await board.start();
+
+  assert.deepEqual(board.view([], NOW).inProgress.map((entry) => entry.key), ['PROJ-1']);
+  const onDisk = await readFile(cfg.ticketsFile, 'utf8');
+  assert.ok(onDisk.includes('PROJ-2'), 'the hidden ticket is still a fact worth keeping');
+  assert.ok(!onDisk.includes('inProgress'), 'nothing about Working on reaches tickets.json');
+  board.stop();
+});
+
+test('a board that is switched off has nothing in progress either', async () => {
+  const cfg = await config({ DAILY_FOCUS_JIRA: 'off' });
+  const board = new TicketBoard(cfg, () => {}, fakeDeps({ fetches: [ok([ticket('PROJ-2', { hasOpenPr: true })])] }));
+  await board.start();
+  assert.deepEqual(board.view([], NOW).inProgress, []);
+  board.stop();
+});
+
 /** The hold list is the user's private configuration, so it is applied on read. */
 test('nothing computed reaches the file', async () => {
   const cfg = await config({ DAILY_FOCUS_JIRA_HOLD_STATUSES: 'Blocked' });

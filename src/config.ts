@@ -105,6 +105,16 @@ export interface JiraConfig {
    * configured here, and an empty list simply leaves every row in place.
    */
   holdStatuses: readonly string[];
+  /**
+   * The statuses the ticket board's Working on view shows, spelled as this Jira
+   * spells them — the ones meaning the user is working on a ticket, as against
+   * the ones where it waits on somebody else, like In Review.
+   *
+   * Jira files both kinds under one category, so only the names can tell them
+   * apart, and which name means which is the user's workflow rather than this
+   * project's. Empty shows everything Jira has in progress.
+   */
+  inProgressStatuses: readonly string[];
   /** Minutes between reads while a browser is watching. */
   pollMinutes: number;
   /**
@@ -288,6 +298,7 @@ function envJira(env: NodeJS.ProcessEnv): JiraConfig {
     // Commas only, as for merge gate checks and calendars: status names contain
     // spaces almost by default — "In Review", "Waiting for customer".
     holdStatuses: envNameList('DAILY_FOCUS_JIRA_HOLD_STATUSES', env),
+    inProgressStatuses: envNameList('DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES', env),
     pollMinutes,
     // Tolerates a pasted URL, since that is what is on screen when someone goes
     // looking for their site's name.

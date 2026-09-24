@@ -57,6 +57,12 @@ const ui = {
   noteFor: null,
   /** Text typed into the open note form but not saved yet. See `discardNote`. */
   noteDraft: '',
+  /** Which drawers are open, by key. In memory only, so a reload closes them all:
+   *  a drawer is a place you go and look, not part of the page's resting state. */
+  openDrawers: new Set(),
+  /** Which of the ticket tab's two views is showing: `sync` or `working`. In
+   *  memory only, so a reload opens on the one that asks for action. */
+  ticketMode: 'sync',
   connectionError: null,
   /** Mirror the running session so item rows can show their own state. */
   activeSessionId: null,
@@ -135,6 +141,23 @@ const handlers = {
     discardNote();
     render();
   },
+  // Doesn't render either: the drawer has already opened itself, and rebuilding
+  // it would take focus off the summary that was just pressed.
+  toggleDrawer: (key, open) => {
+    if (open) ui.openDrawers.add(key);
+    else ui.openDrawers.delete(key);
+  },
+  setTicketMode: (mode) => setTicketMode(mode),
+  // From the flag on a Working on row: over to Out of sync, with that ticket's
+  // row selected and on screen, so the jump lands on the thing it named.
+  jumpToTicket: (id) => {
+    setTicketMode('sync');
+    ui.selectedId = id;
+    render();
+    document
+      .querySelector('#tickets .item[data-selected="true"]')
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  },
   startSession: (id) => void changeSession({ action: 'start', id }),
   stopSession: () => void changeSession({ action: 'stop' }),
   dismissUnattended: (endedAt) => {
@@ -184,6 +207,20 @@ function setView(view) {
   ui.view = view;
   localStorage.setItem(VIEW_KEY, view);
   // The selection belongs to the list it was made in.
+  ui.selectedId = null;
+  ui.menuFor = null;
+  ui.statusFor = null;
+  discardNote();
+  render();
+}
+
+/**
+ * Switch the ticket tab between its two views. The selection and anything open
+ * go with it, as they do between tabs: they belong to the list they were made in.
+ */
+function setTicketMode(mode) {
+  if (ui.ticketMode === mode) return;
+  ui.ticketMode = mode;
   ui.selectedId = null;
   ui.menuFor = null;
   ui.statusFor = null;
@@ -479,9 +516,15 @@ function hideToast() {
 
 /* ---------- keyboard ---------- */
 
-/** Ids of the items currently on screen, in visual order. Only the showing view counts. */
+/**
+ * Ids of the items currently on screen, in visual order. Only the showing view
+ * counts, and a row in a closed drawer is not on screen: `j` stepping into one
+ * would move the selection somewhere nobody can see it.
+ */
 function visibleItemIds() {
-  return [...document.querySelectorAll(`#${ui.view} .item`)].map((node) => node.dataset.id);
+  return [...document.querySelectorAll(`#${ui.view} .item`)]
+    .filter((node) => !node.closest('details:not([open])'))
+    .map((node) => node.dataset.id);
 }
 
 function moveSelection(delta) {
@@ -498,14 +541,20 @@ function moveSelection(delta) {
     ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-/** The selected brief item or board row. Rows carry `court`, items carry `kind`. */
+/**
+ * The selected brief item or board row. Rows carry `court`, items carry `kind`.
+ * An in-progress ticket carries neither, and no `status` — so it takes a note and
+ * opens, and every key that needs an open status passes it over.
+ */
 function selectedItem() {
   if (!state || ui.selectedId === null) return null;
   const list =
     ui.view === 'board'
       ? (state.board?.rows ?? [])
       : ui.view === 'tickets'
-        ? (state.tickets?.rows ?? [])
+        ? ui.ticketMode === 'working'
+          ? (state.tickets?.inProgress ?? [])
+          : (state.tickets?.rows ?? [])
         : state.items;
   return list.find((entry) => entry.id === ui.selectedId) ?? null;
 }
@@ -562,6 +611,11 @@ document.addEventListener('keydown', (event) => {
     case '3':
       event.preventDefault();
       setView('tickets');
+      return;
+    case 'w':
+      if (ui.view !== 'tickets') return;
+      event.preventDefault();
+      setTicketMode(ui.ticketMode === 'working' ? 'sync' : 'working');
       return;
     case 'r':
       if (ui.view === 'board') {

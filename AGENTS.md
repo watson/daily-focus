@@ -450,6 +450,39 @@ The three courts are `TicketCourt` in `src/types.ts`; the client's
 `public/render.js` have to list the same three, and `test/docs-contract.test.ts`
 fails when they don't.
 
+**The tab has two views behind a switch**, because it answers two different
+questions. *Out of sync* is the courts, what the tab opens on, and all the tab
+badge counts, since it is the view that wants action. *Working on* is
+`resolveInProgress`: every ticket in Jira's `indeterminate` category, grouped by
+status. `ui.ticketMode` holds which view is showing, in memory only, so a reload
+opens on the view that asks for action; `w` flips it. The Working on list used to
+be a drawer under Parked, and read as overflow from the courts, which is the reason
+for the switch.
+
+Working on **does not ask `judge`**, so a ticket a court flags is in it as well. An
+earlier version kept the two disjoint, and that removed exactly the tickets it is
+for: an In Progress ticket with no pull request yet is work in progress, and it was
+missing because the idle court had it. The views are exclusive, so a ticket in both
+is never on screen twice. Instead, its Working on row carries an *Out of sync* flag
+naming the court, which jumps to it, because the calm list must not hide the urgent
+one. A parked court row gets no flag, since the park asked for exactly that
+complaint to stay quiet. The hold statuses don't reach Working on either, since
+they only answer the idle court's question.
+
+`DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES` narrows Working on to named statuses. Jira
+files In Progress and In Review under the one category, so only a status name can
+separate them, and this repo names none: the user lists the statuses to show,
+matched as loosely as the hold list. The list only filters, and never admits a
+ticket from outside the category. Working on reads notes from the log and never
+snoozes: a park answers a complaint, so its rows offer Note and never Park. Like the
+courts, it is derived on every read and never stored.
+
+Drawers keep their open state in `ui.openDrawers`, keyed per drawer, and not on the
+`<details>` element. Every render rebuilds the element and state arrives on a
+heartbeat, so a drawer left to remember for itself snapped shut within the minute.
+`visibleItemIds` skips the rows inside a closed one, so `j` never selects a row
+nobody can see.
+
 Five rules this board must keep:
 
 - **A ticket can need more than one pull request, and this is why it asks Jira.** The

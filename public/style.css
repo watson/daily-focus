@@ -1358,6 +1358,61 @@ body[data-view='tickets'] .layout {
 }
 
 /*
+ * The switch between the ticket tab's two views: what is out of sync, and what
+ * you are working on. A segmented control rather than a second row of tabs, so it
+ * reads as a way of looking at this tab and not as more places to go — the tabs
+ * above are underlined words, the status line below is a bordered bar, and this
+ * is neither.
+ */
+.mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 3px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.mode-switch__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.mode-switch__option:hover {
+  color: var(--ink-1);
+}
+.mode-switch__option[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--ink-1);
+  box-shadow: var(--shadow);
+}
+.mode-switch__count {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * On a Working on row whose ticket is also out of sync. The border is the due
+ * pill's, because this is the same kind of claim — something here wants doing —
+ * and the text says what, so the colour is never the only thing carrying it.
+ */
+.pill--flag {
+  border-color: var(--serious);
+  background: transparent;
+  color: var(--ink-2);
+}
+
+/*
  * The key to the dots. Sits under the status line, read once — and carries each
  * type's name in text beside its swatch, which is what lets the dot be the only
  * place the type appears on a row.

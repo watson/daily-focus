@@ -1,10 +1,11 @@
 /**
- * Whether a Jira ticket's status matches what its pull requests say, and nothing
- * else. Pure, for the reason `prs.ts` is: the verdict depends on the user's
- * private configuration, so it is derived on every read and never stored.
+ * Whether a Jira ticket's status matches what its pull requests say — and, for
+ * the tab's Working on view, which tickets the statuses say are in progress.
+ * Pure, for the reason `prs.ts` is: the verdict depends on the user's private
+ * configuration, so it is derived on every read and never stored.
  */
 
-import type { Action, Ticket, TicketCourt, TicketRow } from './types.ts';
+import type { Action, InProgressTicket, Ticket, TicketCourt, TicketRow } from './types.ts';
 import { canonicalId } from './ids.ts';
 import { foldActionLog } from './store.ts';
 
@@ -16,21 +17,22 @@ export function ticketCourtOrder(court: TicketCourt): number {
 }
 
 /**
- * Whether the user has declared this status a place a ticket may legitimately sit
- * still.
+ * Whether the ticket sits in one of the statuses the user has listed — the hold
+ * statuses, or the ones the Working on view shows.
  *
  * Case-insensitive and trimmed, which is deliberately looser than the exact match
- * `matchMergeGates` uses, because the two lists are different kinds of thing. A
+ * `matchMergeGates` uses, because the lists are different kinds of thing. A
  * merge-gate check name is GitHub's own string, copied from a ruleset; a status
- * name is one the user reads off a Jira board and retypes. And the costs run
+ * name is one the user reads off a Jira board and retypes, and one real board
+ * spelled "In Progress" and "In progress" in two projects. And the costs run
  * opposite ways: a gate matched wrongly invents a claim about a repository's
- * policy, while a hold status matched wrongly only means a row keeps showing —
- * visible, and self-correcting the moment they notice.
+ * policy, while a status matched wrongly only changes which rows show — on
+ * screen, and put right by editing one line.
  */
-function onHold(ticket: Ticket, holdStatuses: readonly string[]): boolean {
+function inStatus(ticket: Ticket, statuses: readonly string[]): boolean {
   const status = ticket.workflowStatus.trim().toLowerCase();
   if (status === '') return false;
-  return holdStatuses.some((hold) => hold.trim().toLowerCase() === status);
+  return statuses.some((listed) => listed.trim().toLowerCase() === status);
 }
 
 /**
@@ -71,7 +73,7 @@ export function judge(ticket: Ticket, holdStatuses: readonly string[] = []): Tic
   if (ticket.statusCategory === 'done') return null;
   if (ticket.hasAnyPr && !ticket.hasOpenPr && ticket.allPrsClosed) return 'settled';
   if (ticket.statusCategory === 'new' && ticket.hasOpenPr) return 'started';
-  if (ticket.statusCategory === 'indeterminate' && !ticket.hasAnyPr && !onHold(ticket, holdStatuses)) return 'idle';
+  if (ticket.statusCategory === 'indeterminate' && !ticket.hasAnyPr && !inStatus(ticket, holdStatuses)) return 'idle';
   return null;
 }
 
@@ -120,6 +122,49 @@ export function resolveTickets(
   }
 
   return rows.sort((a, b) => ticketCourtOrder(a.court) - ticketCourtOrder(b.court));
+}
+
+/**
+ * Every ticket whose status says it is in progress, for the tab's Working on
+ * view: the tickets being worked on, whatever the courts make of them.
+ *
+ * "In progress" starts from Jira's `indeterminate` category rather than a list of
+ * status names, for the reason the courts branch on it — the names are a site's
+ * own. Left there, In Review is here, and so is a ticket in one of the user's hold
+ * statuses.
+ *
+ * `inProgressStatuses` narrows it to the statuses the user names, because Jira
+ * files "I am working on this" and "this waits on a reviewer" under the one
+ * category and only the names tell them apart. So they come from configuration,
+ * as the hold statuses do, and an empty list keeps the whole category. The list
+ * only filters: it cannot admit a ticket from a category that isn't in progress.
+ *
+ * **Deliberately not disjoint from `resolveTickets`.** The two answer different
+ * questions — the courts, whether a status looks wrong; this, what the statuses
+ * say is under way — and a ticket can be both. An earlier version left out
+ * anything a court flagged, and that removed exactly the tickets this is for: an
+ * In Progress ticket with no pull request yet is work being done, and was missing
+ * from the list of work being done because the idle court had it. The two are
+ * separate views on the client, so a ticket in both is never on screen twice, and
+ * the Working on row carries a flag pointing back at its court.
+ *
+ * So `judge` is not asked here, and neither the hold statuses nor a park reach
+ * this list: both answer complaints, and nothing here is complaining.
+ *
+ * In the order Jira returned, which is least recently touched first, as in the
+ * courts — so the ticket that has sat longest is the one at the top.
+ */
+export function resolveInProgress(
+  tickets: readonly Ticket[],
+  actions: readonly Action[],
+  now: Date,
+  inProgressStatuses: readonly string[] = [],
+): InProgressTicket[] {
+  const folded = foldActionLog(actions, now);
+  return tickets
+    .filter((ticket) => ticket.statusCategory === 'indeterminate')
+    .filter((ticket) => inProgressStatuses.length === 0 || inStatus(ticket, inProgressStatuses))
+    .map((ticket) => ({ ...ticket, notes: folded.get(canonicalId(ticket.id))?.notes ?? [] }));
 }
 
 /** How many rows sit in each court, plus the parked ones, for the badge and headers. */

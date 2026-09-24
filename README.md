@@ -114,6 +114,7 @@ append-only, like the log it lands in.
 | <kbd>f</kbd> | focus mode |
 | <kbd>p</kbd> | start / stop a focus session on the selected item |
 | <kbd>r</kbd> | refresh whichever board you are on now |
+| <kbd>w</kbd> | on the Jira ticket board, switch between *Out of sync* and *Working on* |
 | <kbd>?</kbd> | shortcuts |
 
 Focus mode (<kbd>f</kbd>) collapses the page to the objective, the single top-ranked
@@ -335,6 +336,23 @@ Three buckets:
   no pull request for it at all. Perfectly normal for work that isn't code, which is
   what `DAILY_FOCUS_JIRA_HOLD_STATUSES` and the park button are for.
 
+A switch at the top of the tab flips between two views, because the tab answers two
+different questions: what is out of sync with reality, and what you are working on.
+<kbd>w</kbd> flips it too. **Out of sync** is the three buckets above. It is where the
+tab opens, and the only thing the tab's badge counts, because it is the view that
+wants action. **Working on** is every ticket whose status says it is in progress,
+grouped by status. It goes by status alone, so an In Progress ticket with no pull
+request yet is listed there even though *In flight with nothing linked* also flags it.
+A ticket like that carries an *Out of sync* tag in Working on, which takes you to it
+on the other view, so the urgent signal isn't lost by looking at the calm list.
+"In progress" is Jira's own status category rather than a status name, so by default
+In Review is in there too, and so is anything waiting in one of your hold statuses.
+Jira gives the board no other way to tell those apart, so to narrow the view to the
+work in your own hands, name the statuses it should show in
+`DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES` — `In Progress` leaves out In Review. Working
+on rows take notes and status changes like any other, but can't be parked: parking
+silences a complaint, and there isn't one.
+
 Epics are left out, and so is anything above them — an epic with merged children is
 a project in progress rather than an oversight, and being told to close the epic
 tracking your current objective is worse than being told nothing. That is read off
@@ -516,6 +534,7 @@ logins. Restart to apply.
 | `DAILY_FOCUS_JIRA` | `on` | `off` disables the Jira ticket board; nothing is read |
 | `DAILY_FOCUS_JIRA_PROJECTS` | *everything* | Project keys to limit the search to, comma-separated |
 | `DAILY_FOCUS_JIRA_HOLD_STATUSES` | *none* | Statuses where standing still is deliberate, comma-separated and spelled as your Jira spells them. Their rows are exempt from *In flight with nothing linked*, and from nothing else |
+| `DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES` | *all of them* | The statuses the ticket board's *Working on* view shows, comma-separated and case-insensitive — `In Progress` to leave out In Review |
 | `DAILY_FOCUS_JIRA_POLL_MINUTES` | `15` | Minutes between reads while a tab is open |
 | `DAILY_FOCUS_JIRA_SITE` | *acli's own* | Atlassian site host the browse links are built from. A pasted URL is fine |
 | `DAILY_FOCUS_ACLI` | `acli` | Path to the Atlassian CLI, for when the server's PATH lacks it. `~` is expanded |

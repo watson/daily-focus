@@ -13,13 +13,13 @@ import { test } from 'node:test';
 
 // Imported for its side effect before `render.js` is pulled in below.
 import { byClass, byTag, buttonLabels, mount, type StubElement } from './dom-stub.ts';
-import { resolveTickets } from '../src/tickets.ts';
-import type { Ticket, TicketRow } from '../src/types.ts';
+import { resolveInProgress, resolveTickets } from '../src/tickets.ts';
+import type { InProgressTicket, Ticket, TicketRow } from '../src/types.ts';
 
 const { renderTicketBoard, renderTicketRow, typeLegend } = (await import('../public/render.js')) as {
   renderTicketBoard: (state: unknown, ui: unknown, handlers: unknown) => void;
-  renderTicketRow: (row: TicketRow, state: unknown, ui: unknown, handlers: unknown) => StubElement;
-  typeLegend: (rows: readonly TicketRow[]) => StubElement | null;
+  renderTicketRow: (row: TicketRow | InProgressTicket, state: unknown, ui: unknown, handlers: unknown) => StubElement;
+  typeLegend: (rows: readonly (TicketRow | InProgressTicket)[]) => StubElement | null;
 };
 
 const NOW = new Date('2026-09-22T09:00:00Z');
@@ -388,7 +388,7 @@ test('the status control carries no persistent clickable marker', async () => {
  * inline Markdown and only `render.js` turns it into an anchor, which is why this
  * is asserted here.
  */
-function boardWith(warnings: readonly string[]): StubElement {
+function boardOf(overrides: Record<string, unknown> = {}, ui: object = UI, handlers: object = {}): StubElement {
   const board = {
     enabled: true,
     reason: null,
@@ -396,15 +396,21 @@ function boardWith(warnings: readonly string[]): StubElement {
     fetching: false,
     account: null,
     projects: [],
-    warnings: [...warnings],
+    warnings: [],
     pollMinutes: 15,
     rows: [],
     counts: { settled: 0, started: 0, idle: 0, parked: 0 },
+    inProgress: [],
     checked: 0,
     statuses: {},
+    ...overrides,
   };
-  renderTicketBoard({ ...STATE, tickets: board }, UI, { ...HANDLERS, refreshTickets: () => {} });
+  renderTicketBoard({ ...STATE, tickets: board }, ui, { ...HANDLERS, refreshTickets: () => {}, ...handlers });
   return mount('tickets');
+}
+
+function boardWith(warnings: readonly string[]): StubElement {
+  return boardOf({ warnings: [...warnings] });
 }
 
 test('a key named in a warning is rendered as a link to it', () => {
@@ -427,4 +433,219 @@ test('a warning with no link in it is still just words', () => {
   const banner = byClass(node, 'banner--warning')[0]!;
   assert.deepEqual(byTag(banner, 'A'), [], 'nothing invents a link for a key with no site behind it');
   assert.match(banner.textContent, /Could not read how work gets finished in PROJ\./);
+});
+
+
+/* ---------- Working on rows ---------- */
+
+function inProgress(overrides: Partial<Ticket> = {}): InProgressTicket {
+  const found = resolveInProgress(
+    [ticket({ workflowStatus: 'In Review', statusCategory: 'indeterminate', hasAnyPr: true, hasOpenPr: true, ...overrides })],
+    [],
+    NOW,
+  );
+  assert.equal(found.length, 1, 'the fixture should be in progress');
+  return found[0]!;
+}
+
+/**
+ * A park silences a complaint until a date, and nothing on this row is
+ * complaining — so there is neither Park nor the Unpark it would lead to.
+ */
+test('a Working on row offers a note and nothing to park', () => {
+  assert.deepEqual(buttonLabels(renderTicketRow(inProgress(), STATE, UI, HANDLERS)), ['Note']);
+});
+
+/**
+ * `Object.assign` onto a dataset writes `undefined` as the word, which would put
+ * `data-court="undefined"` on the row — a court the stylesheet and a test could
+ * both go looking for.
+ */
+test('a Working on row claims no court and no park status', () => {
+  const node = renderTicketRow(inProgress(), STATE, UI, HANDLERS);
+  assert.ok(!('court' in node.dataset), `data-court="${node.dataset.court}"`);
+  assert.ok(!('status' in node.dataset), `data-status="${node.dataset.status}"`);
+  assert.equal(node.dataset.id, 'jira:PROJ-8842');
+});
+
+test('a Working on row can still have its status changed', () => {
+  const row = inProgress();
+  const node = renderTicketRow(
+    row,
+    { now: NOW.toISOString(), tickets: { statuses: VOCAB } },
+    { ...UI, statusFor: row.id },
+    { ...HANDLERS, toggleStatus: () => {}, moveTicket: () => {} },
+  );
+  assert.deepEqual(
+    byTag(byClass(node, 'menu--status')[0]!, 'BUTTON').map((b) => b.textContent),
+    ['Committed', 'Done', "Won't Fix"],
+  );
+});
+
+test('a Working on row shows its notes and its open pull request', () => {
+  const [row] = resolveInProgress(
+    [ticket({ statusCategory: 'indeterminate', hasOpenPr: true })],
+    [{ id: 'jira:PROJ-8842', action: 'note', at: '2026-09-22T08:00:00Z', text: 'waiting on the schema review' }],
+    NOW,
+  );
+  const node = renderTicketRow(row!, STATE, UI, HANDLERS);
+  assert.match(node.textContent, /waiting on the schema review/);
+  assert.match(node.textContent, /open PR/);
+});
+
+/* ---------- the two views ---------- */
+
+/** One ticket flagged and in progress, one only in progress, and one parked. */
+function mixedBoard(): { rows: TicketRow[]; inProgress: InProgressTicket[] } {
+  const idleTicket = ticket({
+    id: 'jira:PROJ-1',
+    key: 'PROJ-1',
+    statusCategory: 'indeterminate',
+    workflowStatus: 'In Progress',
+    hasAnyPr: false,
+  });
+  const reviewTicket = ticket({
+    id: 'jira:PROJ-2',
+    key: 'PROJ-2',
+    statusCategory: 'indeterminate',
+    workflowStatus: 'In Review',
+    hasOpenPr: true,
+    issueType: 'Bug',
+  });
+  const parkedTicket = ticket({ id: 'jira:PROJ-3', key: 'PROJ-3' });
+  const actions = [{ id: 'jira:PROJ-3', action: 'snooze' as const, at: '2026-09-22T08:00:00Z', until: '2026-09-30' }];
+  const all = [idleTicket, reviewTicket, parkedTicket];
+  return { rows: resolveTickets(all, actions, NOW), inProgress: resolveInProgress(all, actions, NOW) };
+}
+
+const modeSwitch = (node: StubElement): StubElement => byClass(node, 'mode-switch')[0]!;
+const options = (node: StubElement): StubElement[] => byClass(modeSwitch(node), 'mode-switch__option');
+const sectionTitles = (node: StubElement): string[] => byClass(node, 'section__title').map((t) => t.textContent);
+
+test('the switch offers both views, each with its count, and opens on Out of sync', () => {
+  const node = boardOf({ ...mixedBoard(), fetchedAt: NOW.toISOString(), checked: 3 });
+  assert.equal(modeSwitch(node).attributes.role, 'tablist');
+  assert.deepEqual(
+    options(node).map((o) => o.textContent),
+    ['Out of sync1', 'Working on2'],
+    'the parked ticket is not counted as out of sync',
+  );
+  assert.deepEqual(
+    options(node).map((o) => o.attributes['aria-selected']),
+    ['true', 'false'],
+  );
+});
+
+test('pressing a side of the switch asks for that view', () => {
+  const asked: string[] = [];
+  const node = boardOf(mixedBoard(), UI, { setTicketMode: (mode: string) => void asked.push(mode) });
+  for (const option of options(node)) (option.listeners.click as (() => void)[])[0]!();
+  assert.deepEqual(asked, ['sync', 'working']);
+});
+
+test('Out of sync shows the courts and Parked, and none of the work in progress', () => {
+  const node = boardOf(mixedBoard());
+  assert.deepEqual(sectionTitles(node), ['In flight with nothing linked']);
+  assert.equal(byClass(node, 'drawer').length, 1, 'Parked');
+  assert.ok(!node.textContent.includes('PROJ-2'), 'the In Review ticket belongs to the other view');
+});
+
+test('Working on shows the tickets in progress grouped by status, and no courts', () => {
+  const node = boardOf(mixedBoard(), { ...UI, ticketMode: 'working' });
+  assert.deepEqual(sectionTitles(node), ['In Progress', 'In Review']);
+  assert.deepEqual(byClass(node, 'drawer'), [], 'Parked belongs to Out of sync');
+  assert.deepEqual(byClass(node, 'court-hint'), []);
+  assert.deepEqual(
+    options(node).map((o) => o.attributes['aria-selected']),
+    ['false', 'true'],
+  );
+});
+
+/** One real board spelled it "In Progress" in one project and "In progress" in another. */
+test('Working on groups a status case-insensitively, under the first spelling seen', () => {
+  const inProgressRows = [
+    inProgress({ id: 'jira:PROJ-1', key: 'PROJ-1', workflowStatus: 'In Progress' }),
+    inProgress({ id: 'jira:OTHER-1', key: 'OTHER-1', workflowStatus: 'In progress' }),
+  ];
+  const node = boardOf({ inProgress: inProgressRows }, { ...UI, ticketMode: 'working' });
+  assert.deepEqual(sectionTitles(node), ['In Progress']);
+  assert.equal(byClass(node, 'item').length, 2);
+});
+
+test('each view has its own legend, from its own rows', () => {
+  // Read straight after each render: `boardOf` hands back the one shared mount.
+  const entries = (node: StubElement) => byClass(node, 'legend__entry').map((entry) => entry.textContent);
+  assert.deepEqual(entries(boardOf(mixedBoard())), [], 'every out-of-sync row is a Task, so there is nothing to key');
+  assert.deepEqual(entries(boardOf(mixedBoard(), { ...UI, ticketMode: 'working' })), ['Bug', 'Task']);
+});
+
+test('the status line counts what the showing view counts', () => {
+  const board = { ...mixedBoard(), fetchedAt: NOW.toISOString(), checked: 3 };
+  const line = (node: StubElement) => byClass(node, 'board__status-text')[0]!.textContent;
+  assert.match(line(boardOf(board)), /1 of 3 unfinished tickets/);
+  assert.match(line(boardOf(board, { ...UI, ticketMode: 'working' })), /2 of 3 unfinished tickets in progress/);
+});
+
+test('an empty Working on says so, and how many tickets were looked at', () => {
+  const node = boardOf({ fetchedAt: NOW.toISOString(), checked: 4 }, { ...UI, ticketMode: 'working' });
+  assert.match(byClass(node, 'empty')[0]!.textContent, /Nothing in progress\. 4 unfinished tickets checked\./);
+});
+
+test('a server older than the page just has nothing in progress', () => {
+  const node = boardOf({ inProgress: undefined }, { ...UI, ticketMode: 'working' });
+  assert.deepEqual(options(node).map((o) => o.textContent), ['Out of sync0', 'Working on0']);
+});
+
+/* ---------- the flag that points back ---------- */
+
+/**
+ * The views are exclusive, so a ticket in both is never on screen twice — which
+ * would leave an In Progress ticket whose pull requests have all closed reading,
+ * in Working on, as work going fine. The flag is what stops that.
+ */
+test('a Working on row that is also out of sync says which court, and jumps to it', () => {
+  const jumped: string[] = [];
+  const node = boardOf(mixedBoard(), { ...UI, ticketMode: 'working' }, { jumpToTicket: (id: string) => void jumped.push(id) });
+  const flags = byClass(node, 'pill--flag');
+  assert.equal(flags.length, 1, 'only the flagged ticket carries one');
+  assert.equal(flags[0]!.tagName, 'BUTTON');
+  assert.equal(flags[0]!.textContent, 'Out of sync: In flight with nothing linked');
+  (flags[0]!.listeners.click as (() => void)[])[0]!();
+  assert.deepEqual(jumped, ['jira:PROJ-1']);
+});
+
+/** A park asked for exactly that complaint to stay quiet until its date. */
+test('a parked court row puts no flag on its Working on row', () => {
+  const flagged = ticket({ statusCategory: 'indeterminate', workflowStatus: 'In Progress', hasAnyPr: false });
+  const actions = [{ id: 'jira:PROJ-8842', action: 'snooze' as const, at: '2026-09-22T08:00:00Z', until: '2026-09-30' }];
+  const node = boardOf(
+    { rows: resolveTickets([flagged], actions, NOW), inProgress: resolveInProgress([flagged], actions, NOW) },
+    { ...UI, ticketMode: 'working' },
+  );
+  assert.equal(byClass(node, 'item').length, 1);
+  assert.deepEqual(byClass(node, 'pill--flag'), []);
+});
+
+/* ---------- drawers remember being open ---------- */
+
+/**
+ * State arrives on a heartbeat and every render rebuilds the element, so a drawer
+ * has to be told it was open. Without this it snapped shut within the minute, or
+ * the moment a row inside it was clicked.
+ */
+test('an opened drawer stays open when the board is rebuilt', () => {
+  const [parked] = resolveTickets(
+    [ticket()],
+    [{ id: 'jira:PROJ-8842', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }],
+    NOW,
+  );
+  const toggled: [string, boolean][] = [];
+  const handlers = { toggleDrawer: (key: string, open: boolean) => void toggled.push([key, open]) };
+  const closed = byClass(boardOf({ rows: [parked] }, UI, handlers), 'drawer')[0]!;
+  assert.ok(!closed.open, 'closed by default');
+  (closed.listeners.toggle as ((event: unknown) => void)[])[0]!({ currentTarget: { open: true } });
+  assert.deepEqual(toggled, [['tickets:parked', true]]);
+
+  const reopened = byClass(boardOf({ rows: [parked] }, { ...UI, openDrawers: new Set(['tickets:parked']) }), 'drawer')[0]!;
+  assert.equal(reopened.open, true);
 });

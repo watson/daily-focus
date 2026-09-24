@@ -24,7 +24,7 @@ import {
   type JiraIdentity,
   type TicketFetch,
 } from './jira.ts';
-import { countTickets, resolveTickets } from './tickets.ts';
+import { countTickets, resolveInProgress, resolveTickets } from './tickets.ts';
 import type { Action, Ticket, TicketBoardState, TicketsFile } from './types.ts';
 
 /** Never re-read more often than this once reads start failing. */
@@ -122,9 +122,13 @@ export class TicketBoard {
   view(actions: readonly Action[], now: Date): TicketBoardState {
     const warnings = this.enabled ? [...this.#warnings] : [];
     let rows: TicketBoardState['rows'] = [];
+    let inProgress: TicketBoardState['inProgress'] = [];
     if (this.enabled) {
+      const tickets = this.#file?.tickets ?? [];
+      const { holdStatuses, inProgressStatuses } = this.#config.jira;
       try {
-        rows = resolveTickets(this.#file?.tickets ?? [], actions, now, this.#config.jira.holdStatuses);
+        rows = resolveTickets(tickets, actions, now, holdStatuses);
+        inProgress = resolveInProgress(tickets, actions, now, inProgressStatuses);
       } catch (err) {
         warnings.push(`Could not judge the tickets on file: ${(err as Error).message}`);
       }
@@ -142,6 +146,7 @@ export class TicketBoard {
       pollMinutes: this.#config.jira.pollMinutes,
       rows,
       counts: countTickets(rows),
+      inProgress,
       checked: this.#file?.tickets.length ?? 0,
       statuses: this.#file?.statuses ?? {},
     };

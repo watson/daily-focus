@@ -592,6 +592,22 @@ export interface TicketRow extends Ticket {
   notes: { text: string; at: string }[];
 }
 
+/**
+ * A ticket whose status says it is in progress — the work being done, for the
+ * ticket board's Working on view. The same ticket may also be a `TicketRow` in a
+ * court.
+ *
+ * No `court`, because the view asks no question a court answers, and no
+ * `status`, because the only status a board row can take from the log is a park,
+ * and a park silences a complaint. The missing `court` is also how the client
+ * tells the two kinds of row apart. Notes are carried: they are how "two more
+ * repos to go" reaches the agent, and that is as true of a ticket going well as
+ * of one that looks stuck.
+ */
+export interface InProgressTicket extends Ticket {
+  notes: { text: string; at: string }[];
+}
+
 /** The ticket board as the client sees it. */
 export interface TicketBoardState {
   enabled: boolean;
@@ -607,6 +623,8 @@ export interface TicketBoardState {
   pollMinutes: number;
   rows: TicketRow[];
   counts: Record<TicketCourt | 'parked', number>;
+  /** Every ticket in progress, by status — including ones `rows` also flags. */
+  inProgress: InProgressTicket[];
   /** How many unfinished tickets were examined to produce those rows. */
   checked: number;
   /**

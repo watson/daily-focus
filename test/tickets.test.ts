@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { countTickets, judge, resolveTickets, ticketCourtOrder } from '../src/tickets.ts';
+import { countTickets, judge, resolveInProgress, resolveTickets, ticketCourtOrder } from '../src/tickets.ts';
 import type { Action, Ticket } from '../src/types.ts';
 
 const NOW = new Date('2026-09-22T09:00:00Z');
@@ -259,4 +259,187 @@ test('counts add up per court, with parked counted once and only once', () => {
   const actions: Action[] = [{ id: 'jira:PROJ-3', action: 'snooze', at: at('2026-09-22T08:00:00Z'), until: '2026-09-30' }];
   const rows = resolveTickets([settled, started, idle, healthy], actions, NOW);
   assert.deepEqual(countTickets(rows), { settled: 1, started: 1, idle: 0, parked: 1 });
+});
+
+
+/* ---------- resolveInProgress ---------- */
+
+/**
+ * The case that made Working on status-based. An In Progress ticket with no pull
+ * request yet is work in progress, and the idle court flagging it is a separate
+ * question — so it is a row in that court and in Working on too. It used to be
+ * left out, which is to say missing from the list of work under way.
+ */
+test('an In Progress ticket with nothing linked is in Working on as well as its court', () => {
+  assert.deepEqual(
+    resolveTickets([idle], [], NOW).map((row) => row.court),
+    ['idle'],
+  );
+  assert.deepEqual(
+    resolveInProgress([idle], [], NOW).map((entry) => entry.key),
+    ['PROJ-3'],
+  );
+});
+
+/** Working on goes by status alone: in progress by Jira's own category, and nothing else. */
+test('Working on holds what Jira has in progress, whatever a court makes of it', () => {
+  const review = ticket({ id: 'jira:PROJ-5', key: 'PROJ-5', workflowStatus: 'In Review', hasAnyPr: true, hasOpenPr: true });
+  const backlog = ticket({
+    id: 'jira:PROJ-6',
+    key: 'PROJ-6',
+    workflowStatus: 'Committed',
+    statusCategory: 'new',
+    hasAnyPr: false,
+    hasOpenPr: false,
+  });
+  const uncategorised = ticket({ id: 'jira:PROJ-7', key: 'PROJ-7', statusCategory: 'undefined', hasOpenPr: true });
+  const finished = ticket({ id: 'jira:PROJ-8', key: 'PROJ-8', workflowStatus: 'Done', statusCategory: 'done', hasOpenPr: true });
+  assert.deepEqual(
+    resolveInProgress([settled, started, idle, healthy, review, backlog, uncategorised, finished], [], NOW).map(
+      (entry) => entry.key,
+    ),
+    ['PROJ-1', 'PROJ-3', 'PROJ-4', 'PROJ-5'],
+    'settled and idle are in progress too; started, the backlog, uncategorised and done are not',
+  );
+});
+
+/**
+ * The property Working on rests on, asked of every combination of facts rather
+ * than a handful: it is exactly the tickets in progress. What the courts, the
+ * hold statuses or the pull request counts say changes nothing about it.
+ */
+test('Working on is exactly the tickets in progress, across every combination of facts', () => {
+  const all: Ticket[] = [];
+  for (const statusCategory of ['new', 'indeterminate', 'done', 'undefined'] as const) {
+    for (const hasAnyPr of [false, true]) {
+      for (const hasOpenPr of [false, true]) {
+        for (const allPrsClosed of [false, true]) {
+          for (const workflowStatus of ['In Progress', 'Blocked']) {
+            const key = `PROJ-${all.length + 1}`;
+            all.push(ticket({ id: `jira:${key}`, key, statusCategory, hasAnyPr, hasOpenPr, allPrsClosed, workflowStatus }));
+          }
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(
+    resolveInProgress(all, [], NOW).map((entry) => entry.id),
+    all.filter((entry) => entry.statusCategory === 'indeterminate').map((entry) => entry.id),
+  );
+});
+
+/**
+ * A hold status silences the idle court because it answers "why isn't this
+ * moving". Working on never asked that, so the hold list has nothing to say to it:
+ * a blocked ticket is in progress whether or not the court is silenced.
+ */
+test('the hold statuses do not reach Working on', () => {
+  const blockedIdle = { ...idle, workflowStatus: 'Blocked' };
+  assert.deepEqual(resolveTickets([blockedIdle], [], NOW, ['Blocked']), [], 'silenced in the court');
+  assert.deepEqual(
+    resolveInProgress([blockedIdle], [], NOW).map((entry) => entry.key),
+    ['PROJ-3'],
+    'and in Working on regardless',
+  );
+});
+
+test('a ticket whose pull requests could not be confirmed is still in progress', () => {
+  const unconfirmed = ticket({ id: 'jira:PROJ-9', key: 'PROJ-9', hasAnyPr: true, hasOpenPr: false, allPrsClosed: false });
+  assert.deepEqual(
+    resolveInProgress([unconfirmed], [], NOW).map((entry) => entry.key),
+    ['PROJ-9'],
+  );
+});
+
+test('Working on keeps the order Jira returned', () => {
+  const older = ticket({ id: 'jira:PROJ-20', key: 'PROJ-20', hasOpenPr: true });
+  const newer = ticket({ id: 'jira:PROJ-21', key: 'PROJ-21', hasOpenPr: true });
+  assert.deepEqual(
+    resolveInProgress([older, settled, newer], [], NOW).map((entry) => entry.key),
+    ['PROJ-20', 'PROJ-1', 'PROJ-21'],
+  );
+});
+
+test('notes reach Working on, matched through the canonical id', () => {
+  const actions: Action[] = [
+    { id: '  JIRA:PROJ-4  ', action: 'note', at: at('2026-09-22T08:00:00Z'), text: 'waiting on the schema review' },
+  ];
+  assert.deepEqual(
+    resolveInProgress([healthy], actions, NOW)[0]?.notes.map((note) => note.text),
+    ['waiting on the schema review'],
+  );
+});
+
+/**
+ * A park is about a complaint, and Working on makes none. So a ticket parked in a
+ * court is parked there and still listed here, and nothing of the park follows it.
+ */
+test('a park neither hides a ticket from Working on nor follows it in', () => {
+  const actions: Action[] = [{ id: 'jira:PROJ-3', action: 'snooze', at: at('2026-09-22T08:00:00Z'), until: '2026-09-30' }];
+  assert.equal(resolveTickets([idle], actions, NOW)[0]?.status, 'snoozed', 'parked in its court');
+  const [entry] = resolveInProgress([idle], actions, NOW);
+  assert.ok(entry, 'and still in Working on');
+  assert.ok(!('status' in entry), 'Working on carries no park status');
+  assert.ok(!('snoozedUntil' in entry), 'nor the date of one');
+  assert.ok(!('court' in entry), 'and no court, which is how the client tells the two kinds of row apart');
+});
+
+/* ---------- narrowing Working on to named statuses ---------- */
+
+const inProgress = ticket({ id: 'jira:PROJ-30', key: 'PROJ-30', workflowStatus: 'In Progress', hasOpenPr: true });
+const inReview = ticket({ id: 'jira:PROJ-31', key: 'PROJ-31', workflowStatus: 'In Review', hasOpenPr: true });
+const blocked = ticket({ id: 'jira:PROJ-32', key: 'PROJ-32', workflowStatus: 'Blocked', hasAnyPr: false });
+
+/**
+ * Jira files "I am working on this" and "this waits on a reviewer" under the one
+ * category, so only a name tells them apart — and which name is which belongs to
+ * the user's workflow, so it arrives as configuration.
+ */
+test('named statuses narrow Working on to the work in your own hands', () => {
+  const all = [inProgress, inReview, blocked];
+  assert.deepEqual(
+    resolveInProgress(all, [], NOW).map((entry) => entry.workflowStatus),
+    ['In Progress', 'In Review', 'Blocked'],
+    'unnamed, Working on keeps the whole category',
+  );
+  assert.deepEqual(
+    resolveInProgress(all, [], NOW, ['In Progress']).map((entry) => entry.workflowStatus),
+    ['In Progress'],
+  );
+});
+
+/** One real board spelled it "In Progress" in one project and "In progress" in another. */
+test('a named status is matched case-insensitively and trimmed', () => {
+  const lower = { ...inProgress, workflowStatus: 'In progress' };
+  assert.deepEqual(
+    resolveInProgress([inProgress, lower], [], NOW, ['  in PROGRESS ']).map((entry) => entry.workflowStatus),
+    ['In Progress', 'In progress'],
+  );
+});
+
+/** Naming covers the flagged ones like any other: Working on is by status, not by complaint. */
+test('a named status keeps a flagged ticket in Working on', () => {
+  assert.deepEqual(
+    resolveInProgress([idle, { ...idle, id: 'jira:PROJ-35', key: 'PROJ-35', workflowStatus: 'In Review' }], [], NOW, [
+      'In Progress',
+    ]).map((entry) => entry.key),
+    ['PROJ-3'],
+  );
+});
+
+/** The list filters the category. It cannot name a ticket into Working on from outside it. */
+test('naming a status Jira does not count as in progress admits nothing', () => {
+  const committed = ticket({
+    id: 'jira:PROJ-34',
+    key: 'PROJ-34',
+    workflowStatus: 'Committed',
+    statusCategory: 'new',
+    hasAnyPr: false,
+  });
+  assert.deepEqual(resolveInProgress([committed], [], NOW, ['Committed']), []);
+});
+
+test('a ticket with no status name is never matched by a named one', () => {
+  assert.deepEqual(resolveInProgress([{ ...inProgress, workflowStatus: '' }], [], NOW, ['In Progress']), []);
 });
