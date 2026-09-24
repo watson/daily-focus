@@ -14,7 +14,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -193,7 +193,10 @@ export function selectEvents(facts: CalendarFacts, calendarNames: readonly strin
   return { events: [...byId.values()], unmatched, matched: keep.size };
 }
 
-/** The helper refused, or never answered. */
+/**
+ * The helper refused, never answered, or could not be launched. Its message goes
+ * on screen as-is, so it says what to do rather than what macOS said.
+ */
 export class CalendarHelperError extends Error {
   constructor(message: string) {
     super(message);
@@ -209,11 +212,30 @@ export class CalendarHelperError extends Error {
  * serve the previous one's output forever.
  */
 export async function runHelper(appPath: string, selfAddresses: readonly string[]): Promise<CalendarFacts> {
+  // The bundle is a build output, so a fresh checkout or worktree doesn't have one.
+  // Asked to launch it anyway, `open` fails with its whole command line — temp path
+  // and calendar addresses included — and a raw NSError dump, none of which says
+  // what to do.
+  try {
+    await stat(appPath);
+  } catch {
+    throw new CalendarHelperError(
+      `the calendar helper isn't built at ${appPath} — run npm run build:calendar, ` +
+        'or point DAILY_FOCUS_CALENDAR_APP at an existing build',
+    );
+  }
+
   const out = join(tmpdir(), `daily-focus-calendar-${process.pid}-${Date.now()}.json`);
   try {
-    await run('/usr/bin/open', ['-n', '-a', appPath, '--args', out, selfAddresses.join(',')], {
-      timeout: HELPER_TIMEOUT_MS,
-    });
+    try {
+      await run('/usr/bin/open', ['-n', '-a', appPath, '--args', out, selfAddresses.join(',')], {
+        timeout: HELPER_TIMEOUT_MS,
+      });
+    } catch (err) {
+      // The detail is for whoever is debugging, not for the agenda.
+      console.warn(`[daily-focus] could not launch the calendar helper: ${(err as Error).message}`);
+      throw new CalendarHelperError(`macOS couldn't launch the calendar helper at ${appPath}; the server log has the detail`);
+    }
 
     const deadline = Date.now() + HELPER_TIMEOUT_MS;
     for (;;) {
