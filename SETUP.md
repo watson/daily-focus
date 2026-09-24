@@ -229,5 +229,6 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
   line for the age of the data.
 - If port 4321 is already in use, set `DAILY_FOCUS_PORT` to another port.
 
-`npm run seed` overwrites the brief in its target store. Use the
-[temporary demo](README.md#try-it) for sample data, never your real store.
+`npm run seed` refuses to replace an existing brief and prints the path it found.
+Use the [temporary demo](README.md#try-it) for sample data, never your real store.
+`npm run seed -- --force` overwrites the brief anyway.

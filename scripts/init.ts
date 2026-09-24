@@ -243,7 +243,7 @@ if (next.length === 0) {
   if (created > 0) {
     console.log(`  ${next.length + 1}. \`npm run seed\` for sample data, or \`npm start\` to open the board.`);
     console.log(
-      `\n  \x1b[2mNo hurry on the scheduler — \`npm run seed\` writes a sample brief so you can\n  see the dashboard before an agent has ever run. It overwrites items.json, so\n  don't run it once a real brief exists.\x1b[0m`,
+      `\n  \x1b[2mNo hurry on the scheduler — \`npm run seed\` writes a sample brief so you can\n  see the dashboard before an agent has ever run. It refuses to replace\n  items.json once a real brief exists.\x1b[0m`,
     );
   } else {
     console.log(
