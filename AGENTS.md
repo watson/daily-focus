@@ -592,8 +592,9 @@ type, Task keeping Jira's own amber so only the exceptions stand out. What keeps
 honest is that nothing load-bearing depends on the hue: the key, summary and status
 are all text, each dot carries its type as an `aria-label` and a hover title rather
 than being `aria-hidden` like the source dots, and `typeLegend` names the types
-actually on screen — derived from the rows, so a type nobody anticipated gets a
-swatch and its own name instead of going quietly grey. `test/tickets-ui.test.ts`
+on the board — derived from both views' rows, so the key is the same on either side
+of the switch, and a type nobody anticipated gets a swatch and its own name instead
+of going quietly grey. `test/tickets-ui.test.ts`
 holds all three halves of that, since none of them are visible to `tickets.ts`.
 
 Two things the board is deliberately quiet about, and both are quiet by construction

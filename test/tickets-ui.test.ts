@@ -572,10 +572,12 @@ test('Working on groups a status case-insensitively, under the first spelling se
   assert.equal(byClass(node, 'item').length, 2);
 });
 
-test('each view has its own legend, from its own rows', () => {
+test('both views show the same legend, keyed from both views\' rows', () => {
   // Read straight after each render: `boardOf` hands back the one shared mount.
+  // Every out-of-sync row is a Task, which on its own would key nothing — and a
+  // legend that comes and goes with the switch moves everything below it.
   const entries = (node: StubElement) => byClass(node, 'legend__entry').map((entry) => entry.textContent);
-  assert.deepEqual(entries(boardOf(mixedBoard())), [], 'every out-of-sync row is a Task, so there is nothing to key');
+  assert.deepEqual(entries(boardOf(mixedBoard())), ['Bug', 'Task']);
   assert.deepEqual(entries(boardOf(mixedBoard(), { ...UI, ticketMode: 'working' })), ['Bug', 'Task']);
 });
 
