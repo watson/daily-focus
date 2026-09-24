@@ -1402,10 +1402,23 @@ body[data-view='tickets'] .layout {
  * above are underlined words, the status line below is a bordered bar, and this
  * is neither.
  */
+/*
+ * The switch and the key to the dots share a line: both describe the view
+ * below rather than being part of it, and stacked they made a third tier under
+ * the tabs, with the key hanging off the switch like a caption. The key goes
+ * to the far end and wraps beneath the switch when the line runs out.
+ */
+.ticket-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin: 0 0 18px;
+}
 .mode-switch {
   display: inline-flex;
   gap: 2px;
-  margin: 0 0 12px;
   padding: 3px;
   background: var(--surface-sunken);
   border: 1px solid var(--hairline);
@@ -1451,16 +1464,14 @@ body[data-view='tickets'] .layout {
 }
 
 /*
- * The key to the dots. Sits under the status line, read once — and carries each
- * type's name in text beside its swatch, which is what lets the dot be the only
- * place the type appears on a row.
+ * The key to the dots. Sits at the end of the switch's line, read once — and
+ * carries each type's name in text beside its swatch, which is what lets the
+ * dot be the only place the type appears on a row.
  */
 .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  margin: -6px 0 14px;
-  padding-left: 2px;
   font-size: 12px;
   color: var(--ink-3);
 }

@@ -1616,13 +1616,19 @@ export function renderTicketBoard(state, ui, handlers) {
   const open = board.rows.filter((row) => row.status === 'open');
   const mode = ui.ticketMode === 'working' ? 'working' : 'sync';
 
-  parts.push(ticketModeSwitch(mode, { sync: open.length, working: inProgress.length }, handlers));
   replace(document.getElementById('tickets-refresh'), ticketStatus(board, handlers, mode));
-  // Under the mode switch rather than beside the rows: it is a key, read once,
+  // On the switch's line rather than beside the rows: it is a key, read once,
   // and a key repeated per court would be three copies of the same sentence.
   // Built from the rows this view shows, so it never names a type that isn't here.
   const legend = typeLegend(mode === 'working' ? inProgress : board.rows);
-  if (legend) parts.push(legend);
+  parts.push(
+    el(
+      'div',
+      { class: 'ticket-toolbar' },
+      ticketModeSwitch(mode, { sync: open.length, working: inProgress.length }, handlers),
+      legend,
+    ),
+  );
 
   // In both views: they are about whether the read can be trusted, and that is
   // as true of the list of work in progress as of the list of what is wrong.
