@@ -564,9 +564,9 @@ Five rules this board must keep:
 
 The layout is the one place this view departs from the other two, and both departures
 are measured rather than stylistic. The rows were 1200px wide for a summary running
-520px at the median, so `#tickets .list` is `columns: 460px` — two columns at the
-shared page width, three on a wide display, which is also why the tickets view is the
-only one allowed past the 1280px cap. A fixed `6rem` gutter holds the status so every
+520px at the median, so `#tickets .list` is `columns: 2 460px` — two columns at the
+shared page width and never more, so the board's edges line up with the other tabs'
+however wide the display is, and one column once the window is too narrow for two. A fixed `6rem` gutter holds the status so every
 summary starts at the same x.
 
 **Columns rather than a grid, because a grid has rows and this board has none.** Cards
