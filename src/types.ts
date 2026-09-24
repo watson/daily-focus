@@ -6,7 +6,7 @@
  *   items.json    written by the agent, read by the dashboard
  *   actions.jsonl appended by the dashboard, read by the agent
  *
- * See AGENTS.md for the prose version of this contract.
+ * See schema/items.schema.json for the payload and AGENTS.md for coding guardrails.
  */
 
 /** Where an item came from. Unknown sources render fine, just without a themed accent. */
