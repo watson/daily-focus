@@ -34,6 +34,11 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Initialize an isolated sample store
+        run: npm run init
+        env:
+          DAILY_FOCUS_DATA: ${{ runner.temp }}/daily-focus
+
       - name: Seed an isolated sample store
         run: npm run seed
         env:
