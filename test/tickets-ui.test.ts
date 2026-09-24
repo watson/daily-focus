@@ -579,11 +579,44 @@ test('each view has its own legend, from its own rows', () => {
   assert.deepEqual(entries(boardOf(mixedBoard(), { ...UI, ticketMode: 'working' })), ['Bug', 'Task']);
 });
 
-test('the status line counts what the showing view counts', () => {
+test('the refresh icon counts what the showing view counts', () => {
   const board = { ...mixedBoard(), fetchedAt: NOW.toISOString(), checked: 3 };
-  const line = (node: StubElement) => byClass(node, 'board__status-text')[0]!.textContent;
-  assert.match(line(boardOf(board)), /1 of 3 unfinished tickets/);
-  assert.match(line(boardOf(board, { ...UI, ticketMode: 'working' })), /2 of 3 unfinished tickets in progress/);
+  // The status is the icon's tooltip, rendered into the header slot rather than the tab.
+  const line = () => byClass(mount('tickets-refresh'), 'refresh-button')[0]!.title as string;
+  boardOf(board);
+  assert.match(line(), /1 of 3 unfinished tickets/);
+  boardOf(board, { ...UI, ticketMode: 'working' });
+  assert.match(line(), /2 of 3 unfinished tickets in progress/);
+});
+
+test('the refresh icon spins while reading, and a click mid-read is ignored', () => {
+  let asked = 0;
+  boardOf({ fetching: true }, UI, { refreshTickets: () => void asked++ });
+  const icon = byClass(mount('tickets-refresh'), 'refresh-button')[0]!;
+  assert.equal(icon.dataset.fetching, 'true');
+  assert.match(icon.title as string, /^refreshing…/);
+  (icon.listeners.click as (() => void)[])[0]!();
+  assert.equal(asked, 0);
+
+  boardOf({ fetchedAt: NOW.toISOString() }, UI, { refreshTickets: () => void asked++ });
+  const idle = byClass(mount('tickets-refresh'), 'refresh-button')[0]!;
+  assert.equal(idle.dataset.fetching, 'false');
+  (idle.listeners.click as (() => void)[])[0]!();
+  assert.equal(asked, 1);
+});
+
+test('the header names the source beside the icon, and when it last read', () => {
+  const label = () => byClass(mount('tickets-refresh'), 'refresh-label')[0]!.textContent;
+  boardOf({ fetchedAt: null });
+  assert.equal(label(), 'Jira · not read yet');
+  boardOf({ fetchedAt: null, fetching: true });
+  assert.equal(label(), 'Jira · reading…');
+  boardOf({ fetchedAt: NOW.toISOString(), fetching: true });
+  assert.match(label(), /^Jira · \d/, 'the last read stays up while the next one runs');
+});
+
+test('the status is not a strip across the tab any more', () => {
+  assert.equal(byClass(boardOf(mixedBoard()), 'refresh-button').length, 0);
 });
 
 test('an empty Working on says so, and how many tickets were looked at', () => {

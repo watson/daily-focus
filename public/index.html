@@ -33,6 +33,15 @@
       </div>
       <div class="page-header__meta">
         <span class="freshness" id="freshness" aria-live="polite"></span>
+        <!--
+          One slot per board, each shown only on its own tab in place of the
+          brief's freshness. The boards render their source, last read and
+          refresh icon here rather than as a full-width strip above their
+          rows: it is a readout consulted now and then, and the details live
+          in the icon's tooltip.
+        -->
+        <span class="board-refresh" id="board-refresh"></span>
+        <span class="board-refresh" id="tickets-refresh"></span>
         <button
           type="button"
           class="icon-button theme-toggle"

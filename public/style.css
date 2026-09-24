@@ -202,6 +202,69 @@ a {
   display: block;
 }
 
+/*
+ * Each board's source, last read and refresh icon, in the header beside the
+ * theme toggle and only on its own tab — where the brief's "updated … ago" sits
+ * on Today, so that side of the header always describes the tab showing.
+ */
+.board-refresh {
+  display: none;
+}
+body[data-view='board'] #board-refresh,
+body[data-view='tickets'] #tickets-refresh {
+  display: contents;
+}
+body[data-view='board'] #freshness,
+body[data-view='tickets'] #freshness {
+  display: none;
+}
+/* Reads as the Today tab's "updated … ago" does, so the three tabs match. */
+.refresh-label {
+  color: var(--ink-3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.refresh-label[data-stale='true'] {
+  color: var(--critical);
+  font-weight: 500;
+}
+/*
+ * Two arrows chasing each other round a circle, stroked to match the theme
+ * toggle's glyphs. A mask rather than an image so it is painted in
+ * `currentColor`, and turns red with the button when the board is stale.
+ */
+.refresh-button__icon {
+  display: block;
+  width: 15px;
+  height: 15px;
+  background: currentColor;
+  --refresh-glyph: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M3.5 12a8.5 8.5 0 0 1 14.5-6L20.5 8.5'/><path d='M20.5 3.5v5h-5'/><path d='M20.5 12a8.5 8.5 0 0 1-14.5 6L3.5 15.5'/><path d='M8.5 15.5h-5v5'/></svg>");
+  -webkit-mask: var(--refresh-glyph) center / contain no-repeat;
+  mask: var(--refresh-glyph) center / contain no-repeat;
+}
+.refresh-button[data-fetching='true'] {
+  cursor: progress;
+}
+.refresh-button[data-fetching='true'] .refresh-button__icon {
+  animation: refresh-spin 0.9s linear infinite;
+}
+.refresh-button[data-stale='true'] {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Still says it is busy without the motion: the icon dims instead of turning. */
+@media (prefers-reduced-motion: reduce) {
+  .refresh-button[data-fetching='true'] .refresh-button__icon {
+    animation: none;
+    opacity: 0.45;
+  }
+}
+
 /* ---------- focus timer ---------- */
 
 .timer {
@@ -1227,22 +1290,6 @@ body[data-view='tickets'] .layout {
 
 /* ---------- the pull request board ---------- */
 
-.board__status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 9px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 13px;
-  color: var(--ink-3);
-}
-.board__status-text {
-  overflow-wrap: anywhere;
-}
 
 /* The line under a waiting-on-you row that says why. Reads as the row's detail. */
 .item__reason {
