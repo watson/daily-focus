@@ -2,7 +2,23 @@ import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 
 import { loadEnv } from './env.ts';
+import { FAVICON_NAMES, type FaviconName } from './favicon.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
+
+/**
+ * Which half of a life an instance briefs. Each instance has its own store, server
+ * and morning agent; the profile only picks their defaults, so any setting below
+ * can still override it.
+ *
+ * `personal` switches off the Jira board, which would otherwise poll for tickets
+ * nobody on this instance has, and away detection, since a personal instance
+ * usually runs on a machine nobody sits at — its idle time says nothing about
+ * whether the user is still in their session. The pull request board stays on:
+ * side projects have pull requests too.
+ */
+export type Profile = 'work' | 'personal';
+
+export const PROFILES: readonly Profile[] = ['work', 'personal'];
 
 /**
  * How the pull request board reaches GitHub. See `board.ts` and `github.ts`.
@@ -132,6 +148,9 @@ export interface JiraConfig {
  * itself is the real one layered over the repo-root `.env`, see `env.ts`.
  */
 export interface Config {
+  profile: Profile;
+  /** Which of the favicons in `favicon.ts` the tab shows. */
+  favicon: FaviconName;
   /** Directory holding items.json and actions.jsonl. */
   dataDir: string;
   itemsFile: string;
@@ -152,6 +171,8 @@ export interface Config {
    * same reason `sourcesFile` does.
    */
   promptFile: string;
+  /** The prompt in this repo that `promptFile` links to, chosen by the profile. */
+  promptSource: string;
   schemaFile: string;
   /** Dated snapshots of past briefs, written by the server. */
   archiveDir: string;
@@ -249,14 +270,20 @@ export function parseScope(entries: readonly string[]): string[] {
   return qualifiers;
 }
 
+/** An on/off switch; unset or empty means `fallback`. */
+function envFlag(name: string, fallback: boolean, env: NodeJS.ProcessEnv): boolean {
+  const flag = (env[name] ?? '').trim().toLowerCase();
+  if (flag === '') return fallback;
+  return !['off', 'false', '0', 'no'].includes(flag);
+}
+
 function envGitHub(env: NodeJS.ProcessEnv): GitHubConfig {
-  const flag = (env.DAILY_FOCUS_GITHUB ?? '').trim().toLowerCase();
   const pollMinutes = envInt('DAILY_FOCUS_GITHUB_POLL_MINUTES', 5, env);
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_GITHUB_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
   return {
-    enabled: !['off', 'false', '0', 'no'].includes(flag),
+    enabled: envFlag('DAILY_FOCUS_GITHUB', true, env),
     accounts: envList('DAILY_FOCUS_GITHUB_ACCOUNTS', env),
     scope: parseScope(envList('DAILY_FOCUS_GITHUB_SCOPE', env)),
     mergeGateChecks: envNameList('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', env),
@@ -266,13 +293,12 @@ function envGitHub(env: NodeJS.ProcessEnv): GitHubConfig {
 }
 
 function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
-  const flag = (env.DAILY_FOCUS_CALENDAR ?? '').trim().toLowerCase();
   const pollMinutes = envInt('DAILY_FOCUS_CALENDAR_POLL_MINUTES', 5, env);
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_CALENDAR_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
   return {
-    enabled: !['off', 'false', '0', 'no'].includes(flag),
+    enabled: envFlag('DAILY_FOCUS_CALENDAR', true, env),
     // Commas only, as for merge gate checks: calendar names contain spaces.
     names: envNameList('DAILY_FOCUS_CALENDARS', env),
     addresses: envNameList('DAILY_FOCUS_CALENDAR_ADDRESSES', env),
@@ -284,8 +310,7 @@ function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
   };
 }
 
-function envJira(env: NodeJS.ProcessEnv): JiraConfig {
-  const flag = (env.DAILY_FOCUS_JIRA ?? '').trim().toLowerCase();
+function envJira(env: NodeJS.ProcessEnv, profile: Profile): JiraConfig {
   // Fifteen rather than the boards' five: status hygiene is never urgent, and
   // three searches a poll is a cost worth paying three times less often.
   const pollMinutes = envInt('DAILY_FOCUS_JIRA_POLL_MINUTES', 15, env);
@@ -293,7 +318,7 @@ function envJira(env: NodeJS.ProcessEnv): JiraConfig {
     throw new Error(`DAILY_FOCUS_JIRA_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
   return {
-    enabled: !['off', 'false', '0', 'no'].includes(flag),
+    enabled: envFlag('DAILY_FOCUS_JIRA', profile === 'work', env),
     projects: envList('DAILY_FOCUS_JIRA_PROJECTS', env),
     // Commas only, as for merge gate checks and calendars: status names contain
     // spaces almost by default — "In Review", "Waiting for customer".
@@ -338,19 +363,41 @@ function envString(name: string, fallback: string, env: NodeJS.ProcessEnv): stri
   return raw === undefined || raw.trim() === '' ? fallback : raw.trim();
 }
 
+/** An unknown profile throws: read as `work`, it would quietly poll work accounts. */
+function envProfile(env: NodeJS.ProcessEnv): Profile {
+  const raw = envString('DAILY_FOCUS_PROFILE', 'work', env).toLowerCase();
+  if (!(PROFILES as readonly string[]).includes(raw)) {
+    throw new Error(`DAILY_FOCUS_PROFILE must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(raw)}`);
+  }
+  return raw as Profile;
+}
+
+/** Green for personal, so the two pinned tabs differ without any setup. */
+function envFavicon(env: NodeJS.ProcessEnv, profile: Profile): FaviconName {
+  const raw = envString('DAILY_FOCUS_ICON', profile === 'personal' ? 'green' : 'blue', env).toLowerCase();
+  if (!(FAVICON_NAMES as readonly string[]).includes(raw)) {
+    throw new Error(`DAILY_FOCUS_ICON must be one of ${FAVICON_NAMES.join(', ')}, got ${JSON.stringify(raw)}`);
+  }
+  return raw as FaviconName;
+}
+
 /**
  * Build the config. With no argument it reads the real environment layered over
  * the repo's `.env`; tests pass an explicit object and never touch the file.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
   const dataDir = expandHome(envString('DAILY_FOCUS_DATA', '~/.daily-focus', env));
+  const profile = envProfile(env);
   return {
+    profile,
+    favicon: envFavicon(env, profile),
     dataDir,
     itemsFile: resolve(dataDir, 'items.json'),
     actionsFile: resolve(dataDir, 'actions.jsonl'),
     focusFile: resolve(dataDir, 'focus.md'),
     sourcesFile: resolve(dataDir, 'sources.md'),
     promptFile: resolve(dataDir, 'prompt.md'),
+    promptSource: resolve(import.meta.dirname, '..', 'prompts', `morning-brief-${profile}.md`),
     schemaFile: resolve(dataDir, 'items.schema.json'),
     archiveDir: resolve(dataDir, 'archive'),
     sessionFile: resolve(dataDir, 'session.json'),
@@ -359,7 +406,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
     sessionMinutes: envInt('DAILY_FOCUS_SESSION_MINUTES', 25, env),
-    awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', 10, env),
+    awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, env),
     port: envInt('DAILY_FOCUS_PORT', 4321, env),
     host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
     workStartHour: envInt('DAILY_FOCUS_WORK_START', 9, env),
@@ -369,6 +416,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     agentDays: envWeekdays('DAILY_FOCUS_AGENT_DAYS', env),
     github: envGitHub(env),
     calendar: envCalendar(env),
-    jira: envJira(env),
+    jira: envJira(env, profile),
   };
 }

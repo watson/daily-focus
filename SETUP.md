@@ -19,8 +19,9 @@ npm start
 Open [localhost:4321](http://127.0.0.1:4321). Keep the server running while you use
 the dashboard. The Today tab stays empty until your agent writes its first brief.
 
-`npm run init` creates templates in `~/.daily-focus/` and links the prompt and
-schema into that directory. It preserves existing files and updates stale symlinks.
+`npm run init` creates templates in `~/.daily-focus/` and links the work prompt and
+schema into that directory. For your personal life, see
+[A personal instance](#a-personal-instance). It preserves existing files and updates stale symlinks.
 You can safely run it again.
 
 ## Set your objective and sources
@@ -171,6 +172,40 @@ Rebuilding the helper may prompt again.
 Without live calendar access, the agenda uses events from the morning brief.
 Set `DAILY_FOCUS_CALENDAR=off` to use those events explicitly.
 
+## A personal instance
+
+Daily Focus can brief your personal life as well as your work: email, family
+calendars, Apple Reminders, Apple Messages, e-Boks and your own GitHub projects. Run it as a second instance
+with its own store, server and morning agent, and set:
+
+```dotenv
+DAILY_FOCUS_PROFILE=personal
+```
+
+Run `npm run init` with that set. It links the personal prompt,
+`prompts/morning-brief-personal.md`, into the store as `prompt.md`, and writes a
+`sources.md` template with sections for those sources. The profile also switches off
+the Jira board and away detection, and gives the tab a green icon. The pull request
+board stays on for side projects; point it at your personal account with
+`DAILY_FOCUS_GITHUB_ACCOUNTS`, or set `DAILY_FOCUS_GITHUB=off`. Set
+`DAILY_FOCUS_ICON` to pick another.
+
+The personal sources often live on another machine, such as a home Mac with access
+to Messages and Reminders. Run the instance there, keep `DAILY_FOCUS_HOST` on
+loopback, and share it with your other devices through
+[Tailscale Serve](https://tailscale.com/kb/1312/serve):
+
+```sh
+tailscale serve --bg http://127.0.0.1:4321
+```
+
+Only your tailnet can reach it, over HTTPS. Don't bind the server to your LAN
+instead: it has no login, and a personal brief holds your mail and messages.
+
+To run both instances on one machine, start the second with its own
+`DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_PROFILE` in its environment,
+which takes precedence over `.env`.
+
 ## Match your working week
 
 Set `DAILY_FOCUS_AGENT_DAYS` to the days your agent runs. It uses cron weekday
@@ -189,6 +224,8 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt `npm run init` links and the defaults marked below |
+| `DAILY_FOCUS_ICON` | `blue`; `green` for personal | Tab icon colour: `blue`, `green`, `purple`, `red`, `teal` or `amber` |
 | `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
 | `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
 | `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data |
@@ -198,7 +235,7 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
 | `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to expect a refresh. Shows an informational message for 45 minutes before warning that the agent may not have run. Counted only in hours a run was due, so days off never trip it |
 | `DAILY_FOCUS_AGENT_DAYS` | *inferred* | Weekdays the agent is scheduled on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
 | `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
-| `DAILY_FOCUS_AWAY_AFTER` | `10` | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
+| `DAILY_FOCUS_AWAY_AFTER` | `10`; `0` for personal | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
 | `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board; nothing is polled |
 | `DAILY_FOCUS_GITHUB_ACCOUNTS` | *gh's active account* | Logins to poll as, comma-separated, each resolved with `gh auth token --user` |
 | `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |
@@ -210,7 +247,7 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
 | `DAILY_FOCUS_CALENDAR_ADDRESSES` | *none* | Your own email addresses, comma-separated, used to find your reply among an event's attendees |
 | `DAILY_FOCUS_CALENDAR_POLL_MINUTES` | `5` | Minutes between calendar reads while a tab is open |
 | `DAILY_FOCUS_CALENDAR_APP` | *built copy* | Path to the calendar helper bundle, if it isn't the one `npm run build:calendar` produces |
-| `DAILY_FOCUS_JIRA` | `on` | `off` disables the Jira ticket board; nothing is read |
+| `DAILY_FOCUS_JIRA` | `on`; `off` for personal | `off` disables the Jira ticket board; nothing is read |
 | `DAILY_FOCUS_JIRA_PROJECTS` | *everything* | Project keys to limit the search to, comma-separated |
 | `DAILY_FOCUS_JIRA_HOLD_STATUSES` | *none* | Statuses where standing still is deliberate, comma-separated and spelled as your Jira spells them. Their rows are exempt from *In flight with nothing linked*, and from nothing else |
 | `DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES` | *all of them* | The statuses the ticket board's *Working on* view shows, comma-separated and case-insensitive. Use `In Progress` to leave out In Review |

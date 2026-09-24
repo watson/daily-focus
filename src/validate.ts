@@ -16,6 +16,9 @@ const SOURCES: ReadonlySet<string> = new Set([
   'workday',
   'tasks',
   'atlassian',
+  'reminders',
+  'messages',
+  'eboks',
   'other',
 ]);
 
@@ -33,6 +36,11 @@ const SOURCE_ALIASES: Readonly<Record<string, Source>> = {
   pr: 'github',
   gh: 'github',
   confluence: 'atlassian',
+  'apple-reminders': 'reminders',
+  imessage: 'messages',
+  'apple-messages': 'messages',
+  sms: 'messages',
+  'e-boks': 'eboks',
 };
 
 export interface ParseResult {

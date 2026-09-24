@@ -12,7 +12,7 @@
  * Exits non-zero if anything failed, so it can gate a run.
  */
 
-import { readFile, readdir } from 'node:fs/promises';
+import { lstat, readFile, readdir, readlink, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
@@ -73,6 +73,30 @@ async function findPrevious(current: Brief): Promise<{ brief: Brief; from: strin
     }
   }
   return null;
+}
+
+/* ---------- store ---------- */
+
+// Checked before the brief, because a prompt link that dangles is why tomorrow's
+// brief won't exist: the agent is told to read a file that isn't there. Renaming
+// a prompt in the repo leaves exactly that behind until `npm run init` runs again.
+section('Store');
+try {
+  const link = await lstat(config.promptFile);
+  if (!link.isSymbolicLink()) {
+    pass('prompt.md', 'a real file, not linked to the repo');
+  } else {
+    const target = resolve(config.dataDir, await readlink(config.promptFile));
+    try {
+      await stat(target);
+      if (target === config.promptSource) pass('prompt.md', `linked to the ${config.profile} prompt`);
+      else warn('prompt.md', `linked to ${target}, not the ${config.profile} prompt — run \`npm run init\``);
+    } catch {
+      fail('prompt.md', `links to ${target}, which does not exist — run \`npm run init\``);
+    }
+  }
+} catch {
+  fail('prompt.md', 'missing — run `npm run init`');
 }
 
 /* ---------- payload ---------- */

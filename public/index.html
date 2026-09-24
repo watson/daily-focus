@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Daily Focus</title>
     <link rel="stylesheet" href="/style.css" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='38' fill='none' stroke='%232a78d6' stroke-width='10'/><circle cx='50' cy='50' r='10' fill='%23eb6834'/></svg>"
-    />
+    <!-- Served by the server, in the colour DAILY_FOCUS_ICON picks. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       /*
        * Applied before first paint so a dark-mode user never sees a white flash,
@@ -153,11 +151,15 @@
       <button type="button" class="tab" id="tab-today" role="tab" aria-selected="true" data-view="today">
         Today
       </button>
-      <button type="button" class="tab" id="tab-board" role="tab" aria-selected="false" data-view="board">
+      <!--
+        The two board tabs start hidden and appear once the first state says their
+        board is switched on, so an instance without one never flashes its tab.
+      -->
+      <button type="button" class="tab" id="tab-board" role="tab" aria-selected="false" data-view="board" hidden>
         Pull requests
         <span class="tab__badge" id="board-badge" hidden></span>
       </button>
-      <button type="button" class="tab" id="tab-tickets" role="tab" aria-selected="false" data-view="tickets">
+      <button type="button" class="tab" id="tab-tickets" role="tab" aria-selected="false" data-view="tickets" hidden>
         Jira tickets
         <!--
           Quiet, unlike the board's: nothing on this tab is ever waiting on an

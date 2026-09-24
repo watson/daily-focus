@@ -52,6 +52,9 @@
   --src-workday: #008300; /* Shared: the green reads on both. */
   --src-tasks: light-dark(#0b8ea8, #2ba8c4);
   --src-atlassian: light-dark(#4a3aa7, #9085e9);
+  --src-reminders: light-dark(#8a5a2b, #c89058);
+  --src-messages: light-dark(#9b3fc0, #c07ae8);
+  --src-eboks: light-dark(#c42b3a, #e5535f);
   --src-other: #898781;
 
   --accent: light-dark(#2a78d6, #3987e5);

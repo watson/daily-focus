@@ -126,3 +126,10 @@ test('unknown methods are refused', async () => {
   const res = await fetch(`${server.url}/api/state`, { method: 'DELETE' });
   assert.equal(res.status, 405);
 });
+
+test('GET /favicon.svg serves the configured icon', async () => {
+  const res = await fetch(`${server.url}/favicon.svg`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/svg+xml');
+  assert.match(await res.text(), /stroke="#2a78d6"/);
+});

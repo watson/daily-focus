@@ -142,7 +142,7 @@ riding on it. The agent weighs it, and is told never to quote it into a title or
 detail.
 `;
 
-const SOURCES_TEMPLATE = `# Sources
+const WORK_SOURCES_TEMPLATE = `# Sources
 
 The personal half of your morning brief. The prompt next to this file
 (\`prompt.md\`) says *what* to gather and how to judge it; this file says *who* and
@@ -187,8 +187,66 @@ be long and only one part is current:
 - https://docs.google.com/document/d/<document id>/edit?tab=t.0 — what meeting it is
 `;
 
+const PERSONAL_SOURCES_TEMPLATE = `# Sources
+
+The private half of your morning brief. The prompt next to this file
+(\`prompt.md\`) says *what* to gather and how to judge it; this file says *who* and
+*where*. The briefing agent reads it; the dashboard never opens it.
+
+Replace the placeholders below and delete whatever doesn't apply. A section you leave
+out is fine — the agent reports the gap. A section that is *wrong* is worse than one
+that is missing.
+
+## Identity
+
+- Name: \`Your Name\`
+- Personal email: \`you@personal.example\`
+- GitHub login: \`your-github-login\` — review requests and authorship are judged
+  against it
+
+## My weeks
+
+What decides how much of a day is yours, so the agent can set the day's bounds: when
+work ends, regular pickups, a rhythm that alternates week to week and how to tell
+which week it is.
+
+- Workdays end at 16:00; personal time is from then until 22:00.
+
+## Calendars
+
+- \`Personal\`
+- \`Family\` — shared; its events block time too
+
+Never query or include: \`Some Noisy Calendar\`.
+
+## Holiday calendars
+
+- \`Holidays in <where you live>\` — including school holidays, if there is one
+
+## Email
+
+Which tool reaches the account, and any senders to always raise or always skip.
+
+## e-Boks
+
+Which tool or CLI reaches it.
+
+## Reminders
+
+Which tool reaches Apple Reminders, and which lists to read. Unset means all of them.
+
+## Messages
+
+Which tool reaches Apple Messages, and any conversations to skip.
+
+## GitHub
+
+Which repositories or organisations are your own projects. Unset means everything
+the login above has open.
+`;
+
 console.log(`\n\x1b[1mDaily Focus — store setup\x1b[0m`);
-console.log(`\x1b[2m${config.dataDir}\x1b[0m`);
+console.log(`\x1b[2m${config.dataDir} (${config.profile} profile)\x1b[0m`);
 
 section('Directories');
 try {
@@ -203,14 +261,16 @@ section('Files you own');
 const wroteFocus = await writeIfAbsent(config.focusFile, FOCUS_TEMPLATE, 'the standing objective');
 const wroteSources = await writeIfAbsent(
   config.sourcesFile,
-  SOURCES_TEMPLATE,
+  config.profile === 'personal' ? PERSONAL_SOURCES_TEMPLATE : WORK_SOURCES_TEMPLATE,
   'the source list the agent reads',
 );
 
 // Linked in so the briefing agent never needs to reach into this repo: everything
 // it reads lives in one directory. Keeping it a link keeps the content in git.
 section('Files linked from the repo');
-await linkIntoStore(config.promptFile, resolve(repoRoot, 'prompts/morning-brief.md'), 'the morning prompt');
+// Which prompt follows DAILY_FOCUS_PROFILE, and a link to the other one — or to the
+// work prompt's old name, before there were two — is stale and gets repointed.
+await linkIntoStore(config.promptFile, config.promptSource, `the ${config.profile} morning prompt`);
 await linkIntoStore(config.schemaFile, resolve(repoRoot, 'schema/items.schema.json'), 'the payload schema');
 
 section('Files you do not own');

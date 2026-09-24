@@ -4,10 +4,12 @@ Keep this file short. Add guidance only for mistakes an agent is likely to make 
 facts that are costly to rediscover. Keep feature details in code comments and tests.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, commands, and the code map.
 
-The morning briefing agent never reads this file. Its instructions belong in
-[`prompts/morning-brief.md`](prompts/morning-brief.md), installed as a symlink in
-the private store. Payload fields belong in [`schema/items.schema.json`](schema/items.schema.json).
-Update the prompt when changing what the briefing agent must produce or understand.
+The morning briefing agents never read this file. Their instructions belong in
+[`prompts/morning-brief-work.md`](prompts/morning-brief-work.md) and
+[`prompts/morning-brief-personal.md`](prompts/morning-brief-personal.md), one per
+`DAILY_FOCUS_PROFILE`, installed as a symlink in the private store. Payload fields
+belong in [`schema/items.schema.json`](schema/items.schema.json). Update both prompts
+when changing what a briefing agent must produce or understand.
 
 ## Private data and store ownership
 

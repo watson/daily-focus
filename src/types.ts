@@ -19,6 +19,9 @@ export type Source =
   | 'workday'
   | 'tasks'
   | 'atlassian'
+  | 'reminders'
+  | 'messages'
+  | 'eboks'
   | 'other';
 
 /**
