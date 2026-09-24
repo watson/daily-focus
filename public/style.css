@@ -1276,18 +1276,6 @@ body[data-view='tickets'] .layout {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/*
- * The ticket board is the one view allowed past the shared page width, because
- * it is the one view that is not prose. Everything else caps at 1280px so a line
- * of a title or a headline stays readable; these rows are a fixed status gutter
- * and a short summary, and a third column is worth more here than a consistent
- * right margin. 1600px is where that stops: a fourth column would need 1870 and
- * would put the summaries back to wrapping every time.
- */
-body[data-view='tickets'] .layout {
-  max-width: 1600px;
-}
-
 /* ---------- the pull request board ---------- */
 
 
@@ -1327,7 +1315,7 @@ body[data-view='tickets'] .layout {
 /* ---------- the Jira ticket board ---------- */
 
 /*
- * Two or three columns, by measurement rather than by taste: the rows were
+ * Two columns, by measurement rather than by taste: the rows were
  * 1200px wide for a summary that runs 520px at the median and 683px at the
  * longest, so half of every card was empty and thirty of them came to 2527px of
  * scrolling. At 460px a column the same thirty fit in half that.
@@ -1342,8 +1330,11 @@ body[data-view='tickets'] .layout {
  *
  * `break-inside: avoid` so a card is never split down the middle of a column,
  * and the vertical rhythm is a margin rather than `gap`, which a multicol
- * container does not have. `column-width` rather than a count, so the number of
- * columns is still the measured 460px answered against whatever width there is.
+ * container does not have.
+ *
+ * Never more than two, so the board keeps the shared page width and its edges
+ * line up with the other tabs' however wide the display is. The 460px floor is
+ * what drops it to one column on a narrow window rather than squeezing two.
  *
  * The abspos worry that picked the grid does not apply: `.item` is
  * `position: relative`, so `.item__actions` and the snooze `.menu` resolve
@@ -1352,7 +1343,7 @@ body[data-view='tickets'] .layout {
  */
 #tickets .list {
   display: block;
-  columns: 460px;
+  columns: 2 460px;
   column-gap: 10px;
 }
 #tickets .list > .item {
