@@ -2,7 +2,6 @@ import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 
 import { loadEnv } from './env.ts';
-import { FAVICON_NAMES, type FaviconName } from './favicon.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 
 /**
@@ -149,8 +148,6 @@ export interface JiraConfig {
  */
 export interface Config {
   profile: Profile;
-  /** Which of the favicons in `favicon.ts` the tab shows. */
-  favicon: FaviconName;
   /** Directory holding items.json and actions.jsonl. */
   dataDir: string;
   itemsFile: string;
@@ -372,15 +369,6 @@ function envProfile(env: NodeJS.ProcessEnv): Profile {
   return raw as Profile;
 }
 
-/** Green for personal, so the two pinned tabs differ without any setup. */
-function envFavicon(env: NodeJS.ProcessEnv, profile: Profile): FaviconName {
-  const raw = envString('DAILY_FOCUS_ICON', profile === 'personal' ? 'green' : 'blue', env).toLowerCase();
-  if (!(FAVICON_NAMES as readonly string[]).includes(raw)) {
-    throw new Error(`DAILY_FOCUS_ICON must be one of ${FAVICON_NAMES.join(', ')}, got ${JSON.stringify(raw)}`);
-  }
-  return raw as FaviconName;
-}
-
 /**
  * Build the config. With no argument it reads the real environment layered over
  * the repo's `.env`; tests pass an explicit object and never touch the file.
@@ -390,7 +378,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
   const profile = envProfile(env);
   return {
     profile,
-    favicon: envFavicon(env, profile),
     dataDir,
     itemsFile: resolve(dataDir, 'items.json'),
     actionsFile: resolve(dataDir, 'actions.jsonl'),

@@ -479,10 +479,10 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       return;
     }
 
-    // Served rather than inlined in index.html, because it comes from config and
+    // Served rather than inlined in index.html, because it depends on the profile and
     // a pinned tab reads it before any script runs.
     if (path === '/favicon.svg' && (req.method === 'GET' || req.method === 'HEAD')) {
-      const svg = faviconSvg(config.favicon);
+      const svg = faviconSvg(config.profile);
       res.writeHead(200, {
         'content-type': 'image/svg+xml',
         'content-length': Buffer.byteLength(svg),

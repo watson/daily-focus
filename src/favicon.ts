@@ -1,30 +1,21 @@
+import type { Profile } from './config.ts';
+
 /**
- * The tab icons an instance can choose between with `DAILY_FOCUS_ICON`.
+ * The tab icon for each profile: a blue briefcase for work, a green house for
+ * personal.
  *
- * One design in several colours rather than several designs: a pinned tab shows
- * nothing but its icon, so two instances need to differ at a glance, and still be
- * recognisably the same app. Each is named for its ring, the part that carries at
- * 16 pixels; the dot is picked to stay distinct from it. `blue` is the original.
+ * A pinned tab shows nothing but its icon, so the two instances differ in shape as
+ * well as colour; colour alone was too subtle at a glance. Both are solid
+ * silhouettes, with the latch and the door cut out rather than drawn in white, so
+ * they hold up at 16 pixels on a light or dark tab bar.
  */
-const FAVICONS = {
-  blue: { ring: '#2a78d6', dot: '#eb6834' },
-  green: { ring: '#1baf7a', dot: '#4a3aa7' },
-  purple: { ring: '#7a4fd6', dot: '#eda100' },
-  red: { ring: '#d63a3a', dot: '#2a78d6' },
-  teal: { ring: '#0b8ea8', dot: '#e87ba4' },
-  amber: { ring: '#e09a00', dot: '#4a3aa7' },
-} as const;
+const FAVICONS: Record<Profile, string> = {
+  work:
+    `<path d="M34 30V20a8 8 0 0 1 8-8h16a8 8 0 0 1 8 8v10" fill="none" stroke="#2a78d6" stroke-width="9"/>` +
+    `<path fill="#2a78d6" fill-rule="evenodd" d="M16 30h68a10 10 0 0 1 10 10v38a10 10 0 0 1-10 10H16A10 10 0 0 1 6 78V40a10 10 0 0 1 10-10ZM40 46v14h20V46Z"/>`,
+  personal: `<path fill="#1baf7a" fill-rule="evenodd" d="M50 8 96 48H84v44H16V48H4ZM41 92V66h18v26Z"/>`,
+};
 
-export type FaviconName = keyof typeof FAVICONS;
-
-export const FAVICON_NAMES = Object.keys(FAVICONS) as FaviconName[];
-
-export function faviconSvg(name: FaviconName): string {
-  const { ring, dot } = FAVICONS[name];
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">` +
-    `<circle cx="50" cy="50" r="38" fill="none" stroke="${ring}" stroke-width="10"/>` +
-    `<circle cx="50" cy="50" r="10" fill="${dot}"/>` +
-    `</svg>`
-  );
+export function faviconSvg(profile: Profile): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${FAVICONS[profile]}</svg>`;
 }

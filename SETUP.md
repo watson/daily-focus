@@ -185,10 +185,9 @@ DAILY_FOCUS_PROFILE=personal
 Run `npm run init` with that set. It links the personal prompt,
 `prompts/morning-brief-personal.md`, into the store as `prompt.md`, and writes a
 `sources.md` template with sections for those sources. The profile also switches off
-the Jira board and away detection, and gives the tab a green icon. The pull request
+the Jira board and away detection, and gives the tab a green house icon instead of the blue briefcase. The pull request
 board stays on for side projects; point it at your personal account with
-`DAILY_FOCUS_GITHUB_ACCOUNTS`, or set `DAILY_FOCUS_GITHUB=off`. Set
-`DAILY_FOCUS_ICON` to pick another.
+`DAILY_FOCUS_GITHUB_ACCOUNTS`, or set `DAILY_FOCUS_GITHUB=off`.
 
 The personal sources often live on another machine, such as a home Mac with access
 to Messages and Reminders. Run the instance there, keep `DAILY_FOCUS_HOST` on
@@ -225,7 +224,6 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt `npm run init` links and the defaults marked below |
-| `DAILY_FOCUS_ICON` | `blue`; `green` for personal | Tab icon colour: `blue`, `green`, `purple`, `red`, `teal` or `amber` |
 | `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
 | `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
 | `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data |
