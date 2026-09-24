@@ -45,6 +45,13 @@ const AGENT_ONLY_MARKER = /^[ \t]*<!--[ \t]*agent-only[ \t]*-->[ \t]*$/im;
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
 
+/**
+ * HTML comments in the public prose are notes to self — the `npm run init`
+ * template keeps its instructions in one — so they are dropped rather than
+ * rendered or promoted to an objective.
+ */
+const COMMENT = /<!--[\s\S]*?-->/g;
+
 /** Keys we lift out of the frontmatter. Anything else is ignored, not an error. */
 const KNOWN_KEYS = new Set(['objective', 'blocker']);
 
@@ -82,7 +89,7 @@ export function parseFocus(text: string): Focus {
     body = body.slice(0, marker.index);
   }
 
-  focus.note = clean(body);
+  focus.note = clean(body.replace(COMMENT, ''));
 
   // Prose-only file: treat the first non-empty line as the objective so that
   // scribbling one sentence into focus.md still does something useful.

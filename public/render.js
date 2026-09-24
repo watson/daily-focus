@@ -322,14 +322,36 @@ export function renderObjective(state) {
   const node = document.getElementById('objective');
   const focus = state.focus;
 
-  if (!focus || !focus.objective) {
+  // No focus.md at all means the feature is off, not forgotten: show nothing.
+  if (!focus) {
     node.hidden = true;
     node.replaceChildren();
     return;
   }
 
   node.hidden = false;
-  node.replaceChildren(
+  node.classList.toggle('objective--empty', !focus.objective);
+
+  // A blank objective is a normal stretch between objectives, not a failure, so
+  // the reminder is quiet rather than a banner.
+  if (!focus.objective) {
+    node.replaceChildren(
+      el('p', { class: 'objective__label' }, 'No current objective'),
+      el(
+        'p',
+        { class: 'objective__note' },
+        'Set ',
+        el('code', {}, 'objective:'),
+        ' in ',
+        el('code', {}, 'focus.md'),
+        ' in your store to have the day ranked against it.',
+      ),
+    );
+    return;
+  }
+
+  replace(
+    node,
     el('p', { class: 'objective__label' }, 'Current objective'),
     el('p', { class: 'objective__text' }, renderMarkdown(focus.objective)),
     focus.blocker

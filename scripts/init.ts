@@ -119,17 +119,25 @@ async function linkIntoStore(target: string, source: string, what: string): Prom
 }
 
 const FOCUS_TEMPLATE = `---
-objective: The one thing you are actually trying to achieve right now
-blocker: What is in the way today, if anything
+objective:
+blocker:
 ---
 
-Replace the two lines above, and this paragraph. The dashboard renders them at the
-top of the board, and the briefing agent ranks the whole day against them — so an
-objective phrased as a project ("ship the thing") gives it less to work with than one
-phrased as a next move ("get the staging path working again").
+<!--
+Fill in the two lines above: the one thing you are actually trying to achieve right
+now, and what is in the way today, if anything. Leaving \`objective\` blank is fine:
+the dashboard shows a quiet reminder instead. Delete this file to turn the feature
+off entirely.
 
-Keep it short and keep it current. This file is the only input describing what you
-are trying to do, as opposed to what other people sent you overnight.
+The dashboard renders them at the top of the board, and the briefing agent ranks the
+whole day against them — so an objective phrased as a project ("ship the thing")
+gives it less to work with than one phrased as a next move ("get the staging path
+working again").
+
+Prose below the frontmatter is shown under the objective. Comments like this one are
+not. Keep it short and keep it current. This file is the only input describing what
+you are trying to do, as opposed to what other people sent you overnight.
+-->
 
 <!-- agent-only -->
 Everything below this marker is read by the agent and never reaches the browser —

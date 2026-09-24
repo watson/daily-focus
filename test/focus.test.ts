@@ -74,3 +74,31 @@ test('an empty file yields nothing rather than throwing', () => {
   const focus = parseFocus('');
   assert.deepEqual(focus, { objective: null, blocker: null, note: null, agentOnly: null });
 });
+
+test('blank fields and comments leave the objective unset', () => {
+  const focus = parseFocus(
+    [
+      '---',
+      'objective:',
+      'blocker:',
+      '---',
+      '',
+      '<!--',
+      'Fill in the two lines above.',
+      '-->',
+      '',
+      '<!-- agent-only -->',
+      'Private context.',
+    ].join('\n'),
+  );
+
+  assert.equal(focus.objective, null);
+  assert.equal(focus.blocker, null);
+  assert.equal(focus.note, null);
+  assert.equal(focus.agentOnly, 'Private context.');
+});
+
+test('comments are dropped from the rendered note', () => {
+  const focus = parseFocus('---\nobjective: Ship it\n---\n\nPublic <!-- to self --> context.');
+  assert.equal(focus.note, 'Public  context.');
+});

@@ -43,6 +43,10 @@ blocker: Reproduce the staging failure
 Start with the staging repro before picking up new work.
 ```
 
+Leave `objective:` blank between objectives; the dashboard shows a quiet reminder and
+the agent ranks by urgency alone. To turn the feature off entirely, delete `focus.md`.
+Running `npm run init` again recreates it.
+
 Add `<!-- agent-only -->` on its own line before context you don't want displayed.
 The agent can read that section, but the server removes it before sending focus
 text to the browser. The server never reads `sources.md`.

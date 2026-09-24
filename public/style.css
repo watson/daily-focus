@@ -553,6 +553,18 @@ body[data-focus-mode='true'][data-view='today'] #today .item__title {
   color: var(--ink-3);
 }
 
+/* A reminder, not a headline: no accent, no shadow, nothing competing with the brief. */
+.objective--empty {
+  padding: 10px 16px;
+  background: transparent;
+  border-style: dashed;
+  border-left-width: 1px;
+  box-shadow: none;
+}
+.objective--empty .objective__note {
+  margin-top: 2px;
+}
+
 /* ---------- stat row ---------- */
 
 .stats {

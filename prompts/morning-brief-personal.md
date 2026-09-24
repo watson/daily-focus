@@ -14,7 +14,8 @@ not for you.
 - `actions.jsonl` — **you only ever read this.** Never write, edit, truncate or
   compact it. It is the user's record of what they have already handled.
 - `focus.md` — **you only ever read this.** The standing personal objective, written
-  by hand. It decides what "important" means.
+  by hand. It decides what "important" means. It may be missing or have a blank
+  `objective`; both are normal.
 - `sessions.jsonl` — **you only ever read this.** One line per focus session: what
   they actually spent time on, as opposed to what they finished.
 - `sources.md` — **you only ever read this.** The personal specifics this prompt
@@ -54,6 +55,13 @@ user is actually trying to achieve. Its format is frontmatter (`objective`,
 context for you that is deliberately never shown in the browser — use it to weight
 your judgement, but **never quote it into a title or `detail`**, because those are
 rendered on a screen that other people can see.
+
+**No objective is a normal state, not a gap to fill.** If `focus.md` is missing or its
+`objective` is blank, the user is between objectives or doesn't use them. Rank the day
+by urgency and cost alone, skip the objective duties in step 3 and check 9 in step 5,
+never set `advancesObjective`, and don't invent an objective or an item asking for
+one — the dashboard handles that reminder itself. Everything below that mentions the
+objective applies only when one is set.
 
 **Fold `actions.jsonl`.** One JSON object per line, appended chronologically. Group
 by `id` and take the **last** entry for each id:
@@ -262,7 +270,8 @@ is waiting on the user, raise nothing.
 
 Everything you emit costs the user attention. Apply real editorial judgement.
 
-**Weigh the day against `focus.md` first.** It obliges you to do five things:
+**Weigh the day against `focus.md` first**, when it sets an objective. It obliges you
+to do five things:
 
 1. **Rank against the objective.** Something that unblocks it outranks anything
    louder that doesn't. Give it `priority: 1` unless a hard external deadline
@@ -401,8 +410,9 @@ Check all of these, and fix anything that fails:
    being built by you.
 7. Every `start`/`end` has a timezone offset, unless deliberately all-day.
 8. `generatedAt` is now, and `generatedBy` names whoever ran.
-9. **At least one item offers a concrete path to the objective in `focus.md`** — a
-   real one you found, or the synthesised one.
+9. **When `focus.md` sets an objective, at least one item offers a concrete path to
+   it** — a real one you found, or the synthesised one. With no objective, no item has
+   `advancesObjective`.
 10. **No text from the `<!-- agent-only -->` section appears anywhere in
     `items.json`.** Grep your own output for it before you rename.
 11. No title or `detail` quotes a private message beyond what is needed to recognise it.
