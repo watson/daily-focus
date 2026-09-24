@@ -22,16 +22,14 @@ const { renderItem } = (await import('../public/render.js')) as {
 const NOW = '2026-09-15T12:00:00Z';
 
 const STATE = { now: NOW, session: { active: null }, agenda: { conflictIds: [] } };
-const UI = { selectedId: null, pending: new Set<string>(), noteFor: null, menuFor: null, noteDraft: '' };
+const UI = { selectedId: null, pending: new Set<string>(), menuFor: null, detailFor: null, noteDraft: '', assistantDraft: '' };
 const HANDLERS = {
   onSelect: () => {},
   onAction: () => {},
   startSession: () => {},
   stopSession: () => {},
   toggleMenu: () => {},
-  toggleNote: () => {},
-  onNoteDraft: () => {},
-  closeNote: () => {},
+  openDetail: () => {},
 };
 
 function render(overrides: Partial<ResolvedItem> = {}): StubElement {

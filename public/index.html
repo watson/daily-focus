@@ -195,6 +195,7 @@
       <aside class="layout__side" aria-label="Today's agenda">
         <div id="agenda"></div>
       </aside>
+      <aside class="flyout" id="flyout" aria-label="Item details" hidden></aside>
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -207,8 +208,9 @@
         <div><dt><kbd>e</kbd></dt><dd>Mark done</dd></div>
         <div><dt><kbd>s</kbd></dt><dd>Snooze until tomorrow</dd></div>
         <div><dt><kbd>x</kbd></dt><dd>Dismiss — not relevant</dd></div>
-        <div><dt><kbd>n</kbd></dt><dd>Leave a note for the agent</dd></div>
-        <div><dt><kbd>a</kbd></dt><dd>Ask the assistant about the selected item</dd></div>
+        <div><dt><kbd>n</kbd></dt><dd>Open the item's panel, ready for a note</dd></div>
+        <div><dt><kbd>a</kbd></dt><dd>Open the item's panel, ready to ask the assistant</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Close the menu, then the panel</dd></div>
         <div><dt><kbd>o</kbd></dt><dd>Open the source link</dd></div>
         <div><dt><kbd>u</kbd></dt><dd>Undo the last action</dd></div>
         <div><dt><kbd>f</kbd></dt><dd>Focus mode — hide all but the top item</dd></div>
@@ -221,8 +223,10 @@
         Done, snoozed and dismissed all tell the morning agent to leave an item out of
         tomorrow's brief. A note is sent along with it as free text. On both boards only
         snooze and note apply: a pull request stays until it's merged or closed, and a
-        ticket whose status looks wrong is put right in Jira rather than here. The
-        assistant is a CLI run on your machine; it reads and drafts, never sends or posts.
+        ticket whose status looks wrong is put right in Jira rather than here. Click a card
+        to open its panel, where its notes and the assistant live; the panel stays on the
+        item it was opened for. The assistant is a CLI run on your machine; it reads and
+        drafts, never sends or posts.
       </p>
       <form method="dialog"><button type="submit" class="button">Close</button></form>
     </dialog>

@@ -1,21 +1,22 @@
 /**
- * The Ask button and the panel, rendered against the DOM stub.
+ * The assistant's half of the item panel, rendered against the DOM stub.
  *
- * Two rules worth holding here: the button exists only when there is an
- * assistant to ask, and the panel offers a row only the quick actions that fit
- * its source — a "draft a reply" on a pull request is the kind of wrong that
- * looks like a feature until it is pressed.
+ * Two rules worth holding here: the section exists only when there is an
+ * assistant to ask, and it offers a row only the quick actions that fit its
+ * source — a "draft a reply" on a pull request is the kind of wrong that looks
+ * like a feature until it is pressed.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buttonLabels, byClass, byTag, type StubElement } from './dom-stub.ts';
+import { buttonLabels, byClass, byTag, mount, type StubElement } from './dom-stub.ts';
 import { QUICK_ACTIONS } from '../src/assistant.ts';
 import type { AssistantTurn, ResolvedItem } from '../src/types.ts';
 
-const { renderItem, renderMarkdownBlocks } = (await import('../public/render.js')) as {
+const { renderItem, renderFlyout, renderMarkdownBlocks } = (await import('../public/render.js')) as {
   renderItem: (item: ResolvedItem, state: unknown, ui: unknown, handlers: unknown) => StubElement;
+  renderFlyout: (row: ResolvedItem | null, state: unknown, ui: unknown, handlers: unknown) => void;
   renderMarkdownBlocks: (text: string) => StubElement[];
 };
 
@@ -42,26 +43,35 @@ function state(assistant: unknown) {
 const ui = (overrides: Record<string, unknown> = {}) => ({
   selectedId: null,
   pending: new Set<string>(),
-  noteFor: null,
   menuFor: null,
+  detailFor: null,
   noteDraft: '',
-  assistantFor: null,
   assistantDraft: '',
+  focusField: null,
   ...overrides,
 });
 
+/** The panel, open on `row`. */
+function panel(row: ResolvedItem, assistant: unknown): StubElement {
+  renderFlyout(row, state(assistant), ui({ detailFor: row.id }), HANDLERS);
+  return mount('flyout');
+}
+
 const ENABLED = { enabled: true, agent: 'claude', quickActions: QUICK_ACTIONS, items: {} };
 
-test('the Ask button appears only when the assistant is on', () => {
-  const off = renderItem(item(), state({ enabled: false, quickActions: [], items: {} }), ui(), HANDLERS);
-  assert.ok(!buttonLabels(off).includes('Ask'));
+test('the assistant is in the panel only when it is on, and never on the row', () => {
+  const off = { enabled: false, quickActions: [], items: {} };
+  assert.equal(byClass(panel(item(), off), 'assistant').length, 0, 'no assistant section to speak to');
+  assert.equal(byClass(panel(item(), off), 'assistant__input').length, 0);
+
   const on = renderItem(item(), state(ENABLED), ui(), HANDLERS);
-  assert.ok(buttonLabels(on).includes('Ask'));
-  assert.equal(byClass(on, 'assistant').length, 0, 'closed until asked for');
+  assert.ok(!buttonLabels(on).includes('Ask'), 'the card itself opens the panel; no button for it');
+  assert.equal(byClass(on, 'assistant').length, 0, 'the conversation lives in the panel, not on the row');
+  assert.equal(byClass(panel(item(), ENABLED), 'assistant__input').length, 1);
 });
 
 test('the panel offers the quick actions for the row\'s source and the ones for every row', () => {
-  const node = renderItem(item(), state(ENABLED), ui({ assistantFor: 'email:thread:1' }), HANDLERS);
+  const node = panel(item(), ENABLED);
   const chips = byClass(node, 'assistant__quick')[0]!;
   const offered = buttonLabels(chips);
   const expected = QUICK_ACTIONS.filter((a) => a.sources === null || a.sources.includes('email')).map((a) => a.label);
@@ -86,7 +96,7 @@ test('a reply renders as blocks, and a running turn says so with a Stop button',
   };
   const running: AssistantTurn = { ...done, id: 't2', action: null, request: 'and shorter?', status: 'running', reply: '', endedAt: null };
   const assistant = { ...ENABLED, items: { 'email:thread:1': { running: true, sessionId: 's', turns: [done, running] } } };
-  const node = renderItem(item(), state(assistant), ui({ assistantFor: 'email:thread:1' }), HANDLERS);
+  const node = panel(item(), assistant);
 
   const turns = byClass(node, 'assistant__turn');
   assert.equal(turns.length, 2);
@@ -96,7 +106,8 @@ test('a reply renders as blocks, and a running turn says so with a Stop button',
   assert.ok(buttonLabels(node).includes('Stop'));
   assert.ok(!buttonLabels(node).includes('Send'));
   assert.equal(byClass(node, 'assistant__quick').length, 0, 'no quick actions while working');
-  assert.ok(byClass(node, 'pill--assistant').length === 1, 'the row says the assistant is working');
+  const row = renderItem(item(), state(assistant), ui(), HANDLERS);
+  assert.ok(byClass(row, 'pill--assistant').length === 1, 'the row says the assistant is working');
 });
 
 test('markdown blocks: a quote is a quote, not a literal angle bracket', () => {

@@ -21,6 +21,7 @@ import {
   renderBanners,
   renderConnection,
   renderBoard,
+  renderFlyout,
   renderHeadline,
   renderHeader,
   renderObjective,
@@ -63,16 +64,16 @@ const ui = {
   /** Which ticket has its status menu open. Separate from `menuFor`, so the park
    *  menu and the status menu can never be open on the same row at once. */
   statusFor: null,
-  noteFor: null,
-  /** Text typed into the open note form but not saved yet. See `discardNote`. */
+  /** Which row the panel beside the list is open on. Persisted below: a reply
+   *  worth reading is usually worth reading after the reload that landed meanwhile. */
+  detailFor: null,
+  /** Text typed into the panel's note field but not saved yet. See `setDetailFor`. */
   noteDraft: '',
-  /** Which row has the assistant panel open. Persisted below: a reply worth
-   *  reading is usually worth reading after the reload that landed meanwhile. */
-  assistantFor: null,
-  /** Text typed into the panel but not sent yet, kept for the same reason as `noteDraft`. */
+  /** Text typed into the panel's assistant field but not sent yet, kept for the same reason. */
   assistantDraft: '',
-  /** Set when the panel was just opened by hand, so the next render focuses its field. */
-  focusAssistant: false,
+  /** Which of the panel's fields was asked for when it was opened by hand — `note`
+   *  or `assistant` — so the next render puts the cursor there. `renderFlyout` clears it. */
+  focusField: null,
   /** Which drawers are open, by key. In memory only, so a reload closes them all:
    *  a drawer is a place you go and look, not part of the page's resting state. */
   openDrawers: new Set(),
@@ -91,19 +92,53 @@ const ui = {
 };
 
 /**
- * Which row's assistant panel is open, by item id. Persisted per tab in
+ * Which row the panel is open on, by item id. Persisted per tab in
  * sessionStorage rather than localStorage: it should survive the self-reload a
  * code change triggers mid-conversation, and not much else.
  */
-const ASSISTANT_KEY = 'daily-focus:assistant-for';
-ui.assistantFor = sessionStorage.getItem(ASSISTANT_KEY);
+const DETAIL_KEY = 'daily-focus:detail-for';
+ui.detailFor = sessionStorage.getItem(DETAIL_KEY);
 
-/** Open or close the panel on a row. Only one is open at a time. */
-function setAssistantFor(id) {
-  ui.assistantFor = id;
-  ui.assistantDraft = '';
-  if (id) sessionStorage.setItem(ASSISTANT_KEY, id);
-  else sessionStorage.removeItem(ASSISTANT_KEY);
+/**
+ * Open the panel on a row, or close it. Only one is open at a time.
+ *
+ * The drafts live in `ui` precisely so they survive the re-renders that land
+ * while they are being typed — which means they no longer disappear on their
+ * own. They belong to the row they were typed for, so moving the panel to
+ * another row is what drops them.
+ */
+function setDetailFor(id) {
+  if (ui.detailFor !== id) {
+    ui.noteDraft = '';
+    ui.assistantDraft = '';
+  }
+  ui.detailFor = id;
+  if (id) sessionStorage.setItem(DETAIL_KEY, id);
+  else sessionStorage.removeItem(DETAIL_KEY);
+}
+
+/**
+ * The row the panel is open on, whichever list it is in.
+ *
+ * The showing view's list is asked first: the same id can be a brief item and a
+ * board row, and the panel describes whichever the user is looking at. The others
+ * are asked after, so the panel survives a change of tab. Null once the row is
+ * gone from everywhere, which is when the panel has nothing left to show.
+ */
+function detailRow() {
+  if (!state || !ui.detailFor) return null;
+  const tickets = state.tickets?.rows ?? [];
+  const inProgress = state.tickets?.inProgress ?? [];
+  const lists = {
+    today: state.items,
+    board: state.board?.rows ?? [],
+    tickets: ui.ticketMode === 'working' ? [...inProgress, ...tickets] : [...tickets, ...inProgress],
+  };
+  for (const view of [ui.view, ...VIEWS.filter((other) => other !== ui.view)]) {
+    const hit = lists[view].find((row) => row.id === ui.detailFor);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /** Last completed action, for the `u` shortcut. */
@@ -127,44 +162,40 @@ function unpark(id) {
   return applyAction(id, restore ?? 'reopen');
 }
 
-/**
- * Close the note form and drop whatever was half-written in it.
- *
- * The draft lives in `ui` precisely so it survives the re-renders that land while
- * it's being typed — which means it no longer disappears on its own, and every
- * path that closes the form has to say so, or the next note opens with the last
- * one's text still in it.
- */
-function discardNote() {
-  ui.noteFor = null;
-  ui.noteDraft = '';
-}
-
 const handlers = {
   onAction: (id, action, extra) => void applyAction(id, action, extra),
+  // A click on a card: the cursor goes to it, and the panel opens on it — or
+  // closes, if it was already open on this one. The card is the one way in with
+  // a mouse; `n` and `a` are the ways in from the keyboard.
   onSelect: (id) => {
     ui.selectedId = id;
+    setDetailFor(ui.detailFor === id ? null : id);
+    ui.focusField = null;
+    ui.menuFor = null;
+    ui.statusFor = null;
     render();
   },
   toggleMenu: (id) => {
     ui.menuFor = ui.menuFor === id ? null : id;
     ui.statusFor = null;
-    discardNote();
     render();
   },
   toggleStatus: (id) => {
     ui.statusFor = ui.statusFor === id ? null : id;
     ui.menuFor = null;
-    discardNote();
     render();
   },
   moveTicket: (key, status, from) => void moveTicket(key, status, from),
-  toggleNote: (id) => {
-    const opening = ui.noteFor !== id;
-    discardNote();
-    ui.noteFor = opening ? id : null;
+  /** Open the panel on a row, with the cursor in `field` — `note`, `assistant`, or neither. */
+  openDetail: (id, field = null) => {
+    setDetailFor(id);
+    ui.focusField = field;
     ui.menuFor = null;
     ui.statusFor = null;
+    render();
+  },
+  closeDetail: () => {
+    setDetailFor(null);
     render();
   },
   // Deliberately doesn't render: the field is already showing the character that
@@ -172,9 +203,9 @@ const handlers = {
   onNoteDraft: (text) => {
     ui.noteDraft = text;
   },
-  closeNote: () => {
-    discardNote();
-    render();
+  saveNote: (id, text) => {
+    ui.noteDraft = '';
+    void applyAction(id, 'note', { text });
   },
   // Doesn't render either: the drawer has already opened itself, and rebuilding
   // it would take focus off the summary that was just pressed.
@@ -206,21 +237,6 @@ const handlers = {
   unpark: (id) => void unpark(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
-  toggleAssistant: (id) => {
-    const opening = ui.assistantFor !== id;
-    setAssistantFor(opening ? id : null);
-    // Opening by hand is the request for the cursor; a reload that remembers
-    // the panel is not. `restoreNoteField` reads and clears this.
-    ui.focusAssistant = opening;
-    ui.menuFor = null;
-    ui.statusFor = null;
-    discardNote();
-    render();
-  },
-  closeAssistant: () => {
-    setAssistantFor(null);
-    render();
-  },
   // No render, for the reason `onNoteDraft` gives.
   onAssistantDraft: (text) => {
     ui.assistantDraft = text;
@@ -253,6 +269,12 @@ function render() {
   // Not written back, so switching the board on again returns to it.
   if (!availableViews(state).includes(ui.view)) ui.view = 'today';
   document.body.dataset.view = ui.view;
+  // Before the lists, which mark the row the panel is open on. A row that has
+  // gone from everywhere takes the panel with it, rather than leaving one open on
+  // nothing.
+  const detail = detailRow();
+  if (ui.detailFor && !detail) setDetailFor(null);
+  document.body.dataset.flyout = detail ? 'open' : 'closed';
   renderTabs(state, ui);
   renderTimer(state, ui, handlers);
   renderHeader(state, handlers);
@@ -270,6 +292,7 @@ function render() {
     renderSections(state, ui, handlers);
     renderAgenda(state);
   }
+  renderFlyout(detail, state, ui, handlers);
 }
 
 /* ---------- views ---------- */
@@ -281,11 +304,11 @@ function setView(view) {
   if (state && !availableViews(state).includes(view)) return;
   ui.view = view;
   localStorage.setItem(VIEW_KEY, view);
-  // The selection belongs to the list it was made in.
+  // The selection belongs to the list it was made in. The panel does not: it
+  // is pinned to its row, and follows to whichever tab that row is on.
   ui.selectedId = null;
   ui.menuFor = null;
   ui.statusFor = null;
-  discardNote();
   render();
 }
 
@@ -299,7 +322,6 @@ function setTicketMode(mode) {
   ui.selectedId = null;
   ui.menuFor = null;
   ui.statusFor = null;
-  discardNote();
   render();
 }
 
@@ -416,7 +438,6 @@ const PAST_TENSE = {
 async function applyAction(id, action, extra = {}) {
   ui.menuFor = null;
   ui.statusFor = null;
-  discardNote();
   ui.pending.add(id);
 
   const item = state?.items.find((candidate) => candidate.id === id);
@@ -700,14 +721,13 @@ document.addEventListener('keydown', (event) => {
   const help = document.getElementById('help');
 
   if (event.key === 'Escape') {
-    if (ui.menuFor || ui.statusFor || ui.noteFor) {
+    if (ui.menuFor || ui.statusFor) {
       ui.menuFor = null;
       ui.statusFor = null;
-      discardNote();
       render();
-    } else if (ui.assistantFor) {
+    } else if (ui.detailFor) {
       // Second press: the panel is closed only once the smaller things are.
-      setAssistantFor(null);
+      setDetailFor(null);
       render();
     }
     return;
@@ -795,12 +815,12 @@ document.addEventListener('keydown', (event) => {
       break;
     case 'n':
       event.preventDefault();
-      handlers.toggleNote(item.id);
+      handlers.openDetail(item.id, 'note');
       break;
     case 'a':
       if (!state.assistant?.enabled) break;
       event.preventDefault();
-      handlers.toggleAssistant(item.id);
+      handlers.openDetail(item.id, 'assistant');
       break;
     case 'p':
       event.preventDefault();

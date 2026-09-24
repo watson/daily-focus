@@ -623,61 +623,7 @@ export function renderSections(state, ui, handlers) {
     sections.push(drawer('today:cleared', `Cleared today (${cleared.length})`, cleared, state, ui, handlers));
   }
 
-  const note = captureNoteField(container);
   replace(container, sections);
-  restoreNoteField(container, ui, note);
-}
-
-/**
- * Read the state of an open note field, on its way out.
- *
- * State arrives on a heartbeat, so a rebuild lands mid-sentence more often than
- * not, and it takes the field being typed into with it. The text survives in
- * `ui.noteDraft`, but the caret and the focus belong to the element that's about
- * to be discarded — the only place to get them is off it, just before it goes.
- */
-function captureNoteField(container) {
-  const input = container.querySelector('.note-form input, .assistant__input');
-  if (!input) return null;
-  return {
-    kind: input.classList.contains('assistant__input') ? 'assistant' : 'note',
-    id: input.closest('.item')?.dataset.id ?? null,
-    focused: document.activeElement === input,
-    start: input.selectionStart,
-    end: input.selectionEnd,
-  };
-}
-
-/** Put focus and caret back on the field that replaced the one we measured. */
-function restoreNoteField(container, ui, before) {
-  const input = container.querySelector('.note-form input, .assistant__input');
-  if (!input) return;
-
-  // The panel's field. Opened by hand it takes the cursor, like the note form;
-  // opened by a reload that remembered it, it does not — nobody asked.
-  if (input.classList.contains('assistant__input')) {
-    if (ui.focusAssistant) {
-      ui.focusAssistant = false;
-      input.focus();
-    } else if (before?.kind === 'assistant' && before.id === ui.assistantFor && before.focused) {
-      input.focus();
-      input.setSelectionRange(before.start, before.end);
-    }
-    return;
-  }
-
-  // A form that wasn't open on the same item a moment ago has just been opened,
-  // and opening it is the request for the cursor.
-  if (before?.kind !== 'note' || before.id !== ui.noteFor) {
-    input.focus();
-    return;
-  }
-
-  // Otherwise leave focus wherever it was — a heartbeat shouldn't pull the cursor
-  // out of the address bar and into a note.
-  if (!before.focused) return;
-  input.focus();
-  input.setSelectionRange(before.start, before.end);
 }
 
 /** A titled list. `row` renders one entry: a brief item by default, a pull request on the board. */
@@ -823,9 +769,11 @@ export function renderItem(item, state, ui, handlers) {
         pending: String(ui.pending.has(item.id)),
         running: String(ui.activeSessionId === item.id),
         overrun: String(ui.activeSessionId === item.id && ui.sessionOverrun === true),
+        detail: String(ui.detailFor === item.id),
       },
       onclick: (event) => {
-        // Let links, buttons and inputs do their own thing.
+        // Let links, buttons and inputs do their own thing. Anywhere else on the
+        // card opens the panel on it: one way in, and the whole card is it.
         if (event.target.closest('a, button, input, textarea, summary')) return;
         handlers.onSelect(item.id);
       },
@@ -845,9 +793,6 @@ export function renderItem(item, state, ui, handlers) {
       el('p', { class: 'item__title' }, title),
       renderMeta(item, state, now),
       item.detail ? el('p', { class: 'item__detail' }, renderMarkdown(item.detail)) : null,
-      renderNotes(item),
-      ui.noteFor === item.id ? renderNoteForm(item, ui, handlers) : null,
-      ui.assistantFor === item.id ? renderAssistantPanel(item, state, ui, handlers) : null,
     ),
     renderActions(item, state, ui, handlers),
     ui.menuFor === item.id ? renderSnoozeMenu(item, now, handlers) : null,
@@ -875,8 +820,7 @@ function renderMeta(item, state, now) {
     pills.push(el('span', { class: 'pill pill--priority' }, `#${item.priority}`));
   }
 
-  const working = assistantPill(item, state);
-  if (working) pills.push(working);
+  pills.push(...rowPills(item, state));
 
   // Marks the rows that actually move the objective, so they're findable at a glance
   // even when they aren't the top-ranked thing on the page.
@@ -931,99 +875,217 @@ function renderMeta(item, state, now) {
 }
 
 /**
- * "assistant working" while a turn runs, wherever the panel is; nothing
- * otherwise. The row says an answer is on its way, and the panel says what it is.
+ * What every kind of row says about its panel: how many notes it carries, and
+ * that the assistant is working on it. The notes themselves live in the panel,
+ * and the card is the way there.
  */
-function assistantPill(row, state) {
-  const entry = state.assistant?.items?.[row.id];
-  if (!entry?.running) return null;
-  return el('span', { class: 'pill pill--assistant' }, 'assistant working…');
+function rowPills(row, state) {
+  const pills = [];
+  const count = row.notes?.length ?? 0;
+  if (count > 0) {
+    pills.push(el('span', { class: 'pill pill--notes' }, count === 1 ? '1 note' : `${count} notes`));
+  }
+  if (state.assistant?.items?.[row.id]?.running) {
+    pills.push(el('span', { class: 'pill pill--assistant' }, 'assistant working…'));
+  }
+  return pills;
 }
 
-function renderNotes(item) {
-  if (item.notes.length === 0) return null;
+/* ---------- the item panel ---------- */
+
+/**
+ * The panel beside the list: one row's notes and its conversation with the
+ * assistant, and a field for each.
+ *
+ * Beside the list rather than under the row, because the row is for deciding and
+ * this is for reading. A transcript under a card pushed the rest of the list down
+ * and a note form did the same in miniature; here the list stays where it was and
+ * one panel holds what would otherwise be stuffed into every card in turn. It is
+ * pinned to the row it was opened for — `j` and `k` move the cursor, not this —
+ * and it stays open across the tabs, since the same id can be a row on more than
+ * one of them and the notes and the conversation are the same wherever it is.
+ *
+ * `row` is null when nothing is open, or the row it was open for has gone.
+ */
+export function renderFlyout(row, state, ui, handlers) {
+  const container = document.getElementById('flyout');
+  if (!row) {
+    container.hidden = true;
+    replace(container);
+    return;
+  }
+
+  const before = captureFlyout(container);
+  const facts = describeRow(row);
+  const now = new Date(state.now);
+  const enabled = Boolean(state.assistant?.enabled);
+  const entry = state.assistant?.items?.[row.id] ?? { running: false, turns: [] };
+
+  container.hidden = false;
+  replace(
+    container,
+    flyoutHeader(row, facts, handlers),
+    el(
+      'div',
+      { class: 'flyout__body' },
+      facts.detail ? el('p', { class: 'flyout__detail' }, renderMarkdown(facts.detail)) : null,
+      el(
+        'section',
+        { class: 'flyout__section' },
+        el('h3', { class: 'flyout__label' }, 'Notes'),
+        row.notes.length
+          ? el(
+              'div',
+              { class: 'flyout__notes' },
+              row.notes.map((note) =>
+                el(
+                  'p',
+                  { class: 'flyout__note' },
+                  `“${note.text}”`,
+                  note.at ? el('span', { class: 'flyout__when' }, ` ${relativeTime(note.at, now)}`) : null,
+                ),
+              ),
+            )
+          : el('p', { class: 'flyout__empty' }, 'Nothing noted yet. A note goes to the morning agent as free text.'),
+        renderNoteForm(row, ui, handlers),
+      ),
+      enabled ? renderAssistantSection(row, state, entry, ui, handlers) : null,
+    ),
+  );
+  restoreFlyout(container, row, ui, before);
+}
+
+/**
+ * What the panel says at the top of every kind of row, in the row's own terms.
+ * A ticket is its key and summary, a pull request its `repo#number`, a brief item
+ * its title and whatever the agent wrote under it. Read off the fields rather
+ * than off a type tag, since the rows have none.
+ */
+function describeRow(row) {
+  if (typeof row.key === 'string' && typeof row.summary === 'string') {
+    return {
+      ref: row.key,
+      title: row.summary,
+      url: row.url ?? null,
+      source: 'jira',
+      color: typeColor(row.issueType),
+      status: row.workflowStatus || null,
+      people: [],
+      detail: null,
+    };
+  }
+  if (typeof row.number === 'number' && typeof row.repo === 'string') {
+    return {
+      ref: `${row.repo}#${row.number}`,
+      title: row.title,
+      url: row.url ?? null,
+      source: 'github',
+      color: sourceColor('github'),
+      status: null,
+      people: [],
+      detail: null,
+    };
+  }
+  return {
+    ref: githubRepo(row),
+    title: row.title,
+    url: row.url ?? null,
+    source: row.source,
+    color: sourceColor(row.source),
+    status: null,
+    people: row.people ?? [],
+    detail: row.detail ?? null,
+  };
+}
+
+function flyoutHeader(row, facts, handlers) {
+  const title = facts.ref ? [el('span', { class: 'item__ref' }, facts.ref), ' ', facts.title] : [facts.title];
   return el(
     'div',
-    { class: 'item__notes' },
-    item.notes.map((note) => el('p', { class: 'item__note' }, `“${note.text}”`)),
+    { class: 'flyout__header' },
+    el(
+      'div',
+      { class: 'flyout__where' },
+      el('span', { class: 'item__dot', style: `background:${facts.color}`, 'aria-hidden': 'true' }),
+      el('span', { class: 'item__source' }, SOURCE_LABEL[facts.source] ?? 'Other'),
+      facts.status ? el('span', {}, `· ${facts.status}`) : null,
+      facts.people.length ? el('span', {}, `· ${facts.people.join(', ')}`) : null,
+    ),
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'icon-button flyout__close',
+        title: 'Close (Esc)',
+        'aria-label': 'Close the panel',
+        onclick: () => handlers.closeDetail(),
+      },
+      '×',
+    ),
+    el(
+      'p',
+      { class: 'flyout__title' },
+      facts.url ? el('a', { href: facts.url, target: '_blank', rel: 'noopener noreferrer' }, ...title) : title,
+    ),
   );
 }
 
-function renderNoteForm(item, ui, handlers) {
+/**
+ * One line, on purpose. A note is a sentence for the morning agent — "nudged
+ * them", "waiting on legal" — appended to the action log and read back as free
+ * text in tomorrow's brief. Anything with more shape than that is a conversation,
+ * and the assistant's field below takes paragraphs.
+ */
+function renderNoteForm(row, ui, handlers) {
   const input = el('input', {
     type: 'text',
+    class: 'flyout__note-input',
     // The draft rather than an empty field: this input is thrown away and rebuilt
     // by every state push, and the text has to come back with it.
     value: ui.noteDraft,
     placeholder: 'Tell the agent what happened…',
-    'aria-label': `Note for ${item.title}`,
+    'aria-label': `Note for ${describeRow(row).title}`,
     oninput: () => handlers.onNoteDraft(input.value),
   });
 
   return el(
     'form',
     {
-      class: 'note-form',
+      class: 'flyout__note-form',
       onsubmit: (event) => {
         event.preventDefault();
         const text = input.value.trim();
-        if (text) handlers.onAction(item.id, 'note', { text });
-        handlers.closeNote();
+        if (text) handlers.saveNote(row.id, text);
       },
     },
     input,
-    el('button', { type: 'submit', class: 'button button--primary' }, 'Save'),
-    el('button', { type: 'button', class: 'button', onclick: () => handlers.closeNote() }, 'Cancel'),
+    el('button', { type: 'submit', class: 'button button--primary flyout__submit' }, 'Save'),
   );
 }
 
-/* ---------- the assistant ---------- */
-
 /**
- * The chat under a row: what was asked, what came back, the canned asks that
- * fit this row's source, and a field for anything else.
- *
- * Inline under the card rather than in a drawer of its own, because the answers
- * this panel is for are short — is the review right, what do they need — and a
- * long one is the sign the task belonged in a real coding session. The transcript
- * scrolls inside a fixed height so a wordy reply doesn't push the list down.
+ * The conversation so far, the canned asks that fit this row's source, and the
+ * field, in that order — one section, with the field at its foot the way a chat
+ * has one. All of it scrolls with the panel; `restoreFlyout` keeps the end in
+ * view while a reply grows.
  */
-function renderAssistantPanel(row, state, ui, handlers) {
-  const entry = state.assistant?.items?.[row.id] ?? { running: false, turns: [] };
+function renderAssistantSection(row, state, entry, ui, handlers) {
   const actions = (state.assistant?.quickActions ?? []).filter(
     (action) => action.sources === null || action.sources.includes(row.source ?? 'github'),
   );
   const label = new Map((state.assistant?.quickActions ?? []).map((action) => [action.id, action]));
 
-  const turns = entry.turns.map((turn) => renderAssistantTurn(turn, label, handlers));
-
-  const input = el('textarea', {
-    class: 'assistant__input',
-    rows: 2,
-    value: ui.assistantDraft,
-    placeholder: entry.turns.length ? 'Follow up…' : 'What do you need help with?',
-    'aria-label': `Ask the assistant about ${row.title}`,
-    disabled: entry.running,
-    oninput: () => handlers.onAssistantDraft(input.value),
-    onkeydown: (event) => {
-      // Enter sends; shift-enter is a new line, as in every chat box.
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        submit();
-      }
-    },
-  });
-
-  const submit = () => {
-    const text = input.value.trim();
-    if (!text || entry.running) return;
-    handlers.ask(row.id, { text });
-  };
-
   return el(
-    'div',
-    { class: 'assistant', dataset: { running: String(entry.running) } },
-    turns.length ? el('div', { class: 'assistant__turns' }, turns) : null,
+    'section',
+    { class: 'flyout__section assistant', dataset: { running: String(entry.running) } },
+    el('h3', { class: 'flyout__label' }, 'Assistant'),
+    entry.turns.length
+      ? el(
+          'div',
+          { class: 'assistant__turns' },
+          entry.turns.map((turn) => renderAssistantTurn(turn, label, handlers)),
+        )
+      : null,
     entry.running
       ? null
       : el(
@@ -1042,26 +1104,109 @@ function renderAssistantPanel(row, state, ui, handlers) {
             ),
           ),
         ),
-    el(
-      'form',
-      {
-        class: 'assistant__form',
-        onsubmit: (event) => {
-          event.preventDefault();
-          submit();
-        },
-      },
-      input,
-      el(
-        'div',
-        { class: 'assistant__buttons' },
-        entry.running
-          ? el('button', { type: 'button', class: 'button', onclick: () => handlers.stopAssistant(row.id) }, 'Stop')
-          : el('button', { type: 'submit', class: 'button button--primary' }, 'Send'),
-        el('button', { type: 'button', class: 'button', onclick: () => handlers.closeAssistant() }, 'Close'),
-      ),
-    ),
+    renderAssistantComposer(row, entry, ui, handlers),
   );
+}
+
+/** The field at the foot of the assistant section. */
+function renderAssistantComposer(row, entry, ui, handlers) {
+  const input = el('textarea', {
+    class: 'assistant__input',
+    rows: 2,
+    value: ui.assistantDraft,
+    placeholder: entry.turns.length ? 'Follow up…' : 'What do you need help with?',
+    'aria-label': `Ask the assistant about ${describeRow(row).title}`,
+    disabled: entry.running,
+    oninput: () => handlers.onAssistantDraft(input.value),
+    onkeydown: (event) => {
+      // Enter sends; shift-enter is a new line, as in every chat box.
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        submit();
+      }
+    },
+  });
+
+  const submit = () => {
+    const text = input.value.trim();
+    if (!text || entry.running) return;
+    handlers.ask(row.id, { text });
+  };
+
+  return el(
+    'form',
+    {
+      class: 'assistant__form',
+      dataset: { running: String(entry.running) },
+      onsubmit: (event) => {
+        event.preventDefault();
+        submit();
+      },
+    },
+    input,
+    entry.running
+      ? el('button', { type: 'button', class: 'button flyout__submit', onclick: () => handlers.stopAssistant(row.id) }, 'Stop')
+      : el('button', { type: 'submit', class: 'button button--primary flyout__submit' }, 'Send'),
+  );
+}
+
+/**
+ * Read the state of the panel on its way out.
+ *
+ * State arrives on a heartbeat, so a rebuild lands mid-sentence more often than
+ * not, and it takes the field being typed into with it. The text survives in
+ * `ui.noteDraft` and `ui.assistantDraft`, but the caret, the focus and how far
+ * the panel was scrolled belong to elements that are about to be discarded —
+ * the only place to get them is off them, just before they go.
+ */
+function captureFlyout(container) {
+  if (container.hidden) return null;
+  const id = container.dataset.id ?? null;
+  const fields = { note: container.querySelector('.flyout__note-input'), assistant: container.querySelector('.assistant__input') };
+  let field = null;
+  for (const [kind, input] of Object.entries(fields)) {
+    if (input && document.activeElement === input) {
+      field = { kind, start: input.selectionStart, end: input.selectionEnd };
+    }
+  }
+  const body = container.querySelector('.flyout__body');
+  const scroll = body
+    ? { top: body.scrollTop, atBottom: body.scrollHeight - body.scrollTop - body.clientHeight < 8 }
+    : null;
+  return { id, field, scroll };
+}
+
+/** Put focus, caret and scroll back on the elements that replaced the ones measured. */
+function restoreFlyout(container, row, ui, before) {
+  container.dataset.id = row.id;
+  const same = before?.id === row.id;
+  const body = container.querySelector('.flyout__body');
+
+  // The same panel, rebuilt: back to where it was, unless it was reading the
+  // newest reply, in which case it follows the reply as it grows. A panel just
+  // opened starts at the end of its conversation, where the next thing happens.
+  if (body) {
+    if (same && before.scroll && !before.scroll.atBottom) body.scrollTop = before.scroll.top;
+    else body.scrollTop = body.scrollHeight;
+  }
+
+  // Opened by hand, the field asked for takes the cursor. Opened by a reload that
+  // remembered it, nothing does — nobody asked.
+  const asked = ui.focusField;
+  ui.focusField = null;
+  if (asked) {
+    const input = container.querySelector(asked === 'note' ? '.flyout__note-input' : '.assistant__input');
+    if (input && !input.disabled) input.focus();
+    return;
+  }
+
+  // Otherwise leave focus wherever it was — a heartbeat shouldn't pull the cursor
+  // out of the address bar and into a note.
+  if (!same || !before.field) return;
+  const input = container.querySelector(before.field.kind === 'note' ? '.flyout__note-input' : '.assistant__input');
+  if (!input || input.disabled) return;
+  input.focus();
+  input.setSelectionRange(before.field.start, before.field.end);
 }
 
 /** One exchange: the request as it was asked, and the reply or what became of it. */
@@ -1194,32 +1339,7 @@ function renderActions(item, state, ui, handlers) {
     buttons.push(el('button', { type: 'button', class: 'button', onclick: act(item.id, 'reopen') }, 'Undo'));
   }
 
-  buttons.push(
-    el(
-      'button',
-      { type: 'button', class: 'button', title: 'Leave a note', onclick: () => handlers.toggleNote(item.id) },
-      'Note',
-    ),
-  );
-  buttons.push(askButton(item, state, ui, handlers));
-
   return el('div', { class: 'item__actions' }, buttons);
-}
-
-/** The Ask button, on every row alike, and only when there is an assistant to ask. */
-function askButton(row, state, ui, handlers) {
-  if (!state.assistant?.enabled) return null;
-  return el(
-    'button',
-    {
-      type: 'button',
-      class: ui.assistantFor === row.id ? 'button button--primary' : 'button',
-      title: 'Ask the assistant about this',
-      'aria-expanded': String(ui.assistantFor === row.id),
-      onclick: () => handlers.toggleAssistant(row.id),
-    },
-    'Ask',
-  );
 }
 
 /**
@@ -1576,9 +1696,7 @@ export function renderBoard(state, ui, handlers) {
     parts.push(drawer('board:parked', `Parked (${parked.length})`, parked, state, ui, handlers, renderPullRow));
   }
 
-  const note = captureNoteField(container);
   replace(container, parts);
-  restoreNoteField(container, ui, note);
 }
 
 /** "as of 10:42 · polling alice, bob every 5 min", on the refresh control. */
@@ -1678,6 +1796,7 @@ export function renderPullRow(row, state, ui, handlers) {
         court: row.court,
         selected: String(selected),
         pending: String(ui.pending.has(row.id)),
+        detail: String(ui.detailFor === row.id),
       },
       onclick: (event) => {
         if (event.target.closest('a, button, input, summary')) return;
@@ -1703,12 +1822,9 @@ export function renderPullRow(row, state, ui, handlers) {
           row.title,
         ),
       ),
-      renderPullMeta(row, now),
+      renderPullMeta(row, state, now),
       renderPullReasons(row, now),
       renderCancelledChecks(row),
-      renderNotes(row),
-      ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
-      ui.assistantFor === row.id ? renderAssistantPanel(row, state, ui, handlers) : null,
     ),
     renderPullActions(row, state, ui, handlers),
     ui.menuFor === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false }) : null,
@@ -1716,7 +1832,7 @@ export function renderPullRow(row, state, ui, handlers) {
   return node;
 }
 
-function renderPullMeta(row, now) {
+function renderPullMeta(row, state, now) {
   const pills = [];
 
   // The server's reading of the reviews, so the pill and the bucket can't disagree.
@@ -1742,6 +1858,7 @@ function renderPullMeta(row, now) {
       el('span', { class: 'pill' }, row.snoozedUntil ? `parked until ${relativeDay(row.snoozedUntil, now)}` : 'parked'),
     );
   }
+  pills.push(...rowPills(row, state));
 
   const touched = row.lastActivityByOthers;
   const you = row.lastActivityByYou;
@@ -1915,15 +2032,6 @@ function renderPullActions(row, state, ui, handlers) {
     buttons.push(el('button', { type: 'button', class: 'button', onclick: () => handlers.unpark(row.id) }, 'Unpark'));
   }
 
-  buttons.push(
-    el(
-      'button',
-      { type: 'button', class: 'button', title: 'Leave a note', onclick: () => handlers.toggleNote(row.id) },
-      'Note',
-    ),
-  );
-  buttons.push(askButton(row, state, ui, handlers));
-
   return el('div', { class: 'item__actions' }, buttons);
 }
 
@@ -2070,9 +2178,7 @@ export function renderTicketBoard(state, ui, handlers) {
   if (mode === 'working') parts.push(...workingOnView(board, inProgress, state, ui, handlers));
   else parts.push(...outOfSyncView(board, open, state, ui, handlers));
 
-  const note = captureNoteField(container);
   replace(container, parts);
-  restoreNoteField(container, ui, note);
 }
 
 /** The switch between the two views, each with how many tickets it holds. */
@@ -2220,6 +2326,7 @@ export function renderTicketRow(row, state, ui, handlers) {
         ...(row.court ? { status: row.status, court: row.court } : {}),
         selected: String(selected),
         pending: String(ui.pending.has(row.id)),
+        detail: String(ui.detailFor === row.id),
       },
       onclick: (event) => {
         if (event.target.closest('a, button, input, summary')) return;
@@ -2245,9 +2352,6 @@ export function renderTicketRow(row, state, ui, handlers) {
       renderTicketStatus(row, state, ui, handlers),
       el('p', { class: 'item__title' }, title),
       renderTicketMeta(row, state, handlers),
-      renderNotes(row),
-      ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
-      ui.assistantFor === row.id ? renderAssistantPanel(row, state, ui, handlers) : null,
     ),
     renderTicketActions(row, state, ui, handlers),
     ui.menuFor === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false, longRange: true }) : null,
@@ -2353,6 +2457,7 @@ function renderTicketMeta(row, state, handlers) {
   if (row.status === 'snoozed' && row.snoozedUntil) {
     pills.push(el('span', { class: 'pill pill--tag' }, `parked until ${formatDay(row.snoozedUntil)}`));
   }
+  pills.push(...rowPills(row, state));
   return pills.length > 0 ? el('div', { class: 'item__meta item__meta--extra' }, pills) : null;
 }
 
@@ -2382,20 +2487,21 @@ function outOfSyncFlag(row, state, handlers) {
 }
 
 /**
- * Park and note — and deliberately nothing else.
+ * Park — and deliberately nothing else.
  *
  * No Done: the fix is a status change in Jira, and the next read drops the row on
  * its own. No Nudged either, which the pull request board offers: there is nobody
- * to nudge about your own ticket's status.
+ * to nudge about your own ticket's status. Notes are written in the panel, which
+ * a click on the card opens.
  *
  * And no Open, which the pull request board does have. The strip is absolutely
  * positioned over the card's top right, so on a 460px column every button in it
  * is width taken off the summary — and this one bought nothing, because the
  * summary beside it is already an anchor to the same browse URL, as is `o`. The
- * two that remain are the reason `.item__title` reserves the room it does.
+ * one that remains is the reason `.item__title` reserves the room it does.
  *
- * A row in Working on gets Note alone. A park silences a complaint
- * until a date, and nothing on that row is complaining.
+ * A row in Working on gets no strip at all. A park silences a complaint until a
+ * date, and nothing on that row is complaining.
  */
 function renderTicketActions(row, state, ui, handlers) {
   const buttons = [];
@@ -2418,14 +2524,5 @@ function renderTicketActions(row, state, ui, handlers) {
     buttons.push(el('button', { type: 'button', class: 'button', onclick: () => handlers.unpark(row.id) }, 'Unpark'));
   }
 
-  buttons.push(
-    el(
-      'button',
-      { type: 'button', class: 'button', title: 'Leave a note', onclick: () => handlers.toggleNote(row.id) },
-      'Note',
-    ),
-  );
-  buttons.push(askButton(row, state, ui, handlers));
-
-  return el('div', { class: 'item__actions' }, buttons);
+  return buttons.length > 0 ? el('div', { class: 'item__actions' }, buttons) : null;
 }

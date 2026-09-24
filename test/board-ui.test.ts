@@ -27,13 +27,13 @@ const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOStr
 
 const GATES = ['policy/merge-gate'];
 
-const UI = { selectedId: null, pending: new Set<string>(), noteFor: null, menuFor: null, noteDraft: '' };
+const UI = { selectedId: null, pending: new Set<string>(), menuFor: null, detailFor: null, noteDraft: '', assistantDraft: '' };
 const HANDLERS = {
   onSelect: () => {},
   onAction: () => {},
   nudge: () => {},
   toggleMenu: () => {},
-  toggleNote: () => {},
+  openDetail: () => {},
   unpark: () => {},
 };
 
@@ -103,7 +103,7 @@ test('a gate row names the check, links GitHub\'s details page, and offers no nu
   );
 
   // The board has no idea whose action the gate needs, so it suggests nobody.
-  assert.deepEqual(buttonLabels(node), ['Park', 'Note']);
+  assert.deepEqual(buttonLabels(node), ['Park']);
 });
 
 test('a cancelled check is shown on the row in every court, and moves none of them', () => {
@@ -148,7 +148,7 @@ test('a check row lists what is still running, without inventing a link', () => 
   const reason = byClass(node, 'item__reason')[0];
   assert.match(reason?.textContent ?? '', /still running: integration-tests, ci\/deploy/);
   assert.equal(byTag(reason!, 'A').length, 0, 'GitHub gave nowhere to look, so nothing is linked');
-  assert.deepEqual(buttonLabels(node), ['Park', 'Note']);
+  assert.deepEqual(buttonLabels(node), ['Park']);
 });
 
 test('a blocked merge with nothing pending is not presented as a check wait', () => {
@@ -179,7 +179,7 @@ test('only a row waiting on reviewers is offered the nudge', () => {
     requestedReviewers: ['carol'],
   });
   assert.equal(row.court, 'reviewers');
-  assert.deepEqual(buttonLabels(node), ['Nudged', 'Park', 'Note']);
+  assert.deepEqual(buttonLabels(node), ['Nudged', 'Park']);
   assert.equal(byClass(node, 'item__reason').length, 0, 'waiting on a review needs no explaining');
 });
 
@@ -187,7 +187,7 @@ test('a ready row is plain: no reason, no nudge', () => {
   const { row, node } = render({});
   assert.equal(row.court, 'ready');
   assert.equal(byClass(node, 'item__reason').length, 0);
-  assert.deepEqual(buttonLabels(node), ['Park', 'Note']);
+  assert.deepEqual(buttonLabels(node), ['Park']);
 });
 
 test('a reason kind this client has never heard of is skipped, not printed half', () => {

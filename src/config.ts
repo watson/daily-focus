@@ -425,7 +425,7 @@ function envJira(env: NodeJS.ProcessEnv, profile: Profile): JiraConfig {
 
 /**
  * `off`, or one of the CLIs. Anything else throws: read as off, a typo would
- * quietly remove the Ask button and nothing would say why.
+ * quietly remove the assistant and nothing would say why.
  */
 function envCli(name: string, env: NodeJS.ProcessEnv): CliName | null {
   const raw = envString(name, 'off', env).toLowerCase();
