@@ -32,7 +32,9 @@ Never compact or rewrite `actions.jsonl` or `sessions.jsonl`. Do not write dashb
 records on the briefing agent's behalf. Integration caches use a sibling temporary
 file and rename; they store facts, not computed board classifications.
 
-`npm run seed` overwrites the brief. Always give it a throwaway store:
+`npm run seed` writes a sample brief. It refuses to replace an existing `items.json`
+unless given `--force`; never pass `--force` against a real store. Always give it a
+throwaway store:
 
 ```sh
 DAILY_FOCUS_DATA=$(mktemp -d) npm run seed
