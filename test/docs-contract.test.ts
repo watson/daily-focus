@@ -210,9 +210,22 @@ test("the server, the client and the README agree on the ticket board's courts",
  */
 test('AGENTS.md names the brief, action log, and integration caches', async () => {
   const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
-  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
+  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
   }
+});
+
+/**
+ * A brief the dashboard starts must be the brief the scheduler starts, so the
+ * wrapper it sends is the one the README tells the user to schedule, word for word.
+ */
+test("the dashboard's rerun sends the scheduled task's wrapper verbatim", async () => {
+  const { agentPrompt } = await import('../src/agent.ts');
+  const readme = await readFile(resolve(root, 'prompts/README.md'), 'utf8');
+  const section = readme.slice(readme.indexOf('## Wiring the morning brief'));
+  const block = /```\n([\s\S]*?)\n```/.exec(section)?.[1];
+  assert.ok(block, 'prompts/README.md has no wrapper block under "Wiring the morning brief"');
+  assert.equal(agentPrompt('~/.daily-focus/prompt.md'), block);
 });
 
 /**

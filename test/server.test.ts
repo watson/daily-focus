@@ -134,6 +134,28 @@ test('GET /favicon.svg serves the profile icon', async () => {
   assert.match(await res.text(), /fill="#2a78d6"/);
 });
 
+test('rerunning the morning agent is off by default, and refuses a request that is not JSON', async () => {
+  const state = await json(await fetch(`${server.url}/api/state`));
+  assert.equal(state.agentRun.enabled, false);
+  assert.equal(state.agentRun.last, null);
+
+  // What a form on another site can send without a preflight.
+  const form = await fetch(`${server.url}/api/agent/run`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: '',
+  });
+  assert.equal(form.status, 415);
+
+  const res = await fetch(`${server.url}/api/agent/run`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(res.status, 409);
+  assert.match((await json(res)).error, /DAILY_FOCUS_AGENT/);
+});
+
 test('the assistant is off by default, says so in state, and refuses to be asked', async () => {
   const state = await json(await fetch(`${server.url}/api/state`));
   assert.equal(state.assistant.enabled, false);

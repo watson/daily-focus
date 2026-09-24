@@ -81,6 +81,10 @@ so renumbering its steps can't strand them. Everything that evolves lives in
 the prompt, in git, where a change to it is reviewable. A scheduler has no
 history and no review, so a rule that ends up there is one nobody can change or check.
 
+The dashboard uses the same wrapper when it reruns the agent by hand (see
+`agentPrompt` in `src/agent.ts`), with the store's actual path in place of
+`~/.daily-focus`. A test keeps the two identical, so change them together.
+
 Two things to sanity-check on the first scheduled run after switching:
 
 - The agent can actually read `~/.daily-focus/prompt.md` from inside whatever sandbox

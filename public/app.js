@@ -3,6 +3,8 @@
 import {
   fetchState,
   postAction,
+  postAgentRun,
+  postAgentStop,
   postAssistantAsk,
   postAssistantStop,
   postBoardRefresh,
@@ -50,6 +52,9 @@ const VIEWS = ['today', 'board', 'tickets'];
  */
 const UNATTENDED_SEEN_KEY = 'daily-focus:unattended-seen';
 
+/** Which hand-started run's report has been put away, by run id. Browser-local, for the same reason. */
+const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';
+
 /** Transient view state that never round-trips to the server. */
 const ui = {
   selectedId: null,
@@ -79,6 +84,9 @@ const ui = {
   activeSessionId: null,
   sessionOverrun: false,
   unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
+  agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
+  /** Which run's report is unfolded. In memory: a reload may fold it again. */
+  agentReportOpen: null,
   view: VIEWS.includes(localStorage.getItem(VIEW_KEY)) ? localStorage.getItem(VIEW_KEY) : 'today',
 };
 
@@ -219,6 +227,17 @@ const handlers = {
   },
   ask: (id, body) => void ask(id, body),
   stopAssistant: (id) => void stopAssistant(id),
+  runAgent: () => void runAgent(),
+  stopAgent: () => void stopAgent(),
+  // No render: the element already shows what was clicked.
+  toggleAgentReport: (id, open) => {
+    ui.agentReportOpen = open ? id : null;
+  },
+  dismissAgentRun: (id) => {
+    ui.agentReportSeen = id;
+    localStorage.setItem(AGENT_RUN_SEEN_KEY, id);
+    render();
+  },
 };
 
 function render() {
@@ -236,8 +255,8 @@ function render() {
   document.body.dataset.view = ui.view;
   renderTabs(state, ui);
   renderTimer(state, ui, handlers);
-  renderHeader(state);
-  renderBanners(state);
+  renderHeader(state, handlers);
+  renderBanners(state, ui, handlers);
   // Only the showing view is built. setView renders again after switching, so the
   // other one is rebuilt the moment it's looked at, and never for a hidden panel.
   if (ui.view === 'board') {
@@ -482,6 +501,35 @@ async function stopAssistant(id) {
     adoptState(await postAssistantStop(id));
   } catch (err) {
     showToast(`Could not stop: ${err.message}`);
+  }
+}
+
+/* ---------- the morning agent ---------- */
+
+/**
+ * Start the morning agent. Asked first, because it is the one button here that
+ * costs a quarter of an hour of a model's time and replaces what is on screen —
+ * and it sits beside the brief's age, where a stray click is easy.
+ */
+async function runAgent() {
+  if (!state?.agentRun?.enabled || state.agentRun.last?.status === 'running') return;
+  const ok = window.confirm(
+    'Run the morning agent now? It rewrites the brief from scratch, which takes a while. ' +
+      'What you have marked done, snoozed or noted is kept.',
+  );
+  if (!ok) return;
+  try {
+    adoptState(await postAgentRun());
+  } catch (err) {
+    showToast(`Could not start the morning agent: ${err.message}`);
+  }
+}
+
+async function stopAgent() {
+  try {
+    adoptState(await postAgentStop());
+  } catch (err) {
+    showToast(`Could not stop the morning agent: ${err.message}`);
   }
 }
 

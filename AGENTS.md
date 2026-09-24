@@ -31,13 +31,14 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl`, `session.json`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json` |
+| Dashboard | `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `session.json`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json` |
 | User | `focus.md`, `sources.md` |
 | `npm run init` | `prompt.md`, `assistant.md`, `items.schema.json` symlinks |
 
-Never compact or rewrite `actions.jsonl`, `sessions.jsonl` or `assistant.jsonl`. Do
-not write dashboard records on the briefing agent's behalf. Integration caches use a sibling temporary
-file and rename; they store facts, not computed board classifications.
+Never compact or rewrite `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl` or
+`agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
+Integration caches use a sibling temporary file and rename; they store facts, not
+computed board classifications.
 
 `npm run seed` writes a sample brief. It refuses to replace an existing `items.json`
 unless given `--force`; never pass `--force` against a real store. Always give it a
@@ -64,6 +65,10 @@ DAILY_FOCUS_DATA=$(mktemp -d) npm run seed
   or edit. It runs in an empty directory with editing tools denied, so keep that a
   property of the process: no checkout, no worktree, no repository path setting.
   Work that needs one belongs in a coding session, not in this dashboard.
+- `src/agent.ts` starts the briefing agent after a user click, never on a timer; the
+  scheduler owns the schedule. The agent still writes `items.json` itself, from the
+  store as its working directory, on the `prompts/README.md` wrapper verbatim. Do not
+  hand it extra instructions, a checkout, or a copy of the prompt.
 
 ## Checks
 

@@ -10,6 +10,7 @@ import { Store } from './store.ts';
 import { Board } from './board.ts';
 import { CalendarBoard } from './calendarboard.ts';
 import { TicketBoard } from './ticketboard.ts';
+import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
@@ -138,6 +139,11 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // chat, and never becomes a note or an action on the item.
   const assistant = new Assistant(config, { onChange: () => void broadcast() });
 
+  // The morning agent, when the user asks for a fresh brief. It writes the brief
+  // itself, and the watcher below picks it up as it would a scheduled one; the
+  // runner keeps only its own log.
+  const agent = new AgentRunner(config, { onChange: () => void broadcast() });
+
   /**
    * State plus the things the store doesn't own: the asset fingerprint the client
    * watches for self-reload, and the two boards, which are fetched rather than
@@ -154,6 +160,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       board: board.view(actions, now),
       tickets: tickets.view(actions, now),
       assistant: assistant.view(),
+      agentRun: agent.view(),
       assetVersion,
     };
   }
@@ -196,6 +203,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
         basename(tempPathFor(config.ticketsFile)),
         // Appended by this process, which broadcasts on its own.
         basename(config.assistantLogFile),
+        basename(config.agentLogFile),
       ],
     },
   );
@@ -258,6 +266,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // Likewise: a turn left running when the last process died is closed as
   // aborted now, rather than shown as a spinner that never stops.
   await assistant.start();
+  await agent.start();
 
   // A session may already be running from before a restart.
   scheduleSessionTick((await buildState()).session.active?.endsAt ?? null);
@@ -452,6 +461,34 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       return;
     }
 
+    if (path === '/api/agent/run' && req.method === 'POST') {
+      // A run is expensive and replaces the brief, and this request has no body
+      // to validate — so without this any page open in the browser could start
+      // one with a plain form post. A JSON content type can't be sent across
+      // origins without a preflight, and this server never answers one.
+      if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
+        sendJSON(res, 415, { error: 'send this as application/json' });
+        return;
+      }
+      try {
+        await agent.run();
+      } catch (err) {
+        sendJSON(res, 409, { error: (err as Error).message });
+        return;
+      }
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
+    if (path === '/api/agent/stop' && req.method === 'POST') {
+      await agent.stop();
+      // As for the assistant: the exit handler records the abort and broadcasts.
+      sendState(res, await buildState());
+      return;
+    }
+
     if (path === '/api/assistant/stop' && req.method === 'POST') {
       let body: unknown;
       try {
@@ -618,6 +655,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       calendar.stop();
       tickets.stop();
       await assistant.close();
+      await agent.close();
       stopWatching();
       stopWatchingAssets();
       for (const res of subscribers) res.end();

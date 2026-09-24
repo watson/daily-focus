@@ -224,13 +224,13 @@ test('the Claude adapter reads what Claude Code prints', () => {
     { done: { ok: false, error: 'Rate limited' } },
   );
 
-  const args = claudeAdapter.args({ prompt: 'p', sessionId: null, model: 'opus', effort: 'high', tools: ['Bash(gh *)'] });
+  const args = claudeAdapter.args({ prompt: 'p', sessionId: null, model: 'opus', effort: 'high', tools: ['Bash(gh *)'], denyEdits: true });
   assert.ok(args.includes('--model') && args[args.indexOf('--model') + 1] === 'opus');
   assert.ok(args.includes('--effort') && args[args.indexOf('--effort') + 1] === 'high');
   assert.ok(args.includes('--allowedTools') && args[args.indexOf('--allowedTools') + 1] === 'Bash(gh *)');
   assert.equal(args.at(-1), 'p');
 
-  const bare = claudeAdapter.args({ prompt: 'p', sessionId: 'abc', model: null, effort: null, tools: [] });
+  const bare = claudeAdapter.args({ prompt: 'p', sessionId: 'abc', model: null, effort: null, tools: [], denyEdits: true });
   assert.ok(!bare.includes('--model') && !bare.includes('--effort') && !bare.includes('--allowedTools'));
   assert.ok(bare.includes('--resume') && bare[bare.indexOf('--resume') + 1] === 'abc');
 });
@@ -242,12 +242,12 @@ test('the Codex adapter reads what Codex prints', () => {
   assert.deepEqual(codexAdapter.parse('{"type":"turn.completed","usage":{}}'), { done: { ok: true } });
   assert.deepEqual(codexAdapter.parse('{"type":"turn.failed","error":{"message":"nope"}}'), { done: { ok: false, error: 'nope' } });
 
-  const first = codexAdapter.args({ prompt: 'p', sessionId: null, model: 'gpt-x', effort: 'low', tools: [] });
+  const first = codexAdapter.args({ prompt: 'p', sessionId: null, model: 'gpt-x', effort: 'low', tools: [], denyEdits: true });
   assert.deepEqual(first.slice(0, 3), ['exec', '--json', '--skip-git-repo-check']);
   assert.ok(first.includes('-c') && first.includes('model="gpt-x"') && first.includes('model_reasoning_effort="low"'));
   assert.ok(first.includes('sandbox_mode="workspace-write"') && first.includes('sandbox_workspace_write.network_access=true'));
 
-  const again = codexAdapter.args({ prompt: 'p', sessionId: 't-1', model: null, effort: null, tools: [] });
+  const again = codexAdapter.args({ prompt: 'p', sessionId: 't-1', model: null, effort: null, tools: [], denyEdits: true });
   assert.deepEqual(again.slice(0, 2), ['exec', 'resume']);
   assert.deepEqual(again.slice(-2), ['t-1', 'p']);
   assert.ok(again.includes('sandbox_workspace_write.network_access=true'), 'the resumed turn is sandboxed the same way');

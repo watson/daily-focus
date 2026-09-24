@@ -126,3 +126,32 @@ export async function postAssistantStop(id) {
   }
   return res.json();
 }
+
+/**
+ * Start the morning agent now. Resolves once it is running; the brief lands
+ * through the store like any other, and the report streams in over SSE.
+ * JSON, though there is nothing to say: the server refuses anything else, so a
+ * page on another site can't start a run with a form post.
+ */
+export async function postAgentRun() {
+  const res = await fetch('/api/agent/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/agent/run returned ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Stop the morning agent's run. Resolves with fresh state. */
+export async function postAgentStop() {
+  const res = await fetch('/api/agent/stop', { method: 'POST' });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/agent/stop returned ${res.status}`);
+  }
+  return res.json();
+}

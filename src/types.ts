@@ -709,6 +709,39 @@ export interface AssistantState {
   items: Record<string, AssistantItemState>;
 }
 
+/* ---------- the morning agent, started by hand ---------- */
+
+/**
+ * One run of the morning agent that the dashboard started. A line-pair in
+ * `agent.jsonl`, shaped like the assistant's. Runs the scheduler starts never
+ * appear here: the dashboard neither sees them nor has anything to say about them.
+ */
+export interface AgentRun {
+  id: string;
+  cli: import('./config.ts').CliName;
+  /** The CLI's session id, so the run can be opened there. Null until it has said. */
+  sessionId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  status: 'running' | 'done' | 'failed' | 'aborted';
+  /**
+   * What the agent reported back, as its prompt asks it to: what it wrote, what
+   * it dropped, what it could not reach. While running, the latest thing it
+   * said. Markdown.
+   */
+  report: string;
+  /** Why a run failed or was aborted, in the CLI's words where it had any. */
+  error: string | null;
+}
+
+/** The hand-started agent as the client sees it. */
+export interface AgentRunState {
+  enabled: boolean;
+  cli: import('./config.ts').CliName | null;
+  /** The newest run, finished or not. Null before the first. */
+  last: AgentRun | null;
+}
+
 export interface DashboardState {
   /**
    * The standing objective from focus.md, with the agent-only section removed.
@@ -762,6 +795,8 @@ export interface DashboardState {
   tickets: TicketBoardState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
   assistant: AssistantState;
+  /** The morning agent, run from the dashboard. Present even when off, so the client can hide the button. */
+  agentRun: AgentRunState;
   stats: {
     open: number;
     topPriority: number;

@@ -57,6 +57,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/jira.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, ticket classification, and polling |
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
+| `src/agent.ts` | Reruns the morning agent through a coding-agent CLI when the user asks |
 | `public/` | Rendering, styles, keyboard controls, and browser API calls |
 | `scripts/` | Store initialization, sample data, and brief audits |
 | `tools/dfcal/` | The macOS calendar helper |
@@ -105,6 +106,8 @@ see `src/server.ts` for request validation and additional session/calendar route
 | `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The dashboard's only write to anything outside this machine |
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
+| `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `application/json` only, so another site can't start one. `409` when it is off or already running |
+| `POST /api/agent/stop` | Kills the morning agent's run |
 | `GET /api/health` | Server health check |
 
 ## Update the screenshot

@@ -141,10 +141,15 @@ export interface JiraConfig {
   acliPath: string;
 }
 
-/** Which coding-agent CLI answers when the user asks the assistant for help. */
-export type AssistantAgent = 'claude' | 'codex';
+/** A coding-agent CLI the dashboard knows how to run headless. */
+export type CliName = 'claude' | 'codex';
 
-export const ASSISTANT_AGENTS: readonly AssistantAgent[] = ['claude', 'codex'];
+export const CLI_NAMES: readonly CliName[] = ['claude', 'codex'];
+
+/** Which CLI answers when the user asks the assistant for help. */
+export type AssistantAgent = CliName;
+
+export const ASSISTANT_AGENTS: readonly AssistantAgent[] = CLI_NAMES;
 
 /**
  * How the on-demand assistant runs. See `assistant.ts`.
@@ -175,6 +180,33 @@ export interface AssistantConfig {
    * reaches the thread.
    * Codex has no equivalent; its sandbox, confined to the empty working
    * directory, is the whole policy.
+   */
+  tools: readonly string[];
+}
+
+/**
+ * How the dashboard runs the morning agent when the user asks for a fresh brief.
+ * See `agent.ts`.
+ *
+ * The scheduler stays the agent's usual home; this is the same agent started by
+ * hand, on the same wrapper prompt, in the store. Its settings are its own rather
+ * than borrowed from the assistant's: the brief is typically written by another
+ * CLI, another model and at another effort than a quick answer about one row.
+ */
+export interface AgentRunConfig {
+  /** `DAILY_FOCUS_AGENT=codex` or `claude`; null means off, which is the default. */
+  cli: CliName | null;
+  /** The CLI binary. Overridable for the reason `ghPath` is. */
+  binPath: string;
+  /** Passed through untouched, as the assistant's are. Null means no flag. */
+  model: string | null;
+  effort: string | null;
+  /**
+   * Tool permissions handed to Claude Code, as for the assistant. Unlike the
+   * assistant it has to write, but only the brief: writing `items.json` and its
+   * temporary sibling is always allowed, and nothing else in the store is.
+   * The rest reaches its sources. Codex ignores this; its sandbox, confined to
+   * the store, is the policy.
    */
   tools: readonly string[];
 }
@@ -268,6 +300,10 @@ export interface Config {
    */
   assistantPromptFile: string;
   assistantPromptSource: string;
+  /** The morning agent, when the dashboard starts it by hand. */
+  agent: AgentRunConfig;
+  /** Append-only record of every run the dashboard started, written by the server. */
+  agentLogFile: string;
 }
 
 function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
@@ -391,19 +427,17 @@ function envJira(env: NodeJS.ProcessEnv, profile: Profile): JiraConfig {
  * `off`, or one of the CLIs. Anything else throws: read as off, a typo would
  * quietly remove the Ask button and nothing would say why.
  */
-function envAssistantAgent(env: NodeJS.ProcessEnv): AssistantAgent | null {
-  const raw = envString('DAILY_FOCUS_ASSISTANT', 'off', env).toLowerCase();
+function envCli(name: string, env: NodeJS.ProcessEnv): CliName | null {
+  const raw = envString(name, 'off', env).toLowerCase();
   if (['off', 'false', '0', 'no', 'none'].includes(raw)) return null;
-  if (!(ASSISTANT_AGENTS as readonly string[]).includes(raw)) {
-    throw new Error(
-      `DAILY_FOCUS_ASSISTANT must be off or one of ${ASSISTANT_AGENTS.join(', ')}, got ${JSON.stringify(raw)}`,
-    );
+  if (!(CLI_NAMES as readonly string[]).includes(raw)) {
+    throw new Error(`${name} must be off or one of ${CLI_NAMES.join(', ')}, got ${JSON.stringify(raw)}`);
   }
-  return raw as AssistantAgent;
+  return raw as CliName;
 }
 
 function envAssistant(env: NodeJS.ProcessEnv): AssistantConfig {
-  const agent = envAssistantAgent(env);
+  const agent = envCli('DAILY_FOCUS_ASSISTANT', env);
   // Commas only: a Claude Code permission rule has a space in it, `Bash(gh *)`.
   const tools = envNameList('DAILY_FOCUS_ASSISTANT_TOOLS', env);
   return {
@@ -421,6 +455,48 @@ function envAssistant(env: NodeJS.ProcessEnv): AssistantConfig {
  * the user asked for in so many words, and the Gmail connector for drafts.
  */
 export const DEFAULT_ASSISTANT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli *)', 'WebFetch', 'mcp__claude_ai_Gmail'];
+
+/**
+ * What the morning agent may reach its sources with under Claude Code, unless
+ * `DAILY_FOCUS_AGENT_TOOLS` says otherwise: the two CLIs, fetching a page, and
+ * Gmail. Its other sources — calendar, chat, documents — are whichever
+ * connectors the user has, under names only they know, so they are added by
+ * setting the list.
+ */
+export const DEFAULT_AGENT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli *)', 'WebFetch', 'mcp__claude_ai_Gmail'];
+
+/**
+ * What the morning agent may always do, whatever the list says, since a brief
+ * can't be written without it: write `items.json` by way of a temporary sibling
+ * and a rename, and nothing else in the store. The prompt and schema are
+ * symlinks out of the store into this repo, so reading them is allowed where
+ * they actually live as well.
+ */
+function briefWritingTools(): string[] {
+  const repo = resolve(import.meta.dirname, '..');
+  return [
+    // `//` anchors a rule at the filesystem root; the path supplies one slash.
+    `Read(/${repo}/prompts/**)`,
+    `Read(/${repo}/schema/**)`,
+    'Write(./items.json)',
+    'Write(./items.json.*)',
+    'Edit(./items.json.*)',
+    'Bash(mv items.json.* items.json)',
+  ];
+}
+
+function envAgent(env: NodeJS.ProcessEnv): AgentRunConfig {
+  const cli = envCli('DAILY_FOCUS_AGENT', env);
+  // Commas only, for the reason the assistant's list gives.
+  const tools = envNameList('DAILY_FOCUS_AGENT_TOOLS', env);
+  return {
+    cli,
+    binPath: expandHome((env.DAILY_FOCUS_AGENT_BIN ?? '').trim() || (cli ?? 'codex')),
+    model: envString('DAILY_FOCUS_AGENT_MODEL', '', env) || null,
+    effort: envString('DAILY_FOCUS_AGENT_EFFORT', '', env) || null,
+    tools: [...briefWritingTools(), ...(tools.length > 0 ? tools : DEFAULT_AGENT_TOOLS)],
+  };
+}
 
 /**
  * Copy the day-of-week field out of whatever runs the agent: `1-5`, `0-4`, `0,6`.
@@ -502,5 +578,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     assistantDir: resolve(dataDir, 'assistant'),
     assistantPromptFile: resolve(dataDir, 'assistant.md'),
     assistantPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'assistant.md'),
+    agent: envAgent(env),
+    agentLogFile: resolve(dataDir, 'agent.jsonl'),
   };
 }

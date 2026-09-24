@@ -242,6 +242,12 @@ export interface SpawnOptions {
   model: string | null;
   effort: string | null;
   tools: readonly string[];
+  /**
+   * Deny the editing tools by name. True for the assistant, which is given
+   * nothing to edit; false for the morning agent, which has to write its brief
+   * and is held to that one file by `tools` instead.
+   */
+  denyEdits: boolean;
 }
 
 /**
@@ -270,11 +276,11 @@ function parseLine(line: string): Record<string, unknown> | null {
  *
  * `--permission-prompts none` with `--permission-mode dontAsk` means anything
  * that would have asked is denied instead, and only `--allowedTools` gets
- * through. The editing tools are denied by name on top, so no allowlist entry
- * can let them back in by accident.
+ * through. For the assistant the editing tools are denied by name on top, so no
+ * allowlist entry can let them back in by accident.
  */
 export const claudeAdapter: Adapter = {
-  args({ prompt, sessionId, model, effort, tools }) {
+  args({ prompt, sessionId, model, effort, tools, denyEdits }) {
     const args = [
       '-p',
       '--output-format',
@@ -284,11 +290,8 @@ export const claudeAdapter: Adapter = {
       'dontAsk',
       '--permission-prompts',
       'none',
-      '--disallowedTools',
-      'Edit',
-      'Write',
-      'NotebookEdit',
     ];
+    if (denyEdits) args.push('--disallowedTools', 'Edit', 'Write', 'NotebookEdit');
     if (tools.length > 0) args.push('--allowedTools', ...tools);
     if (model) args.push('--model', model);
     if (effort) args.push('--effort', effort);
@@ -541,6 +544,7 @@ export class Assistant {
       model: this.config.assistant.model,
       effort: this.config.assistant.effort,
       tools: this.config.assistant.tools,
+      denyEdits: true,
     });
 
     let child: ChildProcess;

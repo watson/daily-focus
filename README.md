@@ -114,6 +114,15 @@ handed back as text for you to post. It never sends, posts, or edits a file, and
 has no checkout: fixing conflicts or a build is work for a real coding session, and
 this is for the questions you would otherwise answer by opening six tabs.
 
+## Rerun the brief
+
+The morning's brief can be out of date by lunch. With `DAILY_FOCUS_AGENT` set to
+`codex` or `claude`, the refresh icon beside the brief's age starts the morning agent
+now, through that CLI, on the same prompt your scheduler uses. It writes the brief
+just as a scheduled run does, keeping what you have marked done, snoozed or noted.
+When it finishes, its report says what it wrote and what it could not reach. See
+[SETUP.md](SETUP.md#rerun-the-brief-from-the-dashboard).
+
 ## Keyboard shortcuts
 
 Press **?** in the dashboard to see the shortcuts.

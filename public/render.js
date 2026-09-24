@@ -82,10 +82,12 @@ function sourceColor(source) {
 
 /* ---------- header & banners ---------- */
 
-export function renderHeader(state) {
+export function renderHeader(state, handlers) {
   const dateEl = document.getElementById('header-date');
   const now = new Date(state.now);
   dateEl.textContent = formatDay(state.brief.date ?? state.now) || formatDay(now.toISOString());
+
+  renderBriefRefresh(state, handlers);
 
   const freshness = document.getElementById('freshness');
   if (state.brief.generatedAt === null) {
@@ -99,6 +101,43 @@ export function renderHeader(state) {
   const by = state.brief.generatedBy ? ` by ${state.brief.generatedBy}` : '';
   freshness.textContent = `updated ${when}${by}`;
   freshness.dataset.stale = String(state.brief.stale);
+}
+
+/**
+ * The refresh icon beside the brief's age, when the dashboard may start the
+ * morning agent. The same icon the boards use, spinning for the same reason,
+ * but no label of its own: "updated … ago" beside it already is one.
+ */
+function renderBriefRefresh(state, handlers) {
+  const slot = document.getElementById('brief-refresh');
+  if (!slot) return;
+  const agent = state.agentRun;
+  if (!agent?.enabled) {
+    replace(slot);
+    return;
+  }
+  const running = agent.last?.status === 'running';
+  const label = running
+    ? `The morning agent is writing a new brief, started ${formatTime(agent.last.startedAt)}`
+    : 'Run the morning agent now, for a fresh brief';
+  replace(
+    slot,
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'icon-button refresh-button',
+        title: label,
+        'aria-label': label,
+        'aria-busy': String(running),
+        dataset: { fetching: String(running), stale: String(Boolean(state.brief.stale)) },
+        onclick: () => {
+          if (!running) handlers.runAgent();
+        },
+      },
+      el('span', { class: 'refresh-button__icon', 'aria-hidden': 'true' }),
+    ),
+  );
 }
 
 /**
@@ -117,19 +156,26 @@ export function renderConnection(connectionError) {
   pill.title = `${connectionError.message}. Showing the last update received; reconnecting on its own.`;
 }
 
-export function renderBanners(state) {
+export function renderBanners(state, ui = {}, handlers = {}) {
   const container = document.getElementById('banners');
   const banners = [];
+  const agent = state.agentRun;
+  const running = agent?.last?.status === 'running';
 
   if (state.problem) {
     banners.push(banner('critical', '!', state.problem));
   }
-  if (state.brief.stale && !state.problem) {
+  if (running) {
+    // Supersedes the three below: each is a guess about when the next brief
+    // comes, and this one is on its way.
+    banners.push(agentRunBanner(agent.last, state, ui, handlers));
+  } else if (state.brief.stale && !state.problem) {
     banners.push(
       banner(
         'warning',
         '!',
         `This brief is ${state.brief.ageHours} hours old. The morning agent may not have run.`,
+        agent?.enabled ? runNowButton(handlers) : null,
       ),
     );
   } else if (state.brief.refreshPending && !state.problem) {
@@ -152,11 +198,94 @@ export function renderBanners(state) {
       ),
     );
   }
+  // Today's only: put away in one browser, a report from last week shouldn't
+  // turn up again in another.
+  if (
+    !running &&
+    agent?.last &&
+    agent.last.id !== ui.agentReportSeen &&
+    localDateKey(parseDate(agent.last.startedAt) ?? new Date(0)) === localDateKey(new Date(state.now))
+  ) {
+    banners.push(agentRunBanner(agent.last, state, ui, handlers));
+  }
   for (const warning of state.warnings) {
     banners.push(banner('warning', '!', warning));
   }
 
   replace(container, banners);
+}
+
+function runNowButton(handlers) {
+  return el('button', { type: 'button', class: 'button banner__action', onclick: () => handlers.runAgent() }, 'Run it now');
+}
+
+/**
+ * A run the dashboard started: going, or finished and not yet put away.
+ *
+ * The report is the agent's own account of the run — what it wrote, what it
+ * dropped as handled, what it could not reach — which on a schedule nobody sees.
+ * Folded away, because the brief it describes is already on the page; open, it
+ * is the one place to learn that a source was down.
+ */
+function agentRunBanner(run, state, ui, handlers) {
+  const now = new Date(state.now);
+  if (run.status === 'running') {
+    return banner(
+      'info',
+      'i',
+      el(
+        'span',
+        { class: 'agent-run' },
+        `The morning agent is writing a new brief, started ${relativeTime(run.startedAt, now)}.`,
+        // The latest thing it said, which along the way is what it is doing now.
+        run.report ? el('span', { class: 'agent-run__progress' }, firstLine(run.report)) : null,
+      ),
+      el('button', { type: 'button', class: 'button banner__action', onclick: () => handlers.stopAgent() }, 'Stop'),
+    );
+  }
+
+  const ended = run.endedAt ? formatTime(run.endedAt) : '';
+  const headline =
+    run.status === 'done'
+      ? `The morning agent finished at ${ended}.`
+      : run.status === 'aborted'
+        ? `The morning agent was stopped at ${ended}: ${run.error}.`
+        : `The morning agent failed at ${ended}: ${run.error}.`;
+  return banner(
+    run.status === 'done' ? 'info' : 'warning',
+    run.status === 'done' ? 'i' : '!',
+    el(
+      'span',
+      { class: 'agent-run' },
+      headline,
+      run.report
+        ? el(
+            'details',
+            {
+              class: 'agent-run__report',
+              // Every state push rebuilds the banners, so whether the report is
+              // open has to outlive the element, or it would snap shut unread.
+              open: ui.agentReportOpen === run.id,
+              ontoggle: (event) => handlers.toggleAgentReport?.(run.id, event.currentTarget.open),
+            },
+            el('summary', {}, run.status === 'done' ? 'Its report' : 'What it said last'),
+            el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(run.report)),
+          )
+        : null,
+    ),
+    run.status === 'done' ? null : runNowButton(handlers),
+    el(
+      'button',
+      { type: 'button', class: 'button banner__action', onclick: () => handlers.dismissAgentRun(run.id) },
+      'Dismiss',
+    ),
+  );
+}
+
+/** The first non-empty line, without the Markdown that would read as noise in one. */
+function firstLine(text) {
+  const line = String(text).split('\n').find((l) => l.trim() !== '') ?? '';
+  return line.replace(/^[#>*\-\s]+/, '').replace(/[*_`]/g, '').trim();
 }
 
 /**
@@ -186,12 +315,13 @@ function nextRunPhrase(state) {
  * deliberately not — they quote titles and ids an LLM wrote, and a stray bracket
  * in one should read as the stray bracket it is rather than become a link.
  */
-function banner(tone, icon, text) {
+function banner(tone, icon, text, ...actions) {
   return el(
     'div',
     { class: `banner banner--${tone}`, role: 'status' },
     el('span', { class: 'banner__icon', 'aria-hidden': 'true' }, icon),
-    el('span', {}, text),
+    el('span', { class: 'banner__text' }, text),
+    actions,
   );
 }
 

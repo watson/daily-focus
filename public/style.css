@@ -264,8 +264,13 @@ body[data-view='tickets'] #tickets-refresh {
   display: contents;
 }
 body[data-view='board'] #freshness,
-body[data-view='tickets'] #freshness {
+body[data-view='tickets'] #freshness,
+body[data-view='board'] #brief-refresh,
+body[data-view='tickets'] #brief-refresh {
   display: none;
+}
+.brief-refresh {
+  display: contents;
 }
 /* Reads as the Today tab's "updated … ago" does, so the three tabs match. */
 .refresh-label {
@@ -434,6 +439,38 @@ body[data-view='tickets'] #freshness {
 .banner--warning .banner__icon {
   color: var(--serious);
 }
+.banner__text {
+  flex: 1;
+  min-width: 0;
+}
+.banner__action {
+  flex: none;
+  align-self: center;
+}
+
+/* A run of the morning agent the dashboard started, and what it reported. */
+.agent-run__progress {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-run__report {
+  margin-top: 4px;
+}
+.agent-run__report summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.agent-run__report .assistant__reply {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
 /* Explanation, not status — so it borrows the accent, not one of the four state hues. */
 .banner--info {
   border-left: 3px solid var(--accent);

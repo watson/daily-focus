@@ -161,7 +161,7 @@ export class Store {
     now: Date = new Date(),
     actions?: readonly Action[],
     calendar?: CalendarState,
-  ): Promise<Omit<DashboardState, 'assetVersion' | 'board' | 'tickets' | 'assistant'>> {
+  ): Promise<Omit<DashboardState, 'assetVersion' | 'board' | 'tickets' | 'assistant' | 'agentRun'>> {
     const [{ brief, error, warnings }, readActions, focus, schedule] = await Promise.all([
       this.readBrief(),
       // The caller may have read the log already, to fold the board from the same
