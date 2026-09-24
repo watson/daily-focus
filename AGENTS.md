@@ -39,7 +39,7 @@ npm run audit       # re-derives the agent's own checklist from the brief on dis
 ```
 
 Configuration is read from the real environment layered over a repo-root `.env`, see
-`src/env.ts`. `test/docs-contract.test.ts` checks that `.env.example`, the README and
+`src/env.ts`. `test/docs-contract.test.ts` checks that `.env.example`, `SETUP.md` and
 `src/config.ts` all name the same variables, so adding a knob means adding it in all
 three.
 
