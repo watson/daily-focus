@@ -1103,6 +1103,7 @@ export function renderBoard(state, ui, handlers) {
   const parts = [];
 
   if (!board || !board.enabled) {
+    replace(document.getElementById('board-refresh'));
     replace(
       container,
       el(
@@ -1114,7 +1115,7 @@ export function renderBoard(state, ui, handlers) {
     return;
   }
 
-  parts.push(boardStatus(board, now, handlers));
+  replace(document.getElementById('board-refresh'), boardStatus(board, now, handlers));
 
   if (board.reason) parts.push(banner('critical', '!', board.reason));
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
@@ -1152,7 +1153,7 @@ export function renderBoard(state, ui, handlers) {
   restoreNoteField(container, ui, note);
 }
 
-/** "as of 10:42 · polling alice, bob every 5 min", and the button that doesn't wait. */
+/** "as of 10:42 · polling alice, bob every 5 min", on the refresh control. */
 function boardStatus(board, now, handlers) {
   const polled = board.accounts.filter((account) => account.ok).map((account) => account.login);
   const bits = [];
@@ -1161,29 +1162,74 @@ function boardStatus(board, now, handlers) {
   if (polled.length > 0) {
     bits.push(`polling ${polled.join(', ')} every ${board.pollMinutes} min`);
   }
+  let stale = false;
   if (board.fetchedAt && !board.fetching) {
     const ageMinutes = Math.round((now.getTime() - new Date(board.fetchedAt).getTime()) / 60_000);
     // Older than two polls means the poller has been failing or paused; say so
-    // rather than let an "as of" from this morning pass for current.
-    if (ageMinutes > board.pollMinutes * 2) bits.push(`${relativeTime(board.fetchedAt, now)}`);
+    // rather than let an "as of" from this morning pass for current. The label
+    // and icon turn red too, since the age itself is only on hover.
+    stale = ageMinutes > board.pollMinutes * 2;
+    if (stale) bits.push(`${relativeTime(board.fetchedAt, now)}`);
   }
 
-  return el(
-    'div',
-    { class: 'board__status' },
-    el('span', { class: 'board__status-text' }, bits.join(' · ') || 'Not polled yet'),
+  return refreshControl({
+    source: 'GitHub',
+    fetchedAt: board.fetchedAt,
+    status: bits.join(' · ') || 'Not polled yet',
+    fetching: board.fetching,
+    stale,
+    action: 'Ask GitHub now (r)',
+    onRefresh: () => handlers.refreshBoard(),
+  });
+}
+
+/**
+ * The refresh control both boards put in the page header: which source it reads
+ * and when it last did, then an icon that spins while a read is in flight, with
+ * the rest of the status in its tooltip.
+ *
+ * The source is named in words because the slot is shared. The header's right
+ * side belongs to whichever tab is showing — the brief's age on Today — and an
+ * unlabelled icon there reads as refreshing everything, when it only ever asks
+ * the one source behind this tab.
+ *
+ * The button is never `disabled`, because a disabled button swallows the hover
+ * that carries the detail; a click mid-read is ignored instead.
+ */
+function refreshControl({ source, fetchedAt, status, fetching, stale, action, onRefresh }) {
+  const label = `${status} — ${action}`;
+  // The last good read stays on screen during a new one; the icon says it is
+  // reading. Only a board with nothing read yet has no time to show.
+  const when = fetchedAt ? formatTime(fetchedAt) : fetching ? 'reading…' : 'not read yet';
+  return [
+    el(
+      'span',
+      {
+        class: 'refresh-label',
+        dataset: { stale: String(stale) },
+        // The button's label says all of this and more; read once, not twice.
+        'aria-hidden': 'true',
+      },
+      `${source} · ${when}`,
+    ),
     el(
       'button',
       {
         type: 'button',
-        class: 'button',
-        disabled: board.fetching,
-        title: 'Ask GitHub now (r)',
-        onclick: () => handlers.refreshBoard(),
+        class: 'icon-button refresh-button',
+        title: label,
+        'aria-label': label,
+        'aria-busy': String(fetching),
+        dataset: { fetching: String(fetching), stale: String(stale) },
+        onclick: () => {
+          if (!fetching) onRefresh();
+        },
       },
-      board.fetching ? 'Refreshing…' : 'Refresh',
+      // Drawn by the stylesheet as a mask, since `el()` builds HTML elements and
+      // an SVG needs its own namespace.
+      el('span', { class: 'refresh-button__icon', 'aria-hidden': 'true' }),
     ),
-  );
+  ];
 }
 
 /** Exported for `test/board-ui.test.ts`, which renders one row against a DOM stub. */
@@ -1559,6 +1605,7 @@ export function renderTicketBoard(state, ui, handlers) {
   const parts = [];
 
   if (!board || !board.enabled) {
+    replace(document.getElementById('tickets-refresh'));
     replace(container, el('p', { class: 'empty' }, 'The Jira ticket board is switched off (DAILY_FOCUS_JIRA=off).'));
     return;
   }
@@ -1570,8 +1617,8 @@ export function renderTicketBoard(state, ui, handlers) {
   const mode = ui.ticketMode === 'working' ? 'working' : 'sync';
 
   parts.push(ticketModeSwitch(mode, { sync: open.length, working: inProgress.length }, handlers));
-  parts.push(ticketStatus(board, handlers, mode));
-  // Under the status line rather than beside the rows: it is a key, read once,
+  replace(document.getElementById('tickets-refresh'), ticketStatus(board, handlers, mode));
+  // Under the mode switch rather than beside the rows: it is a key, read once,
   // and a key repeated per court would be three copies of the same sentence.
   // Built from the rows this view shows, so it never names a type that isn't here.
   const legend = typeLegend(mode === 'working' ? inProgress : board.rows);
@@ -1676,7 +1723,7 @@ function workingOnView(board, inProgress, state, ui, handlers) {
     .map((group) => section(group.title, group.rows, state, ui, handlers, null, renderTicketRow));
 }
 
-/** "as of 10:42 · 19 of 86 unfinished tickets · reading as you@work every 15 min", and Refresh. */
+/** "as of 10:42 · 19 of 86 unfinished tickets · reading as you@work every 15 min", on the refresh control. */
 function ticketStatus(board, handlers, mode = 'sync') {
   const bits = [];
   // "refreshing…", as the pull request board says, so it cannot land beside the
@@ -1695,22 +1742,16 @@ function ticketStatus(board, handlers, mode = 'sync') {
   // One clause, so "reading…" above doesn't land next to a second "reading".
   bits.push(`reading ${board.account ? `as ${board.account} ` : ''}every ${board.pollMinutes} min`);
 
-  return el(
-    'div',
-    { class: 'board__status' },
-    el('span', { class: 'board__status-text' }, bits.join(' · ')),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'button',
-        disabled: board.fetching,
-        title: 'Ask Jira now (r)',
-        onclick: () => handlers.refreshTickets(),
-      },
-      board.fetching ? 'Refreshing…' : 'Refresh',
-    ),
-  );
+  // No stale state: this status line has never carried an age to judge one by.
+  return refreshControl({
+    source: 'Jira',
+    fetchedAt: board.fetchedAt,
+    status: bits.join(' · '),
+    fetching: board.fetching,
+    stale: false,
+    action: 'Ask Jira now (r)',
+    onRefresh: () => handlers.refreshTickets(),
+  });
 }
 
 /** Exported for `test/tickets-ui.test.ts`, which renders one row against a DOM stub. */
