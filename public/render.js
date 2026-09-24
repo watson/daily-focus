@@ -1547,7 +1547,7 @@ const TICKET_COURT_HINT = {
  * Which means this is the one place colour carries a cue on its own, so it is
  * kept to the thing that changes the *least* about what you do: the load-bearing
  * facts — key, summary, status — stay as text, every dot carries its type as an
- * `aria-label` and a hover title, and `typeLegend` names the ones on screen.
+ * `aria-label` and a hover title, and `typeLegend` names the ones on the board.
  *
  * Task keeps Jira's own amber so the ordinary row looks exactly as it did and the
  * exceptions are what stand out. The rest are drawn from the categorical hues and
@@ -1569,7 +1569,7 @@ function typeColor(issueType) {
 }
 
 /**
- * The key to the dots, built from the types actually on screen rather than from
+ * The key to the dots, built from the types actually on the board rather than from
  * the list above — so it never names a type this board isn't showing, and a type
  * nobody anticipated still gets a swatch and its own name rather than going
  * silently grey.
@@ -1632,8 +1632,10 @@ export function renderTicketBoard(state, ui, handlers) {
   replace(document.getElementById('tickets-refresh'), ticketStatus(board, handlers, mode));
   // On the switch's line rather than beside the rows: it is a key, read once,
   // and a key repeated per court would be three copies of the same sentence.
-  // Built from the rows this view shows, so it never names a type that isn't here.
-  const legend = typeLegend(mode === 'working' ? inProgress : board.rows);
+  // Built from both views' rows, so it is the same key on either side of the
+  // switch: one built per view vanished whenever a view held a single type, and
+  // the line under it jumped as it came and went.
+  const legend = typeLegend([...board.rows, ...inProgress]);
   parts.push(
     el(
       'div',

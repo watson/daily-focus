@@ -1518,6 +1518,8 @@ body[data-view='tickets'] .layout {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
+  /* A <p>, and its default margins made the switch's line taller whenever the key was on it. */
+  margin: 0;
   font-size: 12px;
   color: var(--ink-3);
 }
