@@ -1077,19 +1077,29 @@ export function renderTabs(state, ui) {
     tab.setAttribute('aria-selected', String(tab.dataset.view === ui.view));
   }
   const waiting = state.board?.enabled ? state.board.counts.you : 0;
-  badge('board-badge', waiting, `${waiting} waiting on you`);
+  badge(
+    'board-badge',
+    waiting,
+    `${waiting} ${waiting === 1 ? 'pull request is' : 'pull requests are'} waiting on you`,
+  );
 
   const tickets = state.tickets;
   const flagged = tickets?.enabled ? tickets.rows.filter((row) => row.status === 'open').length : 0;
-  badge('tickets-badge', flagged, `${flagged} tickets whose status looks wrong`);
+  badge(
+    'tickets-badge',
+    flagged,
+    `${flagged} ${flagged === 1 ? 'ticket has a status that looks' : 'tickets have statuses that look'} wrong`,
+  );
 }
 
+/** The label doubles as the hover tooltip, so a bare number can be decoded. */
 function badge(id, count, label) {
   const node = document.getElementById(id);
   if (!node) return;
   node.hidden = count === 0;
   node.textContent = String(count);
   node.setAttribute('aria-label', label);
+  node.title = label;
 }
 
 /* ---------- the pull request board ---------- */

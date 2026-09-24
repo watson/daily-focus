@@ -1295,6 +1295,24 @@ kbd {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  cursor: help;
+}
+/*
+ * Centring the line box doesn't centre the digits: where they sit inside it
+ * depends on the font's ascent and descent, which differ by browser, and in
+ * an 18px circle a pixel off is visible. Trimmed to cap height and baseline,
+ * the line box is exactly the digits, so equal padding centres them. The
+ * trim only applies to a block container's own lines, not to the anonymous
+ * item a grid wraps its text in, hence inline-block.
+ */
+@supports (text-box: trim-both cap alphabetic) {
+  .tab__badge {
+    display: inline-block;
+    height: auto;
+    padding: calc((18px - 1cap) / 2) 5px;
+    text-align: center;
+    text-box: trim-both cap alphabetic;
+  }
 }
 
 /*
@@ -1542,7 +1560,8 @@ body[data-view='tickets'] .layout {
  */
 .tab__badge--quiet {
   background: var(--surface-sunken);
-  border: 1px solid var(--hairline);
+  /* A shadow, not a border, so it adds nothing to the padding that centres the digits. */
+  box-shadow: inset 0 0 0 1px var(--hairline);
   color: var(--ink-2);
 }
 
