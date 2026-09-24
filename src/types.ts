@@ -653,6 +653,62 @@ export interface TicketsFile {
 }
 
 /** Everything the client needs for one render. */
+/* ---------- the assistant ---------- */
+
+/**
+ * One request to the assistant and what came back. A line-pair in
+ * `assistant.jsonl`: a `started` record, then one of `finished`, `failed` or
+ * `aborted`. The transcript itself stays with the CLI, which keeps it under the
+ * session id; this is the join, plus the one thing the panel has to redraw after
+ * a reload, which is the reply.
+ */
+export interface AssistantTurn {
+  id: string;
+  /** The item the turn was about: a brief item, a pull request row or a ticket. */
+  itemId: string;
+  agent: import('./config.ts').AssistantAgent;
+  /** The CLI's own session id, for resuming. Null until the CLI has said. */
+  sessionId: string | null;
+  /** What was asked, as sent: a quick action's text or what was typed. */
+  request: string;
+  /** The quick action it came from, when it did. */
+  action: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  status: 'running' | 'done' | 'failed' | 'aborted';
+  /** The assistant's final message, or so far while running. Markdown. */
+  reply: string;
+  /** Why a turn failed or was aborted, in the CLI's words where it had any. */
+  error: string | null;
+}
+
+/** A canned request offered as a button, so common asks need no typing. */
+export interface AssistantQuickAction {
+  id: string;
+  label: string;
+  /** The text sent as the request. */
+  request: string;
+  /** Which sources it applies to; null means every row. */
+  sources: readonly Source[] | null;
+}
+
+/** Everything the panel on one row needs. */
+export interface AssistantItemState {
+  running: boolean;
+  /** The session the next message resumes, once there has been a first turn. */
+  sessionId: string | null;
+  turns: AssistantTurn[];
+}
+
+/** The assistant as the client sees it. */
+export interface AssistantState {
+  enabled: boolean;
+  agent: import('./config.ts').AssistantAgent | null;
+  quickActions: AssistantQuickAction[];
+  /** By item id. Only items that have ever been asked about appear. */
+  items: Record<string, AssistantItemState>;
+}
+
 export interface DashboardState {
   /**
    * The standing objective from focus.md, with the agent-only section removed.
@@ -704,6 +760,8 @@ export interface DashboardState {
   board: BoardState;
   /** The Jira ticket board. Present even when off, for the same reason. */
   tickets: TicketBoardState;
+  /** The on-demand assistant. Present even when off, so the client can hide the button. */
+  assistant: AssistantState;
   stats: {
     open: number;
     topPriority: number;

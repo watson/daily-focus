@@ -280,11 +280,16 @@ section('Files linked from the repo');
 // work prompt's old name, before there were two — is stale and gets repointed.
 await linkIntoStore(config.promptFile, config.promptSource, `the ${config.profile} morning prompt`);
 await linkIntoStore(config.schemaFile, resolve(repoRoot, 'schema/items.schema.json'), 'the payload schema');
+// The assistant's instructions, which the server reads and hands to the CLI. Linked
+// for the same reason the morning prompt is; the server falls back to the repo's
+// copy until this exists, so an unlinked store still works.
+await linkIntoStore(config.assistantPromptFile, config.assistantPromptSource, "the assistant's instructions");
 
 section('Files you do not own');
 kept('items.json', 'the briefing agent writes it; absent reads as no brief yet');
 kept('actions.jsonl', 'the dashboard appends to it as you action things');
 kept('sessions.jsonl', 'the dashboard appends to it as you run focus sessions');
+kept('assistant.jsonl', 'the dashboard appends to it as you ask the assistant for help');
 
 if (platform() !== 'darwin') {
   section('Note');

@@ -507,9 +507,10 @@ export function renderSections(state, ui, handlers) {
  * to be discarded — the only place to get them is off it, just before it goes.
  */
 function captureNoteField(container) {
-  const input = container.querySelector('.note-form input');
+  const input = container.querySelector('.note-form input, .assistant__input');
   if (!input) return null;
   return {
+    kind: input.classList.contains('assistant__input') ? 'assistant' : 'note',
     id: input.closest('.item')?.dataset.id ?? null,
     focused: document.activeElement === input,
     start: input.selectionStart,
@@ -519,12 +520,25 @@ function captureNoteField(container) {
 
 /** Put focus and caret back on the field that replaced the one we measured. */
 function restoreNoteField(container, ui, before) {
-  const input = container.querySelector('.note-form input');
+  const input = container.querySelector('.note-form input, .assistant__input');
   if (!input) return;
+
+  // The panel's field. Opened by hand it takes the cursor, like the note form;
+  // opened by a reload that remembered it, it does not — nobody asked.
+  if (input.classList.contains('assistant__input')) {
+    if (ui.focusAssistant) {
+      ui.focusAssistant = false;
+      input.focus();
+    } else if (before?.kind === 'assistant' && before.id === ui.assistantFor && before.focused) {
+      input.focus();
+      input.setSelectionRange(before.start, before.end);
+    }
+    return;
+  }
 
   // A form that wasn't open on the same item a moment ago has just been opened,
   // and opening it is the request for the cursor.
-  if (before?.id !== ui.noteFor) {
+  if (before?.kind !== 'note' || before.id !== ui.noteFor) {
     input.focus();
     return;
   }
@@ -682,7 +696,7 @@ export function renderItem(item, state, ui, handlers) {
       },
       onclick: (event) => {
         // Let links, buttons and inputs do their own thing.
-        if (event.target.closest('a, button, input, summary')) return;
+        if (event.target.closest('a, button, input, textarea, summary')) return;
         handlers.onSelect(item.id);
       },
     },
@@ -703,8 +717,9 @@ export function renderItem(item, state, ui, handlers) {
       item.detail ? el('p', { class: 'item__detail' }, renderMarkdown(item.detail)) : null,
       renderNotes(item),
       ui.noteFor === item.id ? renderNoteForm(item, ui, handlers) : null,
+      ui.assistantFor === item.id ? renderAssistantPanel(item, state, ui, handlers) : null,
     ),
-    renderActions(item, ui, handlers),
+    renderActions(item, state, ui, handlers),
     ui.menuFor === item.id ? renderSnoozeMenu(item, now, handlers) : null,
   );
 
@@ -729,6 +744,9 @@ function renderMeta(item, state, now) {
   if (item.priority !== undefined && item.status === 'open') {
     pills.push(el('span', { class: 'pill pill--priority' }, `#${item.priority}`));
   }
+
+  const working = assistantPill(item, state);
+  if (working) pills.push(working);
 
   // Marks the rows that actually move the objective, so they're findable at a glance
   // even when they aren't the top-ranked thing on the page.
@@ -782,6 +800,16 @@ function renderMeta(item, state, now) {
   );
 }
 
+/**
+ * "assistant working" while a turn runs, wherever the panel is; nothing
+ * otherwise. The row says an answer is on its way, and the panel says what it is.
+ */
+function assistantPill(row, state) {
+  const entry = state.assistant?.items?.[row.id];
+  if (!entry?.running) return null;
+  return el('span', { class: 'pill pill--assistant' }, 'assistant working…');
+}
+
 function renderNotes(item) {
   if (item.notes.length === 0) return null;
   return el(
@@ -819,7 +847,183 @@ function renderNoteForm(item, ui, handlers) {
   );
 }
 
-function renderActions(item, ui, handlers) {
+/* ---------- the assistant ---------- */
+
+/**
+ * The chat under a row: what was asked, what came back, the canned asks that
+ * fit this row's source, and a field for anything else.
+ *
+ * Inline under the card rather than in a drawer of its own, because the answers
+ * this panel is for are short — is the review right, what do they need — and a
+ * long one is the sign the task belonged in a real coding session. The transcript
+ * scrolls inside a fixed height so a wordy reply doesn't push the list down.
+ */
+function renderAssistantPanel(row, state, ui, handlers) {
+  const entry = state.assistant?.items?.[row.id] ?? { running: false, turns: [] };
+  const actions = (state.assistant?.quickActions ?? []).filter(
+    (action) => action.sources === null || action.sources.includes(row.source ?? 'github'),
+  );
+  const label = new Map((state.assistant?.quickActions ?? []).map((action) => [action.id, action]));
+
+  const turns = entry.turns.map((turn) => renderAssistantTurn(turn, label, handlers));
+
+  const input = el('textarea', {
+    class: 'assistant__input',
+    rows: 2,
+    value: ui.assistantDraft,
+    placeholder: entry.turns.length ? 'Follow up…' : 'What do you need help with?',
+    'aria-label': `Ask the assistant about ${row.title}`,
+    disabled: entry.running,
+    oninput: () => handlers.onAssistantDraft(input.value),
+    onkeydown: (event) => {
+      // Enter sends; shift-enter is a new line, as in every chat box.
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        submit();
+      }
+    },
+  });
+
+  const submit = () => {
+    const text = input.value.trim();
+    if (!text || entry.running) return;
+    handlers.ask(row.id, { text });
+  };
+
+  return el(
+    'div',
+    { class: 'assistant', dataset: { running: String(entry.running) } },
+    turns.length ? el('div', { class: 'assistant__turns' }, turns) : null,
+    entry.running
+      ? null
+      : el(
+          'div',
+          { class: 'assistant__quick' },
+          actions.map((action) =>
+            el(
+              'button',
+              {
+                type: 'button',
+                class: 'pill pill--button',
+                title: action.request,
+                onclick: () => handlers.ask(row.id, { action: action.id }),
+              },
+              action.label,
+            ),
+          ),
+        ),
+    el(
+      'form',
+      {
+        class: 'assistant__form',
+        onsubmit: (event) => {
+          event.preventDefault();
+          submit();
+        },
+      },
+      input,
+      el(
+        'div',
+        { class: 'assistant__buttons' },
+        entry.running
+          ? el('button', { type: 'button', class: 'button', onclick: () => handlers.stopAssistant(row.id) }, 'Stop')
+          : el('button', { type: 'submit', class: 'button button--primary' }, 'Send'),
+        el('button', { type: 'button', class: 'button', onclick: () => handlers.closeAssistant() }, 'Close'),
+      ),
+    ),
+  );
+}
+
+/** One exchange: the request as it was asked, and the reply or what became of it. */
+function renderAssistantTurn(turn, label, handlers) {
+  const action = turn.action ? label.get(turn.action) : null;
+  // A quick action shows as its label, plus whatever was typed alongside it.
+  const extra = action && turn.request.startsWith(action.request) ? turn.request.slice(action.request.length).trim() : null;
+  const asked = action ? [el('strong', {}, action.label), extra ? ` — ${extra}` : ''] : turn.request;
+
+  const status =
+    turn.status === 'running'
+      ? el('p', { class: 'assistant__status' }, 'Working…')
+      : turn.status === 'failed'
+        ? el('p', { class: 'assistant__status assistant__status--bad' }, `Failed: ${turn.error}`)
+        : turn.status === 'aborted'
+          ? el('p', { class: 'assistant__status' }, `Stopped: ${turn.error}`)
+          : null;
+
+  return el(
+    'div',
+    { class: 'assistant__turn', dataset: { status: turn.status } },
+    el('p', { class: 'assistant__request' }, asked),
+    turn.reply ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(turn.reply)) : null,
+    status,
+  );
+}
+
+/**
+ * Markdown with paragraphs, lists and fenced code, on top of the inline forms
+ * `renderMarkdown` knows. The assistant writes whole answers; everything else on
+ * the page is a sentence.
+ */
+export function renderMarkdownBlocks(text) {
+  const out = [];
+  const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      const code = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+      i++;
+      const pre = el('pre', {});
+      pre.textContent = code.join('\n');
+      out.push(pre);
+      continue;
+    }
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+    // A quote: the assistant's habit for "the draft now says". Rendered by
+    // recursion so a quoted list or paragraph break keeps its shape.
+    if (/^\s*>/.test(line)) {
+      const quoted = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) quoted.push(lines[i++].replace(/^\s*>\s?/, ''));
+      out.push(el('blockquote', {}, renderMarkdownBlocks(quoted.join('\n'))));
+      continue;
+    }
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      i++;
+      out.push(el('hr', {}));
+      continue;
+    }
+    const bullet = /^\s*(?:[-*•]|\d+[.)])\s+/;
+    if (bullet.test(line)) {
+      const ordered = /^\s*\d+[.)]/.test(line);
+      const items = [];
+      while (i < lines.length && bullet.test(lines[i])) {
+        let item = lines[i].replace(bullet, '');
+        i++;
+        // A wrapped bullet continues on indented lines.
+        while (i < lines.length && /^\s+\S/.test(lines[i]) && !bullet.test(lines[i])) item += ` ${lines[i++].trim()}`;
+        items.push(el('li', {}, renderMarkdown(item)));
+      }
+      out.push(el(ordered ? 'ol' : 'ul', {}, items));
+      continue;
+    }
+    const paragraph = [];
+    while (i < lines.length && lines[i].trim() !== '' && !bullet.test(lines[i]) && !/^\s*(```|>)/.test(lines[i])) {
+      paragraph.push(lines[i++]);
+    }
+    const joined = paragraph.join(' ');
+    // A heading reads as a lead sentence: the panel is too narrow for hierarchy.
+    const heading = /^#{1,6}\s+(.*)$/.exec(joined);
+    out.push(heading ? el('p', {}, el('strong', {}, renderMarkdown(heading[1]))) : el('p', {}, renderMarkdown(joined)));
+  }
+  return out;
+}
+
+function renderActions(item, state, ui, handlers) {
   const buttons = [];
   const act = (id, action, extra) => () => handlers.onAction(id, action, extra);
 
@@ -867,8 +1071,25 @@ function renderActions(item, ui, handlers) {
       'Note',
     ),
   );
+  buttons.push(askButton(item, state, ui, handlers));
 
   return el('div', { class: 'item__actions' }, buttons);
+}
+
+/** The Ask button, on every row alike, and only when there is an assistant to ask. */
+function askButton(row, state, ui, handlers) {
+  if (!state.assistant?.enabled) return null;
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: ui.assistantFor === row.id ? 'button button--primary' : 'button',
+      title: 'Ask the assistant about this',
+      'aria-expanded': String(ui.assistantFor === row.id),
+      onclick: () => handlers.toggleAssistant(row.id),
+    },
+    'Ask',
+  );
 }
 
 /**
@@ -1357,8 +1578,9 @@ export function renderPullRow(row, state, ui, handlers) {
       renderCancelledChecks(row),
       renderNotes(row),
       ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
+      ui.assistantFor === row.id ? renderAssistantPanel(row, state, ui, handlers) : null,
     ),
-    renderPullActions(row, ui, handlers),
+    renderPullActions(row, state, ui, handlers),
     ui.menuFor === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false }) : null,
   );
   return node;
@@ -1522,7 +1744,7 @@ function checkNames(checks) {
   return parts;
 }
 
-function renderPullActions(row, ui, handlers) {
+function renderPullActions(row, state, ui, handlers) {
   const buttons = [];
   const act = (id, action, extra) => () => handlers.onAction(id, action, extra);
 
@@ -1570,6 +1792,7 @@ function renderPullActions(row, ui, handlers) {
       'Note',
     ),
   );
+  buttons.push(askButton(row, state, ui, handlers));
 
   return el('div', { class: 'item__actions' }, buttons);
 }
@@ -1894,8 +2117,9 @@ export function renderTicketRow(row, state, ui, handlers) {
       renderTicketMeta(row, state, handlers),
       renderNotes(row),
       ui.noteFor === row.id ? renderNoteForm(row, ui, handlers) : null,
+      ui.assistantFor === row.id ? renderAssistantPanel(row, state, ui, handlers) : null,
     ),
-    renderTicketActions(row, ui, handlers),
+    renderTicketActions(row, state, ui, handlers),
     ui.menuFor === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false, longRange: true }) : null,
   );
 }
@@ -2043,7 +2267,7 @@ function outOfSyncFlag(row, state, handlers) {
  * A row in Working on gets Note alone. A park silences a complaint
  * until a date, and nothing on that row is complaining.
  */
-function renderTicketActions(row, ui, handlers) {
+function renderTicketActions(row, state, ui, handlers) {
   const buttons = [];
 
   if (row.court && row.status === 'open') {
@@ -2071,6 +2295,7 @@ function renderTicketActions(row, ui, handlers) {
       'Note',
     ),
   );
+  buttons.push(askButton(row, state, ui, handlers));
 
   return el('div', { class: 'item__actions' }, buttons);
 }

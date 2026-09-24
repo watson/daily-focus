@@ -133,3 +133,25 @@ test('GET /favicon.svg serves the profile icon', async () => {
   assert.equal(res.headers.get('content-type'), 'image/svg+xml');
   assert.match(await res.text(), /fill="#2a78d6"/);
 });
+
+test('the assistant is off by default, says so in state, and refuses to be asked', async () => {
+  const state = await json(await fetch(`${server.url}/api/state`));
+  assert.equal(state.assistant.enabled, false);
+  assert.equal(state.assistant.agent, null);
+  assert.ok(Array.isArray(state.assistant.quickActions) && state.assistant.quickActions.length > 0);
+
+  const res = await fetch(`${server.url}/api/assistant/ask`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'gh:1', text: 'hello' }),
+  });
+  assert.equal(res.status, 409);
+  assert.match((await json(res)).error, /DAILY_FOCUS_ASSISTANT/);
+
+  const bad = await fetch(`${server.url}/api/assistant/ask`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'no id' }),
+  });
+  assert.equal(bad.status, 400);
+});

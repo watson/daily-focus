@@ -176,6 +176,41 @@ Rebuilding the helper may prompt again.
 Without live calendar access, the agenda uses events from the morning brief.
 Set `DAILY_FOCUS_CALENDAR=off` to use those events explicitly.
 
+## Ask the assistant
+
+Every row can have an Ask button that runs a coding-agent CLI you already have,
+headless, against that one item. Press it, pick a quick action or type a request,
+and the answer streams in under the row; you can follow up in the same conversation.
+The quick actions cover the common asks: whether a review comment is right, why CI
+is failing, what a thread is asking of you, a reply to an email drafted straight into
+Gmail as a draft on the thread.
+
+Install and log in to [Claude Code](https://code.claude.com/docs) or the
+[Codex CLI](https://developers.openai.com/codex/cli), then set:
+
+```dotenv
+DAILY_FOCUS_ASSISTANT=claude
+```
+
+Restart the server and the Ask button appears. Model and effort default to whatever
+the CLI is configured with; `DAILY_FOCUS_ASSISTANT_MODEL` and
+`DAILY_FOCUS_ASSISTANT_EFFORT` override them. If the server can't find the CLI,
+set `DAILY_FOCUS_ASSISTANT_BIN` to its path.
+
+The assistant reads and drafts; it never sends, posts or edits anything, and it has
+no checkout to work in. That is deliberate. Fixing merge conflicts or a failing build
+belongs in a real coding session; this panel is for the questions you'd otherwise
+answer by opening six tabs. The Gmail draft is the one thing it creates, through the
+Gmail tool the CLI has: with Claude Code that is the claude.ai Gmail connector, which
+`DAILY_FOCUS_ASSISTANT_TOOLS` allows by default; with Codex it is the Gmail plugin
+from the Codex app, which the CLI finds through its plugin catalogue. Without either,
+the assistant hands you the text instead and says so.
+
+Its instructions live in `prompts/assistant.md`, linked into the store by
+`npm run init` as `assistant.md`. What it says stays in the chat under the row: it
+never leaves notes on the item or marks it handled. That is yours to do once you have
+read the reply.
+
 ## A personal instance
 
 Daily Focus can brief your personal life as well as your work: email, family
@@ -256,6 +291,11 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
 | `DAILY_FOCUS_JIRA_POLL_MINUTES` | `15` | Minutes between reads while a tab is open |
 | `DAILY_FOCUS_JIRA_SITE` | *acli's own* | Atlassian site host the browse links are built from. A pasted URL is fine |
 | `DAILY_FOCUS_ACLI` | `acli` | Path to the Atlassian CLI, for when the server's PATH lacks it. `~` is expanded |
+| `DAILY_FOCUS_ASSISTANT` | `off` | `claude` or `codex` puts an Ask button on every row that runs that CLI headless against the item. `off` hides it |
+| `DAILY_FOCUS_ASSISTANT_BIN` | *the CLI's name* | Path to the assistant's CLI, for when the server's PATH lacks it. `~` is expanded |
+| `DAILY_FOCUS_ASSISTANT_MODEL` | *the CLI's own* | Model passed to the CLI untouched: an alias like `opus`, or a full id. Unset passes no flag |
+| `DAILY_FOCUS_ASSISTANT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched: `low`, `medium`, `high`, `xhigh` or `max`. Unset passes no flag |
+| `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. Ignored by Codex |
 
 ## If something looks wrong
 

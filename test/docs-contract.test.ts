@@ -210,8 +210,20 @@ test("the server, the client and the README agree on the ticket board's courts",
  */
 test('AGENTS.md names the brief, action log, and integration caches', async () => {
   const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
-  for (const file of ['items.json', 'actions.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
+  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
+  }
+});
+
+/**
+ * The assistant's prompt carries the rules that keep it read-only and inside its
+ * chat. They live nowhere else the runner could enforce them, so the least the
+ * tests can do is notice when one goes missing.
+ */
+test("the assistant's prompt keeps its never-rules and stays in the chat", async () => {
+  const prompt = await readFile(resolve(root, 'prompts/assistant.md'), 'utf8');
+  for (const rule of ['Never send', 'Never post', 'Never change', 'Do not leave notes']) {
+    assert.ok(prompt.includes(rule), `prompts/assistant.md has lost the "${rule}" rule`);
   }
 });
 

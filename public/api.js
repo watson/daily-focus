@@ -94,3 +94,35 @@ export async function postTicketTransition(key, status) {
   }
   return res.json();
 }
+
+/**
+ * Ask the assistant about an item: a quick action, typed text, or both.
+ * Resolves once the CLI is running, with the state showing the turn in progress;
+ * the reply streams in over SSE.
+ */
+export async function postAssistantAsk(body) {
+  const res = await fetch('/api/assistant/ask', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/assistant/ask returned ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Stop the assistant's turn on an item. Resolves with fresh state. */
+export async function postAssistantStop(id) {
+  const res = await fetch('/api/assistant/stop', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/assistant/stop returned ${res.status}`);
+  }
+  return res.json();
+}
