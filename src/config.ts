@@ -141,6 +141,44 @@ export interface JiraConfig {
   acliPath: string;
 }
 
+/** Which coding-agent CLI answers when the user asks the assistant for help. */
+export type AssistantAgent = 'claude' | 'codex';
+
+export const ASSISTANT_AGENTS: readonly AssistantAgent[] = ['claude', 'codex'];
+
+/**
+ * How the on-demand assistant runs. See `assistant.ts`.
+ *
+ * Not the morning agent. That one is scheduled, unattended and writes the brief;
+ * this one is a CLI the dashboard runs headless when the user asks for help with
+ * one item, in a chat they started. The two never share a setting, and the
+ * vocabulary is kept apart on purpose: "agent" is the morning one, "assistant"
+ * is this.
+ */
+export interface AssistantConfig {
+  /** `DAILY_FOCUS_ASSISTANT=claude` or `codex`; null means off, which is the default. */
+  agent: AssistantAgent | null;
+  /** The CLI binary. Overridable for the reason `ghPath` is. */
+  binPath: string;
+  /**
+   * Model and effort, passed through to the CLI untouched. Null means no flag,
+   * which leaves the CLI on whatever the user configured in it: the zero-config
+   * case, and usually the right one.
+   */
+  model: string | null;
+  effort: string | null;
+  /**
+   * Tool permissions handed to Claude Code, in its own `--allowedTools` syntax.
+   * The assistant runs with prompts disabled, so a tool not on this list is
+   * denied outright. The default covers the two CLIs the boards already lean on,
+   * fetching a page, and the claude.ai Gmail connector, which is how a draft
+   * reaches the thread.
+   * Codex has no equivalent; its sandbox, confined to the empty working
+   * directory, is the whole policy.
+   */
+  tools: readonly string[];
+}
+
 /**
  * All configuration is environment-driven so the agent and the dashboard can be
  * pointed at the same store without either one hardcoding a path. The environment
@@ -210,6 +248,26 @@ export interface Config {
   jira: JiraConfig;
   /** Where tickets.json lives: the board's last good read, written by the server. */
   ticketsFile: string;
+  /** The on-demand assistant. */
+  assistant: AssistantConfig;
+  /** Append-only record of every assistant turn, written by the server. */
+  assistantLogFile: string;
+  /**
+   * The assistant's working directory: an empty directory inside the store. It
+   * gets no checkout on purpose. Anything that needs one is a job for a real
+   * coding session, and running here with nothing to edit is what makes the
+   * boundary a property of the process rather than a line in a prompt.
+   */
+  assistantDir: string;
+  /**
+   * The assistant's instructions, linked into the store by `npm run init` as the
+   * morning prompt is. Unlike that one, the server does open this: it is the
+   * server that starts the assistant, so it is the server that hands over the
+   * text. `assistantPromptSource` is the copy in this repo it falls back to before
+   * init has run.
+   */
+  assistantPromptFile: string;
+  assistantPromptSource: string;
 }
 
 function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
@@ -330,6 +388,41 @@ function envJira(env: NodeJS.ProcessEnv, profile: Profile): JiraConfig {
 }
 
 /**
+ * `off`, or one of the CLIs. Anything else throws: read as off, a typo would
+ * quietly remove the Ask button and nothing would say why.
+ */
+function envAssistantAgent(env: NodeJS.ProcessEnv): AssistantAgent | null {
+  const raw = envString('DAILY_FOCUS_ASSISTANT', 'off', env).toLowerCase();
+  if (['off', 'false', '0', 'no', 'none'].includes(raw)) return null;
+  if (!(ASSISTANT_AGENTS as readonly string[]).includes(raw)) {
+    throw new Error(
+      `DAILY_FOCUS_ASSISTANT must be off or one of ${ASSISTANT_AGENTS.join(', ')}, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw as AssistantAgent;
+}
+
+function envAssistant(env: NodeJS.ProcessEnv): AssistantConfig {
+  const agent = envAssistantAgent(env);
+  // Commas only: a Claude Code permission rule has a space in it, `Bash(gh *)`.
+  const tools = envNameList('DAILY_FOCUS_ASSISTANT_TOOLS', env);
+  return {
+    agent,
+    binPath: expandHome((env.DAILY_FOCUS_ASSISTANT_BIN ?? '').trim() || (agent ?? 'claude')),
+    model: envString('DAILY_FOCUS_ASSISTANT_MODEL', '', env) || null,
+    effort: envString('DAILY_FOCUS_ASSISTANT_EFFORT', '', env) || null,
+    tools: tools.length > 0 ? tools : DEFAULT_ASSISTANT_TOOLS,
+  };
+}
+
+/**
+ * What the assistant may reach for when nobody is there to answer a prompt: the
+ * GitHub and Atlassian CLIs, read and write alike since a comment is something
+ * the user asked for in so many words, and the Gmail connector for drafts.
+ */
+export const DEFAULT_ASSISTANT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli *)', 'WebFetch', 'mcp__claude_ai_Gmail'];
+
+/**
  * Copy the day-of-week field out of whatever runs the agent: `1-5`, `0-4`, `0,6`.
  *
  * Unset is not the same as "every day" — it means we haven't been told, and the
@@ -404,5 +497,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     github: envGitHub(env),
     calendar: envCalendar(env),
     jira: envJira(env, profile),
+    assistant: envAssistant(env),
+    assistantLogFile: resolve(dataDir, 'assistant.jsonl'),
+    assistantDir: resolve(dataDir, 'assistant'),
+    assistantPromptFile: resolve(dataDir, 'assistant.md'),
+    assistantPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'assistant.md'),
   };
 }

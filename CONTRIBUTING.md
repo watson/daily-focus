@@ -56,6 +56,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
 | `src/jira.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, ticket classification, and polling |
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
+| `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `public/` | Rendering, styles, keyboard controls, and browser API calls |
 | `scripts/` | Store initialization, sample data, and brief audits |
 | `tools/dfcal/` | The macOS calendar helper |
@@ -78,6 +79,8 @@ When changing a contract, update the documents that describe it:
 
 - Brief fields belong in the schema and both prompts, `prompts/morning-brief-work.md`
   and `prompts/morning-brief-personal.md`.
+- The assistant's instructions belong in `prompts/assistant.md`, and its quick
+  actions in `QUICK_ACTIONS` in `src/assistant.ts`.
 - Agent instructions belong in the prompt for the profile they apply to, or both.
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
   symlink can make changes live on the next scheduled run.
@@ -99,7 +102,9 @@ see `src/server.ts` for request validation and additional session/calendar route
 | `POST /api/actions` | `{id, action, until?, text?}`. Appends to the log, returns fresh state |
 | `POST /api/board/refresh` | Polls GitHub now. Returns fresh state once it has |
 | `POST /api/tickets/refresh` | Reads Jira now. Returns fresh state once it has |
-| `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The only write to anything outside this machine |
+| `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The dashboard's only write to anything outside this machine |
+| `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
+| `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
 | `GET /api/health` | Server health check |
 
 ## Update the screenshot

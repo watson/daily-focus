@@ -4,10 +4,17 @@
 |---|---|
 | [`morning-brief-work.md`](./morning-brief-work.md) | The scheduled prompt for the work briefing agent, run once every workday morning. |
 | [`morning-brief-personal.md`](./morning-brief-personal.md) | The scheduled prompt for the personal briefing agent: email, family calendars, Apple Reminders, Apple Messages, e-Boks and the user's own GitHub projects. |
+| [`assistant.md`](./assistant.md) | The instructions for the on-demand assistant, which the server runs headless when the user presses Ask on a row. One file for both profiles. Linked into the store as `assistant.md`. |
 
-Both are **nothing but prompt** — the scheduled task reads one verbatim, so anything
+All three are **nothing but prompt** — each is read verbatim by its agent, so anything
 else in there is either noise the agent has to skip or, worse, an instruction it
 might try to act on. Notes about the prompts belong in this file instead.
+
+The assistant's file differs from the other two in one way: the server does read it.
+It is the server that starts the assistant, so it is the server that inlines these
+instructions ahead of the row and the request on the first turn of a session. The
+quick actions the panel offers are sentences in `src/assistant.ts`, not in the
+prompt, so what the button sends is what the panel shows was sent.
 
 `DAILY_FOCUS_PROFILE` decides which one `npm run init` links into a store. Each
 profile is its own instance, with its own store, server and agent, so a store only

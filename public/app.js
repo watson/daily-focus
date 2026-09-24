@@ -3,6 +3,8 @@
 import {
   fetchState,
   postAction,
+  postAssistantAsk,
+  postAssistantStop,
   postBoardRefresh,
   postSession,
   postTicketTransition,
@@ -59,6 +61,13 @@ const ui = {
   noteFor: null,
   /** Text typed into the open note form but not saved yet. See `discardNote`. */
   noteDraft: '',
+  /** Which row has the assistant panel open. Persisted below: a reply worth
+   *  reading is usually worth reading after the reload that landed meanwhile. */
+  assistantFor: null,
+  /** Text typed into the panel but not sent yet, kept for the same reason as `noteDraft`. */
+  assistantDraft: '',
+  /** Set when the panel was just opened by hand, so the next render focuses its field. */
+  focusAssistant: false,
   /** Which drawers are open, by key. In memory only, so a reload closes them all:
    *  a drawer is a place you go and look, not part of the page's resting state. */
   openDrawers: new Set(),
@@ -72,6 +81,22 @@ const ui = {
   unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
   view: VIEWS.includes(localStorage.getItem(VIEW_KEY)) ? localStorage.getItem(VIEW_KEY) : 'today',
 };
+
+/**
+ * Which row's assistant panel is open, by item id. Persisted per tab in
+ * sessionStorage rather than localStorage: it should survive the self-reload a
+ * code change triggers mid-conversation, and not much else.
+ */
+const ASSISTANT_KEY = 'daily-focus:assistant-for';
+ui.assistantFor = sessionStorage.getItem(ASSISTANT_KEY);
+
+/** Open or close the panel on a row. Only one is open at a time. */
+function setAssistantFor(id) {
+  ui.assistantFor = id;
+  ui.assistantDraft = '';
+  if (id) sessionStorage.setItem(ASSISTANT_KEY, id);
+  else sessionStorage.removeItem(ASSISTANT_KEY);
+}
 
 /** Last completed action, for the `u` shortcut. */
 let lastAction = null;
@@ -173,6 +198,27 @@ const handlers = {
   unpark: (id) => void unpark(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
+  toggleAssistant: (id) => {
+    const opening = ui.assistantFor !== id;
+    setAssistantFor(opening ? id : null);
+    // Opening by hand is the request for the cursor; a reload that remembers
+    // the panel is not. `restoreNoteField` reads and clears this.
+    ui.focusAssistant = opening;
+    ui.menuFor = null;
+    ui.statusFor = null;
+    discardNote();
+    render();
+  },
+  closeAssistant: () => {
+    setAssistantFor(null);
+    render();
+  },
+  // No render, for the reason `onNoteDraft` gives.
+  onAssistantDraft: (text) => {
+    ui.assistantDraft = text;
+  },
+  ask: (id, body) => void ask(id, body),
+  stopAssistant: (id) => void stopAssistant(id),
 };
 
 function render() {
@@ -412,6 +458,33 @@ async function refresh() {
   render();
 }
 
+/* ---------- the assistant ---------- */
+
+/**
+ * Send a request to the assistant. Not optimistic: the reply is the server's
+ * to stream, and the panel shows "working" from the moment the reply to this
+ * says so. The draft is cleared on success and kept on failure, since a message
+ * that didn't go is one the user will want to send again.
+ */
+async function ask(id, body) {
+  if (state?.assistant?.items?.[id]?.running) return;
+  try {
+    const next = await postAssistantAsk({ id, ...body });
+    ui.assistantDraft = '';
+    adoptState(next);
+  } catch (err) {
+    showToast(`Could not ask: ${err.message}`);
+  }
+}
+
+async function stopAssistant(id) {
+  try {
+    adoptState(await postAssistantStop(id));
+  } catch (err) {
+    showToast(`Could not stop: ${err.message}`);
+  }
+}
+
 /* ---------- focus sessions ---------- */
 
 async function changeSession(body) {
@@ -584,6 +657,10 @@ document.addEventListener('keydown', (event) => {
       ui.statusFor = null;
       discardNote();
       render();
+    } else if (ui.assistantFor) {
+      // Second press: the panel is closed only once the smaller things are.
+      setAssistantFor(null);
+      render();
     }
     return;
   }
@@ -671,6 +748,11 @@ document.addEventListener('keydown', (event) => {
     case 'n':
       event.preventDefault();
       handlers.toggleNote(item.id);
+      break;
+    case 'a':
+      if (!state.assistant?.enabled) break;
+      event.preventDefault();
+      handlers.toggleAssistant(item.id);
       break;
     case 'p':
       event.preventDefault();

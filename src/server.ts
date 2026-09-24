@@ -10,6 +10,7 @@ import { Store } from './store.ts';
 import { Board } from './board.ts';
 import { CalendarBoard } from './calendarboard.ts';
 import { TicketBoard } from './ticketboard.ts';
+import { Assistant, type AskContext } from './assistant.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
@@ -132,6 +133,11 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   const calendar = new CalendarBoard(config, () => void broadcast());
   const tickets = new TicketBoard(config, () => void broadcast());
 
+  // Runs a CLI on request and broadcasts as its answer streams in. It writes
+  // nothing to the store but its own log: what the assistant says stays in the
+  // chat, and never becomes a note or an action on the item.
+  const assistant = new Assistant(config, { onChange: () => void broadcast() });
+
   /**
    * State plus the things the store doesn't own: the asset fingerprint the client
    * watches for self-reload, and the two boards, which are fetched rather than
@@ -143,7 +149,13 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     const actions = await store.readActions();
     const now = new Date();
     const state = await store.getState(now, actions, calendar.state());
-    return { ...state, board: board.view(actions, now), tickets: tickets.view(actions, now), assetVersion };
+    return {
+      ...state,
+      board: board.view(actions, now),
+      tickets: tickets.view(actions, now),
+      assistant: assistant.view(),
+      assetVersion,
+    };
   }
 
   /** Push state to every open tab. A caller that just built one can hand it over. */
@@ -182,6 +194,8 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
         basename(tempPathFor(config.pullsFile)),
         basename(config.ticketsFile),
         basename(tempPathFor(config.ticketsFile)),
+        // Appended by this process, which broadcasts on its own.
+        basename(config.assistantLogFile),
       ],
     },
   );
@@ -240,6 +254,10 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // Before the first render, because the session left running may have been
   // abandoned while the machine slept or while this process was dead.
   await checkPresence();
+
+  // Likewise: a turn left running when the last process died is closed as
+  // aborted now, rather than shown as a spinner that never stops.
+  await assistant.start();
 
   // A session may already be running from before a restart.
   scheduleSessionTick((await buildState()).session.active?.endsAt ?? null);
@@ -373,6 +391,84 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       const state = await buildState();
       sendState(res, state);
       void broadcast(state);
+      return;
+    }
+
+    if (path === '/api/assistant/ask' && req.method === 'POST') {
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (err) {
+        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      if (typeof body !== 'object' || body === null) {
+        sendJSON(res, 400, { error: 'body must be an object' });
+        return;
+      }
+      const { id, action, text } = body as Record<string, unknown>;
+      if (typeof id !== 'string' || id === '') {
+        sendJSON(res, 400, { error: '"id" is required' });
+        return;
+      }
+      if (action !== undefined && typeof action !== 'string') {
+        sendJSON(res, 400, { error: '"action" must be a quick action id' });
+        return;
+      }
+      if (text !== undefined && typeof text !== 'string') {
+        sendJSON(res, 400, { error: '"text" must be a string' });
+        return;
+      }
+      if (!assistant.enabled) {
+        sendJSON(res, 409, { error: 'the assistant is off; set DAILY_FOCUS_ASSISTANT to claude or codex' });
+        return;
+      }
+
+      // The row as the dashboard shows it, so the assistant is told what the
+      // user is looking at rather than left to find it. The same id may be a
+      // brief item and a board row at once; both go along.
+      const current = await buildState();
+      const context: AskContext = {
+        item: current.items.find((item) => item.id === id),
+        pull: current.board.rows.find((row) => row.id === id),
+        ticket:
+          current.tickets.rows.find((row) => row.id === id) ??
+          current.tickets.inProgress.find((row) => row.id === id),
+      };
+      if (!context.item && !context.pull && !context.ticket) {
+        sendJSON(res, 404, { error: `no item with id ${id}` });
+        return;
+      }
+
+      try {
+        await assistant.ask({ itemId: id, action, text }, context);
+      } catch (err) {
+        sendJSON(res, 409, { error: (err as Error).message });
+        return;
+      }
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
+    if (path === '/api/assistant/stop' && req.method === 'POST') {
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (err) {
+        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      const { id } = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+      if (typeof id !== 'string' || id === '') {
+        sendJSON(res, 400, { error: '"id" is required' });
+        return;
+      }
+      await assistant.stop(id);
+      // The exit handler records the abort and broadcasts; this reply may still
+      // show the turn running for a moment, which is honest.
+      sendState(res, await buildState());
       return;
     }
 
@@ -521,6 +617,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       board.stop();
       calendar.stop();
       tickets.stop();
+      await assistant.close();
       stopWatching();
       stopWatchingAssets();
       for (const res of subscribers) res.end();

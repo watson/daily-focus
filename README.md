@@ -99,6 +99,21 @@ your projects; Jira may refuse a move that your workflow doesn't allow. Make
 transitions that need extra fields in Jira itself. Undo requests a transition back,
 so both moves remain in Jira's history.
 
+## Ask the assistant
+
+Some items are a question away from being handled: is this review comment right,
+why is CI red, what does this thread actually want from me. With
+`DAILY_FOCUS_ASSISTANT` set to `claude` or `codex`, every row gets an Ask button that
+runs that CLI headless against the item, with quick actions for the common asks and
+a field for anything else. The reply streams in under the row, and you can follow up
+in the same conversation.
+
+It reads and drafts, and that is all. An email reply is created as a Gmail draft on
+the thread, so it is waiting there when you open the mail; a reply to a reviewer is
+handed back as text for you to post. It never sends, posts, or edits a file, and it
+has no checkout: fixing conflicts or a build is work for a real coding session, and
+this is for the questions you would otherwise answer by opening six tabs.
+
 ## Keyboard shortcuts
 
 Press **?** in the dashboard to see the shortcuts.
