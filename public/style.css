@@ -185,6 +185,52 @@ a {
 }
 
 /*
+ * Lost connection to the server. A pill in the header, because it is about the
+ * whole page rather than the tab showing, and it heals by itself — a full-width
+ * banner claimed more attention than a state with nothing to do about it.
+ * Warning, not critical: nothing is lost, the page is just not moving.
+ */
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: help;
+}
+.connection[hidden] {
+  display: none;
+}
+.connection__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: connection-pulse 1.4s ease-in-out infinite;
+}
+@keyframes connection-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connection__dot {
+    animation: none;
+  }
+}
+/* The readouts beside it describe the last update, not now, so they step back. */
+body[data-offline='true'] .freshness,
+body[data-offline='true'] .refresh-label {
+  opacity: 0.5;
+}
+
+/*
  * One glyph per theme state, picked by the attribute the pre-paint stamp sets.
  * Keyed off `:root` rather than off something the client writes later, so the
  * icon arrives in the same paint as the colours it is describing.

@@ -84,7 +84,23 @@ export function renderHeader(state) {
   freshness.dataset.stale = String(state.brief.stale);
 }
 
-export function renderBanners(state, connectionError) {
+/**
+ * The live connection, as a pill in the header rather than a banner under the
+ * tabs. It belongs to the page and not to whichever tab is showing, and it is a
+ * state rather than a message: EventSource reconnects on its own, so there is
+ * nothing to read and nothing to do, only something to know — that what is on
+ * screen stopped moving at the last update. The error's own words go in the
+ * tooltip, since "Failed to fetch" is for whoever is debugging, not the reader.
+ */
+export function renderConnection(connectionError) {
+  const pill = document.getElementById('connection');
+  pill.hidden = !connectionError;
+  document.body.dataset.offline = String(Boolean(connectionError));
+  if (!connectionError) return;
+  pill.title = `${connectionError.message}. Showing the last update received; reconnecting on its own.`;
+}
+
+export function renderBanners(state) {
   const container = document.getElementById('banners');
   const banners = [];
 
@@ -118,9 +134,6 @@ export function renderBanners(state, connectionError) {
         )}'s brief${nextRunPhrase(state)}.`,
       ),
     );
-  }
-  if (connectionError) {
-    banners.push(banner('warning', '!', `${connectionError.message}. Retrying…`));
   }
   for (const warning of state.warnings) {
     banners.push(banner('warning', '!', warning));
