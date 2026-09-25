@@ -503,7 +503,7 @@ export function renderStats(state) {
   replace(
     document.getElementById('stats'),
     objectiveStat(state.objectiveProgress),
-    focusTimeStat(state.agenda),
+    focusTimeStat(state.agenda, new Date(state.now)),
     stat('Needs action', open),
     stat('Overdue', overdue, overdue > 0 ? 'critical' : null),
     stat('Cleared today', completedToday, completedToday > 0 ? 'good' : null),
@@ -516,11 +516,40 @@ export function renderStats(state) {
  * A list of open items reads identically whether six hours remain or forty
  * minutes, which is precisely when it misleads. This is the number that decides
  * whether today's plan is possible.
+ *
+ * When free time isn't tracked (the personal profile's default: an evening at home
+ * has no end to count down to), the slot shows the next timed event instead. That
+ * is the one time-shaped fact the agenda still knows for certain.
  */
-function focusTimeStat(agenda) {
+function focusTimeStat(agenda, now) {
+  if (!agenda.tracksFreeTime) return nextEventStat(agenda, now);
   const minutes = agenda.remainingFocusMinutes;
   const tone = minutes === 0 ? 'critical' : minutes < 60 ? 'critical' : null;
   return stat('Focus time left', minutes === 0 ? 'None' : formatDuration(minutes), tone, `Day ends ${agenda.dayEnd}`);
+}
+
+/**
+ * The next timed event that hasn't started, or the one running now. All-day
+ * events are skipped: they are context, not something to be somewhere for.
+ */
+export function nextEventStat(agenda, now) {
+  const timed = agenda.events
+    .filter((event) => !/^\d{4}-\d{2}-\d{2}$/.test(event.start))
+    .map((event) => ({ event, start: new Date(event.start).getTime(), end: eventEnd(event) }))
+    .filter((entry) => entry.end > now.getTime())
+    .sort((a, b) => a.start - b.start);
+  const next = timed[0];
+  if (!next) return stat('Next event', 'None today', null, null);
+  if (next.start <= now.getTime()) return stat('Next event', 'Now', null, next.event.title);
+  const minutes = Math.round((next.start - now.getTime()) / 60_000);
+  return stat('Next event', `in ${formatDuration(Math.max(minutes, 1))}`, null, next.event.title);
+}
+
+/** An event's end in ms, assuming the same half hour `agenda.ts` gives an open-ended one. */
+function eventEnd(event) {
+  const start = new Date(event.start).getTime();
+  const end = event.end ? new Date(event.end).getTime() : NaN;
+  return Number.isFinite(end) && end > start ? end : start + 30 * 60_000;
 }
 
 /**
@@ -1486,7 +1515,7 @@ export function renderAgenda(state) {
       agendaNotes(state.agendaSource),
       rows.length > 0
         ? el('ul', { class: 'agenda__list' }, rows)
-        : el('p', { class: 'empty' }, 'No meetings today.'),
+        : el('p', { class: 'empty' }, 'No events today.'),
     ),
   );
 }
@@ -1498,7 +1527,7 @@ export function renderAgenda(state) {
  * these rows, and a global banner for a stale calendar would compete with the
  * ones about the brief. But it is never silent when the source isn't live — an
  * agenda quietly served from this morning looks exactly like a live one right up
- * to the meeting you cancelled still sitting on it.
+ * to the event you cancelled still sitting on it.
  */
 function agendaNotes(source) {
   if (!source) return [];
@@ -1542,7 +1571,7 @@ export function eventRow(event, now, conflictIds) {
       'span',
       { class: 'agenda__name' },
       name,
-      clashes ? el('span', { class: 'agenda__sub' }, '⚠ clashes with another meeting') : null,
+      clashes ? el('span', { class: 'agenda__sub' }, '⚠ clashes with another event') : null,
       sub ? el('span', { class: 'agenda__sub' }, sub) : null,
     ),
   );

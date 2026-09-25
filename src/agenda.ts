@@ -51,6 +51,8 @@ function mergeIntervals(intervals: Interval[]): Interval[] {
 }
 
 export interface AgendaOptions {
+  /** Off means events only: no free windows, no focus time, no day bounds in play. */
+  freeWindows: boolean;
   workStartHour: number;
   workEndHour: number;
   minFreeWindowMinutes: number;
@@ -125,9 +127,12 @@ export function buildAgenda(items: ResolvedItem[], now: Date, opts: AgendaOption
       .filter((span) => span.end > span.start),
   );
 
+  // With free windows off the bounds are still reported, so the header can say what
+  // it would have used, but nothing is measured against them.
   const freeWindows: FreeWindow[] = [];
   let cursor = dayStart.getTime();
-  for (const span of [...busy, { start: dayEnd.getTime(), end: dayEnd.getTime() }]) {
+  const stops = opts.freeWindows ? [...busy, { start: dayEnd.getTime(), end: dayEnd.getTime() }] : [];
+  for (const span of stops) {
     const minutes = Math.round((span.start - cursor) / MS_PER_MINUTE);
     if (minutes >= opts.minFreeWindowMinutes) {
       freeWindows.push({
@@ -151,6 +156,7 @@ export function buildAgenda(items: ResolvedItem[], now: Date, opts: AgendaOption
   return {
     events,
     conflictIds: [...conflictIds],
+    tracksFreeTime: opts.freeWindows,
     freeWindows,
     remainingFocusMinutes,
     dayStart: clockString(dayStart),

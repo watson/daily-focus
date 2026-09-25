@@ -5,7 +5,7 @@ import { buildAgenda } from '../src/agenda.ts';
 import type { ResolvedItem } from '../src/types.ts';
 
 const NOW = new Date(2026, 8, 10, 10, 0, 0); // 10 Sep 2026, local
-const OPTS = { workStartHour: 9, workEndHour: 17, minFreeWindowMinutes: 45 };
+const OPTS = { freeWindows: true, workStartHour: 9, workEndHour: 17, minFreeWindowMinutes: 45 };
 
 /** Local ISO for a time on the agenda's day, so tests don't depend on the runner's timezone. */
 function at(hour: number, minute = 0): string {
@@ -200,7 +200,7 @@ test('blocking:false only frees the slot when it is exactly false', () => {
 test('a non-blocking event never registers as a clash', () => {
   // Same treatment all-day events already get: something that takes none of your
   // time cannot collide with something that does. Flagging a parcel delivery as
-  // "clashes with another meeting" would be noise on every row it overlapped.
+  // "clashes with another event" would be noise on every row it overlapped.
   const agenda = buildAgenda(
     [{ ...event('delivery', at(12), at(14)), blocking: false }, event('standup', at(13), at(13, 30))],
     NOW,
@@ -211,4 +211,29 @@ test('a non-blocking event never registers as a clash', () => {
   // Two genuinely booked meetings still clash, so the check hasn't been defanged.
   const real = buildAgenda([event('a', at(12), at(14)), event('b', at(13), at(13, 30))], NOW, OPTS);
   assert.deepEqual(real.conflictIds.sort(), ['a', 'b']);
+});
+
+test('with free windows off the agenda is events only', () => {
+  const agenda = buildAgenda([event('a', at(10), at(11)), event('b', at(14), at(15))], NOW, {
+    ...OPTS,
+    freeWindows: false,
+  });
+  assert.equal(agenda.tracksFreeTime, false);
+  assert.deepEqual(agenda.freeWindows, []);
+  assert.equal(agenda.remainingFocusMinutes, 0);
+  assert.deepEqual(agenda.events.map((e) => e.id), ['a', 'b']);
+});
+
+test('with free windows off an empty day is not one long window either', () => {
+  const agenda = buildAgenda([], NOW, { ...OPTS, freeWindows: false, dayStart: '17:00', dayEnd: '22:00' });
+  assert.deepEqual(agenda.freeWindows, []);
+  assert.equal(agenda.remainingFocusMinutes, 0);
+});
+
+test('with free windows off a clash is still a clash', () => {
+  const agenda = buildAgenda([event('a', at(10), at(11)), event('b', at(10, 30), at(11, 30))], NOW, {
+    ...OPTS,
+    freeWindows: false,
+  });
+  assert.deepEqual(agenda.conflictIds.sort(), ['a', 'b']);
 });

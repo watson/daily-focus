@@ -194,6 +194,7 @@ export class Store {
     };
 
     const agenda = buildAgenda(agendaItems, now, {
+      freeWindows: this.config.freeWindows,
       workStartHour: this.config.workStartHour,
       workEndHour: this.config.workEndHour,
       minFreeWindowMinutes: this.config.minFreeWindowMinutes,

@@ -31,6 +31,7 @@ const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
 const emptyAgenda: Agenda = {
   events: [],
   conflictIds: [],
+  tracksFreeTime: true,
   freeWindows: [],
   remainingFocusMinutes: 0,
   dayStart: '09:00',

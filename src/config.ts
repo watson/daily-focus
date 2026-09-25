@@ -256,6 +256,12 @@ export interface Config {
   awayAfterMinutes: number;
   port: number;
   host: string;
+  /**
+   * Whether the agenda looks for free windows and counts focus time left. That
+   * needs a start and end to the day, which an evening at home does not have, so
+   * the personal profile defaults to off: events only, no "Free · 5 h" rows.
+   */
+  freeWindows: boolean;
   /** Local hour the working day starts, for free-window detection. */
   workStartHour: number;
   workEndHour: number;
@@ -565,6 +571,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, env),
     port: envInt('DAILY_FOCUS_PORT', 4321, env),
     host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
+    freeWindows: envFlag('DAILY_FOCUS_FREE_WINDOWS', profile !== 'personal', env),
     workStartHour: envInt('DAILY_FOCUS_WORK_START', 9, env),
     workEndHour: envInt('DAILY_FOCUS_WORK_END', 17, env),
     minFreeWindowMinutes: envInt('DAILY_FOCUS_MIN_FREE_WINDOW', 45, env),
