@@ -32,7 +32,7 @@ Stop it with Ctrl+C. Close the terminal when you're done to clear the demo setti
 
 To use your own data, follow [SETUP.md](SETUP.md). It covers your objective,
 the morning agent, optional integrations, and every setting. The dashboard runs
-locally; you bring the agent and scheduler that produce the brief.
+locally, and runs the agent for you through the Codex CLI or Claude Code.
 
 ## Your day at a glance
 
@@ -116,14 +116,18 @@ handed back as text for you to post. It never sends, posts, or edits a file, and
 has no checkout: fixing conflicts or a build is work for a real coding session, and
 this is for the questions you would otherwise answer by opening six tabs.
 
-## Rerun the brief
+## The morning agent
 
-The morning's brief can be out of date by lunch. With `DAILY_FOCUS_AGENT` set to
-`codex` or `claude`, the refresh icon beside the brief's age starts the morning agent
-now, through that CLI, on the same prompt your scheduler uses. It writes the brief
-just as a scheduled run does, keeping what you have marked done, snoozed or noted.
-When it finishes, its report says what it wrote and what it could not reach. See
-[SETUP.md](SETUP.md#rerun-the-brief-from-the-dashboard).
+With `DAILY_FOCUS_AGENT` set to `codex` or `claude`, the dashboard runs the morning
+agent itself through that CLI: at 07:00 each scheduled morning, or the time you set
+in `DAILY_FOCUS_AGENT_AT`, and from the refresh icon beside the brief's age when the
+morning's brief is out of date by lunch. Each run keeps what you have marked done,
+snoozed or noted.
+
+Every run is recorded. Click "updated … ago" to open the latest: its report says what
+it wrote and what it could not reach, its working commentary is folded away beneath,
+and you can ask it why it did what it did, or to look again, in the same session. Earlier runs are folded away below. See
+[SETUP.md](SETUP.md#connect-your-morning-agent).
 
 ## Keyboard shortcuts
 

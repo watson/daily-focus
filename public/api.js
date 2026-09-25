@@ -146,7 +146,24 @@ export async function postAgentRun() {
   return res.json();
 }
 
-/** Stop the morning agent's run. Resolves with fresh state. */
+/**
+ * Ask a finished run of the morning agent a question. Resolves once the agent
+ * is working on it; the answer streams in over SSE.
+ */
+export async function postAgentAsk(run, text) {
+  const res = await fetch('/api/agent/ask', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ run, text }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error ?? `POST /api/agent/ask returned ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Stop the morning agent, whether it is writing a brief or answering a question. Resolves with fresh state. */
 export async function postAgentStop() {
   const res = await fetch('/api/agent/stop', { method: 'POST' });
   if (!res.ok) {

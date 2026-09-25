@@ -7,11 +7,15 @@ import { after, test } from 'node:test';
 import { loadConfig } from '../src/config.ts';
 import type { Config } from '../src/config.ts';
 import {
+  MONDAY_TO_FRIDAY,
   describeSchedule,
+  describeTime,
   nextRunDate,
+  nextScheduledRun,
   parseWeekdays,
   resolveSchedule,
   runsOn,
+  scheduledRunDue,
   type Schedule,
 } from '../src/schedule.ts';
 import { localDateKey } from '../src/time.ts';
@@ -164,4 +168,52 @@ test('an empty store falls back too', async () => {
   const schedule = await resolveSchedule(config, MONDAY);
   assert.equal(schedule.source, 'default');
   assert.deepEqual(schedule.days, [1, 2, 3, 4, 5]);
+});
+
+/* ---------- the dashboard's own clock ---------- */
+
+function local(date: string, hour: number, minute = 0): Date {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y!, m! - 1, d!, hour, minute);
+}
+
+const WEEKDAYS: Schedule = { days: MONDAY_TO_FRIDAY, source: 'config' };
+const AT = { hour: 6, minute: 30 };
+const wednesday = '2026-09-23';
+
+test('a run is due from the time on a scheduled day until something has produced the day\'s brief', () => {
+  const base = { at: AT, schedule: WEEKDAYS, lastRunStartedAt: null, briefGeneratedAt: null };
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 6, 29) }), false);
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 6, 30) }), true);
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 23, 59) }), true, 'late is still due');
+  assert.equal(scheduledRunDue({ ...base, now: local('2026-09-26', 9, 0) }), false, 'not on a Saturday');
+  // Whatever made today's brief — this dashboard's run, by clock or by hand, or
+  // something else writing the file — is today's run.
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), lastRunStartedAt: local(wednesday, 5, 0).toISOString() }), false);
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), briefGeneratedAt: local(wednesday, 6, 45).toISOString() }), false);
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), lastRunStartedAt: local('2026-09-22', 9, 0).toISOString() }), true);
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), briefGeneratedAt: 'garbage' }), true);
+});
+
+test('the next run is today\'s if it has not come yet, else the next scheduled morning', () => {
+  const base = { at: AT, schedule: WEEKDAYS, lastRunStartedAt: null, briefGeneratedAt: null };
+  assert.deepEqual(nextScheduledRun({ ...base, now: local(wednesday, 6, 0) }), local(wednesday, 6, 30));
+  assert.deepEqual(nextScheduledRun({ ...base, now: local(wednesday, 7, 0) }), local('2026-09-24', 6, 30));
+  // A hand run before the hour stands in for today's.
+  assert.deepEqual(
+    nextScheduledRun({ ...base, now: local(wednesday, 6, 0), lastRunStartedAt: local(wednesday, 5, 0).toISOString() }),
+    local('2026-09-24', 6, 30),
+  );
+  assert.deepEqual(nextScheduledRun({ ...base, now: local('2026-09-25', 7, 0) }), local('2026-09-28', 6, 30), 'over the weekend');
+  assert.equal(nextScheduledRun({ ...base, schedule: { days: [], source: 'config' }, now: local(wednesday, 7, 0) }), null);
+  assert.equal(describeTime(AT), '06:30');
+});
+
+test('with a clock of its own the dashboard never infers the schedule from the archive', async () => {
+  const now = local(wednesday, 9, 0);
+  const config = await makeConfig({ DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_AT: '06:30' });
+  await seedArchive(config, now, { on: [0, 1, 2, 3, 4, 5, 6] });
+  assert.deepEqual(await resolveSchedule(config, now), { days: MONDAY_TO_FRIDAY, source: 'default' });
+  const told = await makeConfig({ DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_AT: '06:30', DAILY_FOCUS_AGENT_DAYS: '0-4' });
+  assert.deepEqual((await resolveSchedule(told, now)).days, [0, 1, 2, 3, 4]);
 });

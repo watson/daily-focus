@@ -22,7 +22,7 @@ import { runContractChecks } from '../src/checks.ts';
 import { readArchiveIndex } from '../src/archive.ts';
 import { fingerprintId } from '../src/ids.ts';
 import { workingMsBetween } from '../src/time.ts';
-import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, nextRunDate, resolveSchedule, runsOn } from '../src/schedule.ts';
+import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, describeTime, nextRunDate, resolveSchedule, runsOn } from '../src/schedule.ts';
 import { resolveItems } from '../src/store.ts';
 import type { Brief } from '../src/types.ts';
 
@@ -125,7 +125,9 @@ const isRunDay = (d: Date) => runsOn(schedule, d);
 const provenance = {
   config: 'from DAILY_FOCUS_AGENT_DAYS',
   observed: 'observed from the archive',
-  default: 'assumed — set DAILY_FOCUS_AGENT_DAYS or let the archive fill up',
+  default: config.agent.at
+    ? `the dashboard's own, at ${describeTime(config.agent.at)} — set DAILY_FOCUS_AGENT_DAYS to change the days`
+    : 'assumed — set DAILY_FOCUS_AGENT_DAYS or let the archive fill up',
 }[schedule.source];
 pass('agent schedule', `${describeSchedule(schedule)} (${provenance})`);
 

@@ -715,17 +715,21 @@ export interface AssistantState {
   items: Record<string, AssistantItemState>;
 }
 
-/* ---------- the morning agent, started by hand ---------- */
+/* ---------- the morning agent, run by the dashboard ---------- */
 
 /**
- * One run of the morning agent that the dashboard started. A line-pair in
- * `agent.jsonl`, shaped like the assistant's. Runs the scheduler starts never
- * appear here: the dashboard neither sees them nor has anything to say about them.
+ * One run of the morning agent, and the conversation that may follow it. Lines
+ * in `agent.jsonl`, shaped like the assistant's: a `started` record, then one
+ * of `finished`, `failed` or `aborted`; after that, a pair per follow-up. The
+ * transcript itself stays with the CLI under the session id; this is the join,
+ * plus what the panel needs to redraw after a reload.
  */
 export interface AgentRun {
   id: string;
   cli: import('./config.ts').CliName;
-  /** The CLI's session id, so the run can be opened there. Null until it has said. */
+  /** Started by the dashboard's own clock, or by a click. */
+  trigger: 'schedule' | 'hand';
+  /** The CLI's session id, which a follow-up resumes. Null until it has said. */
   sessionId: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -736,16 +740,52 @@ export interface AgentRun {
    * said. Markdown.
    */
   report: string;
+  /**
+   * Everything the agent said along the way, oldest first, the report included
+   * when it was the last thing said. Its working commentary — "reading the
+   * calendar", "two threads dropped as handled" — kept so the reasoning behind
+   * a brief can be read back after the fact. Markdown.
+   */
+  messages: string[];
   /** Why a run failed or was aborted, in the CLI's words where it had any. */
+  error: string | null;
+  /** Questions asked of this run afterwards, oldest first. */
+  turns: AgentTurn[];
+  /**
+   * Whether a follow-up can be asked: the run is over, it left a session, and
+   * that session belongs to the CLI configured now. A Claude session means
+   * nothing to Codex.
+   */
+  resumable: boolean;
+}
+
+/** One question asked of a finished run, and the answer. */
+export interface AgentTurn {
+  id: string;
+  question: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: 'running' | 'done' | 'failed' | 'aborted';
+  /** The agent's final message, or so far while running. Markdown. */
+  reply: string;
   error: string | null;
 }
 
-/** The hand-started agent as the client sees it. */
+/** The morning agent as the client sees it. */
 export interface AgentRunState {
   enabled: boolean;
   cli: import('./config.ts').CliName | null;
+  /** The dashboard's own clock, when it has one. */
+  schedule: {
+    /** Local time of day, `HH:MM`. */
+    at: string;
+    /** When the dashboard will next start the agent. Null if never. */
+    nextRunAt: string | null;
+  } | null;
   /** The newest run, finished or not. Null before the first. */
   last: AgentRun | null;
+  /** Recent runs, newest first; the log keeps the rest. */
+  runs: AgentRun[];
 }
 
 export interface DashboardState {
@@ -801,7 +841,7 @@ export interface DashboardState {
   tickets: TicketBoardState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
   assistant: AssistantState;
-  /** The morning agent, run from the dashboard. Present even when off, so the client can hide the button. */
+  /** The morning agent, run by the dashboard. Present even when off, so the client can hide the button. */
   agentRun: AgentRunState;
   stats: {
     open: number;

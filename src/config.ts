@@ -184,29 +184,41 @@ export interface AssistantConfig {
   tools: readonly string[];
 }
 
+/** A local time of day, as `DAILY_FOCUS_AGENT_AT` gives it. */
+export interface TimeOfDay {
+  hour: number;
+  minute: number;
+}
+
 /**
- * How the dashboard runs the morning agent when the user asks for a fresh brief.
- * See `agent.ts`.
+ * How the dashboard runs the morning agent: on its own clock each scheduled
+ * morning, and by hand when the user asks for a fresh brief. See `agent.ts`.
  *
- * The scheduler stays the agent's usual home; this is the same agent started by
- * hand, on the same wrapper prompt, in the store. Its settings are its own rather
- * than borrowed from the assistant's: the brief is typically written by another
- * CLI, another model and at another effort than a quick answer about one row.
+ * The same agent either way, on the same wrapper prompt, in the store. Its
+ * settings are its own rather than borrowed from the assistant's: the brief is
+ * typically written by another CLI, another model and at another effort than a
+ * quick answer about one row.
  */
 export interface AgentRunConfig {
   /** `DAILY_FOCUS_AGENT=codex` or `claude`; null means off, which is the default. */
   cli: CliName | null;
+  /**
+   * The local time the dashboard starts the agent on each scheduled day: 07:00
+   * unless `DAILY_FOCUS_AGENT_AT` says otherwise. Null when that is `off`, which
+   * leaves the schedule to whatever else runs the agent, or when the agent is.
+   */
+  at: TimeOfDay | null;
   /** The CLI binary. Overridable for the reason `ghPath` is. */
   binPath: string;
   /** Passed through untouched, as the assistant's are. Null means no flag. */
   model: string | null;
   effort: string | null;
   /**
-   * Tool permissions handed to Claude Code, as for the assistant. Unlike the
-   * assistant it has to write, but only the brief: writing `items.json` and its
-   * temporary sibling is always allowed, and nothing else in the store is.
-   * The rest reaches its sources. Codex ignores this; its sandbox, confined to
-   * the store, is the policy.
+   * Tool permissions handed to Claude Code for reaching its sources, as for the
+   * assistant. Writing the brief is not on this list: `briefWritingTools` is
+   * added by the runner for a run and withheld for a follow-up question, so a
+   * chat about a finished brief cannot rewrite it. Codex ignores this; its
+   * sandbox, confined to the store, is the policy.
    */
   tools: readonly string[];
 }
@@ -270,8 +282,10 @@ export interface Config {
   /** Scheduled hours before a refresh is expected, followed by a 45-minute grace period. */
   staleAfterHours: number;
   /**
-   * Weekdays the briefing agent is scheduled on, 0 = Sunday. Null when it hasn't
-   * been said, which leaves `schedule.ts` to work it out from the archive.
+   * Weekdays the briefing agent runs on, 0 = Sunday. With `agent.at` set these
+   * are the days the dashboard starts it, Mon–Fri when unset. Otherwise they
+   * describe whatever else runs it, and null leaves `schedule.ts` to work that
+   * out from the archive.
    */
   agentDays: readonly Weekday[] | null;
   /** The live pull request board. */
@@ -478,7 +492,7 @@ export const DEFAULT_AGENT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli 
  * symlinks out of the store into this repo, so reading them is allowed where
  * they actually live as well.
  */
-function briefWritingTools(): string[] {
+export function briefWritingTools(): string[] {
   const repo = resolve(import.meta.dirname, '..');
   return [
     // `//` anchors a rule at the filesystem root; the path supplies one slash.
@@ -491,17 +505,37 @@ function briefWritingTools(): string[] {
   ];
 }
 
+/** When the dashboard starts the agent unless told otherwise. */
+export const DEFAULT_AGENT_AT: TimeOfDay = { hour: 7, minute: 0 };
+
 function envAgent(env: NodeJS.ProcessEnv): AgentRunConfig {
   const cli = envCli('DAILY_FOCUS_AGENT', env);
+  const at = envTimeOfDay('DAILY_FOCUS_AGENT_AT', env);
+  // A time set by hand with no CLI would be a schedule that never fires, and
+  // nothing on screen would say so. Refuse it at startup instead.
+  if (at && !cli && envString('DAILY_FOCUS_AGENT_AT', '', env) !== '') {
+    throw new Error('DAILY_FOCUS_AGENT_AT needs DAILY_FOCUS_AGENT set to codex or claude');
+  }
   // Commas only, for the reason the assistant's list gives.
   const tools = envNameList('DAILY_FOCUS_AGENT_TOOLS', env);
   return {
     cli,
+    at: cli ? at : null,
     binPath: expandHome((env.DAILY_FOCUS_AGENT_BIN ?? '').trim() || (cli ?? 'codex')),
     model: envString('DAILY_FOCUS_AGENT_MODEL', '', env) || null,
     effort: envString('DAILY_FOCUS_AGENT_EFFORT', '', env) || null,
-    tools: [...briefWritingTools(), ...(tools.length > 0 ? tools : DEFAULT_AGENT_TOOLS)],
+    tools: tools.length > 0 ? tools : DEFAULT_AGENT_TOOLS,
   };
+}
+
+/** `06:30`, `6:30` or `18:00`, local time. Unset is 07:00; `off` means no clock of the dashboard's own. */
+function envTimeOfDay(name: string, env: NodeJS.ProcessEnv): TimeOfDay | null {
+  const raw = envString(name, '', env).toLowerCase();
+  if (raw === '') return DEFAULT_AGENT_AT;
+  if (['off', 'false', '0', 'no', 'none', 'never'].includes(raw)) return null;
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw);
+  if (!match) throw new Error(`${name} must be a 24-hour time such as 06:30, or off, got ${JSON.stringify(raw)}`);
+  return { hour: Number(match[1]), minute: Number(match[2]) };
 }
 
 /**
