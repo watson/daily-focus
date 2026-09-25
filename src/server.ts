@@ -152,13 +152,8 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
 
   // The morning agent, on the dashboard's clock and when the user asks for a
   // fresh brief. It writes the brief itself, and the watcher below picks it up
-  // as it would any other; the runner keeps only its own log. The clock reads
-  // the brief's own timestamp so that a brief something else wrote today is
-  // today's run, and it doesn't start another.
-  const agent = new AgentRunner(config, {
-    onChange: () => void broadcast(),
-    briefGeneratedAt: async () => (await store.readBrief()).brief?.generatedAt ?? null,
-  });
+  // as it would any other; the runner keeps only its own log.
+  const agent = new AgentRunner(config, { onChange: () => void broadcast() });
 
   /**
    * State plus the things the store doesn't own: the asset fingerprint the client

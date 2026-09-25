@@ -56,7 +56,7 @@ async function settle(runner: AgentRunner): Promise<void> {
   throw new Error('the run never finished');
 }
 
-test('a run starts in the store on the scheduled wrapper, and keeps the last word as the report', async () => {
+test('a run starts in the store on the wrapper prompt, and keeps the last word as the report', async () => {
   const config = await makeConfig(
     [THREAD, SAID('Reading the prompt.'), SAID('Wrote 7 items; Calendar was unreachable.'), DONE],
     { DAILY_FOCUS_AGENT_MODEL: 'some-model', DAILY_FOCUS_AGENT_EFFORT: 'xhigh' },
@@ -182,7 +182,7 @@ function local(date: string, hour: number, minute = 0): Date {
 test('the clock starts a run once the time has passed on a scheduled day, and only once', async () => {
   const config = await makeConfig([THREAD, SAID('ok'), DONE], { DAILY_FOCUS_AGENT_AT: '06:30', DAILY_FOCUS_AGENT_DAYS: '1-5' });
   let changes = 0;
-  const runner = new AgentRunner(config, { onChange: () => changes++, briefGeneratedAt: async () => null });
+  const runner = new AgentRunner(config, { onChange: () => changes++ });
   const wednesday = '2026-09-23';
 
   await runner.tick(local(wednesday, 6, 0));
@@ -202,18 +202,13 @@ test('the clock starts a run once the time has passed on a scheduled day, and on
   assert.equal(runner.view().runs.length, 1, 'not on a Saturday');
 });
 
-test("the clock defers to a brief something else wrote today, and to a run that failed", async () => {
+test('the clock does not retry a run that failed', async () => {
   const config = await makeConfig([], { DAILY_FOCUS_AGENT_AT: '06:30', DAILY_FOCUS_AGENT_DAYS: '1-5' }, 'exit 2');
   const today = '2026-09-23';
-  let generated: string | null = local(today, 6, 10).toISOString();
-  const runner = new AgentRunner(config, { onChange: () => {}, briefGeneratedAt: async () => generated });
+  const runner = new AgentRunner(config, { onChange: () => {} });
 
   await runner.tick(local(today, 7, 0));
-  assert.equal(runner.view().last, null, "today's brief is already there");
-
-  generated = local('2026-09-22', 6, 10).toISOString();
-  await runner.tick(local(today, 7, 0));
-  assert.equal(runner.view().last?.trigger, 'schedule', "yesterday's isn't");
+  assert.equal(runner.view().last?.trigger, 'schedule');
   await settle(runner);
   assert.equal(runner.view().last?.status, 'failed');
 

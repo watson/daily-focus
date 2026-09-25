@@ -31,11 +31,9 @@
  *    editing tools are denied and the brief-writing rules withheld; under Codex,
  *    whose sandbox has no per-file policy, the question is framed to say so.
  *
- * One process at a time, run or follow-up. The dashboard cannot see any other
- * scheduler, so a run started elsewhere while this one is going is not
- * prevented; both rename a complete file over the brief, so the later one wins
- * and neither is ever half-written. The clock defers to a brief something else
- * wrote today, so an old scheduled task and this one don't both run.
+ * One process at a time, run or follow-up, and nothing else starts the agent:
+ * the log here is the whole record of its runs, so the clock starts nothing on
+ * a day the log already holds a run for, whatever became of that run.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -63,11 +61,10 @@ const TURN_TIMEOUT_MS = 10 * 60_000;
 const RUNS_SHOWN = 30;
 
 /**
- * The prompt the run is started with: the wrapper `prompts/README.md` gives for
- * any other scheduler, word for word, with the store's real path. Word for word
- * so two ways of running the agent can't drift apart — the contract test checks
- * it against the README — and so everything that evolves stays in the prompt
- * file, which is re-read every run.
+ * The prompt a run is started with: a short wrapper that names the prompt file
+ * by its store path and nothing more, so everything that evolves stays in the
+ * prompt file, in git, and this never needs editing. The path is the store's,
+ * not the repo's — see `prompts/README.md` for why the agent stays in there.
  */
 export function agentPrompt(promptPath: string): string {
   return [
@@ -103,7 +100,7 @@ export function followUpPrompt(question: string): string {
   ].join('\n');
 }
 
-/** `~/.daily-focus/prompt.md` rather than the expanded path, as the README writes it. */
+/** `~/.daily-focus/prompt.md` rather than the expanded path, as the prompt and the docs write it. */
 export function displayPath(path: string, home: string = homedir()): string {
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
@@ -228,11 +225,6 @@ interface Running {
 export interface AgentRunnerHooks {
   /** Something changed that a tab should see. */
   onChange: () => void;
-  /**
-   * When the brief on disk was written, for the clock: a brief written today by
-   * anything at all means today's run has happened.
-   */
-  briefGeneratedAt?: () => Promise<string | null>;
 }
 
 export class AgentRunner {
@@ -310,38 +302,29 @@ export class AgentRunner {
     return { at: describeTime(at), nextRunAt: this.nextRunAt?.toISOString() ?? null };
   }
 
-  /** Worked out by the last tick, since it needs the schedule and the brief off disk. */
+  /** Worked out by the last tick, since it needs the log. */
   private nextRunAt: Date | null = null;
 
   /**
    * The clock. Called every so often by the server, and once at startup: if a
-   * run is due and nothing has produced today's brief, start one. Never throws;
-   * a clock that can't read the brief has nothing to say about it.
+   * run is due and none has started today, start one.
    */
   async tick(now: Date = new Date()): Promise<void> {
     const at = this.config.agent.at;
     if (!at || !this.enabled) return;
     await this.start();
-    let due = false;
-    try {
-      const input = {
-        at,
-        schedule: await resolveSchedule(this.config, now),
-        lastRunStartedAt: this.last?.startedAt ?? null,
-        briefGeneratedAt: (await this.hooks.briefGeneratedAt?.()) ?? null,
-        now,
-      };
-      const next = nextScheduledRun(input);
-      if ((next?.getTime() ?? null) !== (this.nextRunAt?.getTime() ?? null)) {
-        this.nextRunAt = next;
-        this.hooks.onChange();
-      }
-      due = scheduledRunDue(input);
-    } catch (err) {
-      console.error(`[daily-focus] the morning agent's clock could not decide: ${(err as Error).message}`);
-      return;
+    const input = {
+      at,
+      schedule: resolveSchedule(this.config),
+      lastRunStartedAt: this.last?.startedAt ?? null,
+      now,
+    };
+    const next = nextScheduledRun(input);
+    if ((next?.getTime() ?? null) !== (this.nextRunAt?.getTime() ?? null)) {
+      this.nextRunAt = next;
+      this.hooks.onChange();
     }
-    if (!due || this.running) return;
+    if (!scheduledRunDue(input) || this.running) return;
     console.log(`[daily-focus] starting the morning agent, due ${describeTime(at)}`);
     await this.run('schedule', now);
   }

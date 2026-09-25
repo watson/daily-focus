@@ -205,7 +205,7 @@ export interface AgentRunConfig {
   /**
    * The local time the dashboard starts the agent on each scheduled day: 07:00
    * unless `DAILY_FOCUS_AGENT_AT` says otherwise. Null when that is `off`, which
-   * leaves the schedule to whatever else runs the agent, or when the agent is.
+   * leaves runs to the refresh icon, or when the agent is off.
    */
   at: TimeOfDay | null;
   /** The CLI binary. Overridable for the reason `ghPath` is. */
@@ -282,10 +282,8 @@ export interface Config {
   /** Scheduled hours before a refresh is expected, followed by a 45-minute grace period. */
   staleAfterHours: number;
   /**
-   * Weekdays the briefing agent runs on, 0 = Sunday. With `agent.at` set these
-   * are the days the dashboard starts it, Mon–Fri when unset. Otherwise they
-   * describe whatever else runs it, and null leaves `schedule.ts` to work that
-   * out from the archive.
+   * Weekdays the dashboard starts the briefing agent on, 0 = Sunday. Null means
+   * Mon–Fri, which `schedule.ts` fills in so the audit can say it was assumed.
    */
   agentDays: readonly Weekday[] | null;
   /** The live pull request board. */
@@ -528,7 +526,7 @@ function envAgent(env: NodeJS.ProcessEnv): AgentRunConfig {
   };
 }
 
-/** `06:30`, `6:30` or `18:00`, local time. Unset is 07:00; `off` means no clock of the dashboard's own. */
+/** `06:30`, `6:30` or `18:00`, local time. Unset is 07:00; `off` leaves runs to the refresh icon. */
 function envTimeOfDay(name: string, env: NodeJS.ProcessEnv): TimeOfDay | null {
   const raw = envString(name, '', env).toLowerCase();
   if (raw === '') return DEFAULT_AGENT_AT;
@@ -539,11 +537,11 @@ function envTimeOfDay(name: string, env: NodeJS.ProcessEnv): TimeOfDay | null {
 }
 
 /**
- * Copy the day-of-week field out of whatever runs the agent: `1-5`, `0-4`, `0,6`.
+ * The days the agent runs, cron-numbered: `1-5`, `0-4`, `0,6`.
  *
- * Unset is not the same as "every day" — it means we haven't been told, and the
- * schedule gets inferred instead. A bad spec throws at startup rather than being
- * silently read as Mon–Fri, since a wrong schedule makes the staleness banner lie.
+ * Unset is not the same as "every day" — it means Mon–Fri, left to `schedule.ts`
+ * to fill in. A bad spec throws at startup rather than being silently read as
+ * Mon–Fri, since a wrong schedule makes the staleness banner lie.
  */
 function envWeekdays(name: string, env: NodeJS.ProcessEnv): readonly Weekday[] | null {
   const raw = env[name];

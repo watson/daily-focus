@@ -26,7 +26,7 @@ A rule both agents need goes into both.
 
 The briefing agent reads and writes one directory — `~/.daily-focus/` — and nothing
 else. `npm run init` symlinks this prompt into it as `prompt.md`, alongside
-`items.schema.json`, so whatever starts the agent only ever names a path inside the store:
+`items.schema.json`, so a run only ever names a path inside the store:
 
 ```
 ~/.daily-focus/
@@ -37,6 +37,7 @@ else. `npm run init` symlinks this prompt into it as `prompt.md`, alongside
   items.json          the agent writes it
   actions.jsonl       the dashboard appends
   sessions.jsonl      the dashboard appends
+  agent.jsonl         the dashboard appends: every run, its report, and the questions asked of it
   archive/            the dashboard writes
   prs.json            the dashboard writes: its last fetch of the user's open pull requests
 ```
@@ -51,65 +52,28 @@ never comes up.
 
 A symlink rather than a copy, because a second copy of a prompt this long drifts
 silently, and the first symptom is a brief that carefully followed a rule we replaced
-a month ago.
-The link keeps the content in git — reviewable, revertible — while the path the
-scheduler names stays inside the store.
+a month ago. The link keeps the content in git — reviewable, revertible — while the
+path a run names stays inside the store. A real file in its place is left alone by
+`npm run init` and by the audit, for anyone who wants a private prompt of their own.
 
-## Wiring the morning brief into a scheduled task
+## How a run starts
 
-The dashboard runs the agent itself when `DAILY_FOCUS_AGENT` is set, and needs
-none of this: it starts the CLI in the store on the wrapper below (see `agentPrompt`
-in `src/agent.ts`), with the store's actual path in place of `~/.daily-focus`. This
-section is for running the agent from a scheduler of your own instead.
+The dashboard starts the agent, and nothing else does: each scheduled morning at
+`DAILY_FOCUS_AGENT_AT`, and from the refresh icon beside the brief's age. It runs
+the CLI named by `DAILY_FOCUS_AGENT` headless, with the store as its working
+directory, on a short wrapper prompt — `agentPrompt` in `src/agent.ts` — that
+names `prompt.md` by its store path and tells the agent to read it now and follow
+it. Nothing else is handed over: no extra instructions, no checkout, no copy of the
+prompt. Everything that evolves lives in the prompt, in git, where a change to it is
+reviewable, and the wrapper should never need editing.
 
-**Point the task at the store's path; don't paste the prompt's contents in.** The
-prompt changes as the dashboard learns things, and a copy living in the scheduler goes
-stale with no warning. Put only this stable wrapper in the scheduled task:
-
-```
-Run my morning brief for today.
-
-Your full instructions are in this file — read it now and follow it exactly,
-including every step it lists and the verification checks it ends with:
-
-  ~/.daily-focus/prompt.md
-
-That file is the source of truth and it changes over time. Re-read it on every
-run; never work from your memory of a previous run.
-
-Finish by reporting back as that file asks you to.
-```
-
-Those seven lines should never need editing again — the path is the only thing in them
-that is specific to anything, and they name the prompt by role rather than by position
-so renumbering its steps can't strand them. Everything that evolves lives in
-the prompt, in git, where a change to it is reviewable. A scheduler has no
-history and no review, so a rule that ends up there is one nobody can change or check.
-
-A test keeps this block and `agentPrompt` identical, so change them together.
-
-Two things to sanity-check on the first scheduled run after switching:
-
-- The agent can actually read `~/.daily-focus/prompt.md` from inside whatever sandbox
-  the task runs in, and can follow the symlink out of it. If following links is
-  blocked, replace it with a copy and add a step to your own routine to refresh it —
-  but check first, because a copy is the failure mode above.
-- It re-reads the file each run rather than caching it.
-
-If the brief stops appearing, the dashboard's staleness banner is the alarm: it
-turns red once the brief is more than 24 *working* hours old, so a silently broken
-scheduled task surfaces the next morning rather than never — while the Saturday and
-Sunday the task was never going to run don't fire it. At a weekend the dashboard says
-so instead, in place of the warning, so Friday's board doesn't read as a failure.
-
-Which days those are is the one thing the dashboard has to know about your task. It
-reads `DAILY_FOCUS_AGENT_DAYS` if you set it — cron-numbered, so `1-5` is Mon–Fri and
-`0-4` is the Sun–Thu week — and otherwise infers it from the days briefs have landed
-on, falling back to Mon–Fri for the first three weeks. **Set it to match the task's
-own day spec** when you change the schedule: if the two disagree, the banner is
-confidently wrong in whichever direction the dashboard guessed. `npm run audit`
-prints the schedule it's using and where it got it. Set `DAILY_FOCUS_AGENT_AT=off`
-if `DAILY_FOCUS_AGENT` is on, or the dashboard will run the agent as well.
+Which days it runs is `DAILY_FOCUS_AGENT_DAYS` — cron-numbered, so `1-5` is Mon–Fri
+and `0-4` is the Sun–Thu week — and Mon–Fri when unset. The same schedule drives the
+staleness banner, which turns red once the brief is more than 24 *working* hours old,
+so a morning the run quietly failed surfaces that day rather than never — while the
+Saturday and Sunday it was never going to run don't fire it. At a weekend the
+dashboard says so instead, in place of the warning, so Friday's board doesn't read as
+a failure. `npm run audit` prints the schedule it's using and where it got it.
 
 ## Where the rules live
 
@@ -151,5 +115,5 @@ every morning, and every line that isn't doing work is competing with the lines
 that are.
 
 You're editing a live file: the symlink means a save takes effect on the next
-scheduled run, with no install step. That's the point, but it does mean a
-half-finished edit at 06:00 is what runs.
+run, with no install step. That's the point, but it does mean a half-finished edit
+at 06:59 is what runs at 07:00.

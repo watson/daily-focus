@@ -117,17 +117,16 @@ if (parsed.warnings.length === 0) pass('no items were dropped or repaired');
 
 // The same scheduled-hours clock the dashboard uses: hours on a day the agent was
 // never going to run don't count, so Friday's brief audited on Sunday is the current
-// one rather than a late one. The schedule itself is reported, because an inferred
-// one being wrong is otherwise invisible — and it is the thing this check rests on.
+// one rather than a late one. The schedule itself is reported, since it is the
+// thing this check rests on and a wrong one is otherwise invisible.
 const auditedAt = new Date();
-const schedule = await resolveSchedule(config, auditedAt);
+const schedule = resolveSchedule(config);
 const isRunDay = (d: Date) => runsOn(schedule, d);
 const provenance = {
   config: 'from DAILY_FOCUS_AGENT_DAYS',
-  observed: 'observed from the archive',
   default: config.agent.at
     ? `the dashboard's own, at ${describeTime(config.agent.at)} — set DAILY_FOCUS_AGENT_DAYS to change the days`
-    : 'assumed — set DAILY_FOCUS_AGENT_DAYS or let the archive fill up',
+    : 'assumed — set DAILY_FOCUS_AGENT_DAYS to change the days',
 }[schedule.source];
 pass('agent schedule', `${describeSchedule(schedule)} (${provenance})`);
 

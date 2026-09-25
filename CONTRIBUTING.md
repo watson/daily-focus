@@ -90,7 +90,7 @@ When changing a contract, update the documents that describe it:
   actions in `QUICK_ACTIONS` in `src/assistant.ts`.
 - Agent instructions belong in the prompt for the profile they apply to, or both.
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
-  symlink can make changes live on the next scheduled run.
+  symlink makes changes live on the next run.
 - Settings belong in `src/config.ts`, `.env.example`, and `SETUP.md`.
 - Board buckets belong in server types, the client renderer, and the README.
 

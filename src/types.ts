@@ -807,8 +807,8 @@ export interface DashboardState {
   schedule: {
     /** Days a run is due, 0 = Sunday. */
     days: number[];
-    /** `config` when it was told, `observed` when derived from the archive. */
-    source: 'config' | 'observed' | 'default';
+    /** `config` when `DAILY_FOCUS_AGENT_DAYS` said so, `default` for Mon–Fri. */
+    source: 'config' | 'default';
     /** Human-readable form of `days`, e.g. "Mon–Fri". */
     description: string;
     /** Whether a run was due today. */
