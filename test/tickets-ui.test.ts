@@ -2,8 +2,8 @@
  * What one ticket row actually renders.
  *
  * The rules worth holding to something are the ones that live only in
- * `render.js`: that a row shows the status it currently claims, that it offers
- * park but never done, and that a ticket with no site behind it renders
+ * `client/tickets.ts`: that a row shows the status it currently claims, that it
+ * offers park but never done, and that a ticket with no site behind it renders
  * as text rather than as an anchor going nowhere. None of those are visible to
  * `tickets.ts`, so nothing else would catch them going.
  */
@@ -11,28 +11,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// Imported for its side effect before `render.js` is pulled in below.
-import { byClass, byTag, buttonLabels, mount, type StubElement } from './dom-stub.ts';
-import { resolveInProgress, resolveTickets } from '../src/tickets.ts';
-import type { InProgressTicket, Ticket, TicketRow } from '../src/types.ts';
+import { h } from 'preact';
 
-const { renderFlyout, renderTicketBoard, renderTicketRow, typeLegend } = (await import('../public/render.js')) as {
-  renderFlyout: (row: TicketRow | InProgressTicket | null, state: unknown, ui: unknown, handlers: unknown) => void;
-  renderTicketBoard: (state: unknown, ui: unknown, handlers: unknown) => void;
-  renderTicketRow: (row: TicketRow | InProgressTicket, state: unknown, ui: unknown, handlers: unknown) => StubElement;
-  typeLegend: (rows: readonly (TicketRow | InProgressTicket)[]) => StubElement | null;
-};
+// Imported ahead of the client, for the document it installs.
+import { buttonLabels, byClass, byTag, handlersWith, mount, mountOne, uiWith } from './dom.ts';
+import { Flyout } from '../client/flyout.ts';
+import { renderTicketBoard, renderTicketRow, ticketStatus, typeLegend } from '../client/tickets.ts';
+import type { Handlers, TicketMode, UiValues } from '../client/types.ts';
+import { resolveInProgress, resolveTickets } from '../src/tickets.ts';
+import type { DashboardState, InProgressTicket, Ticket, TicketBoardState, TicketRow } from '../src/types.ts';
 
 const NOW = new Date('2026-09-22T09:00:00Z');
-const STATE = { now: NOW.toISOString() };
-const UI = { selectedId: null, pending: new Set<string>(), menuFor: null, detailFor: null, noteDraft: '', assistantDraft: '' };
-const HANDLERS = {
-  onSelect: () => {},
-  onAction: () => {},
-  toggleMenu: () => {},
-  openDetail: () => {},
-  unpark: () => {},
-};
+const STATE = { now: NOW.toISOString() } as unknown as DashboardState;
+const UI = uiWith();
+const HANDLERS = handlersWith();
 
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
   const base: Ticket = {
@@ -53,20 +45,21 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
   return { ...base, allPrsClosed: overrides.allPrsClosed ?? (base.hasAnyPr && !base.hasOpenPr) };
 }
 
-function render(overrides: Partial<Ticket> = {}, actions: Parameters<typeof resolveTickets>[1] = []): StubElement {
+function render(overrides: Partial<Ticket> = {}, actions: Parameters<typeof resolveTickets>[1] = []): HTMLElement {
   const rows = resolveTickets([ticket(overrides)], actions, NOW);
   assert.equal(rows.length, 1, 'the fixture should produce exactly one row');
-  return renderTicketRow(rows[0]!, STATE, UI, HANDLERS);
+  return mountOne(renderTicketRow(rows[0]!, STATE, UI, HANDLERS));
 }
 
 test('the row names the ticket by key and links to it', () => {
   const node = render();
-  const link = byTag(node, 'A').find((a) => String(a.href ?? '').includes('/browse/'));
-  assert.equal(byTag(node, 'A').length, 1, 'the summary is the only link; an Open button would duplicate it');
+  const links = byTag(node, 'a') as HTMLAnchorElement[];
+  const link = links.find((a) => a.href.includes('/browse/'));
+  assert.equal(links.length, 1, 'the summary is the only link; an Open button would duplicate it');
   assert.ok(link, 'expected a browse link');
   assert.equal(link.href, 'https://acme.atlassian.net/browse/PROJ-8842');
   assert.equal(byClass(node, 'item__ref')[0]?.textContent, 'PROJ-8842');
-  assert.match(node.textContent, /Drop the retry loop/);
+  assert.match(node.textContent!, /Drop the retry loop/);
 });
 
 /**
@@ -98,14 +91,14 @@ test('the issue type is on the dot as text, not as colour alone', () => {
   const node = render({ issueType: 'Sub-task' });
   const dot = byClass(node, 'item__dot')[0];
   assert.ok(dot, 'expected a dot');
-  assert.equal(dot.attributes['aria-label'], 'Sub-task');
+  assert.equal(dot.getAttribute('aria-label'), 'Sub-task');
   assert.equal(dot.title, 'Sub-task');
-  assert.notEqual(dot.attributes['aria-hidden'], 'true', 'the dot carries meaning here, so it must not be hidden');
+  assert.notEqual(dot.getAttribute('aria-hidden'), 'true', 'the dot carries meaning here, so it must not be hidden');
 });
 
 test('a type Jira did not name says so rather than going quietly grey', () => {
   const dot = byClass(render({ issueType: '' }), 'item__dot')[0];
-  assert.equal(dot?.attributes['aria-label'], 'unknown type');
+  assert.equal(dot?.getAttribute('aria-label'), 'unknown type');
 });
 
 test('the type no longer takes a pill, since that cost a line in the gutter', () => {
@@ -126,11 +119,12 @@ const rowsOf = (...types: string[]): TicketRow[] =>
 test('the legend names every type on screen, once, in a stable order', () => {
   const legend = typeLegend(rowsOf('Task', 'Bug', 'Task', 'Sub-task'));
   assert.ok(legend);
+  const node = mountOne(legend);
   assert.deepEqual(
-    byClass(legend, 'legend__entry').map((entry) => entry.textContent),
+    byClass(node, 'legend__entry').map((entry) => entry.textContent),
     ['Bug', 'Sub-task', 'Task'],
   );
-  assert.equal(byClass(legend, 'legend__dot').length, 3, 'every entry carries its swatch');
+  assert.equal(byClass(node, 'legend__dot').length, 3, 'every entry carries its swatch');
 });
 
 /** A key to one colour explains nothing, and is a row of furniture every morning. */
@@ -140,9 +134,9 @@ test('there is no legend when every ticket is the same type', () => {
 });
 
 test('a type the palette has never heard of still gets a legend entry', () => {
-  const legend = typeLegend(rowsOf('Task', 'Spike'));
+  const legend = mountOne(typeLegend(rowsOf('Task', 'Spike'))!);
   assert.deepEqual(
-    byClass(legend!, 'legend__entry').map((entry) => entry.textContent),
+    byClass(legend, 'legend__entry').map((entry) => entry.textContent),
     ['Spike', 'Task'],
   );
 });
@@ -153,14 +147,14 @@ test('a row carries its court, so the stylesheet and a test can both see it', ()
 });
 
 /**
- * `el()` drops a null href, which would leave an anchor that looks clickable and
- * goes nowhere. A site nobody named means a plain row instead.
+ * An anchor with no href would look clickable and go nowhere. A site nobody
+ * named means a plain row instead.
  */
 test('no site means no anchor at all, not an anchor with no target', () => {
   const node = render({ url: null });
-  assert.deepEqual(byTag(node, 'A'), []);
-  assert.match(node.textContent, /PROJ-8842/);
-  assert.match(node.textContent, /Drop the retry loop/);
+  assert.deepEqual(byTag(node, 'a'), []);
+  assert.match(node.textContent!, /PROJ-8842/);
+  assert.match(node.textContent!, /Drop the retry loop/);
 });
 
 /**
@@ -190,7 +184,7 @@ test('park is offered; done, dismiss, nudge and a note button are not', () => {
 test('a parked row says until when, and offers Unpark instead of Park', () => {
   const node = render({}, [{ id: 'jira:PROJ-8842', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }]);
   assert.equal(node.dataset.status, 'snoozed');
-  assert.match(node.textContent, /parked until/);
+  assert.match(node.textContent!, /parked until/);
   const labels = buttonLabels(node);
   assert.ok(labels.includes('Unpark'), labels.join(','));
   assert.ok(!labels.includes('Park'), labels.join(','));
@@ -202,22 +196,23 @@ test('a note left on a ticket is counted on its row, and read in the panel', () 
     [{ id: 'jira:PROJ-8842', action: 'note', at: '2026-09-22T08:00:00Z', text: 'two more repos to go' }],
     NOW,
   );
-  const node = renderTicketRow(rows[0]!, STATE, UI, HANDLERS);
+  const node = mountOne(renderTicketRow(rows[0]!, STATE, UI, HANDLERS));
   assert.equal(byClass(node, 'pill--notes')[0]?.textContent, '1 note');
-  assert.doesNotMatch(node.textContent, /two more repos to go/, 'the text is the panel\'s to show');
+  assert.doesNotMatch(node.textContent!, /two more repos to go/, "the text is the panel's to show");
 
-  renderFlyout(rows[0]!, STATE, { ...UI, detailFor: 'jira:PROJ-8842' }, HANDLERS);
-  const panel = mount('flyout');
-  assert.match(panel.textContent, /two more repos to go/);
-  assert.match(panel.textContent, /PROJ-8842/);
-  assert.match(panel.textContent, /Committed/, 'the status the row is in, since the row is not beside it');
+  const panel = mountOne(
+    h(Flyout, { row: rows[0]!, run: null, state: STATE, ui: uiWith({ detailFor: 'jira:PROJ-8842' }), handlers: HANDLERS }),
+  );
+  assert.match(panel.textContent!, /two more repos to go/);
+  assert.match(panel.textContent!, /PROJ-8842/);
+  assert.match(panel.textContent!, /Committed/, 'the status the row is in, since the row is not beside it');
 });
 
 /**
  * The same ticket can be a brief item as well, and two elements sharing one id is
  * invalid HTML and an ambiguous fragment target — so the row namespaces its own.
  */
-test('the element id is namespaced away from the brief\'s', () => {
+test("the element id is namespaced away from the brief's", () => {
   assert.match(String(render().id ?? ''), /^ticket-/);
 });
 
@@ -232,17 +227,24 @@ test('the element id is namespaced away from the brief\'s', () => {
 function park(label: string, today = '2026-09-22'): string | undefined {
   const rows = resolveTickets([ticket()], [], new Date(`${today}T09:00:00Z`), []);
   let sent: { until?: string } | undefined;
-  const node = renderTicketRow(
-    rows[0]!,
-    { now: `${today}T09:00:00` },
-    { ...UI, menuFor: 'jira:PROJ-8842' },
-    { ...HANDLERS, onAction: (_id: string, _action: string, extra: { until?: string }) => void (sent = extra) },
+  const node = mountOne(
+    renderTicketRow(
+      rows[0]!,
+      { now: `${today}T09:00:00` } as unknown as DashboardState,
+      uiWith({ menuFor: 'jira:PROJ-8842' }),
+      handlersWith({ onAction: (_id, _action, extra) => void (sent = extra) }),
+    ),
   );
   const menu = byClass(node, 'menu')[0];
   assert.ok(menu, 'expected the menu to render when ui.menuFor matches');
-  const button = byTag(menu, 'BUTTON').find((b) => b.textContent.startsWith(label));
-  assert.ok(button, `no "${label}" entry; menu had ${byTag(menu, 'BUTTON').map((b) => b.textContent).join(' | ')}`);
-  (button.listeners.click as (() => void)[])[0]!();
+  const button = byTag(menu, 'button').find((b) => b.textContent!.startsWith(label));
+  assert.ok(
+    button,
+    `no "${label}" entry; menu had ${byTag(menu, 'button')
+      .map((b) => b.textContent)
+      .join(' | ')}`,
+  );
+  button.click();
   return sent?.until;
 }
 
@@ -270,8 +272,8 @@ test('a park from the end of a long month lands inside the month it named', () =
 
 test('the long-range entries say which date they mean, and the short ones do not', () => {
   const rows = resolveTickets([ticket()], [], NOW, []);
-  const node = renderTicketRow(rows[0]!, { now: NOW.toISOString() }, { ...UI, menuFor: 'jira:PROJ-8842' }, HANDLERS);
-  const labels = byTag(byClass(node, 'menu')[0]!, 'BUTTON').map((b) => b.textContent);
+  const node = mountOne(renderTicketRow(rows[0]!, STATE, uiWith({ menuFor: 'jira:PROJ-8842' }), HANDLERS));
+  const labels = byTag(byClass(node, 'menu')[0]!, 'button').map((b) => b.textContent!);
   assert.ok(
     labels.some((l) => l.startsWith('Next quarter') && /Dec/.test(l)),
     labels.join(' | '),
@@ -282,8 +284,8 @@ test('the long-range entries say which date they mean, and the short ones do not
 /** A dateless park would hide a board row forever with nothing on screen to say so. */
 test('the board still refuses an open-ended park', () => {
   const rows = resolveTickets([ticket()], [], NOW, []);
-  const node = renderTicketRow(rows[0]!, { now: NOW.toISOString() }, { ...UI, menuFor: 'jira:PROJ-8842' }, HANDLERS);
-  const labels = byTag(byClass(node, 'menu')[0]!, 'BUTTON').map((b) => b.textContent);
+  const node = mountOne(renderTicketRow(rows[0]!, STATE, uiWith({ menuFor: 'jira:PROJ-8842' }), HANDLERS));
+  const labels = byTag(byClass(node, 'menu')[0]!, 'button').map((b) => b.textContent!);
   assert.ok(!labels.some((l) => /agent decides/.test(l)), labels.join(' | '));
 });
 
@@ -293,22 +295,24 @@ const VOCAB = { PROJ: ['Committed', 'Done', 'In Review', "Won't Fix"], OTHER: ['
 
 function statusRow(overrides: Partial<Ticket> = {}, statuses: Record<string, string[]> = VOCAB, open = true) {
   const rows = resolveTickets([ticket(overrides)], [], NOW, []);
-  const moved: { key: string; status: string; from: string }[] = [];
-  const node = renderTicketRow(
-    rows[0]!,
-    { now: NOW.toISOString(), tickets: { statuses } },
-    { ...UI, statusFor: open ? rows[0]!.id : null },
-    { ...HANDLERS, toggleStatus: () => {}, moveTicket: (key: string, status: string, from: string) => void moved.push({ key, status, from }) },
+  const moved: { key: string; status: string; from: string | null }[] = [];
+  const node = mountOne(
+    renderTicketRow(
+      rows[0]!,
+      { now: NOW.toISOString(), tickets: { statuses } } as unknown as DashboardState,
+      uiWith({ statusFor: open ? rows[0]!.id : null }),
+      handlersWith({ moveTicket: (key, status, from) => void moved.push({ key, status, from }) }),
+    ),
   );
   return { node, moved };
 }
 
-test('the status is pressable, and offers the project\'s other statuses', () => {
+test("the status is pressable, and offers the project's other statuses", () => {
   const { node } = statusRow();
   const menu = byClass(node, 'menu--status')[0];
   assert.ok(menu, 'expected a status menu when ui.statusFor matches');
   assert.deepEqual(
-    byTag(menu, 'BUTTON').map((b) => b.textContent),
+    byTag(menu, 'button').map((b) => b.textContent),
     ['Done', 'In Review', "Won't Fix"],
     'the current status is not offered as somewhere to move to',
   );
@@ -316,8 +320,8 @@ test('the status is pressable, and offers the project\'s other statuses', () => 
 
 test('picking a status asks to move that key, and remembers where it came from', () => {
   const { node, moved } = statusRow();
-  const done = byTag(byClass(node, 'menu--status')[0]!, 'BUTTON').find((b) => b.textContent === 'Done');
-  (done!.listeners.click as (() => void)[])[0]!();
+  const done = byTag(byClass(node, 'menu--status')[0]!, 'button').find((b) => b.textContent === 'Done');
+  done!.click();
   // The `from` is what makes the toast's undo a transition back rather than a lie.
   assert.deepEqual(moved, [{ key: 'PROJ-8842', status: 'Done', from: 'Committed' }]);
 });
@@ -326,10 +330,10 @@ test('picking a status asks to move that key, and remembers where it came from',
  * One real board ran "In Progress" in one project and "In progress" in another.
  * Offering one project's vocabulary on another's ticket is offering a refusal.
  */
-test('only the row\'s own project is offered', () => {
+test("only the row's own project is offered", () => {
   const { node } = statusRow({ key: 'OTHER-5', id: 'jira:OTHER-5' });
   assert.deepEqual(
-    byTag(byClass(node, 'menu--status')[0]!, 'BUTTON').map((b) => b.textContent),
+    byTag(byClass(node, 'menu--status')[0]!, 'button').map((b) => b.textContent),
     ['To Do'],
     "PROJ's statuses must not be offered on an OTHER ticket",
   );
@@ -344,18 +348,18 @@ test('only the row\'s own project is offered', () => {
 test('a project nothing is known about leaves the status as plain text', () => {
   const { node } = statusRow({ key: 'NOPE-1', id: 'jira:NOPE-1' });
   assert.deepEqual(byClass(node, 'menu--status'), []);
-  assert.deepEqual(byTag(byClass(node, 'item__meta--status')[0]!, 'BUTTON'), [], 'nothing to offer, so nothing to press');
+  assert.deepEqual(byTag(byClass(node, 'item__meta--status')[0]!, 'button'), [], 'nothing to offer, so nothing to press');
   assert.equal(byClass(node, 'item__meta--status')[0]?.textContent, 'Committed');
 });
 
 test('a vocabulary of only the current status offers nothing', () => {
   const { node } = statusRow({}, { PROJ: ['Committed'] });
-  assert.deepEqual(byTag(byClass(node, 'item__meta--status')[0]!, 'BUTTON'), []);
+  assert.deepEqual(byTag(byClass(node, 'item__meta--status')[0]!, 'button'), []);
 });
 
 test('no vocabulary at all — an older cache — leaves the status as plain text', () => {
   const { node } = statusRow({}, {});
-  assert.deepEqual(byTag(byClass(node, 'item__meta--status')[0]!, 'BUTTON'), []);
+  assert.deepEqual(byTag(byClass(node, 'item__meta--status')[0]!, 'button'), []);
 });
 
 /** Nothing anywhere on a ticket row may take free text for a status. */
@@ -365,7 +369,7 @@ test('there is no way to type a status name', () => {
     const { node } = statusRow({}, statuses);
     const menu = byClass(node, 'menu--status')[0];
     if (!menu) continue;
-    assert.deepEqual(byTag(menu, 'INPUT'), [], 'the status menu takes no typed input');
+    assert.deepEqual(byTag(menu, 'input'), [], 'the status menu takes no typed input');
   }
 });
 
@@ -373,21 +377,17 @@ test('the menu is closed unless this row is the one that opened it', () => {
   const { node } = statusRow({}, VOCAB, false);
   assert.deepEqual(byClass(node, 'menu--status'), []);
   // But the control is still there to open it.
-  assert.equal(byTag(byClass(node, 'item__meta--status')[0]!, 'BUTTON').length, 1);
+  assert.equal(byTag(byClass(node, 'item__meta--status')[0]!, 'button').length, 1);
 });
 
 /** They looked good as plain pills, and a permanent hint is ink spent every row. */
 test('the status control carries no persistent clickable marker', async () => {
-  const css = await (await import('node:fs/promises')).readFile(
-    new URL('../public/style.css', import.meta.url),
-    'utf8',
-  );
+  const css = await (await import('node:fs/promises')).readFile(new URL('../public/style.css', import.meta.url), 'utf8');
   const rule = /\.pill--button \{([^}]+)\}/.exec(css);
   assert.ok(rule, 'style.css no longer declares .pill--button where this test looks');
   assert.ok(!/text-decoration/.test(rule[1]!), 'no underline on the resting pill');
   assert.ok(/cursor:\s*pointer/.test(rule[1]!), 'the cursor is what says it does something');
 });
-
 
 /* ---------- the warnings ---------- */
 
@@ -395,11 +395,11 @@ test('the status control carries no persistent clickable marker', async () => {
  * A warning is the one place this board talks about a ticket without rendering a
  * row for it, and the held-out ones are exactly the rows somebody will want to go
  * and look at — so the key has to be clickable. `jira.ts` writes the link as
- * inline Markdown and only `render.js` turns it into an anchor, which is why this
+ * inline Markdown and only the client turns it into an anchor, which is why this
  * is asserted here.
  */
-function boardOf(overrides: Record<string, unknown> = {}, ui: object = UI, handlers: object = {}): StubElement {
-  const board = {
+function boardState(overrides: Record<string, unknown> = {}): TicketBoardState {
+  return {
     enabled: true,
     reason: null,
     fetchedAt: null,
@@ -414,12 +414,15 @@ function boardOf(overrides: Record<string, unknown> = {}, ui: object = UI, handl
     checked: 0,
     statuses: {},
     ...overrides,
-  };
-  renderTicketBoard({ ...STATE, tickets: board }, ui, { ...HANDLERS, refreshTickets: () => {}, ...handlers });
-  return mount('tickets');
+  } as TicketBoardState;
 }
 
-function boardWith(warnings: readonly string[]): StubElement {
+function boardOf(overrides: Record<string, unknown> = {}, ui: Partial<UiValues> = {}, handlers: Partial<Handlers> = {}): HTMLElement {
+  const state = { ...STATE, tickets: boardState(overrides) } as DashboardState;
+  return mount(h('div', null, renderTicketBoard(state, uiWith(ui), handlersWith(handlers))));
+}
+
+function boardWith(warnings: readonly string[]): HTMLElement {
   return boardOf({ warnings: [...warnings] });
 }
 
@@ -430,21 +433,20 @@ test('a key named in a warning is rendered as a link to it', () => {
   ]);
   const banner = byClass(node, 'banner--warning')[0];
   assert.ok(banner, 'the warning is on the board');
-  const links = byTag(banner, 'A');
+  const links = byTag(banner, 'a') as HTMLAnchorElement[];
   assert.equal(links.length, 1);
   assert.equal(links[0]!.href, 'https://acme.atlassian.net/browse/PROJ-8842');
   assert.equal(links[0]!.textContent, 'PROJ-8842');
   // The sentence around it survives being linkified.
-  assert.match(banner.textContent, /does not account for them\.$/);
+  assert.match(banner.textContent!, /does not account for them\.$/);
 });
 
 test('a warning with no link in it is still just words', () => {
   const node = boardWith(['Could not read how work gets finished in PROJ.']);
   const banner = byClass(node, 'banner--warning')[0]!;
-  assert.deepEqual(byTag(banner, 'A'), [], 'nothing invents a link for a key with no site behind it');
-  assert.match(banner.textContent, /Could not read how work gets finished in PROJ\./);
+  assert.deepEqual(byTag(banner, 'a'), [], 'nothing invents a link for a key with no site behind it');
+  assert.match(banner.textContent!, /Could not read how work gets finished in PROJ\./);
 });
-
 
 /* ---------- Working on rows ---------- */
 
@@ -463,31 +465,32 @@ function inProgress(overrides: Partial<Ticket> = {}): InProgressTicket {
  * complaining — so there is neither Park nor the Unpark it would lead to.
  */
 test('a Working on row has nothing to park, and no strip at all', () => {
-  assert.deepEqual(buttonLabels(renderTicketRow(inProgress(), STATE, UI, HANDLERS)), []);
+  assert.deepEqual(buttonLabels(mountOne(renderTicketRow(inProgress(), STATE, UI, HANDLERS))), []);
 });
 
 /**
- * `Object.assign` onto a dataset writes `undefined` as the word, which would put
- * `data-court="undefined"` on the row — a court the stylesheet and a test could
- * both go looking for.
+ * A `data-court="undefined"` on the row would be a court the stylesheet and a
+ * test could both go looking for, so a row with no court carries no attribute.
  */
 test('a Working on row claims no court and no park status', () => {
-  const node = renderTicketRow(inProgress(), STATE, UI, HANDLERS);
-  assert.ok(!('court' in node.dataset), `data-court="${node.dataset.court}"`);
-  assert.ok(!('status' in node.dataset), `data-status="${node.dataset.status}"`);
+  const node = mountOne(renderTicketRow(inProgress(), STATE, UI, HANDLERS));
+  assert.ok(!node.hasAttribute('data-court'), `data-court="${node.dataset.court}"`);
+  assert.ok(!node.hasAttribute('data-status'), `data-status="${node.dataset.status}"`);
   assert.equal(node.dataset.id, 'jira:PROJ-8842');
 });
 
 test('a Working on row can still have its status changed', () => {
   const row = inProgress();
-  const node = renderTicketRow(
-    row,
-    { now: NOW.toISOString(), tickets: { statuses: VOCAB } },
-    { ...UI, statusFor: row.id },
-    { ...HANDLERS, toggleStatus: () => {}, moveTicket: () => {} },
+  const node = mountOne(
+    renderTicketRow(
+      row,
+      { now: NOW.toISOString(), tickets: { statuses: VOCAB } } as unknown as DashboardState,
+      uiWith({ statusFor: row.id }),
+      HANDLERS,
+    ),
   );
   assert.deepEqual(
-    byTag(byClass(node, 'menu--status')[0]!, 'BUTTON').map((b) => b.textContent),
+    byTag(byClass(node, 'menu--status')[0]!, 'button').map((b) => b.textContent),
     ['Committed', 'Done', "Won't Fix"],
   );
 });
@@ -498,9 +501,9 @@ test('a Working on row shows its notes and its open pull request', () => {
     [{ id: 'jira:PROJ-8842', action: 'note', at: '2026-09-22T08:00:00Z', text: 'waiting on the schema review' }],
     NOW,
   );
-  const node = renderTicketRow(row!, STATE, UI, HANDLERS);
+  const node = mountOne(renderTicketRow(row!, STATE, UI, HANDLERS));
   assert.equal(byClass(node, 'pill--notes')[0]?.textContent, '1 note');
-  assert.match(node.textContent, /open PR/);
+  assert.match(node.textContent!, /open PR/);
 });
 
 /* ---------- the two views ---------- */
@@ -528,28 +531,28 @@ function mixedBoard(): { rows: TicketRow[]; inProgress: InProgressTicket[] } {
   return { rows: resolveTickets(all, actions, NOW), inProgress: resolveInProgress(all, actions, NOW) };
 }
 
-const modeSwitch = (node: StubElement): StubElement => byClass(node, 'mode-switch')[0]!;
-const options = (node: StubElement): StubElement[] => byClass(modeSwitch(node), 'mode-switch__option');
-const sectionTitles = (node: StubElement): string[] => byClass(node, 'section__title').map((t) => t.textContent);
+const modeSwitch = (node: HTMLElement): HTMLElement => byClass(node, 'mode-switch')[0]!;
+const options = (node: HTMLElement): HTMLElement[] => byClass(modeSwitch(node), 'mode-switch__option');
+const sectionTitles = (node: HTMLElement): string[] => byClass(node, 'section__title').map((t) => t.textContent!);
 
 test('the switch offers both views, each with its count, and opens on Out of sync', () => {
   const node = boardOf({ ...mixedBoard(), fetchedAt: NOW.toISOString(), checked: 3 });
-  assert.equal(modeSwitch(node).attributes.role, 'tablist');
+  assert.equal(modeSwitch(node).getAttribute('role'), 'tablist');
   assert.deepEqual(
     options(node).map((o) => o.textContent),
     ['Out of sync1', 'Working on2'],
     'the parked ticket is not counted as out of sync',
   );
   assert.deepEqual(
-    options(node).map((o) => o.attributes['aria-selected']),
+    options(node).map((o) => o.getAttribute('aria-selected')),
     ['true', 'false'],
   );
 });
 
 test('pressing a side of the switch asks for that view', () => {
   const asked: string[] = [];
-  const node = boardOf(mixedBoard(), UI, { setTicketMode: (mode: string) => void asked.push(mode) });
-  for (const option of options(node)) (option.listeners.click as (() => void)[])[0]!();
+  const node = boardOf(mixedBoard(), {}, { setTicketMode: (mode) => void asked.push(mode) });
+  for (const option of options(node)) option.click();
   assert.deepEqual(asked, ['sync', 'working']);
 });
 
@@ -557,16 +560,16 @@ test('Out of sync shows the courts and Parked, and none of the work in progress'
   const node = boardOf(mixedBoard());
   assert.deepEqual(sectionTitles(node), ['In flight with nothing linked']);
   assert.equal(byClass(node, 'drawer').length, 1, 'Parked');
-  assert.ok(!node.textContent.includes('PROJ-2'), 'the In Review ticket belongs to the other view');
+  assert.ok(!node.textContent!.includes('PROJ-2'), 'the In Review ticket belongs to the other view');
 });
 
 test('Working on shows the tickets in progress grouped by status, and no courts', () => {
-  const node = boardOf(mixedBoard(), { ...UI, ticketMode: 'working' });
+  const node = boardOf(mixedBoard(), { ticketMode: 'working' });
   assert.deepEqual(sectionTitles(node), ['In Progress', 'In Review']);
   assert.deepEqual(byClass(node, 'drawer'), [], 'Parked belongs to Out of sync');
   assert.deepEqual(byClass(node, 'court-hint'), []);
   assert.deepEqual(
-    options(node).map((o) => o.attributes['aria-selected']),
+    options(node).map((o) => o.getAttribute('aria-selected')),
     ['false', 'true'],
   );
 });
@@ -577,54 +580,51 @@ test('Working on groups a status case-insensitively, under the first spelling se
     inProgress({ id: 'jira:PROJ-1', key: 'PROJ-1', workflowStatus: 'In Progress' }),
     inProgress({ id: 'jira:OTHER-1', key: 'OTHER-1', workflowStatus: 'In progress' }),
   ];
-  const node = boardOf({ inProgress: inProgressRows }, { ...UI, ticketMode: 'working' });
+  const node = boardOf({ inProgress: inProgressRows }, { ticketMode: 'working' });
   assert.deepEqual(sectionTitles(node), ['In Progress']);
   assert.equal(byClass(node, 'item').length, 2);
 });
 
-test('both views show the same legend, keyed from both views\' rows', () => {
-  // Read straight after each render: `boardOf` hands back the one shared mount.
+test("both views show the same legend, keyed from both views' rows", () => {
   // Every out-of-sync row is a Task, which on its own would key nothing — and a
   // legend that comes and goes with the switch moves everything below it.
-  const entries = (node: StubElement) => byClass(node, 'legend__entry').map((entry) => entry.textContent);
+  const entries = (node: HTMLElement) => byClass(node, 'legend__entry').map((entry) => entry.textContent);
   assert.deepEqual(entries(boardOf(mixedBoard())), ['Bug', 'Task']);
-  assert.deepEqual(entries(boardOf(mixedBoard(), { ...UI, ticketMode: 'working' })), ['Bug', 'Task']);
+  assert.deepEqual(entries(boardOf(mixedBoard(), { ticketMode: 'working' })), ['Bug', 'Task']);
 });
+
+/** The refresh control, as the header slot shows it for this board. */
+function slot(overrides: Record<string, unknown>, mode: TicketMode = 'sync', handlers: Partial<Handlers> = {}): HTMLElement {
+  return mount(h('span', null, ticketStatus(boardState(overrides), handlersWith(handlers), mode)));
+}
 
 test('the refresh icon counts what the showing view counts', () => {
   const board = { ...mixedBoard(), fetchedAt: NOW.toISOString(), checked: 3 };
   // The status is the icon's tooltip, rendered into the header slot rather than the tab.
-  const line = () => byClass(mount('tickets-refresh'), 'refresh-button')[0]!.title as string;
-  boardOf(board);
-  assert.match(line(), /1 of 3 unfinished tickets/);
-  boardOf(board, { ...UI, ticketMode: 'working' });
-  assert.match(line(), /2 of 3 unfinished tickets in progress/);
+  const line = (mode: TicketMode) => byClass(slot(board, mode), 'refresh-button')[0]!.title;
+  assert.match(line('sync'), /1 of 3 unfinished tickets/);
+  assert.match(line('working'), /2 of 3 unfinished tickets in progress/);
 });
 
 test('the refresh icon spins while reading, and a click mid-read is ignored', () => {
   let asked = 0;
-  boardOf({ fetching: true }, UI, { refreshTickets: () => void asked++ });
-  const icon = byClass(mount('tickets-refresh'), 'refresh-button')[0]!;
+  const icon = byClass(slot({ fetching: true }, 'sync', { refreshTickets: () => void asked++ }), 'refresh-button')[0]!;
   assert.equal(icon.dataset.fetching, 'true');
-  assert.match(icon.title as string, /^refreshing…/);
-  (icon.listeners.click as (() => void)[])[0]!();
+  assert.match(icon.title, /^refreshing…/);
+  icon.click();
   assert.equal(asked, 0);
 
-  boardOf({ fetchedAt: NOW.toISOString() }, UI, { refreshTickets: () => void asked++ });
-  const idle = byClass(mount('tickets-refresh'), 'refresh-button')[0]!;
+  const idle = byClass(slot({ fetchedAt: NOW.toISOString() }, 'sync', { refreshTickets: () => void asked++ }), 'refresh-button')[0]!;
   assert.equal(idle.dataset.fetching, 'false');
-  (idle.listeners.click as (() => void)[])[0]!();
+  idle.click();
   assert.equal(asked, 1);
 });
 
 test('the header names the source beside the icon, and when it last read', () => {
-  const label = () => byClass(mount('tickets-refresh'), 'refresh-label')[0]!.textContent;
-  boardOf({ fetchedAt: null });
-  assert.equal(label(), 'Jira · not read yet');
-  boardOf({ fetchedAt: null, fetching: true });
-  assert.equal(label(), 'Jira · reading…');
-  boardOf({ fetchedAt: NOW.toISOString(), fetching: true });
-  assert.match(label(), /^Jira · \d/, 'the last read stays up while the next one runs');
+  const label = (overrides: Record<string, unknown>) => byClass(slot(overrides), 'refresh-label')[0]!.textContent;
+  assert.equal(label({ fetchedAt: null }), 'Jira · not read yet');
+  assert.equal(label({ fetchedAt: null, fetching: true }), 'Jira · reading…');
+  assert.match(label({ fetchedAt: NOW.toISOString(), fetching: true })!, /^Jira · \d/, 'the last read stays up while the next one runs');
 });
 
 test('the status is not a strip across the tab any more', () => {
@@ -632,13 +632,16 @@ test('the status is not a strip across the tab any more', () => {
 });
 
 test('an empty Working on says so, and how many tickets were looked at', () => {
-  const node = boardOf({ fetchedAt: NOW.toISOString(), checked: 4 }, { ...UI, ticketMode: 'working' });
-  assert.match(byClass(node, 'empty')[0]!.textContent, /Nothing in progress\. 4 unfinished tickets checked\./);
+  const node = boardOf({ fetchedAt: NOW.toISOString(), checked: 4 }, { ticketMode: 'working' });
+  assert.match(byClass(node, 'empty')[0]!.textContent!, /Nothing in progress\. 4 unfinished tickets checked\./);
 });
 
 test('a server older than the page just has nothing in progress', () => {
-  const node = boardOf({ inProgress: undefined }, { ...UI, ticketMode: 'working' });
-  assert.deepEqual(options(node).map((o) => o.textContent), ['Out of sync0', 'Working on0']);
+  const node = boardOf({ inProgress: undefined }, { ticketMode: 'working' });
+  assert.deepEqual(
+    options(node).map((o) => o.textContent),
+    ['Out of sync0', 'Working on0'],
+  );
 });
 
 /* ---------- the flag that points back ---------- */
@@ -650,12 +653,12 @@ test('a server older than the page just has nothing in progress', () => {
  */
 test('a Working on row that is also out of sync says which court, and jumps to it', () => {
   const jumped: string[] = [];
-  const node = boardOf(mixedBoard(), { ...UI, ticketMode: 'working' }, { jumpToTicket: (id: string) => void jumped.push(id) });
+  const node = boardOf(mixedBoard(), { ticketMode: 'working' }, { jumpToTicket: (id) => void jumped.push(id) });
   const flags = byClass(node, 'pill--flag');
   assert.equal(flags.length, 1, 'only the flagged ticket carries one');
   assert.equal(flags[0]!.tagName, 'BUTTON');
   assert.equal(flags[0]!.textContent, 'Out of sync: In flight with nothing linked');
-  (flags[0]!.listeners.click as (() => void)[])[0]!();
+  flags[0]!.click();
   assert.deepEqual(jumped, ['jira:PROJ-1']);
 });
 
@@ -665,7 +668,7 @@ test('a parked court row puts no flag on its Working on row', () => {
   const actions = [{ id: 'jira:PROJ-8842', action: 'snooze' as const, at: '2026-09-22T08:00:00Z', until: '2026-09-30' }];
   const node = boardOf(
     { rows: resolveTickets([flagged], actions, NOW), inProgress: resolveInProgress([flagged], actions, NOW) },
-    { ...UI, ticketMode: 'working' },
+    { ticketMode: 'working' },
   );
   assert.equal(byClass(node, 'item').length, 1);
   assert.deepEqual(byClass(node, 'pill--flag'), []);
@@ -674,9 +677,9 @@ test('a parked court row puts no flag on its Working on row', () => {
 /* ---------- drawers remember being open ---------- */
 
 /**
- * State arrives on a heartbeat and every render rebuilds the element, so a drawer
- * has to be told it was open. Without this it snapped shut within the minute, or
- * the moment a row inside it was clicked.
+ * State arrives on a heartbeat and every push renders the board again, so a
+ * drawer is told whether it is open rather than left to remember. A toggle by
+ * hand is reported back, and the next render says the same thing the element does.
  */
 test('an opened drawer stays open when the board is rebuilt', () => {
   const [parked] = resolveTickets(
@@ -686,11 +689,12 @@ test('an opened drawer stays open when the board is rebuilt', () => {
   );
   const toggled: [string, boolean][] = [];
   const handlers = { toggleDrawer: (key: string, open: boolean) => void toggled.push([key, open]) };
-  const closed = byClass(boardOf({ rows: [parked] }, UI, handlers), 'drawer')[0]!;
+  const closed = byClass(boardOf({ rows: [parked] }, {}, handlers), 'drawer')[0] as HTMLDetailsElement;
   assert.ok(!closed.open, 'closed by default');
-  (closed.listeners.toggle as ((event: unknown) => void)[])[0]!({ currentTarget: { open: true } });
-  assert.deepEqual(toggled, [['tickets:parked', true]]);
+  closed.open = true;
+  closed.dispatchEvent(new Event('toggle'));
+  assert.deepEqual(toggled[0], ['tickets:parked', true]);
 
-  const reopened = byClass(boardOf({ rows: [parked] }, { ...UI, openDrawers: new Set(['tickets:parked']) }), 'drawer')[0]!;
+  const reopened = byClass(boardOf({ rows: [parked] }, { openDrawers: new Set(['tickets:parked']) }), 'drawer')[0] as HTMLDetailsElement;
   assert.equal(reopened.open, true);
 });

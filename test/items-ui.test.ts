@@ -1,38 +1,27 @@
 /**
  * Where a brief row says it lives.
  *
- * The repository behind a GitHub item is derived in `render.js` and nowhere else,
- * so nothing but a rendered row can be asked whether it survived — and the rule
- * worth holding is as much about the links it must *not* name a repository for
- * as about the ones it must.
+ * The repository behind a GitHub item is derived in `client/items.ts` and nowhere
+ * else, so nothing but a rendered row can be asked whether it survived — and the
+ * rule worth holding is as much about the links it must *not* name a repository
+ * for as about the ones it must.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// Imported for its side effect before `render.js` is pulled in below: it installs
-// the `document` and `Node` globals that `el()` reaches for.
-import { byClass, type StubElement } from './dom-stub.ts';
-import type { ResolvedItem } from '../src/types.ts';
-
-const { renderItem } = (await import('../public/render.js')) as {
-  renderItem: (item: ResolvedItem, state: unknown, ui: unknown, handlers: unknown) => StubElement;
-};
+// Imported ahead of the client, for the document it installs.
+import { byClass, handlersWith, mountOne, uiWith } from './dom.ts';
+import { renderItem } from '../client/items.ts';
+import type { DashboardState, ResolvedItem } from '../src/types.ts';
 
 const NOW = '2026-09-15T12:00:00Z';
 
-const STATE = { now: NOW, session: { active: null }, agenda: { conflictIds: [] } };
-const UI = { selectedId: null, pending: new Set<string>(), menuFor: null, detailFor: null, noteDraft: '', assistantDraft: '' };
-const HANDLERS = {
-  onSelect: () => {},
-  onAction: () => {},
-  startSession: () => {},
-  stopSession: () => {},
-  toggleMenu: () => {},
-  openDetail: () => {},
-};
+const STATE = { now: NOW, session: { active: null }, agenda: { conflictIds: [] } } as unknown as DashboardState;
+const UI = uiWith();
+const HANDLERS = handlersWith();
 
-function render(overrides: Partial<ResolvedItem> = {}): StubElement {
+function render(overrides: Partial<ResolvedItem> = {}): HTMLElement {
   const item: ResolvedItem = {
     id: 'github:pr:acme/webapp#3421',
     source: 'github',
@@ -44,11 +33,11 @@ function render(overrides: Partial<ResolvedItem> = {}): StubElement {
     ageDays: 0,
     ...overrides,
   };
-  return renderItem(item, STATE, UI, HANDLERS);
+  return mountOne(renderItem(item, STATE, UI, HANDLERS));
 }
 
 /** The `owner/repo` shown on the row, or null when it declined to name one. */
-function ref(node: StubElement): string | null {
+function ref(node: HTMLElement): string | null {
   return byClass(node, 'item__ref')[0]?.textContent ?? null;
 }
 

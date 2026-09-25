@@ -11,10 +11,13 @@
       /*
        * Applied before first paint so a dark-mode user never sees a white flash,
        * and so the toggle's three icons have a state to key off in that paint too.
+       * It has to live here rather than in the bundle: the bundle is fetched after
+       * this document is already on screen.
        *
        * Only the two explicit modes are ever stored. Anything else — nothing yet,
        * a value from an older build, a hand-edited one — stamps `system`, which
-       * pins no scheme and leaves the OS in charge.
+       * pins no scheme and leaves the OS in charge. `client/theme.ts` writes the
+       * same attribute and reads the same key from then on.
        */
       const stored = localStorage.getItem('daily-focus:theme');
       document.documentElement.dataset.theme =
@@ -22,217 +25,12 @@
     </script>
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
-
-    <header class="page-header">
-      <div class="page-header__titles">
-        <h1>Daily Focus</h1>
-        <p class="page-header__date" id="header-date"></p>
-      </div>
-      <div class="page-header__meta">
-        <span class="connection" id="connection" role="status" hidden>
-          <span class="connection__dot" aria-hidden="true"></span>
-          Reconnecting…
-        </span>
-        <span class="freshness" id="freshness" aria-live="polite"></span>
-        <!-- The icon that starts the morning agent, beside the age it would reset. -->
-        <span class="brief-refresh" id="brief-refresh"></span>
-        <!--
-          One slot per board, each shown only on its own tab in place of the
-          brief's freshness. The boards render their source, last read and
-          refresh icon here rather than as a full-width strip above their
-          rows: it is a readout consulted now and then, and the details live
-          in the icon's tooltip.
-        -->
-        <span class="board-refresh" id="board-refresh"></span>
-        <span class="board-refresh" id="tickets-refresh"></span>
-        <button
-          type="button"
-          class="icon-button theme-toggle"
-          id="theme-toggle"
-          aria-label="Switch to light mode (now following the system)"
-          title="Switch to light mode (now following the system)"
-        >
-          <!--
-            One glyph per state, and only the stamped one shows. The button is a
-            readout as much as a control: cycling through "system" passes through a
-            press that changes no colour at all, since system renders identically
-            to whichever mode the OS is already in — and a control that appears to
-            do nothing is what got the old two-state toggle written in the first
-            place. The icon and the label move on every press even when the page
-            does not.
-
-            System is both icons at once, cut on the diagonal: the sun on a light
-            half, the moon on a dark one. Its light and dark are written out as
-            hex rather than taken from the palette, which is the one place in this
-            stylesheet's reach that a colour is hardcoded. It has to be: the glyph
-            depicts light and dark instead of being drawn in them, so a half
-            painted in `--page` would follow the scheme and show a dark "light
-            side" on a dark page — the exact opposite of what it claims. Nothing
-            load-bearing rides on the hues; they are greys, and the label says in
-            words which state the button is in.
-          -->
-          <svg
-            class="theme-toggle__icon"
-            data-theme-icon="system"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <!--
-              The badge is a whole light disc with the dark half laid over it, not
-              two halves meeting: abutting fills leave the page colour showing
-              through the diagonal as a hairline once the browser antialiases both
-              edges of it. The dark grey is lifted off `--page`'s #0d0d0d so the
-              dark half is still a shape on a dark page.
-            -->
-            <circle cx="12" cy="12" r="10" fill="#f9f9f7" />
-            <path d="M4.93 19.07A10 10 0 0 0 19.07 4.93Z" fill="#17171a" />
-            <!--
-              Sun on the light half, moon on the dark one, each sized to sit clear
-              of the cut — which is what saves a clip path, and what a change to
-              either radius would spend.
-            -->
-            <circle cx="7.8" cy="7.8" r="2.1" fill="#17171a" />
-            <path
-              d="M10.99 8.65 12.24 8.99M8.65 10.99 8.99 12.24M5.47 10.13 4.55 11.05M4.61 6.95 3.36 6.61M6.95 4.61 6.61 3.36M10.13 5.47 11.05 4.55"
-              stroke="#17171a"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              fill-rule="evenodd"
-              fill="#f9f9f7"
-              d="M11.2 15.7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M9.95 13.95a4 4 0 1 0 8 0a4 4 0 1 0-8 0"
-            />
-            <!-- The rim is the only part that follows the page, so the badge
-                 still reads as one of the header's icons. -->
-            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.3" />
-          </svg>
-          <svg
-            class="theme-toggle__icon"
-            data-theme-icon="light"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="4.1" />
-            <path
-              d="M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.35 5.35l1.5 1.5M17.15 17.15l1.5 1.5M18.65 5.35l-1.5 1.5M6.85 17.15l-1.5 1.5"
-            />
-          </svg>
-          <svg
-            class="theme-toggle__icon"
-            data-theme-icon="dark"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <path d="M20.6 14.1A8.6 8.6 0 1 1 9.9 3.4 6.8 6.8 0 0 0 20.6 14.1z" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          class="icon-button"
-          id="help-toggle"
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts"
-        >
-          <span aria-hidden="true">?</span>
-        </button>
-      </div>
-    </header>
-
-    <nav class="tabs" aria-label="Views" role="tablist">
-      <button type="button" class="tab" id="tab-today" role="tab" aria-selected="true" data-view="today">
-        Today
-      </button>
-      <!--
-        The two board tabs start hidden and appear once the first state says their
-        board is switched on, so an instance without one never flashes its tab.
-      -->
-      <button type="button" class="tab" id="tab-board" role="tab" aria-selected="false" data-view="board" hidden>
-        Pull requests
-        <span class="tab__badge" id="board-badge" hidden></span>
-      </button>
-      <button type="button" class="tab" id="tab-tickets" role="tab" aria-selected="false" data-view="tickets" hidden>
-        Jira tickets
-        <!--
-          Quiet, unlike the board's: nothing on this tab is ever waiting on an
-          answer, and a red count sitting there every morning is a thing you
-          learn to stop seeing.
-        -->
-        <span class="tab__badge tab__badge--quiet" id="tickets-badge" hidden></span>
-      </button>
-    </nav>
-
-    <div class="timer" id="timer" hidden></div>
-
-    <div id="banners" class="banners"></div>
-
-    <main id="main" class="layout">
-      <div class="layout__main">
-        <div id="today" role="tabpanel" aria-labelledby="tab-today">
-          <p class="focus-bar" id="focus-bar" hidden>
-            Focus mode — everything but the top item is hidden.
-            <button type="button" class="button" id="focus-exit">Show everything</button>
-          </p>
-          <section class="objective" id="objective" aria-label="Current objective" hidden></section>
-          <section class="stats" id="stats" aria-label="Today at a glance"></section>
-          <p class="headline" id="headline" hidden></p>
-          <div id="sections"></div>
-        </div>
-        <div id="board" role="tabpanel" aria-labelledby="tab-board"></div>
-        <div id="tickets" role="tabpanel" aria-labelledby="tab-tickets"></div>
-      </div>
-
-      <aside class="layout__side" aria-label="Today's agenda">
-        <div id="agenda"></div>
-      </aside>
-      <aside class="flyout" id="flyout" aria-label="Item details" hidden></aside>
-    </main>
-
-    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-
-    <dialog class="help" id="help">
-      <h2>Keyboard shortcuts</h2>
-      <dl>
-        <div><dt><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></dt><dd>Today / pull requests / Jira tickets</dd></div>
-        <div><dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous item</dd></div>
-        <div><dt><kbd>e</kbd></dt><dd>Mark done</dd></div>
-        <div><dt><kbd>s</kbd></dt><dd>Snooze until tomorrow</dd></div>
-        <div><dt><kbd>x</kbd></dt><dd>Dismiss — not relevant</dd></div>
-        <div><dt><kbd>n</kbd></dt><dd>Open the item's panel, ready for a note</dd></div>
-        <div><dt><kbd>a</kbd></dt><dd>Open the item's panel, ready to ask the assistant</dd></div>
-        <div><dt><kbd>Esc</kbd></dt><dd>Close the menu, then the panel</dd></div>
-        <div><dt><kbd>o</kbd></dt><dd>Open the source link</dd></div>
-        <div><dt><kbd>u</kbd></dt><dd>Undo the last action</dd></div>
-        <div><dt><kbd>f</kbd></dt><dd>Focus mode — hide all but the top item</dd></div>
-        <div><dt><kbd>p</kbd></dt><dd>Start a focus session on the selected item</dd></div>
-        <div><dt><kbd>r</kbd></dt><dd>Refresh whichever board you are on</dd></div>
-        <div><dt><kbd>w</kbd></dt><dd>Jira tickets: switch between out of sync and working on</dd></div>
-        <div><dt><kbd>?</kbd></dt><dd>This help</dd></div>
-      </dl>
-      <p class="help__note">
-        Done, snoozed and dismissed all tell the morning agent to leave an item out of
-        tomorrow's brief. A note is sent along with it as free text. On both boards only
-        snooze and note apply: a pull request stays until it's merged or closed, and a
-        ticket whose status looks wrong is put right in Jira rather than here. Click a card
-        to open its panel, where its notes and the assistant live; the panel stays on the
-        item it was opened for. The assistant is a CLI run on your machine; it reads and
-        drafts, never sends or posts. Click "updated … ago" in the header to open the
-        morning agent's latest run: its report, earlier runs, and a place to ask it why
-        it did what it did.
-      </p>
-      <form method="dialog"><button type="submit" class="button">Close</button></form>
-    </dialog>
-
+    <!--
+      The page is built by app.js, bundled from client/. Nothing is written here
+      that the client would only have to describe again: one source for the
+      markup, and one place a change to it is made.
+    -->
+    <div id="app"></div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

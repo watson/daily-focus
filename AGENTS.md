@@ -75,7 +75,8 @@ DAILY_FOCUS_DATA=$(mktemp -d) npm run seed
 ## Checks
 
 Run `npm run typecheck` and `npm test` for code changes. Keep tests independent of
-live accounts and calendar permission prompts.
+live accounts and calendar permission prompts. The client is built from `client/`
+into `public/app.js`, which is not tracked: edit the source, never the bundle.
 
 `npm run audit` checks the brief in the selected store, not the code.
 `test/docs-contract.test.ts` checks prompt/schema, configuration, and board-label

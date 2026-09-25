@@ -18,7 +18,9 @@
  * and not a decoration.
  *
  * Both rules span three files and live in none of them, which is why they are
- * asserted here rather than left to a reviewer to notice.
+ * asserted here rather than left to a reviewer to notice. The stamp is read from
+ * `index.html`, where it has to run before the bundle is fetched; the cycle and
+ * the glyphs from `client/theme.ts`, where the toggle lives.
  */
 
 import assert from 'node:assert/strict';
@@ -26,6 +28,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 const read = (name: string) => readFile(new URL(`../public/${name}`, import.meta.url), 'utf8');
+/** The toggle lives in the client source now; the bundle it becomes is not tracked. */
+const theme = () => readFile(new URL('../client/theme.ts', import.meta.url), 'utf8');
 
 /** Run `index.html`'s pre-paint stamp against a given `localStorage`. */
 function stamp(html: string, stored: string | null): string | undefined {
@@ -96,7 +100,7 @@ test('the pre-paint stamp trusts only the two explicit modes', async () => {
 });
 
 test('every state in the cycle has its own glyph, so no press is invisible', async () => {
-  const [html, css, app] = await Promise.all([read('index.html'), read('style.css'), read('app.js')]);
+  const [css, app] = await Promise.all([read('style.css'), theme()]);
 
   const cycle = /const THEME_CYCLE = \[([^\]]+)\]/.exec(app);
   assert.ok(cycle, 'the cycle is no longer where this test can read it');
@@ -104,7 +108,7 @@ test('every state in the cycle has its own glyph, so no press is invisible', asy
   assert.deepEqual(states, ['system', 'light', 'dark']);
 
   for (const state of states) {
-    assert.match(html, new RegExp(`data-theme-icon="${state}"`), `no ${state} glyph`);
+    assert.match(app, new RegExp(`'data-theme-icon': '${state}'`), `no ${state} glyph`);
     assert.match(
       css,
       new RegExp(`:root\\[data-theme='${state}'\\] [^,{]*\\[data-theme-icon='${state}'\\]`),
@@ -115,7 +119,7 @@ test('every state in the cycle has its own glyph, so no press is invisible', asy
 });
 
 test('choosing the system clears the override rather than recording one', async () => {
-  const app = await read('app.js');
+  const app = await theme();
 
   // Writing `system` to storage would render identically today and be a stale
   // pin the first time these state names change.
