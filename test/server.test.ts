@@ -154,6 +154,20 @@ test('rerunning the morning agent is off by default, and refuses a request that 
   });
   assert.equal(res.status, 409);
   assert.match((await json(res)).error, /DAILY_FOCUS_AGENT/);
+  assert.equal(state.agentRun.schedule, null, 'and it has no clock');
+
+  // A follow-up needs a run and a question, and then the agent to be on.
+  const ask = (body: unknown) =>
+    fetch(`${server.url}/api/agent/ask`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  assert.equal((await ask({ text: 'why?' })).status, 400);
+  assert.equal((await ask({ run: 'r1', text: '  ' })).status, 400);
+  const off = await ask({ run: 'r1', text: 'why?' });
+  assert.equal(off.status, 409);
+  assert.match((await json(off)).error, /DAILY_FOCUS_AGENT/);
 });
 
 test('the assistant is off by default, says so in state, and refuses to be asked', async () => {

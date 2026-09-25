@@ -90,17 +90,39 @@ export function renderHeader(state, handlers) {
   renderBriefRefresh(state, handlers);
 
   const freshness = document.getElementById('freshness');
+  let text;
   if (state.brief.generatedAt === null) {
-    freshness.textContent = 'no brief yet';
+    text = 'no brief yet';
     freshness.dataset.stale = 'true';
-    return;
+  } else {
+    const hours = state.brief.ageHours ?? 0;
+    const when = hours < 1 ? 'just now' : hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+    const by = state.brief.generatedBy ? ` by ${state.brief.generatedBy}` : '';
+    text = `updated ${when}${by}`;
+    freshness.dataset.stale = String(state.brief.stale);
   }
 
-  const hours = state.brief.ageHours ?? 0;
-  const when = hours < 1 ? 'just now' : hours === 1 ? '1 hour ago' : `${hours} hours ago`;
-  const by = state.brief.generatedBy ? ` by ${state.brief.generatedBy}` : '';
-  freshness.textContent = `updated ${when}${by}`;
-  freshness.dataset.stale = String(state.brief.stale);
+  // The readout is the way in to the morning agent's runs, once there is one:
+  // what it did, what it reported, and the place to ask it why. A link rather
+  // than a button in the header, so nothing new appears there for it.
+  const last = state.agentRun?.last;
+  if (!last) {
+    freshness.textContent = text;
+    return;
+  }
+  replace(
+    freshness,
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'freshness__link',
+        title: "Open the morning agent's latest run: its report, and a place to ask it why",
+        onclick: () => handlers.openRun?.(),
+      },
+      text,
+    ),
+  );
 }
 
 /**
@@ -119,7 +141,7 @@ function renderBriefRefresh(state, handlers) {
   const running = agent.last?.status === 'running';
   const label = running
     ? `The morning agent is writing a new brief, started ${formatTime(agent.last.startedAt)}`
-    : 'Run the morning agent now, for a fresh brief';
+    : `Run the morning agent now, for a fresh brief${nextRunPhraseFor(agent)}`;
   replace(
     slot,
     el(
@@ -198,11 +220,13 @@ export function renderBanners(state, ui = {}, handlers = {}) {
       ),
     );
   }
-  // Today's only: put away in one browser, a report from last week shouldn't
-  // turn up again in another.
+  // A run that went wrong today, until it is put away. A run that finished
+  // needs no banner: the brief it wrote is the page, and "updated just now" in
+  // the header is the way to its report.
   if (
     !running &&
     agent?.last &&
+    agent.last.status !== 'done' &&
     agent.last.id !== ui.agentReportSeen &&
     localDateKey(parseDate(agent.last.startedAt) ?? new Date(0)) === localDateKey(new Date(state.now))
   ) {
@@ -220,66 +244,55 @@ function runNowButton(handlers) {
 }
 
 /**
- * A run the dashboard started: going, or finished and not yet put away.
+ * A run of the morning agent: going, or gone wrong and not yet put away.
  *
- * The report is the agent's own account of the run — what it wrote, what it
- * dropped as handled, what it could not reach — which on a schedule nobody sees.
- * Folded away, because the brief it describes is already on the page; open, it
- * is the one place to learn that a source was down.
+ * The banner is the way into the run's panel, as a card is the way into an
+ * item's: click it anywhere. What the agent is saying stays in the panel, so
+ * the banner is one line and its one button is Stop.
  */
 function agentRunBanner(run, state, ui, handlers) {
   const now = new Date(state.now);
+  const open = () => handlers.openRun?.(run.id);
+  let node;
   if (run.status === 'running') {
-    return banner(
+    node = banner(
       'info',
       'i',
-      el(
-        'span',
-        { class: 'agent-run' },
-        `The morning agent is writing a new brief, started ${relativeTime(run.startedAt, now)}.`,
-        // The latest thing it said, which along the way is what it is doing now.
-        run.report ? el('span', { class: 'agent-run__progress' }, firstLine(run.report)) : null,
-      ),
+      `The morning agent is writing a new brief, started ${relativeTime(run.startedAt, now)}.`,
       el('button', { type: 'button', class: 'button banner__action', onclick: () => handlers.stopAgent() }, 'Stop'),
     );
-  }
-
-  const ended = run.endedAt ? formatTime(run.endedAt) : '';
-  const headline =
-    run.status === 'done'
-      ? `The morning agent finished at ${ended}.`
-      : run.status === 'aborted'
+  } else {
+    const ended = run.endedAt ? formatTime(run.endedAt) : '';
+    node = banner(
+      'warning',
+      '!',
+      run.status === 'aborted'
         ? `The morning agent was stopped at ${ended}: ${run.error}.`
-        : `The morning agent failed at ${ended}: ${run.error}.`;
-  return banner(
-    run.status === 'done' ? 'info' : 'warning',
-    run.status === 'done' ? 'i' : '!',
-    el(
-      'span',
-      { class: 'agent-run' },
-      headline,
-      run.report
-        ? el(
-            'details',
-            {
-              class: 'agent-run__report',
-              // Every state push rebuilds the banners, so whether the report is
-              // open has to outlive the element, or it would snap shut unread.
-              open: ui.agentReportOpen === run.id,
-              ontoggle: (event) => handlers.toggleAgentReport?.(run.id, event.currentTarget.open),
-            },
-            el('summary', {}, run.status === 'done' ? 'Its report' : 'What it said last'),
-            el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(run.report)),
-          )
-        : null,
-    ),
-    run.status === 'done' ? null : runNowButton(handlers),
-    el(
-      'button',
-      { type: 'button', class: 'button banner__action', onclick: () => handlers.dismissAgentRun(run.id) },
-      'Dismiss',
-    ),
-  );
+        : `The morning agent failed at ${ended}: ${run.error}.`,
+      runNowButton(handlers),
+      el(
+        'button',
+        { type: 'button', class: 'button banner__action', onclick: () => handlers.dismissAgentRun(run.id) },
+        'Dismiss',
+      ),
+    );
+  }
+  node.className += ' banner--link';
+  node.setAttribute('role', 'button');
+  node.tabIndex = 0;
+  node.title = 'Open the run';
+  // The buttons are their own targets; a click on one must not also open the panel.
+  node.addEventListener('click', (event) => {
+    if (event.target?.closest?.('button')) return;
+    open();
+  });
+  node.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  });
+  return node;
 }
 
 /** The first non-empty line, without the Markdown that would read as noise in one. */
@@ -301,6 +314,13 @@ function isHeldOverDayOff(state) {
 }
 
 /** " — the next one arrives Monday", or nothing if we can't say. */
+/** ". It runs on its own at 06:30; next tomorrow 06:30", or nothing when the dashboard has no clock. */
+function nextRunPhraseFor(agent) {
+  if (!agent?.schedule) return '';
+  const next = agent.schedule.nextRunAt ? `; next ${relativeDay(agent.schedule.nextRunAt)} ${formatTime(agent.schedule.nextRunAt)}` : '';
+  return `. It runs on its own at ${agent.schedule.at}${next}`;
+}
+
 function nextRunPhrase(state) {
   const next = state.schedule.nextRunDate;
   if (!next) return '';
@@ -1260,6 +1280,327 @@ function renderAssistantTurn(turn, label, handlers) {
     el('p', { class: 'assistant__request' }, asked),
     turn.reply ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(turn.reply)) : null,
     status,
+  );
+}
+
+/* ---------- the morning agent's runs ---------- */
+
+/** "scheduled" / "by hand", and what became of it. */
+const RUN_STATUS = {
+  running: 'running',
+  done: 'finished',
+  failed: 'failed',
+  aborted: 'stopped',
+};
+
+/**
+ * The panel, open on one run of the morning agent.
+ *
+ * The same panel the rows use, since it is the same shape of thing: what
+ * happened, and a conversation about it. The report at the top is the agent's
+ * own account of the run — what it wrote, what it dropped as handled, what it
+ * could not reach — and the field at the foot resumes the run's session, so
+ * "why did you drop this" is answered by the agent that dropped it. The other
+ * runs are folded away at the end: the newest is the one that matters, and
+ * the rest are there for the day something needs explaining.
+ */
+export function renderRunFlyout(run, state, ui, handlers) {
+  const container = document.getElementById('flyout');
+  const before = captureFlyout(container);
+  const now = new Date(state.now);
+  const agent = state.agentRun ?? {};
+  const runs = agent.runs ?? [];
+  const busy = runs.some((candidate) => candidate.status === 'running' || candidate.turns?.some((turn) => turn.status === 'running'));
+  const answering = run.turns.some((turn) => turn.status === 'running');
+
+  container.hidden = false;
+  replace(
+    container,
+    runHeader(run, now, handlers),
+    el(
+      'div',
+      { class: 'flyout__body' },
+      runStatus(run, now, handlers),
+      runReport(run, ui, handlers),
+      run.status === 'running' ? null : runConversation(run, busy, answering, ui, handlers),
+      runList(run, runs, now, agent, handlers),
+    ),
+  );
+  restoreFlyout(container, { id: `run:${run.id}` }, ui, before);
+}
+
+function runHeader(run, now, handlers) {
+  return el(
+    'div',
+    { class: 'flyout__header' },
+    el(
+      'div',
+      { class: 'flyout__where' },
+      el('span', { class: 'item__source' }, 'Morning agent'),
+      el('span', {}, `· ${run.trigger === 'schedule' ? 'scheduled' : 'by hand'}`),
+      el('span', {}, `· ${RUN_STATUS[run.status] ?? run.status}`),
+    ),
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'icon-button flyout__close',
+        title: 'Close (Esc)',
+        'aria-label': 'Close the panel',
+        onclick: () => handlers.closeDetail(),
+      },
+      '×',
+    ),
+    el('p', { class: 'flyout__title' }, `Run ${describeWhen(run.startedAt, now)}`),
+  );
+}
+
+/** "today at 06:30", "yesterday at 06:30", "Mon 21 Sep at 06:30". */
+function describeWhen(value, now) {
+  const day = relativeDay(value, now);
+  const date = parseDate(value);
+  const named = day === 'today' || day === 'tomorrow' || day === 'yesterday';
+  return `${named ? day : date && date.getFullYear() === now.getFullYear() ? formatShortDay(value) : formatDay(value)} at ${formatTime(value)}`;
+}
+
+/**
+ * The report, and how the agent got there.
+ *
+ * Finished, the report stands on its own and the messages before it fold away
+ * beneath, each under its first line. Running, there is no report yet: the
+ * latest message is open, since it is what the agent is doing now, and the
+ * earlier ones fold away the same way. The reader's own folding wins over the
+ * default, and survives the re-render every new message brings.
+ */
+function runReport(run, ui, handlers) {
+  const messages = run.messages ?? (run.report ? [run.report] : []);
+  const running = run.status === 'running';
+  // The report is the last message when the CLI has no final result of its own;
+  // when it has one, the last message is usually the same text. Either way it
+  // is not listed twice.
+  const earlier = !running && messages.length && messages.at(-1) === run.report ? messages.slice(0, -1) : messages;
+  const list = earlier.length
+    ? el(
+        'div',
+        { class: 'agent-run__messages' },
+        earlier.map((message, index) => {
+          const key = `${run.id}:${index}`;
+          const latest = running && index === earlier.length - 1;
+          const open = ui.messageOpen?.has(key) ? ui.messageOpen.get(key) : latest;
+          return el(
+            'details',
+            {
+              class: 'agent-run__message',
+              open,
+              // A fold created open fires a toggle too, so only a toggle away
+              // from the default is the reader's; one back to it is forgotten,
+              // or the fold would stick where a message no longer is.
+              ontoggle: (event) =>
+                handlers.toggleMessage?.(key, event.currentTarget.open === latest ? null : event.currentTarget.open),
+            },
+            // Closed, the first line stands for the message; open, a short
+            // label stands in for it instead, so a one-line message isn't
+            // read twice. The stylesheet swaps the two.
+            el(
+              'summary',
+              {},
+              el('span', { class: 'agent-run__message-line' }, firstLine(message) || `Message ${index + 1}`),
+              el('span', { class: 'agent-run__message-index' }, `Message ${index + 1} of ${earlier.length}`),
+            ),
+            el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(message)),
+          );
+        }),
+      )
+    : null;
+
+  if (running) {
+    return el(
+      'section',
+      { class: 'flyout__section' },
+      el('h3', { class: 'flyout__label' }, 'What it is doing'),
+      list ?? el('p', { class: 'flyout__empty' }, 'Nothing yet.'),
+    );
+  }
+  return el(
+    'section',
+    { class: 'flyout__section' },
+    el('h3', { class: 'flyout__label' }, run.status === 'done' ? 'Its report' : 'What it said last'),
+    run.report
+      ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(run.report))
+      : el('p', { class: 'flyout__empty' }, 'It said nothing.'),
+    list
+      ? el(
+          'details',
+          { class: 'agent-run__list' },
+          el('summary', {}, `How it got there, in ${earlier.length} ${earlier.length === 1 ? 'message' : 'messages'}`),
+          list,
+        )
+      : null,
+  );
+}
+
+/** The one line under the header that says how the run went, and Stop while it goes. */
+function runStatus(run, now, handlers) {
+  if (run.status === 'running') {
+    return el(
+      'p',
+      { class: 'agent-run__status' },
+      `Writing a new brief, started ${relativeTime(run.startedAt, now)}. `,
+      el('button', { type: 'button', class: 'button', onclick: () => handlers.stopAgent() }, 'Stop'),
+    );
+  }
+  const took = runDuration(run);
+  if (run.status === 'done') {
+    return el('p', { class: 'agent-run__status' }, `Finished at ${formatTime(run.endedAt)}${took ? `, in ${took}` : ''}.`);
+  }
+  return el(
+    'p',
+    { class: 'agent-run__status agent-run__status--bad' },
+    `${run.status === 'aborted' ? 'Stopped' : 'Failed'} at ${formatTime(run.endedAt)}${took ? `, after ${took}` : ''}: ${run.error}.`,
+  );
+}
+
+/** "40 s", "7 min", "1 h 12 min": how long a finished run took. Empty while it hasn't. */
+function runDuration(run) {
+  const from = parseDate(run.startedAt);
+  const to = parseDate(run.endedAt);
+  if (!from || !to || to < from) return '';
+  const seconds = Math.round((to - from) / 1000);
+  return seconds < 60 ? `${seconds} s` : formatDuration(Math.round(seconds / 60));
+}
+
+/**
+ * The questions asked of the run and the answers, and the field for the next.
+ * A run that can't be continued says why in place of the field.
+ */
+function runConversation(run, busy, answering, ui, handlers) {
+  const turns = run.turns.length
+    ? el(
+        'div',
+        { class: 'assistant__turns' },
+        run.turns.map((turn) =>
+          el(
+            'div',
+            { class: 'assistant__turn', dataset: { status: turn.status } },
+            el('p', { class: 'assistant__request' }, turn.question),
+            turn.reply ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(turn.reply)) : null,
+            turn.status === 'running'
+              ? el('p', { class: 'assistant__status' }, 'Working…')
+              : turn.status === 'failed'
+                ? el('p', { class: 'assistant__status assistant__status--bad' }, `Failed: ${turn.error}`)
+                : turn.status === 'aborted'
+                  ? el('p', { class: 'assistant__status' }, `Stopped: ${turn.error}`)
+                  : null,
+          ),
+        ),
+      )
+    : null;
+
+  let foot;
+  if (!run.resumable) {
+    foot = el(
+      'p',
+      { class: 'flyout__empty' },
+      run.sessionId
+        ? 'This run was made by another CLI, so it cannot be asked anything now.'
+        : 'This run left no session behind, so there is nothing to ask.',
+    );
+  } else {
+    const input = el('textarea', {
+      class: 'assistant__input',
+      rows: 2,
+      value: ui.assistantDraft,
+      placeholder: run.turns.length ? 'Follow up…' : 'Ask why it did what it did, or to look again…',
+      'aria-label': 'Ask the morning agent about this run',
+      disabled: busy,
+      oninput: () => handlers.onAssistantDraft(input.value),
+      onkeydown: (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          submit();
+        }
+      },
+    });
+    const submit = () => {
+      const text = input.value.trim();
+      if (!text || busy) return;
+      handlers.askAgent(run.id, text);
+    };
+    foot = el(
+      'form',
+      {
+        class: 'assistant__form',
+        dataset: { running: String(answering) },
+        onsubmit: (event) => {
+          event.preventDefault();
+          submit();
+        },
+      },
+      input,
+      answering
+        ? el('button', { type: 'button', class: 'button flyout__submit', onclick: () => handlers.stopAgent() }, 'Stop')
+        : el('button', { type: 'submit', class: 'button button--primary flyout__submit', disabled: busy }, 'Send'),
+    );
+  }
+
+  return el(
+    'section',
+    { class: 'flyout__section assistant', dataset: { running: String(answering) } },
+    el('h3', { class: 'flyout__label' }, 'Ask it'),
+    turns,
+    busy && !answering ? el('p', { class: 'flyout__empty' }, 'The morning agent is busy with another run.') : null,
+    foot,
+  );
+}
+
+/**
+ * Every other run the server sent, newest first, folded away, plus when the
+ * next one is due. Each is a way to move the panel onto it.
+ */
+function runList(current, runs, now, agent, handlers) {
+  const others = runs.filter((run) => run.id !== current.id);
+  const schedule = agent.schedule;
+  const next = schedule
+    ? el(
+        'p',
+        { class: 'flyout__empty' },
+        `Runs on its own at ${schedule.at}${schedule.nextRunAt ? `; next ${describeWhen(schedule.nextRunAt, now)}` : ''}.`,
+      )
+    : el('p', { class: 'flyout__empty' }, 'Started by hand only; DAILY_FOCUS_AGENT_AT is off.');
+  return el(
+    'section',
+    { class: 'flyout__section' },
+    el('h3', { class: 'flyout__label' }, 'Earlier runs'),
+    next,
+    others.length
+      ? el(
+          'details',
+          { class: 'agent-run__list' },
+          el('summary', {}, `${others.length} earlier ${others.length === 1 ? 'run' : 'runs'}`),
+          el(
+            'ul',
+            { class: 'agent-run__runs' },
+            others.map((run) =>
+              el(
+                'li',
+                {},
+                el(
+                  'button',
+                  { type: 'button', class: 'agent-run__pick', onclick: () => handlers.openRun(run.id) },
+                  el(
+                    'span',
+                    { class: 'agent-run__pick-when' },
+                    `${describeWhen(run.startedAt, now)} · ${run.trigger === 'schedule' ? 'scheduled' : 'by hand'} · ${RUN_STATUS[run.status] ?? run.status}${runDuration(run) ? ` in ${runDuration(run)}` : ''}`,
+                  ),
+                  run.report || run.error
+                    ? el('span', { class: 'agent-run__pick-line' }, firstLine(run.status === 'done' ? run.report : (run.error ?? run.report)))
+                    : null,
+                ),
+              ),
+            ),
+          ),
+        )
+      : el('p', { class: 'flyout__empty' }, 'This is the only run so far.'),
   );
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { StubElement, byClass, byTag } from './dom-stub.ts';
+import { StubElement, buttonLabels, byClass, byTag } from './dom-stub.ts';
 
 const { renderBanners, renderConnection } = await import('../public/render.js');
 
@@ -41,7 +41,12 @@ function renderWithRun(last: Record<string, unknown> | null, brief: Record<strin
   container.replaceChildren = (...children: StubElement[]) => { container.childNodes = children; };
   Object.assign((globalThis as unknown as { document: object }).document, { getElementById: () => container });
   const calls: string[] = [];
-  const handlers = { runAgent: () => calls.push('run'), stopAgent: () => calls.push('stop'), dismissAgentRun: () => calls.push('dismiss') };
+  const handlers = {
+    runAgent: () => calls.push('run'),
+    stopAgent: () => calls.push('stop'),
+    dismissAgentRun: () => calls.push('dismiss'),
+    openRun: (id: string) => calls.push(`open ${id}`),
+  };
   renderBanners(
     {
       now: '2026-09-24T12:00:00Z',
@@ -57,7 +62,7 @@ function renderWithRun(last: Record<string, unknown> | null, brief: Record<strin
   return { container, calls };
 }
 
-const RUN = { id: 'r1', cli: 'codex', sessionId: null, startedAt: '2026-09-24T11:50:00Z', endedAt: null, error: null };
+const RUN = { id: 'r1', cli: 'codex', trigger: 'hand', sessionId: null, startedAt: '2026-09-24T11:50:00Z', endedAt: null, error: null, turns: [] };
 
 test('a stale brief offers to run the agent when the dashboard may', () => {
   const { container } = renderWithRun(null, { stale: true });
@@ -65,31 +70,37 @@ test('a stale brief offers to run the agent when the dashboard may', () => {
   assert.match(container.textContent, /Run it now/);
 });
 
-test('a running agent replaces the guesses about when the brief comes', () => {
-  const { container } = renderWithRun({ ...RUN, status: 'running', report: '**Reading** the calendar' }, { stale: true });
+test('a running agent replaces the guesses about when the brief comes, in one line with Stop', () => {
+  const { container, calls } = renderWithRun({ ...RUN, status: 'running', report: '**Reading** the calendar', messages: ['**Reading** the calendar'] }, { stale: true });
   assert.doesNotMatch(container.textContent, /may not have run/);
   assert.match(container.textContent, /writing a new brief/);
-  assert.match(container.textContent, /Reading the calendar/);
-  assert.match(container.textContent, /Stop/);
+  // What it is saying belongs to the panel, not the strip.
+  assert.doesNotMatch(container.textContent, /Reading the calendar/);
+  assert.deepEqual(buttonLabels(container), ['Stop']);
+  // The strip itself is the way into the panel; its button is not.
+  const strip = byClass(container, 'banner--link')[0]!;
+  (strip.listeners.click as ((event: unknown) => void)[])[0]!({ target: null });
+  (strip.listeners.click as ((event: unknown) => void)[])[0]!({ target: { closest: () => ({}) } });
+  assert.deepEqual(calls, ['open r1']);
 });
 
-test("a finished run shows today's report until it is dismissed", () => {
-  const done = { ...RUN, status: 'done', endedAt: '2026-09-24T11:58:00Z', report: 'Wrote 6 items.' };
-  assert.match(renderWithRun(done).container.textContent, /Wrote 6 items\./);
-  assert.doesNotMatch(renderWithRun(done, {}, { agentReportSeen: 'r1' }).container.textContent, /Wrote 6 items/);
-  // Opened, it stays open through the next state push, which rebuilds the banner.
-  const open = renderWithRun(done, {}, { agentReportOpen: 'r1' }).container;
-  assert.equal(byTag(open, 'DETAILS')[0]!.open, true);
-  const lastWeek = { ...done, startedAt: '2026-09-17T11:50:00Z' };
-  assert.doesNotMatch(renderWithRun(lastWeek).container.textContent, /Wrote 6 items/);
+test('a finished run needs no banner at all', () => {
+  const done = { ...RUN, status: 'done', trigger: 'schedule', endedAt: '2026-09-24T11:58:00Z', report: 'Wrote 6 items.' };
+  const { container } = renderWithRun(done);
+  assert.equal(byClass(container, 'banner').length, 0);
 });
 
-test('a failed run is a warning that says why and offers another go', () => {
+test('a failed run is a warning that says why, offers another go, and opens its panel until dismissed', () => {
   const failed = { ...RUN, status: 'failed', endedAt: '2026-09-24T11:51:00Z', report: '', error: 'codex exited with code 2' };
-  const { container } = renderWithRun(failed);
+  const { container, calls } = renderWithRun(failed);
   assert.equal(byClass(container, 'banner--warning').length, 1);
   assert.match(container.textContent, /code 2/);
-  assert.match(container.textContent, /Run it now/);
+  assert.deepEqual(buttonLabels(container), ['Run it now', 'Dismiss']);
+  (byClass(container, 'banner--link')[0]!.listeners.click as ((event: unknown) => void)[])[0]!({ target: null });
+  assert.deepEqual(calls, ['open r1']);
+  assert.equal(byClass(renderWithRun(failed, {}, { agentReportSeen: 'r1' }).container, 'banner').length, 0);
+  const lastWeek = { ...failed, startedAt: '2026-09-17T11:50:00Z' };
+  assert.equal(byClass(renderWithRun(lastWeek).container, 'banner').length, 0);
 });
 
 test('a lost connection is a header pill, not a banner', () => {

@@ -169,6 +169,22 @@ a {
   color: var(--critical);
   font-weight: 500;
 }
+/*
+ * The readout as a link into the morning agent's runs: the same words, so the
+ * header gains nothing, and an underline on hover to say they go somewhere.
+ */
+.freshness__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.freshness__link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
 
 .icon-button {
   width: 30px;
@@ -458,17 +474,105 @@ body[data-view='tickets'] #brief-refresh {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.agent-run__report {
-  margin-top: 4px;
-}
-.agent-run__report summary {
+
+/* A banner that is a way in, as a card is: the whole strip is the target. */
+.banner--link {
   cursor: pointer;
-  color: var(--ink-3);
-  font-size: 13px;
 }
-.agent-run__report .assistant__reply {
-  max-height: 50vh;
-  overflow-y: auto;
+.banner--link:hover {
+  border-color: var(--ink-3);
+}
+.banner--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The run's panel: how it went, then the list of the others, folded away. */
+.agent-run__status {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.agent-run__status--bad {
+  color: var(--serious);
+}
+.agent-run__list summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+/* What the agent said along the way, one fold per message, under its first line. */
+.agent-run__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-run__list > .agent-run__messages {
+  margin-top: 8px;
+}
+.agent-run__message {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.agent-run__message summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-run__message[open] summary {
+  color: var(--ink-3);
+}
+.agent-run__message-index,
+.agent-run__message[open] .agent-run__message-line {
+  display: none;
+}
+.agent-run__message[open] .agent-run__message-index {
+  display: inline;
+}
+.agent-run__message .assistant__reply {
+  padding: 0 10px 8px;
+}
+.agent-run__runs {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-run__runs li + li {
+  margin-top: 6px;
+}
+.agent-run__pick {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  text-align: left;
+  font: inherit;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.agent-run__pick:hover {
+  border-color: var(--ink-3);
+  color: var(--ink-1);
+}
+.agent-run__pick-when {
+  display: block;
+  font-size: 12.5px;
+}
+.agent-run__pick-line {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Explanation, not status — so it borrows the accent, not one of the four state hues. */

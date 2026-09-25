@@ -3,7 +3,8 @@
 [Back to the README](README.md)
 
 Daily Focus needs Node.js 22.18 or newer. Node 24 is recommended. GitHub, Jira,
-and the live macOS calendar are optional. A separate agent produces the morning brief.
+and the live macOS calendar are optional. The morning brief is written by an agent
+the dashboard runs for you through a coding-agent CLI, or by one you schedule yourself.
 
 ## Start the dashboard
 
@@ -55,22 +56,66 @@ Keep real names, account handles, and work details in this private store, outsid
 
 ## Connect your morning agent
 
-Choose an agent that can read and write local files and reach the sources you list
-in `sources.md`. Schedule it for your working mornings, with access to
+The simplest setup lets the dashboard run the agent. Install and log in to the
+[Codex CLI](https://developers.openai.com/codex/cli) or
+[Claude Code](https://code.claude.com/docs), then set:
+
+```dotenv
+DAILY_FOCUS_AGENT=codex
+```
+
+Restart the server. Each scheduled morning at 07:00 local time the dashboard starts
+the agent through that CLI, headless, in the store, and the brief appears when it
+finishes. Set `DAILY_FOCUS_AGENT_AT` to another time, such as `06:30`. The dashboard
+has to be running at the time; if it wasn't, it runs the agent as soon as it is
+started that day, provided nothing has produced a brief for the day yet. It runs
+once a day, whatever became of the run: a failed morning is reported once, not
+retried every half minute. The days are Monday to Friday unless
+`DAILY_FOCUS_AGENT_DAYS` says otherwise; see
+[Match your working week](#match-your-working-week). `DAILY_FOCUS_AGENT_AT=off`
+means the dashboard never starts a run on its own; the refresh icon still does.
+
+Whichever way it starts, every run lands in the same place: the report it gives when
+it finishes, and a chat where you can ask it why it did what it did. See
+[The morning agent's runs](#the-morning-agents-runs).
+
+The agent reaches your sources the way the CLI does:
+
+- **Codex** runs in its workspace-write sandbox with network access, confined to the
+  store. Connectors from the Codex app are found through its plugin catalogue. There
+  is nobody to approve a command outside the sandbox, so the agent reports that
+  restriction for any `gh` command that needs it, such as switching accounts.
+- **Claude Code** may write `items.json` and nothing else in the store, and reach
+  its sources with only what `DAILY_FOCUS_AGENT_TOOLS` allows. The default covers
+  GitHub, Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat
+  and document connectors to the list by name, or the brief will report them as
+  unreachable.
+
+Set `DAILY_FOCUS_AGENT_MODEL` and `DAILY_FOCUS_AGENT_EFFORT` if the CLI's own
+defaults are not what you want for a brief; a brief is worth a high effort. If the
+server can't find the CLI, set `DAILY_FOCUS_AGENT_BIN`.
+
+### Or schedule it yourself
+
+Any agent that can read and write local files and reach the sources you list in
+`sources.md` can write the brief instead: a scheduled task in the Codex or ChatGPT
+app, a cron job, anything. Schedule it for your working mornings, with access to
 `~/.daily-focus/`, and point it at:
 
 ```text
 ~/.daily-focus/prompt.md
 ```
 
-Use the [scheduled-task wrapper in prompts/README.md](prompts/README.md#wiring-the-morning-brief-into-the-scheduled-task).
+Use the [wrapper in prompts/README.md](prompts/README.md#wiring-the-morning-brief-into-a-scheduled-task).
 It tells the agent to reread the prompt each run. Don't paste a copy of the prompt
-into the scheduler or point the briefing agent at this repo's `AGENTS.md`.
+into the scheduler or point the briefing agent at this repo's `AGENTS.md`. Set
+`DAILY_FOCUS_AGENT_DAYS` to the task's days so the dashboard knows when a brief is
+overdue. If you also set `DAILY_FOCUS_AGENT`, so the refresh icon can start a run by
+hand between scheduled ones, set `DAILY_FOCUS_AGENT_AT=off` or the dashboard will
+run the agent as well.
 
 The agent writes `items.json`. The dashboard records your actions and focus sessions
-for the next run to read. The dashboard doesn't schedule the agent; that stays
-with your scheduler. It can start it by hand, though, if you let it:
-[Rerun the brief from the dashboard](#rerun-the-brief-from-the-dashboard).
+for the next run to read.
 
 Run the agent once by hand to check access and see your first brief. Then run:
 
@@ -214,46 +259,30 @@ Its instructions live in `prompts/assistant.md`, linked into the store by
 never leaves notes on the item or marks it handled. That is yours to do once you have
 read the reply.
 
-## Rerun the brief from the dashboard
+## The morning agent's runs
 
-When the day has moved on from the morning's brief, the refresh icon beside
-"updated … ago" on the Today tab starts the morning agent now, rather than
-tomorrow. It runs the agent through a CLI you already have, headless, with the
-same wrapper your scheduler uses and the store as its working directory, so it
-writes the brief exactly as a scheduled run does. What you have marked done,
-snoozed or noted is kept; the brief it replaces is in the archive.
+Every run the dashboard starts, on its clock or by hand, is recorded in the store.
+The refresh icon beside "updated … ago" on the Today tab starts one now, for the
+day that has moved on from the morning's brief. It rewrites the brief from scratch;
+what you have marked done, snoozed or noted is kept, and the brief it replaces is
+in the archive. While it runs, a banner says so and offers Stop; click the banner
+to watch the run. When it finishes the banner goes, since the brief it wrote is the
+page. A run that fails stays as a warning until you dismiss it.
 
-Install and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
-[Claude Code](https://code.claude.com/docs), then set:
+Click "updated … ago" to open the latest run in the panel. It holds the agent's
+report — what it wrote, what it dropped as handled, and any source it could not
+reach — with everything it said on the way there folded away beneath, and a field
+to ask it about the run. The question goes to the agent in the
+same session, so it answers from what it actually did: why it dropped an item, what
+it could not find, whether it can find it now. A follow-up is given nothing to
+write; if something in the brief should change, it says what, and you run it again.
+Earlier runs are folded away at the foot of the panel, newest first, and any of
+them opens the same way.
 
-```dotenv
-DAILY_FOCUS_AGENT=codex
-```
-
-Restart the server and the icon appears. Set `DAILY_FOCUS_AGENT_MODEL` and
-`DAILY_FOCUS_AGENT_EFFORT` to what your scheduled task uses, so a hand-started
-brief is as thorough as a scheduled one; unset, the CLI's own defaults apply. If
-the server can't find the CLI, set `DAILY_FOCUS_AGENT_BIN`.
-
-While it runs, a banner shows what the agent is doing and offers Stop. When it
-finishes, the banner holds the agent's report — what it wrote, what it dropped as
-handled, and any source it could not reach — until you dismiss it.
-
-It reaches your sources the way the CLI does, which may not be the way your
-scheduler does:
-
-- **Codex** runs in its workspace-write sandbox with network access, confined to the
-  store. Connectors from the Codex app are found through its plugin catalogue. There
-  is nobody to approve a command outside the sandbox, so the agent reports that
-  restriction for any `gh` command that needs it, such as switching accounts.
-- **Claude Code** may write `items.json` and nothing else in the store, and reach
-  its sources with only what `DAILY_FOCUS_AGENT_TOOLS` allows. The default covers
-  GitHub, Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat
-  and document connectors to the list by name, or the brief will report them as
-  unreachable.
-
-One run at a time. The dashboard can't see your scheduler, so avoid starting a run
-just before a scheduled one; if both run, the later brief replaces the earlier one.
+The dashboard runs one thing at a time: a run, or a question about one. It can't see
+a scheduler of your own, so if both start a run, the later brief replaces the
+earlier one. A brief something else wrote today does hold the dashboard's clock
+off for the day.
 
 ## A personal instance
 
@@ -290,14 +319,16 @@ which takes precedence over `.env`.
 
 ## Match your working week
 
-Set `DAILY_FOCUS_AGENT_DAYS` to the days your agent runs. It uses cron weekday
+Set `DAILY_FOCUS_AGENT_DAYS` to the days the agent runs. It uses cron weekday
 numbers: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, or `0,6` for
-weekends.
+weekends. When the dashboard runs the agent itself, these are the days it does so,
+and Monday to Friday when unset.
 
-If unset, the dashboard infers the schedule after three weeks of archived briefs.
-Until then it assumes Monday to Friday. `npm run audit` shows the schedule in use.
-Days without scheduled runs don't make a brief overdue. Once a refresh is due,
-the dashboard allows 45 minutes before showing a warning.
+When something else runs the agent and this is unset, the dashboard infers the
+schedule after three weeks of archived briefs. Until then it assumes Monday to
+Friday. `npm run audit` shows the schedule in use. Days without scheduled runs
+don't make a brief overdue. Once a refresh is due, the dashboard allows 45 minutes
+before showing a warning.
 
 ## Settings reference
 
@@ -316,7 +347,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends when the brief does not specify it |
 | `DAILY_FOCUS_MIN_FREE_WINDOW` | `45` | Minutes before a gap counts as a focus window |
 | `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to expect a refresh. Shows an informational message for 45 minutes before warning that the agent may not have run. Counted only in hours a run was due, so days off never trip it |
-| `DAILY_FOCUS_AGENT_DAYS` | *inferred* | Weekdays the agent is scheduled on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
+| `DAILY_FOCUS_AGENT_DAYS` | `1-5` when the dashboard runs the agent, else *inferred* | Weekdays the agent runs on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
 | `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
 | `DAILY_FOCUS_AWAY_AFTER` | `10`; `0` for personal | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
 | `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board; nothing is polled |
@@ -342,10 +373,11 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_ASSISTANT_MODEL` | *the CLI's own* | Model passed to the CLI untouched: an alias like `opus`, or a full id. Unset passes no flag |
 | `DAILY_FOCUS_ASSISTANT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched: `low`, `medium`, `high`, `xhigh` or `max`. Unset passes no flag |
 | `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. Ignored by Codex |
-| `DAILY_FOCUS_AGENT` | `off` | `codex` or `claude` puts a refresh icon beside the brief's age that runs the morning agent through that CLI now. `off` hides it |
+| `DAILY_FOCUS_AGENT` | `off` | `codex` or `claude` lets the dashboard run the morning agent through that CLI: each scheduled morning, and from the refresh icon beside the brief's age. `off` hides it |
+| `DAILY_FOCUS_AGENT_AT` | `07:00` | Local time, `HH:MM`, at which the dashboard starts the agent on each scheduled day, or as soon as it is running after that. `off` means it never starts one on its own. Needs `DAILY_FOCUS_AGENT` |
 | `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the server's PATH lacks it. `~` is expanded |
-| `DAILY_FOCUS_AGENT_MODEL` | *the CLI's own* | Model passed to the CLI untouched. Match your scheduled task's. Unset passes no flag |
-| `DAILY_FOCUS_AGENT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched. Match your scheduled task's. Unset passes no flag |
+| `DAILY_FOCUS_AGENT_MODEL` | *the CLI's own* | Model passed to the CLI untouched. Unset passes no flag |
+| `DAILY_FOCUS_AGENT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched. Unset passes no flag |
 | `DAILY_FOCUS_AGENT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use to reach your sources, in its permission syntax, comma-separated. Writing `items.json`, and nothing else in the store, is allowed regardless. Ignored by Codex |
 
 ## If something looks wrong
@@ -353,7 +385,10 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 - An empty Today tab usually means the agent hasn't written `items.json` yet. Check
   that the agent and dashboard use the same store.
 - A stale brief needs an agent run. Refreshing a board doesn't regenerate the brief;
-  the icon beside the brief's age does, when `DAILY_FOCUS_AGENT` is set.
+  the icon beside the brief's age does, when `DAILY_FOCUS_AGENT` is set. If the
+  dashboard was meant to run it, click "updated … ago" to see what the last run
+  said, or whether there was one: the dashboard has to be running at
+  `DAILY_FOCUS_AGENT_AT`, 07:00 by default, or started later that day.
 - A GitHub or Jira warning may mean the CLI session needs authentication. If the
   server can't find a CLI, set its full path with `DAILY_FOCUS_GH` or `DAILY_FOCUS_ACLI`.
 - The boards keep their last successful results during an outage. Check the status

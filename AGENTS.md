@@ -65,10 +65,12 @@ DAILY_FOCUS_DATA=$(mktemp -d) npm run seed
   or edit. It runs in an empty directory with editing tools denied, so keep that a
   property of the process: no checkout, no worktree, no repository path setting.
   Work that needs one belongs in a coding session, not in this dashboard.
-- `src/agent.ts` starts the briefing agent after a user click, never on a timer; the
-  scheduler owns the schedule. The agent still writes `items.json` itself, from the
-  store as its working directory, on the `prompts/README.md` wrapper verbatim. Do not
-  hand it extra instructions, a checkout, or a copy of the prompt.
+- `src/agent.ts` starts the briefing agent on the dashboard's clock, 07:00 unless
+  `DAILY_FOCUS_AGENT_AT` says otherwise, once a day, and after a user click. The agent still writes
+  `items.json` itself, from the store as its working directory, on the
+  `prompts/README.md` wrapper verbatim. Do not hand it extra instructions, a
+  checkout, or a copy of the prompt. A follow-up question resumes the run's session
+  with nothing to write; it must never become a way to edit the brief.
 
 ## Checks
 

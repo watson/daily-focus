@@ -52,6 +52,9 @@ const MAX_BODY_BYTES = 64 * 1024;
  */
 const PRESENCE_POLL_MS = 30_000;
 
+/** How often the morning agent's clock checks whether a run is due. */
+const AGENT_CLOCK_MS = 30_000;
+
 function sendJSON(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -139,10 +142,15 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // chat, and never becomes a note or an action on the item.
   const assistant = new Assistant(config, { onChange: () => void broadcast() });
 
-  // The morning agent, when the user asks for a fresh brief. It writes the brief
-  // itself, and the watcher below picks it up as it would a scheduled one; the
-  // runner keeps only its own log.
-  const agent = new AgentRunner(config, { onChange: () => void broadcast() });
+  // The morning agent, on the dashboard's clock and when the user asks for a
+  // fresh brief. It writes the brief itself, and the watcher below picks it up
+  // as it would any other; the runner keeps only its own log. The clock reads
+  // the brief's own timestamp so that a brief something else wrote today is
+  // today's run, and it doesn't start another.
+  const agent = new AgentRunner(config, {
+    onChange: () => void broadcast(),
+    briefGeneratedAt: async () => (await store.readBrief()).brief?.generatedAt ?? null,
+  });
 
   /**
    * State plus the things the store doesn't own: the asset fingerprint the client
@@ -160,7 +168,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       board: board.view(actions, now),
       tickets: tickets.view(actions, now),
       assistant: assistant.view(),
-      agentRun: agent.view(),
+      agentRun: agent.view(now),
       assetVersion,
     };
   }
@@ -267,6 +275,16 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // aborted now, rather than shown as a spinner that never stops.
   await assistant.start();
   await agent.start();
+
+  // The morning agent's clock. Once now, so a dashboard opened after the hour
+  // catches up on a brief it missed while closed, and then every half minute:
+  // a timer set for six-thirty doesn't fire at six-thirty on a machine that was
+  // asleep, but a check each time it is awake does.
+  void agent.tick();
+  const agentClock = setInterval(() => {
+    void agent.tick();
+  }, AGENT_CLOCK_MS);
+  agentClock.unref();
 
   // A session may already be running from before a restart.
   scheduleSessionTick((await buildState()).session.active?.endsAt ?? null);
@@ -482,6 +500,35 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       return;
     }
 
+    if (path === '/api/agent/ask' && req.method === 'POST') {
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (err) {
+        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      const { run, text } = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+      if (typeof run !== 'string' || run === '') {
+        sendJSON(res, 400, { error: 'run must be a run id' });
+        return;
+      }
+      if (typeof text !== 'string' || text.trim() === '') {
+        sendJSON(res, 400, { error: 'text must be the question to ask' });
+        return;
+      }
+      try {
+        await agent.ask(run, text);
+      } catch (err) {
+        sendJSON(res, 409, { error: (err as Error).message });
+        return;
+      }
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
     if (path === '/api/agent/stop' && req.method === 'POST') {
       await agent.stop();
       // As for the assistant: the exit handler records the abort and broadcasts.
@@ -650,6 +697,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     async close() {
       clearInterval(heartbeat);
       clearInterval(presencePoll);
+      clearInterval(agentClock);
       if (sessionTick) clearTimeout(sessionTick);
       board.stop();
       calendar.stop();

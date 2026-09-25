@@ -1,6 +1,6 @@
-import type { Config } from './config.ts';
+import type { Config, TimeOfDay } from './config.ts';
 import { listArchivedDates } from './archive.ts';
-import { calendarDaysBetween, localDateKey, parseISO, startOfLocalDay } from './time.ts';
+import { calendarDaysBetween, isSameLocalDay, localDateKey, parseISO, startOfLocalDay } from './time.ts';
 
 /**
  * Which weekdays the morning brief is expected on.
@@ -12,12 +12,19 @@ import { calendarDaysBetween, localDateKey, parseISO, startOfLocalDay } from './
  *
  * So the question is answered in this order, most trustworthy first:
  *
- *  1. `DAILY_FOCUS_AGENT_DAYS`, which mirrors the scheduled task's own day spec.
- *     Nothing else can be more accurate, because that *is* the schedule.
- *  2. The archive. Every brief is snapshotted under its date, so the days a brief
- *     has actually landed on are on disk — the same reasoning the action log gets:
- *     the record of what happened beats an inference about what should.
- *  3. Mon–Fri, as the default that has to exist for the first three weeks.
+ *  1. `DAILY_FOCUS_AGENT_DAYS`. When the dashboard runs the agent itself, that
+ *     *is* the schedule; when something else does, it mirrors that task's day spec
+ *     and nothing can be more accurate.
+ *  2. Mon–Fri, when the dashboard runs the agent itself — which it does whenever
+ *     `DAILY_FOCUS_AGENT` is set and `DAILY_FOCUS_AGENT_AT` isn't `off` — and
+ *     hasn't been told otherwise. Its own runs are the only thing the archive could show, so there
+ *     is nothing to infer — and inferring would let a few hand runs on a Saturday
+ *     talk it into scheduling Saturdays.
+ *  3. The archive, otherwise. Every brief is snapshotted under its date, so the
+ *     days a brief has actually landed on are on disk — the same reasoning the
+ *     action log gets: the record of what happened beats an inference about what
+ *     should.
+ *  4. Mon–Fri, as the default that has to exist for the first three weeks.
  *
  * Deliberately *not* used: `Intl.Locale.getWeekInfo()`, which does know that `he-IL`
  * has a Fri–Sat weekend. It answers a different question — what the region's weekend
@@ -121,9 +128,74 @@ export function parseWeekdays(spec: string): Weekday[] {
  */
 export async function resolveSchedule(config: Config, now: Date = new Date()): Promise<Schedule> {
   if (config.agentDays) return { days: config.agentDays, source: 'config' };
+  if (config.agent.at) return { days: MONDAY_TO_FRIDAY, source: 'default' };
 
   const observed = await observeSchedule(config, now);
   return observed ? { days: observed, source: 'observed' } : { days: MONDAY_TO_FRIDAY, source: 'default' };
+}
+
+/* ---------- the dashboard's own clock ---------- */
+
+/** `at` on the same local day as `date`. */
+export function atTimeOn(date: Date, at: TimeOfDay): Date {
+  const when = startOfLocalDay(date);
+  when.setHours(at.hour, at.minute, 0, 0);
+  return when;
+}
+
+/** "06:30", for the client. */
+export function describeTime(at: TimeOfDay): string {
+  return `${String(at.hour).padStart(2, '0')}:${String(at.minute).padStart(2, '0')}`;
+}
+
+export interface RunDueInput {
+  at: TimeOfDay;
+  schedule: Schedule;
+  /** When the newest run the dashboard knows of started, whoever started it. */
+  lastRunStartedAt: string | null;
+  /** When the brief on disk was written, whoever wrote it. */
+  briefGeneratedAt: string | null;
+  now: Date;
+}
+
+/**
+ * Whether the dashboard should start the agent now.
+ *
+ * Once a day, at `at` or as soon after it as the dashboard is running — the
+ * machine was asleep, the tab was closed, the laptop was opened at nine — on a
+ * scheduled day. Anything that already produced today's brief counts as today's
+ * run: a run this dashboard started, by clock or by hand, whatever became of it;
+ * or a brief on disk written today by something else, which is what a scheduler
+ * that has not been switched off yet looks like. A run that failed also counts,
+ * so a CLI that is broken today is tried once, and reported once, rather than
+ * every half minute until it is fixed.
+ */
+export function scheduledRunDue({ at, schedule, lastRunStartedAt, briefGeneratedAt, now }: RunDueInput): boolean {
+  if (!runsOn(schedule, now)) return false;
+  if (now.getTime() < atTimeOn(now, at).getTime()) return false;
+  return !ranToday(lastRunStartedAt, briefGeneratedAt, now);
+}
+
+/** The next moment the dashboard will start the agent, for saying so. Null if never. */
+export function nextScheduledRun(
+  { at, schedule, lastRunStartedAt, briefGeneratedAt, now }: RunDueInput,
+): Date | null {
+  const today = atTimeOn(now, at);
+  if (runsOn(schedule, now) && now.getTime() < today.getTime() && !ranToday(lastRunStartedAt, briefGeneratedAt, now)) {
+    return today;
+  }
+  const next = nextRunDate(schedule, now);
+  if (!next) return null;
+  const date = parseISO(next);
+  return date ? atTimeOn(date, at) : null;
+}
+
+function ranToday(lastRunStartedAt: string | null, briefGeneratedAt: string | null, now: Date): boolean {
+  for (const iso of [lastRunStartedAt, briefGeneratedAt]) {
+    const when = parseISO(iso);
+    if (when && isSameLocalDay(when, now)) return true;
+  }
+  return false;
 }
 
 /**

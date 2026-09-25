@@ -3,6 +3,7 @@
 import {
   fetchState,
   postAction,
+  postAgentAsk,
   postAgentRun,
   postAgentStop,
   postAssistantAsk,
@@ -22,6 +23,7 @@ import {
   renderConnection,
   renderBoard,
   renderFlyout,
+  renderRunFlyout,
   renderHeadline,
   renderHeader,
   renderObjective,
@@ -53,8 +55,14 @@ const VIEWS = ['today', 'board', 'tickets'];
  */
 const UNATTENDED_SEEN_KEY = 'daily-focus:unattended-seen';
 
-/** Which hand-started run's report has been put away, by run id. Browser-local, for the same reason. */
+/** Which failed run's notice has been put away, by run id. Browser-local, for the same reason. */
 const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';
+
+/**
+ * The panel opens on rows by their id, and on a run of the morning agent by
+ * its id under this prefix: the two share the one panel, and never an id.
+ */
+const RUN_PREFIX = 'run:';
 
 /** Transient view state that never round-trips to the server. */
 const ui = {
@@ -64,12 +72,15 @@ const ui = {
   /** Which ticket has its status menu open. Separate from `menuFor`, so the park
    *  menu and the status menu can never be open on the same row at once. */
   statusFor: null,
-  /** Which row the panel beside the list is open on. Persisted below: a reply
-   *  worth reading is usually worth reading after the reload that landed meanwhile. */
+  /** Which row the panel beside the list is open on, or which run of the
+   *  morning agent under `RUN_PREFIX`. Persisted below: a reply worth reading
+   *  is usually worth reading after the reload that landed meanwhile. */
   detailFor: null,
   /** Text typed into the panel's note field but not saved yet. See `setDetailFor`. */
   noteDraft: '',
-  /** Text typed into the panel's assistant field but not sent yet, kept for the same reason. */
+  /** Text typed into the panel's chat field but not sent yet, kept for the same
+   *  reason. One field, whichever the panel is open on: the assistant on a row,
+   *  or a follow-up to a run of the morning agent. */
   assistantDraft: '',
   /** Which of the panel's fields was asked for when it was opened by hand — `note`
    *  or `assistant` — so the next render puts the cursor there. `renderFlyout` clears it. */
@@ -86,8 +97,11 @@ const ui = {
   sessionOverrun: false,
   unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
   agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
-  /** Which run's report is unfolded. In memory: a reload may fold it again. */
-  agentReportOpen: null,
+  /** Which of a run's messages are unfolded in its panel, by `runId:index`, when
+   *  the reader has said so; otherwise the latest is. In memory only. */
+  messageOpen: new Map(),
+  /** The run that was going at the last render, so a new one can be told from it. */
+  runningRun: null,
   view: VIEWS.includes(localStorage.getItem(VIEW_KEY)) ? localStorage.getItem(VIEW_KEY) : 'today',
 };
 
@@ -126,7 +140,7 @@ function setDetailFor(id) {
  * gone from everywhere, which is when the panel has nothing left to show.
  */
 function detailRow() {
-  if (!state || !ui.detailFor) return null;
+  if (!state || !ui.detailFor || ui.detailFor.startsWith(RUN_PREFIX)) return null;
   const tickets = state.tickets?.rows ?? [];
   const inProgress = state.tickets?.inProgress ?? [];
   const lists = {
@@ -139,6 +153,17 @@ function detailRow() {
     if (hit) return hit;
   }
   return null;
+}
+
+/**
+ * The run of the morning agent the panel is open on, if it is open on one. Null
+ * once the run has dropped off the list the server sends, which is when the
+ * panel has nothing left to show.
+ */
+function detailRun() {
+  if (!state || !ui.detailFor?.startsWith(RUN_PREFIX)) return null;
+  const id = ui.detailFor.slice(RUN_PREFIX.length);
+  return (state.agentRun?.runs ?? []).find((run) => run.id === id) ?? null;
 }
 
 /** Last completed action, for the `u` shortcut. */
@@ -198,6 +223,16 @@ const handlers = {
     setDetailFor(null);
     render();
   },
+  /** Open the panel on a run of the morning agent — the newest, when no id is given. */
+  openRun: (id = null) => {
+    const run = id ?? state?.agentRun?.last?.id;
+    if (!run) return;
+    setDetailFor(`${RUN_PREFIX}${run}`);
+    ui.focusField = null;
+    ui.menuFor = null;
+    ui.statusFor = null;
+    render();
+  },
   // Deliberately doesn't render: the field is already showing the character that
   // was just typed, and re-rendering per keystroke would fight the caret.
   onNoteDraft: (text) => {
@@ -245,14 +280,17 @@ const handlers = {
   stopAssistant: (id) => void stopAssistant(id),
   runAgent: () => void runAgent(),
   stopAgent: () => void stopAgent(),
-  // No render: the element already shows what was clicked.
-  toggleAgentReport: (id, open) => {
-    ui.agentReportOpen = open ? id : null;
-  },
+  askAgent: (run, text) => void askAgent(run, text),
   dismissAgentRun: (id) => {
     ui.agentReportSeen = id;
     localStorage.setItem(AGENT_RUN_SEEN_KEY, id);
     render();
+  },
+  // No render: the element already shows what was clicked. Null forgets the
+  // key: the fold is back at its default.
+  toggleMessage: (key, open) => {
+    if (open === null) ui.messageOpen.delete(key);
+    else ui.messageOpen.set(key, open);
   },
 };
 
@@ -269,12 +307,22 @@ function render() {
   // Not written back, so switching the board on again returns to it.
   if (!availableViews(state).includes(ui.view)) ui.view = 'today';
   document.body.dataset.view = ui.view;
+  // A run that has just started takes the panel with it, if the panel is open on
+  // a run at all: whoever is looking at the stopped one is looking for what
+  // happens next, and the clock's run should be as visible as a click's. Only on
+  // the change, so browsing an earlier run while one goes is left alone.
+  const runningNow = state.agentRun?.last?.status === 'running' ? state.agentRun.last.id : null;
+  if (runningNow && runningNow !== ui.runningRun && ui.detailFor?.startsWith(RUN_PREFIX)) {
+    setDetailFor(`${RUN_PREFIX}${runningNow}`);
+  }
+  ui.runningRun = runningNow;
   // Before the lists, which mark the row the panel is open on. A row that has
   // gone from everywhere takes the panel with it, rather than leaving one open on
-  // nothing.
-  const detail = detailRow();
-  if (ui.detailFor && !detail) setDetailFor(null);
-  document.body.dataset.flyout = detail ? 'open' : 'closed';
+  // nothing; so does a run that has dropped off the list.
+  const run = detailRun();
+  const detail = run ? null : detailRow();
+  if (ui.detailFor && !detail && !run) setDetailFor(null);
+  document.body.dataset.flyout = detail || run ? 'open' : 'closed';
   renderTabs(state, ui);
   renderTimer(state, ui, handlers);
   renderHeader(state, handlers);
@@ -292,7 +340,8 @@ function render() {
     renderSections(state, ui, handlers);
     renderAgenda(state);
   }
-  renderFlyout(detail, state, ui, handlers);
+  if (run) renderRunFlyout(run, state, ui, handlers);
+  else renderFlyout(detail, state, ui, handlers);
 }
 
 /* ---------- views ---------- */
@@ -551,6 +600,20 @@ async function stopAgent() {
     adoptState(await postAgentStop());
   } catch (err) {
     showToast(`Could not stop the morning agent: ${err.message}`);
+  }
+}
+
+/**
+ * Ask a finished run a question, in its own session. The reply streams in over
+ * SSE. The draft is kept until the server has taken it, as the assistant's is.
+ */
+async function askAgent(run, text) {
+  try {
+    const next = await postAgentAsk(run, text);
+    ui.assistantDraft = '';
+    adoptState(next);
+  } catch (err) {
+    showToast(`Could not ask the morning agent: ${err.message}`);
   }
 }
 

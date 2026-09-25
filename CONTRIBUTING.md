@@ -57,11 +57,11 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/jira.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, ticket classification, and polling |
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
-| `src/agent.ts` | Reruns the morning agent through a coding-agent CLI when the user asks |
+| `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
 | `public/` | Rendering, styles, keyboard controls, and browser API calls |
 | `scripts/` | Store initialization, sample data, and brief audits |
 | `tools/dfcal/` | The macOS calendar helper |
-| `prompts/` | The external briefing agent's instructions |
+| `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
 
 ## Keep the contracts in sync
@@ -107,7 +107,8 @@ see `src/server.ts` for request validation and additional session/calendar route
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
 | `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `application/json` only, so another site can't start one. `409` when it is off or already running |
-| `POST /api/agent/stop` | Kills the morning agent's run |
+| `POST /api/agent/ask` | `{run, text}`. Asks a finished run a question in its own session; returns state with the answer coming. The reply streams in over SSE. `409` when it is off, busy, or the run can't be continued |
+| `POST /api/agent/stop` | Kills whatever the morning agent is doing: a run, or a question about one |
 | `GET /api/health` | Server health check |
 
 ## Update the screenshot

@@ -2,8 +2,8 @@
 
 | File | What it is |
 |---|---|
-| [`morning-brief-work.md`](./morning-brief-work.md) | The scheduled prompt for the work briefing agent, run once every workday morning. |
-| [`morning-brief-personal.md`](./morning-brief-personal.md) | The scheduled prompt for the personal briefing agent: email, family calendars, Apple Reminders, Apple Messages, e-Boks and the user's own GitHub projects. |
+| [`morning-brief-work.md`](./morning-brief-work.md) | The prompt for the work briefing agent, run once every workday morning. |
+| [`morning-brief-personal.md`](./morning-brief-personal.md) | The prompt for the personal briefing agent: email, family calendars, Apple Reminders, Apple Messages, e-Boks and the user's own GitHub projects. |
 | [`assistant.md`](./assistant.md) | The instructions for the on-demand assistant, which the server runs headless when the user presses Ask on a row. One file for both profiles. Linked into the store as `assistant.md`. |
 
 All three are **nothing but prompt** — each is read verbatim by its agent, so anything
@@ -26,7 +26,7 @@ A rule both agents need goes into both.
 
 The briefing agent reads and writes one directory — `~/.daily-focus/` — and nothing
 else. `npm run init` symlinks this prompt into it as `prompt.md`, alongside
-`items.schema.json`, so the scheduled task only ever names a path inside the store:
+`items.schema.json`, so whatever starts the agent only ever names a path inside the store:
 
 ```
 ~/.daily-focus/
@@ -55,7 +55,12 @@ a month ago.
 The link keeps the content in git — reviewable, revertible — while the path the
 scheduler names stays inside the store.
 
-## Wiring the morning brief into the scheduled task
+## Wiring the morning brief into a scheduled task
+
+The dashboard runs the agent itself when `DAILY_FOCUS_AGENT` is set, and needs
+none of this: it starts the CLI in the store on the wrapper below (see `agentPrompt`
+in `src/agent.ts`), with the store's actual path in place of `~/.daily-focus`. This
+section is for running the agent from a scheduler of your own instead.
 
 **Point the task at the store's path; don't paste the prompt's contents in.** The
 prompt changes as the dashboard learns things, and a copy living in the scheduler goes
@@ -81,9 +86,7 @@ so renumbering its steps can't strand them. Everything that evolves lives in
 the prompt, in git, where a change to it is reviewable. A scheduler has no
 history and no review, so a rule that ends up there is one nobody can change or check.
 
-The dashboard uses the same wrapper when it reruns the agent by hand (see
-`agentPrompt` in `src/agent.ts`), with the store's actual path in place of
-`~/.daily-focus`. A test keeps the two identical, so change them together.
+A test keeps this block and `agentPrompt` identical, so change them together.
 
 Two things to sanity-check on the first scheduled run after switching:
 
@@ -105,7 +108,8 @@ reads `DAILY_FOCUS_AGENT_DAYS` if you set it — cron-numbered, so `1-5` is Mon�
 on, falling back to Mon–Fri for the first three weeks. **Set it to match the task's
 own day spec** when you change the schedule: if the two disagree, the banner is
 confidently wrong in whichever direction the dashboard guessed. `npm run audit`
-prints the schedule it's using and where it got it.
+prints the schedule it's using and where it got it. Set `DAILY_FOCUS_AGENT_AT=off`
+if `DAILY_FOCUS_AGENT` is on, or the dashboard will run the agent as well.
 
 ## Where the rules live
 
