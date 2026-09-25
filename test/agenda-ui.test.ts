@@ -1,24 +1,19 @@
 /**
  * What one agenda row actually renders.
  *
- * The DOM stub lives in `./dom-stub.ts`, shared with the board render test. The
- * rule worth holding here is the one `agenda.ts` cannot express: an event marked
- * free in the calendar takes none of the day, and the row has to say so without
- * reading as an event that is already over. Both halves are only in `render.js`.
+ * The rule worth holding here is the one `agenda.ts` cannot express: an event
+ * marked free in the calendar takes none of the day, and the row has to say so
+ * without reading as an event that is already over. Both halves are only in
+ * `client/agenda.ts`.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// Imported for its side effect before `render.js` is pulled in below: it installs
-// the `document` and `Node` globals that `el()` reaches for.
-import { byClass, type StubElement } from './dom-stub.ts';
+// Imported ahead of the client, for the document it installs.
+import { byClass, mountOne } from './dom.ts';
+import { eventRow, nextEventStat } from '../client/agenda.ts';
 import type { ResolvedItem } from '../src/types.ts';
-
-const { eventRow, nextEventStat } = (await import('../public/render.js')) as {
-  eventRow: (event: ResolvedItem, now: Date, conflictIds: string[]) => StubElement;
-  nextEventStat: (agenda: { events: ResolvedItem[] }, now: Date) => StubElement;
-};
 
 /* ---------- the fixtures ---------- */
 
@@ -42,10 +37,10 @@ function event(overrides: Partial<ResolvedItem> = {}): ResolvedItem {
   };
 }
 
-const render = (overrides: Partial<ResolvedItem> = {}) => eventRow(event(overrides), NOW, []);
+const render = (overrides: Partial<ResolvedItem> = {}) => mountOne(eventRow(event(overrides), NOW, []));
 
 /** The row's sub-lines, in order — where "until", the clash and "marked free" land. */
-const subs = (node: StubElement) => byClass(node, 'agenda__sub').map((sub) => sub.textContent);
+const subs = (node: HTMLElement) => byClass(node, 'agenda__sub').map((sub) => sub.textContent ?? '');
 
 /* ---------- tests ---------- */
 
@@ -96,7 +91,7 @@ test('an absent or truthy blocking still reads as blocking', () => {
 });
 
 test('a clash is still called out on an event marked free', () => {
-  const node = eventRow(event({ blocking: false }), NOW, ['calendar:event:abc']);
+  const node = mountOne(eventRow(event({ blocking: false }), NOW, ['calendar:event:abc']));
 
   assert.equal(subs(node).length, 2);
   assert.match(subs(node)[0]!, /clashes with another event/);
@@ -105,29 +100,30 @@ test('a clash is still called out on an event marked free', () => {
 
 /* ---------- the next-event stat, shown when free time isn't tracked ---------- */
 
-const statValue = (node: StubElement) => byClass(node, 'stat__value')[0]?.textContent;
-const statNote = (node: StubElement) => byClass(node, 'stat__footnote')[0]?.textContent;
+const statOf = (events: ResolvedItem[]) => mountOne(nextEventStat({ events }, NOW));
+const statValue = (node: HTMLElement) => byClass(node, 'stat__value')[0]?.textContent;
+const statNote = (node: HTMLElement) => byClass(node, 'stat__footnote')[0]?.textContent;
 
 test('the next event is the first timed one still ahead', () => {
-  const node = nextEventStat({ events: [event({ start: at(8), end: at(9), title: 'Gone' }), event({ start: at(12, 15), end: at(13), title: 'Lunch' })] }, NOW);
+  const node = statOf([event({ start: at(8), end: at(9), title: 'Gone' }), event({ start: at(12, 15), end: at(13), title: 'Lunch' })]);
   assert.equal(statValue(node), 'in 2 h 15 min');
   assert.equal(statNote(node), 'Lunch');
 });
 
 test('an event under way reads as now', () => {
-  const node = nextEventStat({ events: [event({ start: at(9, 30), end: at(10, 30), title: 'Standup' })] }, NOW);
+  const node = statOf([event({ start: at(9, 30), end: at(10, 30), title: 'Standup' })]);
   assert.equal(statValue(node), 'Now');
   assert.equal(statNote(node), 'Standup');
 });
 
 test('all-day events are not something to be somewhere for', () => {
-  const node = nextEventStat({ events: [event({ start: '2026-09-10', end: undefined, title: 'Holiday' })] }, NOW);
+  const node = statOf([event({ start: '2026-09-10', end: undefined, title: 'Holiday' })]);
   assert.equal(statValue(node), 'None today');
 });
 
 test('an open-ended event is assumed to last half an hour', () => {
-  const node = nextEventStat({ events: [event({ start: at(9, 40), end: undefined, title: 'Call' })] }, NOW);
+  const node = statOf([event({ start: at(9, 40), end: undefined, title: 'Call' })]);
   assert.equal(statValue(node), 'Now');
-  const over = nextEventStat({ events: [event({ start: at(9, 20), end: undefined, title: 'Call' })] }, NOW);
+  const over = statOf([event({ start: at(9, 20), end: undefined, title: 'Call' })]);
   assert.equal(statValue(over), 'None today');
 });

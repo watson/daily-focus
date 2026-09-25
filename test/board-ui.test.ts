@@ -1,24 +1,19 @@
 /**
  * What one board row actually renders.
  *
- * The DOM stub lives in `./dom-stub.ts`, shared with the other client render
- * test. What is worth asking of a board row is whether the reason appears, the
+ * What is worth asking of a board row is whether the reason appears, the
  * check's link is clickable, and the *Nudged* button is offered — rules that live
- * only in `render.js` and would otherwise never be held to anything.
+ * only in `client/board.ts` and would otherwise never be held to anything.
  */
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// Imported for its side effect before `render.js` is pulled in below: it installs
-// the `document` and `Node` globals that `el()` reaches for.
-import { byClass, byTag, buttonLabels, type StubElement, type StubNode } from './dom-stub.ts';
+// Imported ahead of the client, for the document it installs.
+import { buttonLabels, byClass, byTag, handlersWith, mountOne, uiWith } from './dom.ts';
+import { renderPullRow } from '../client/board.ts';
 import { resolveBoard } from '../src/prs.ts';
-import type { BoardRow, PullRequest } from '../src/types.ts';
-
-const { renderPullRow } = (await import('../public/render.js')) as {
-  renderPullRow: (row: BoardRow, state: unknown, ui: unknown, handlers: unknown) => StubElement;
-};
+import type { BoardRow, DashboardState, PullRequest } from '../src/types.ts';
 
 /* ---------- the fixtures ---------- */
 
@@ -27,15 +22,9 @@ const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOStr
 
 const GATES = ['policy/merge-gate'];
 
-const UI = { selectedId: null, pending: new Set<string>(), menuFor: null, detailFor: null, noteDraft: '', assistantDraft: '' };
-const HANDLERS = {
-  onSelect: () => {},
-  onAction: () => {},
-  nudge: () => {},
-  toggleMenu: () => {},
-  openDetail: () => {},
-  unpark: () => {},
-};
+const STATE = { now: NOW.toISOString() } as unknown as DashboardState;
+const UI = uiWith();
+const HANDLERS = handlersWith();
 
 function pr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -68,13 +57,13 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
 }
 
 /** One rendered row, judged the way the server would judge it. */
-function render(overrides: Partial<PullRequest>): { row: BoardRow; node: StubElement } {
+function render(overrides: Partial<PullRequest>): { row: BoardRow; node: HTMLElement } {
   const [row] = resolveBoard([pr(overrides)], [], NOW, GATES);
   assert.ok(row);
-  return { row, node: renderPullRow(row, { now: NOW.toISOString() }, UI, HANDLERS) };
+  return { row, node: mountOne(renderPullRow(row, STATE, UI, HANDLERS)) };
 }
 
-test('a gate row names the check, links GitHub\'s details page, and offers no nudge', () => {
+test("a gate row names the check, links GitHub's details page, and offers no nudge", () => {
   const { row, node } = render({
     mergeStateStatus: 'BLOCKED',
     checks: 'pending',
@@ -91,7 +80,7 @@ test('a gate row names the check, links GitHub\'s details page, and offers no nu
   // Not red: nothing has gone wrong, it just isn't finished.
   assert.ok(reason.className.includes('item__reason--waiting'));
 
-  const link = byTag(reason, 'A')[0];
+  const link = byTag(reason, 'a')[0] as HTMLAnchorElement | undefined;
   assert.equal(link?.href, 'https://github.com/acme/webapp/runs/4821');
   assert.equal(link?.textContent, 'policy/merge-gate');
 
@@ -99,7 +88,9 @@ test('a gate row names the check, links GitHub\'s details page, and offers no nu
   // the row's last push was 48 hours ago, which is where the wait starts.
   assert.ok(
     byClass(node, 'pill').some((pill) => pill.textContent === 'waiting 2 days'),
-    byClass(node, 'pill').map((pill) => pill.textContent).join(' | '),
+    byClass(node, 'pill')
+      .map((pill) => pill.textContent)
+      .join(' | '),
   );
 
   // The board has no idea whose action the gate needs, so it suggests nobody.
@@ -147,7 +138,7 @@ test('a check row lists what is still running, without inventing a link', () => 
 
   const reason = byClass(node, 'item__reason')[0];
   assert.match(reason?.textContent ?? '', /still running: integration-tests, ci\/deploy/);
-  assert.equal(byTag(reason!, 'A').length, 0, 'GitHub gave nowhere to look, so nothing is linked');
+  assert.equal(byTag(reason!, 'a').length, 0, 'GitHub gave nowhere to look, so nothing is linked');
   assert.deepEqual(buttonLabels(node), ['Park']);
 });
 
@@ -206,7 +197,7 @@ test('a reason kind this client has never heard of is skipped, not printed half'
   assert.ok(row);
   // A server one version ahead: the row renders, minus the part nothing can word.
   const ahead = { ...row, reasons: [{ kind: 'merge-queue-position' }, ...row.reasons] } as unknown as BoardRow;
-  const reason = byClass(renderPullRow(ahead, { now: NOW.toISOString() }, UI, HANDLERS), 'item__reason')[0];
+  const reason = byClass(mountOne(renderPullRow(ahead, STATE, UI, HANDLERS)), 'item__reason')[0];
   assert.equal(reason?.textContent, 'still running: integration-tests', 'no stray separator where the unknown reason was');
 });
 

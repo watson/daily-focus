@@ -16,7 +16,9 @@
   },
   "scripts": {
     "start": "node src/server.ts",
-    "dev": "node --watch src/server.ts",
+    "prestart": "node scripts/build.ts",
+    "dev": "node scripts/dev.ts",
+    "build": "node scripts/build.ts",
     "init": "node scripts/init.ts",
     "seed": "node scripts/seed.ts",
     "audit": "node scripts/audit.ts",
@@ -26,6 +28,12 @@
   },
   "devDependencies": {
     "@types/node": "24.13.3",
+    "esbuild": "0.28.2",
+    "happy-dom": "20.14.5",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@preact/signals": "2.11.2",
+    "preact": "10.29.8"
   }
 }

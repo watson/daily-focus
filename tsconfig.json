@@ -3,18 +3,13 @@
     "target": "esnext",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "lib": ["esnext"],
+    "lib": ["esnext", "dom", "dom.iterable"],
     "types": ["node"],
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": false,
-
-    // The frontend is untyped ES modules, and `test/board-ui.test.ts` imports one
-    // of them to render a row. Inferred types are enough for that; `checkJs` stays
-    // off, so `public/` is read rather than judged.
-    "allowJs": true,
 
     "noEmit": true,
     "allowImportingTsExtensions": true,
@@ -23,5 +18,5 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["src", "scripts", "test"]
+  "include": ["src", "scripts", "test", "client"]
 }

@@ -26,6 +26,7 @@ const MIME: Readonly<Record<string, string>> = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
@@ -125,6 +126,13 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   const config = env ? loadConfig(env) : loadConfig();
   const store = new Store(config);
   await store.ensureDataDir();
+
+  // The client is built from `client/` into `public/app.js`, which is not
+  // tracked. A checkout that skipped the build would serve a blank page with
+  // nothing on it to say why.
+  await stat(join(PUBLIC_DIR, 'app.js')).catch(() => {
+    console.warn('[daily-focus] public/app.js is missing: run `npm run build` (npm start does so on its own)');
+  });
 
   /** Open SSE connections. Each gets every state change until it disconnects. */
   const subscribers = new Set<ServerResponse>();

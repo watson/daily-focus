@@ -13,3 +13,7 @@ data/
 
 # Built calendar helper. A signed .app, rebuilt by `npm run build:calendar`.
 tools/dfcal/build/
+
+# The client bundle, built from client/ by `npm run build` (and by `npm start`).
+public/app.js
+public/app.js.map

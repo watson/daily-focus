@@ -2,8 +2,10 @@
 
 [Back to the README](README.md)
 
-The server is TypeScript running directly in Node.js. The frontend uses plain
-JavaScript modules. There is no build step or runtime package dependency.
+The server is TypeScript run directly by Node.js, with no runtime package
+dependency. The client is TypeScript too, written on Preact and bundled by esbuild
+into `public/app.js`, which is not tracked: `npm run dev` rebuilds it as you edit,
+and `npm start` builds it once before listening.
 
 Read [AGENTS.md](AGENTS.md) before changing behavior. It covers file ownership,
 privacy, and constraints that apply across the codebase. For installation and account
@@ -22,8 +24,9 @@ npm run seed
 npm run dev
 ```
 
-Open [localhost:4321](http://127.0.0.1:4321). The server restarts on changes. An open
-tab reloads when frontend files change, or offers a reload if you're writing a note.
+Open [localhost:4321](http://127.0.0.1:4321). The server restarts on changes, and the
+client is rebuilt. An open tab reloads when the bundle changes, or offers a reload if
+you're writing a note.
 Close this terminal when done to clear the temporary settings.
 
 Use invented data for fixtures and screenshots. Never copy a real brief, calendar,
@@ -38,7 +41,9 @@ npm test
 ```
 
 The tests use Node's built-in test runner. They use fixtures and temporary stores;
-keep them independent of live accounts and calendar permission prompts.
+keep them independent of live accounts and calendar permission prompts. The ones
+that render the client do so into a happy-dom document through `test/dom.ts`, so a
+rendered row can be asked the same questions a browser would answer.
 
 To check a generated brief, run `npm run audit` with `DAILY_FOCUS_DATA` pointing to
 its store. The audit checks content and history; it doesn't replace the test suite.
@@ -58,7 +63,8 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
-| `public/` | Rendering, styles, keyboard controls, and browser API calls |
+| `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
+| `public/` | The page shell, the stylesheet, and the built bundle |
 | `scripts/` | Store initialization, sample data, and brief audits |
 | `tools/dfcal/` | The macOS calendar helper |
 | `prompts/` | The briefing agent's instructions |

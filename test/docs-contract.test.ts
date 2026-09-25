@@ -126,7 +126,7 @@ test('the prompt calls out the required item fields', () => {
  */
 test('the server, the client and the README agree on the board\'s courts', async () => {
   const types = await readFile(resolve(root, 'src/types.ts'), 'utf8');
-  const client = await readFile(resolve(root, 'public/render.js'), 'utf8');
+  const client = await readFile(resolve(root, 'client/board.ts'), 'utf8');
 
   const union = /export type Court = ([^;]+);/.exec(types);
   assert.ok(union, 'Court is no longer declared where this test looks for it');
@@ -134,11 +134,11 @@ test('the server, the client and the README agree on the board\'s courts', async
   assert.ok(courts.length >= 4, 'expected a union of string literals');
 
   const titles = /const COURT_TITLE = \{([^}]+)\}/.exec(client);
-  assert.ok(titles, 'render.js no longer declares COURT_TITLE where this test looks');
+  assert.ok(titles, 'the client no longer declares COURT_TITLE where this test looks');
   const titled = new Map([...titles[1]!.matchAll(/(\w+): '([^']+)'/g)].map((m) => [m[1]!, m[2]!]));
 
   const order = /const COURT_ORDER = \[([^\]]+)\]/.exec(client);
-  assert.ok(order, 'render.js no longer declares COURT_ORDER where this test looks');
+  assert.ok(order, 'the client no longer declares COURT_ORDER where this test looks');
   const ordered = [...order[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
 
   assert.deepEqual([...titled.keys()].sort(), [...courts].sort(), 'COURT_TITLE must name every court, and no others');
@@ -167,7 +167,7 @@ test('the server, the client and the README agree on the board\'s courts', async
  */
 test("the server, the client and the README agree on the ticket board's courts", async () => {
   const types = await readFile(resolve(root, 'src/types.ts'), 'utf8');
-  const client = await readFile(resolve(root, 'public/render.js'), 'utf8');
+  const client = await readFile(resolve(root, 'client/tickets.ts'), 'utf8');
 
   const union = /export type TicketCourt = ([^;]+);/.exec(types);
   assert.ok(union, 'TicketCourt is no longer declared where this test looks for it');
@@ -175,11 +175,11 @@ test("the server, the client and the README agree on the ticket board's courts",
   assert.ok(courts.length >= 2, 'expected a union of string literals');
 
   const titles = /const TICKET_COURT_TITLE = \{([^}]+)\}/.exec(client);
-  assert.ok(titles, 'render.js no longer declares TICKET_COURT_TITLE where this test looks');
+  assert.ok(titles, 'the client no longer declares TICKET_COURT_TITLE where this test looks');
   const titled = new Map([...titles[1]!.matchAll(/(\w+):\s*'([^']+)'/g)].map((m) => [m[1]!, m[2]!]));
 
   const order = /const TICKET_COURT_ORDER = \[([^\]]+)\]/.exec(client);
-  assert.ok(order, 'render.js no longer declares TICKET_COURT_ORDER where this test looks');
+  assert.ok(order, 'the client no longer declares TICKET_COURT_ORDER where this test looks');
   const ordered = [...order[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
 
   assert.deepEqual([...titled.keys()].sort(), [...courts].sort(), 'TICKET_COURT_TITLE must name every court, and no others');
@@ -188,7 +188,7 @@ test("the server, the client and the README agree on the ticket board's courts",
   // Every court also needs the line saying what to do about it, since the
   // heading alone says only what is wrong.
   const hints = /const TICKET_COURT_HINT = \{([\s\S]+?)\n\};/.exec(client);
-  assert.ok(hints, 'render.js no longer declares TICKET_COURT_HINT where this test looks');
+  assert.ok(hints, 'the client no longer declares TICKET_COURT_HINT where this test looks');
   for (const court of courts) {
     assert.match(hints[1]!, new RegExp(`\\b${court}:`), `TICKET_COURT_HINT says nothing about ${court}`);
   }
