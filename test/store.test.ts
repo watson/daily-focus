@@ -151,7 +151,7 @@ test("Friday's brief goes stale on Monday after the refresh grace period", async
 });
 
 test('on a Sun–Thu week the weekend moves with the schedule', async () => {
-  // The Israeli working week, as the scheduled task would be set: Sun–Thu.
+  // The Israeli working week: Sun–Thu.
   const store = await makeStore({ agentDays: [0, 1, 2, 3, 4] });
   await writeFile(store.config.itemsFile, JSON.stringify(brief([], thursdayRun)));
 

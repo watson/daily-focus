@@ -216,19 +216,6 @@ test('AGENTS.md names the brief, action log, and integration caches', async () =
 });
 
 /**
- * A brief the dashboard starts must be the brief the scheduler starts, so the
- * wrapper it sends is the one the README tells the user to schedule, word for word.
- */
-test("the dashboard's rerun sends the scheduled task's wrapper verbatim", async () => {
-  const { agentPrompt } = await import('../src/agent.ts');
-  const readme = await readFile(resolve(root, 'prompts/README.md'), 'utf8');
-  const section = readme.slice(readme.indexOf('## Wiring the morning brief'));
-  const block = /```\n([\s\S]*?)\n```/.exec(section)?.[1];
-  assert.ok(block, 'prompts/README.md has no wrapper block under "Wiring the morning brief"');
-  assert.equal(agentPrompt('~/.daily-focus/prompt.md'), block);
-});
-
-/**
  * The assistant's prompt carries the rules that keep it read-only and inside its
  * chat. They live nowhere else the runner could enforce them, so the least the
  * tests can do is notice when one goes missing.

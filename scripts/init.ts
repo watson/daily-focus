@@ -75,8 +75,8 @@ async function writeIfAbsent(path: string, contents: string, what: string): Prom
  *
  * A symlink rather than a copy, because the alternative is two versions of a long
  * prompt drifting apart silently — and the first symptom is a brief that carefully
- * followed a rule we replaced a month ago. The link means the scheduled task can
- * name a path inside the store while the content stays in git, reviewable.
+ * followed a rule we replaced a month ago. The link means a run can name a path
+ * inside the store while the content stays in git, reviewable.
  *
  * Unlike the files the user owns, this one *should* be refreshed: a stale link is a
  * stale prompt. So a link pointing somewhere else gets repointed — but a real file
@@ -305,7 +305,7 @@ if (platform() !== 'darwin') {
 const next: string[] = [];
 if (wroteFocus) next.push(`Edit ${config.focusFile} — say what you are trying to achieve.`);
 if (wroteSources) next.push(`Edit ${config.sourcesFile} — say where to look.`);
-if (linked > 0) next.push(`Point your scheduler at ${config.promptFile}. See prompts/README.md.`);
+if (!config.agent.cli) next.push('Set DAILY_FOCUS_AGENT=codex or claude in .env, so the dashboard runs the morning agent. See SETUP.md.');
 
 section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
@@ -316,7 +316,7 @@ if (next.length === 0) {
   if (created > 0) {
     console.log(`  ${next.length + 1}. \`npm run seed\` for sample data, or \`npm start\` to open the board.`);
     console.log(
-      `\n  \x1b[2mNo hurry on the scheduler — \`npm run seed\` writes a sample brief so you can\n  see the dashboard before an agent has ever run. It refuses to replace\n  items.json once a real brief exists.\x1b[0m`,
+      `\n  \x1b[2mNo hurry on the agent — \`npm run seed\` writes a sample brief so you can\n  see the dashboard before an agent has ever run. It refuses to replace\n  items.json once a real brief exists.\x1b[0m`,
     );
   } else {
     console.log(

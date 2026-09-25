@@ -162,15 +162,15 @@ export class Store {
     actions?: readonly Action[],
     calendar?: CalendarState,
   ): Promise<Omit<DashboardState, 'assetVersion' | 'board' | 'tickets' | 'assistant' | 'agentRun'>> {
-    const [{ brief, error, warnings }, readActions, focus, schedule] = await Promise.all([
+    const [{ brief, error, warnings }, readActions, focus] = await Promise.all([
       this.readBrief(),
       // The caller may have read the log already, to fold the board from the same
       // snapshot; two reads could straddle an append and disagree.
       actions ? Promise.resolve(actions) : this.readActions(),
       this.readFocus(),
-      resolveSchedule(this.config, now),
     ]);
     actions = readActions;
+    const schedule = resolveSchedule(this.config);
 
     // Which days the agent runs decides both halves of the staleness question, and
     // it's also the dashboard's only notion of a weekend — so the progress metric

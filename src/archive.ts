@@ -82,9 +82,8 @@ export interface ArchivedItem {
 /**
  * Every date we hold a snapshot for, oldest first.
  *
- * Just the dates, off the filenames — no file is opened. That makes it cheap enough
- * to ask on every read, which is what lets `schedule.ts` infer which weekdays the
- * agent actually runs on from the days briefs have landed.
+ * Just the dates, off the filenames — no file is opened, so the index below can
+ * pick the newest snapshots before reading any of them.
  */
 export async function listArchivedDates(config: Config): Promise<string[]> {
   let names: string[];

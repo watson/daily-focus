@@ -18,7 +18,6 @@ import {
   scheduledRunDue,
   type Schedule,
 } from '../src/schedule.ts';
-import { localDateKey } from '../src/time.ts';
 
 const dirs: string[] = [];
 
@@ -31,28 +30,6 @@ async function makeConfig(env: NodeJS.ProcessEnv = {}): Promise<Config> {
   dirs.push(dataDir);
   return loadConfig({ DAILY_FOCUS_DATA: dataDir, ...env });
 }
-
-/**
- * Fake `days` worth of history: an archived brief on every one of `on` in the
- * `days` before `now`, skipping any date the caller wants missing.
- */
-async function seedArchive(
-  config: Config,
-  now: Date,
-  { on, days = 28, skip = [] }: { on: number[]; days?: number; skip?: string[] },
-): Promise<void> {
-  await mkdir(config.archiveDir, { recursive: true });
-  const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  for (let i = 0; i < days; i++) {
-    cursor.setDate(cursor.getDate() - 1);
-    const date = localDateKey(cursor);
-    if (!on.includes(cursor.getDay()) || skip.includes(date)) continue;
-    await writeFile(resolve(config.archiveDir, `items-${date}.json`), '{"version":1,"items":[]}');
-  }
-}
-
-// Monday 14 September 2026, 08:00 local.
-const MONDAY = new Date(2026, 8, 14, 8, 0);
 
 /* ---------- the spec ---------- */
 
@@ -106,68 +83,28 @@ test('the next run skips the days off', () => {
 
 /* ---------- resolving ---------- */
 
-test('the configured schedule wins over anything observed', async () => {
-  const config = await makeConfig({ DAILY_FOCUS_AGENT_DAYS: '0-4' });
-  await seedArchive(config, MONDAY, { on: [1, 2, 3, 4, 5] });
+test('the schedule is the configured days, else Mon–Fri', async () => {
+  const told = await makeConfig({ DAILY_FOCUS_AGENT_DAYS: '0-4' });
+  assert.deepEqual(resolveSchedule(told), { days: [0, 1, 2, 3, 4], source: 'config' });
 
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.equal(schedule.source, 'config');
-  assert.deepEqual(schedule.days, [0, 1, 2, 3, 4]);
-});
-
-test('a Sun–Thu week is read off the archive without being told', async () => {
-  const config = await makeConfig();
-  await seedArchive(config, MONDAY, { on: [0, 1, 2, 3, 4] });
-
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.equal(schedule.source, 'observed');
-  assert.deepEqual(schedule.days, [0, 1, 2, 3, 4]);
-});
-
-test('so is a Mon–Fri week', async () => {
-  const config = await makeConfig();
-  await seedArchive(config, MONDAY, { on: [1, 2, 3, 4, 5] });
-
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.equal(schedule.source, 'observed');
-  assert.deepEqual(schedule.days, [1, 2, 3, 4, 5]);
-});
-
-test('one brief run by hand on a Saturday does not become a schedule', async () => {
-  const config = await makeConfig();
-  await seedArchive(config, MONDAY, { on: [1, 2, 3, 4, 5] });
-  await writeFile(resolve(config.archiveDir, 'items-2026-09-05.json'), '{"version":1,"items":[]}');
-
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.deepEqual(schedule.days, [1, 2, 3, 4, 5]);
-});
-
-test('a week away does not make those weekdays look unscheduled', async () => {
-  const config = await makeConfig();
-  await seedArchive(config, MONDAY, {
-    on: [1, 2, 3, 4, 5],
-    skip: ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11'],
+  const unset = await makeConfig();
+  assert.deepEqual(resolveSchedule(unset), { days: MONDAY_TO_FRIDAY, source: 'default' });
+  assert.deepEqual(resolveSchedule(await makeConfig({ DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_AT: 'off' })), {
+    days: MONDAY_TO_FRIDAY,
+    source: 'default',
   });
-
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.equal(schedule.source, 'observed');
-  assert.deepEqual(schedule.days, [1, 2, 3, 4, 5]);
 });
 
-test('too little history falls back to the default rather than inventing one', async () => {
+test('the days briefs have landed on are not a schedule', async () => {
+  // Nothing but this dashboard writes the brief, so the archive can only show
+  // its own runs — and a month of Saturday runs by hand must not make Saturdays
+  // scheduled.
   const config = await makeConfig();
-  await seedArchive(config, MONDAY, { on: [0, 1, 2, 3, 4], days: 7 });
-
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.equal(schedule.source, 'default');
-  assert.deepEqual(schedule.days, [1, 2, 3, 4, 5]);
-});
-
-test('an empty store falls back too', async () => {
-  const config = await makeConfig();
-  const schedule = await resolveSchedule(config, MONDAY);
-  assert.equal(schedule.source, 'default');
-  assert.deepEqual(schedule.days, [1, 2, 3, 4, 5]);
+  await mkdir(config.archiveDir, { recursive: true });
+  for (const date of ['2026-08-22', '2026-08-29', '2026-09-05', '2026-09-12']) {
+    await writeFile(resolve(config.archiveDir, `items-${date}.json`), '{"version":1,"items":[]}');
+  }
+  assert.deepEqual(resolveSchedule(config), { days: MONDAY_TO_FRIDAY, source: 'default' });
 });
 
 /* ---------- the dashboard's own clock ---------- */
@@ -181,22 +118,20 @@ const WEEKDAYS: Schedule = { days: MONDAY_TO_FRIDAY, source: 'config' };
 const AT = { hour: 6, minute: 30 };
 const wednesday = '2026-09-23';
 
-test('a run is due from the time on a scheduled day until something has produced the day\'s brief', () => {
-  const base = { at: AT, schedule: WEEKDAYS, lastRunStartedAt: null, briefGeneratedAt: null };
+test('a run is due from the time on a scheduled day until one has started that day', () => {
+  const base = { at: AT, schedule: WEEKDAYS, lastRunStartedAt: null };
   assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 6, 29) }), false);
   assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 6, 30) }), true);
   assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 23, 59) }), true, 'late is still due');
   assert.equal(scheduledRunDue({ ...base, now: local('2026-09-26', 9, 0) }), false, 'not on a Saturday');
-  // Whatever made today's brief — this dashboard's run, by clock or by hand, or
-  // something else writing the file — is today's run.
+  // A run started today, by clock or by hand, is today's run.
   assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), lastRunStartedAt: local(wednesday, 5, 0).toISOString() }), false);
-  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), briefGeneratedAt: local(wednesday, 6, 45).toISOString() }), false);
   assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), lastRunStartedAt: local('2026-09-22', 9, 0).toISOString() }), true);
-  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), briefGeneratedAt: 'garbage' }), true);
+  assert.equal(scheduledRunDue({ ...base, now: local(wednesday, 9, 0), lastRunStartedAt: 'garbage' }), true);
 });
 
 test('the next run is today\'s if it has not come yet, else the next scheduled morning', () => {
-  const base = { at: AT, schedule: WEEKDAYS, lastRunStartedAt: null, briefGeneratedAt: null };
+  const base = { at: AT, schedule: WEEKDAYS, lastRunStartedAt: null };
   assert.deepEqual(nextScheduledRun({ ...base, now: local(wednesday, 6, 0) }), local(wednesday, 6, 30));
   assert.deepEqual(nextScheduledRun({ ...base, now: local(wednesday, 7, 0) }), local('2026-09-24', 6, 30));
   // A hand run before the hour stands in for today's.
@@ -207,13 +142,4 @@ test('the next run is today\'s if it has not come yet, else the next scheduled m
   assert.deepEqual(nextScheduledRun({ ...base, now: local('2026-09-25', 7, 0) }), local('2026-09-28', 6, 30), 'over the weekend');
   assert.equal(nextScheduledRun({ ...base, schedule: { days: [], source: 'config' }, now: local(wednesday, 7, 0) }), null);
   assert.equal(describeTime(AT), '06:30');
-});
-
-test('with a clock of its own the dashboard never infers the schedule from the archive', async () => {
-  const now = local(wednesday, 9, 0);
-  const config = await makeConfig({ DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_AT: '06:30' });
-  await seedArchive(config, now, { on: [0, 1, 2, 3, 4, 5, 6] });
-  assert.deepEqual(await resolveSchedule(config, now), { days: MONDAY_TO_FRIDAY, source: 'default' });
-  const told = await makeConfig({ DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_AT: '06:30', DAILY_FOCUS_AGENT_DAYS: '0-4' });
-  assert.deepEqual((await resolveSchedule(told, now)).days, [0, 1, 2, 3, 4]);
 });

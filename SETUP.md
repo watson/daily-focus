@@ -4,7 +4,7 @@
 
 Daily Focus needs Node.js 22.18 or newer. Node 24 is recommended. GitHub, Jira,
 and the live macOS calendar are optional. The morning brief is written by an agent
-the dashboard runs for you through a coding-agent CLI, or by one you schedule yourself.
+the dashboard runs for you through a coding-agent CLI.
 
 ## Start the dashboard
 
@@ -56,8 +56,8 @@ Keep real names, account handles, and work details in this private store, outsid
 
 ## Connect your morning agent
 
-The simplest setup lets the dashboard run the agent. Install and log in to the
-[Codex CLI](https://developers.openai.com/codex/cli) or
+The dashboard runs the agent through a coding-agent CLI you already have. Install
+and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
 [Claude Code](https://code.claude.com/docs), then set:
 
 ```dotenv
@@ -95,29 +95,11 @@ Set `DAILY_FOCUS_AGENT_MODEL` and `DAILY_FOCUS_AGENT_EFFORT` if the CLI's own
 defaults are not what you want for a brief; a brief is worth a high effort. If the
 server can't find the CLI, set `DAILY_FOCUS_AGENT_BIN`.
 
-### Or schedule it yourself
-
-Any agent that can read and write local files and reach the sources you list in
-`sources.md` can write the brief instead: a scheduled task in the Codex or ChatGPT
-app, a cron job, anything. Schedule it for your working mornings, with access to
-`~/.daily-focus/`, and point it at:
-
-```text
-~/.daily-focus/prompt.md
-```
-
-Use the [wrapper in prompts/README.md](prompts/README.md#wiring-the-morning-brief-into-a-scheduled-task).
-It tells the agent to reread the prompt each run. Don't paste a copy of the prompt
-into the scheduler or point the briefing agent at this repo's `AGENTS.md`. Set
-`DAILY_FOCUS_AGENT_DAYS` to the task's days so the dashboard knows when a brief is
-overdue. If you also set `DAILY_FOCUS_AGENT`, so the refresh icon can start a run by
-hand between scheduled ones, set `DAILY_FOCUS_AGENT_AT=off` or the dashboard will
-run the agent as well.
-
 The agent writes `items.json`. The dashboard records your actions and focus sessions
 for the next run to read.
 
-Run the agent once by hand to check access and see your first brief. Then run:
+Start the first run by hand, from the refresh icon beside "no brief yet" in the
+header, to check access and see your first brief. Then run:
 
 ```sh
 npm run audit
@@ -279,10 +261,7 @@ write; if something in the brief should change, it says what, and you run it aga
 Earlier runs are folded away at the foot of the panel, newest first, and any of
 them opens the same way.
 
-The dashboard runs one thing at a time: a run, or a question about one. It can't see
-a scheduler of your own, so if both start a run, the later brief replaces the
-earlier one. A brief something else wrote today does hold the dashboard's clock
-off for the day.
+The dashboard runs one thing at a time: a run, or a question about one.
 
 ## A personal instance
 
@@ -319,16 +298,11 @@ which takes precedence over `.env`.
 
 ## Match your working week
 
-Set `DAILY_FOCUS_AGENT_DAYS` to the days the agent runs. It uses cron weekday
-numbers: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, or `0,6` for
-weekends. When the dashboard runs the agent itself, these are the days it does so,
-and Monday to Friday when unset.
-
-When something else runs the agent and this is unset, the dashboard infers the
-schedule after three weeks of archived briefs. Until then it assumes Monday to
-Friday. `npm run audit` shows the schedule in use. Days without scheduled runs
-don't make a brief overdue. Once a refresh is due, the dashboard allows 45 minutes
-before showing a warning.
+Set `DAILY_FOCUS_AGENT_DAYS` to the days the dashboard runs the agent. It uses cron
+weekday numbers: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, or `0,6`
+for weekends. Unset means Monday to Friday. `npm run audit` shows the schedule in
+use. Days without scheduled runs don't make a brief overdue. Once a refresh is due,
+the dashboard allows 45 minutes before showing a warning.
 
 ## Settings reference
 
@@ -347,7 +321,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends when the brief does not specify it |
 | `DAILY_FOCUS_MIN_FREE_WINDOW` | `45` | Minutes before a gap counts as a focus window |
 | `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to expect a refresh. Shows an informational message for 45 minutes before warning that the agent may not have run. Counted only in hours a run was due, so days off never trip it |
-| `DAILY_FOCUS_AGENT_DAYS` | `1-5` when the dashboard runs the agent, else *inferred* | Weekdays the agent runs on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
+| `DAILY_FOCUS_AGENT_DAYS` | `1-5` | Weekdays the dashboard runs the agent on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
 | `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
 | `DAILY_FOCUS_AWAY_AFTER` | `10`; `0` for personal | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
 | `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board; nothing is polled |
@@ -374,7 +348,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_ASSISTANT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched: `low`, `medium`, `high`, `xhigh` or `max`. Unset passes no flag |
 | `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. Ignored by Codex |
 | `DAILY_FOCUS_AGENT` | `off` | `codex` or `claude` lets the dashboard run the morning agent through that CLI: each scheduled morning, and from the refresh icon beside the brief's age. `off` hides it |
-| `DAILY_FOCUS_AGENT_AT` | `07:00` | Local time, `HH:MM`, at which the dashboard starts the agent on each scheduled day, or as soon as it is running after that. `off` means it never starts one on its own. Needs `DAILY_FOCUS_AGENT` |
+| `DAILY_FOCUS_AGENT_AT` | `07:00` | Local time, `HH:MM`, at which the dashboard starts the agent on each scheduled day, or as soon as it is running after that. `off` means it never starts one on its own; the refresh icon still does. Needs `DAILY_FOCUS_AGENT` |
 | `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the server's PATH lacks it. `~` is expanded |
 | `DAILY_FOCUS_AGENT_MODEL` | *the CLI's own* | Model passed to the CLI untouched. Unset passes no flag |
 | `DAILY_FOCUS_AGENT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched. Unset passes no flag |
@@ -382,12 +356,12 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 
 ## If something looks wrong
 
-- An empty Today tab usually means the agent hasn't written `items.json` yet. Check
-  that the agent and dashboard use the same store.
+- An empty Today tab means the agent hasn't written `items.json` yet. Without
+  `DAILY_FOCUS_AGENT` nothing runs it; with it, start a run from the refresh icon
+  beside "no brief yet".
 - A stale brief needs an agent run. Refreshing a board doesn't regenerate the brief;
-  the icon beside the brief's age does, when `DAILY_FOCUS_AGENT` is set. If the
-  dashboard was meant to run it, click "updated … ago" to see what the last run
-  said, or whether there was one: the dashboard has to be running at
+  the icon beside the brief's age does. Click "updated … ago" to see what the last
+  run said, or whether there was one: the dashboard has to be running at
   `DAILY_FOCUS_AGENT_AT`, 07:00 by default, or started later that day.
 - A GitHub or Jira warning may mean the CLI session needs authentication. If the
   server can't find a CLI, set its full path with `DAILY_FOCUS_GH` or `DAILY_FOCUS_ACLI`.
