@@ -168,7 +168,9 @@ const noOffset = timedEvents.filter((i) => !/(Z|[+-]\d{2}:?\d{2})$/.test(i.start
 if (noOffset.length) fail('timed events carry a timezone offset', `${noOffset.length} without`);
 else pass('timed events carry a timezone offset', `${timedEvents.length} checked`);
 
-if (brief.dayStart || brief.dayEnd) {
+if (!config.freeWindows) {
+  pass('free windows off', brief.dayStart || brief.dayEnd ? 'dayStart / dayEnd present but unused' : 'no day bounds, none needed');
+} else if (brief.dayStart || brief.dayEnd) {
   pass('working day set from the calendar', `${brief.dayStart ?? 'default'} → ${brief.dayEnd ?? 'default'}`);
 } else {
   warn('working day not set', 'falling back to config; fine only if today is standard');

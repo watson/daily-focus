@@ -15,8 +15,9 @@ import { test } from 'node:test';
 import { byClass, type StubElement } from './dom-stub.ts';
 import type { ResolvedItem } from '../src/types.ts';
 
-const { eventRow } = (await import('../public/render.js')) as {
+const { eventRow, nextEventStat } = (await import('../public/render.js')) as {
   eventRow: (event: ResolvedItem, now: Date, conflictIds: string[]) => StubElement;
+  nextEventStat: (agenda: { events: ResolvedItem[] }, now: Date) => StubElement;
 };
 
 /* ---------- the fixtures ---------- */
@@ -98,6 +99,35 @@ test('a clash is still called out on an event marked free', () => {
   const node = eventRow(event({ blocking: false }), NOW, ['calendar:event:abc']);
 
   assert.equal(subs(node).length, 2);
-  assert.match(subs(node)[0]!, /clashes with another meeting/);
+  assert.match(subs(node)[0]!, /clashes with another event/);
   assert.match(subs(node)[1]!, /marked free$/);
+});
+
+/* ---------- the next-event stat, shown when free time isn't tracked ---------- */
+
+const statValue = (node: StubElement) => byClass(node, 'stat__value')[0]?.textContent;
+const statNote = (node: StubElement) => byClass(node, 'stat__footnote')[0]?.textContent;
+
+test('the next event is the first timed one still ahead', () => {
+  const node = nextEventStat({ events: [event({ start: at(8), end: at(9), title: 'Gone' }), event({ start: at(12, 15), end: at(13), title: 'Lunch' })] }, NOW);
+  assert.equal(statValue(node), 'in 2 h 15 min');
+  assert.equal(statNote(node), 'Lunch');
+});
+
+test('an event under way reads as now', () => {
+  const node = nextEventStat({ events: [event({ start: at(9, 30), end: at(10, 30), title: 'Standup' })] }, NOW);
+  assert.equal(statValue(node), 'Now');
+  assert.equal(statNote(node), 'Standup');
+});
+
+test('all-day events are not something to be somewhere for', () => {
+  const node = nextEventStat({ events: [event({ start: '2026-09-10', end: undefined, title: 'Holiday' })] }, NOW);
+  assert.equal(statValue(node), 'None today');
+});
+
+test('an open-ended event is assumed to last half an hour', () => {
+  const node = nextEventStat({ events: [event({ start: at(9, 40), end: undefined, title: 'Call' })] }, NOW);
+  assert.equal(statValue(node), 'Now');
+  const over = nextEventStat({ events: [event({ start: at(9, 20), end: undefined, title: 'Call' })] }, NOW);
+  assert.equal(statValue(over), 'None today');
 });

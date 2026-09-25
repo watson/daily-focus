@@ -302,7 +302,8 @@ the dashboard allows 45 minutes before showing a warning.
 ## Settings reference
 
 All settings can go in `.env` or the environment. Restart after changing them.
-The brief's `dayStart` and `dayEnd` override the configured working hours.
+The brief's `dayStart` and `dayEnd` override the configured working hours. Neither
+matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -310,6 +311,7 @@ The brief's `dayStart` and `dayEnd` override the configured working hours.
 | `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
 | `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
 | `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data |
+| `DAILY_FOCUS_FREE_WINDOWS` | `on`; `off` for personal | `off` shows events only: no free windows in the agenda, and the next event in place of focus time left |
 | `DAILY_FOCUS_WORK_START` | `9` | Local hour the working day starts, when the brief doesn't say |
 | `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends when the brief does not specify it |
 | `DAILY_FOCUS_MIN_FREE_WINDOW` | `45` | Minutes before a gap counts as a focus window |

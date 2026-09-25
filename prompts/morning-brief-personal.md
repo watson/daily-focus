@@ -157,13 +157,11 @@ be read, name it in step 5 rather than silently briefing from the others.
 out one falling within the next 14 days — school holidays especially, since they
 change who needs looking after.
 
-**Work out which part of today is the user's own and set `dayStart` / `dayEnd`**
-(local `"HH:MM"`). This brief is not about office hours: on a workday that is usually
-the time after work, on a day off most of the day. `sources.md` may describe a rhythm
-that changes it — alternating weeks, regular pickups, evening commitments — and the
-calendar shows the exceptions. The dashboard computes free windows and remaining time
-from these, so getting them wrong means confidently recommending a block that doesn't
-exist.
+**Leave `dayStart` / `dayEnd` out.** An evening at home has no start and end worth
+measuring against, so the personal dashboard does not look for free windows or count
+time left; it shows the events and the next one up. Only set them (local `"HH:MM"`)
+if `sources.md` says the dashboard tracks free windows, and then work them out from
+the calendar and the rhythm `sources.md` describes rather than assuming office hours.
 
 On a short day, say so in the `headline` and cut harder in step 3.
 
@@ -310,9 +308,9 @@ Then the general editorial bar:
   daycare invoice before Friday" beats "e-Boks: new letter". Keep them to one line.
 - **`detail` earns its place or is omitted.** Say what the user can't infer from the
   title: who is waiting, how long, what happens if it slips. Don't restate the title.
-- **Emit today's timed events as `kind: "event"`.** The dashboard computes clashes and
-  free windows itself from those events — do **not** emit free-window items yourself.
-  You may mention the best free block in the `headline`.
+- **Emit today's timed events as `kind: "event"`.** The dashboard computes clashes
+  itself from those events — do **not** emit free-window items yourself. You may
+  mention the best free stretch in the `headline`.
 - **Mark an event `"blocking": false` when it takes none of the user's time.** A parcel
   delivery window, a partner's evening out, a reminder someone else is doing something:
   these belong on the agenda so the day reads correctly, but they do not stop the user.
@@ -332,8 +330,6 @@ Then the general editorial bar:
   "generatedBy": "<name yourself — your model or agent id>",
   "date": "<today, YYYY-MM-DD>",
   "headline": "<one or two sentences, or omit>",
-  "dayStart": "17:00",
-  "dayEnd": "22:00",
   "items": [ … ]
 }
 ```

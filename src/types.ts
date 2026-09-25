@@ -203,6 +203,12 @@ export interface Agenda {
   events: ResolvedItem[];
   /** Ids of events that overlap at least one other event. */
   conflictIds: string[];
+  /**
+   * Whether free windows and focus time are being tracked at all. Off for the
+   * personal profile by default, where "the day" has no start or end worth
+   * measuring against; the client shows the next event instead.
+   */
+  tracksFreeTime: boolean;
   freeWindows: FreeWindow[];
   /**
    * Unbooked minutes between now and the end of the working day.

@@ -13,6 +13,7 @@ test('the work profile is the default, and keeps every integration on', () => {
   assert.equal(config.jira.enabled, true);
   assert.equal(config.calendar.enabled, true);
   assert.equal(config.awayAfterMinutes, 10);
+  assert.equal(config.freeWindows, true);
 });
 
 test('the personal profile switches off the Jira board and away detection', () => {
@@ -22,6 +23,7 @@ test('the personal profile switches off the Jira board and away detection', () =
   assert.equal(config.jira.enabled, false);
   assert.equal(config.calendar.enabled, true);
   assert.equal(config.awayAfterMinutes, 0);
+  assert.equal(config.freeWindows, false);
 });
 
 test('an explicit setting beats the profile default', () => {
@@ -29,10 +31,12 @@ test('an explicit setting beats the profile default', () => {
     DAILY_FOCUS_PROFILE: 'Personal',
     DAILY_FOCUS_JIRA: 'on',
     DAILY_FOCUS_AWAY_AFTER: '5',
+    DAILY_FOCUS_FREE_WINDOWS: 'on',
   });
   assert.equal(config.profile, 'personal');
   assert.equal(config.jira.enabled, true);
   assert.equal(config.awayAfterMinutes, 5);
+  assert.equal(config.freeWindows, true);
 });
 
 test('an unknown profile fails at startup rather than falling back', () => {
