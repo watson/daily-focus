@@ -21,7 +21,7 @@ export function TodayView({ state, ui, handlers }: { state: DashboardState; ui: 
   );
   // Before the first brief there is nothing to rank and nothing to count: the
   // page is the way to the first brief instead.
-  if (state.setup?.needed) return [focusBar, h(SetupCard, { state, handlers })];
+  if (state.setup?.needed) return [focusBar, h(SetupCard, { state, ui, handlers })];
   return [focusBar, renderObjective(state, handlers), renderStats(state), renderHeadline(state), renderSections(state, ui, handlers)];
 }
 
