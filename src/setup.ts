@@ -55,15 +55,24 @@ export async function findExecutable(name: string, path: string = process.env.PA
   return null;
 }
 
-/** Where each CLI the dashboard can run is installed, honouring a path set for the agent or the assistant. */
+/**
+ * Where each CLI the dashboard can run is installed: a path set for the agent or
+ * the assistant when that one is set to this CLI, whatever the file is called,
+ * then the CLI's own name on PATH.
+ */
 async function findClis(config: Config): Promise<Record<CliName, string | null>> {
   const found = {} as Record<CliName, string | null>;
   for (const cli of CLI_NAMES) {
-    const configured = [config.agent, config.assistant.agent === cli ? config.assistant : null]
-      .filter((entry) => entry !== null)
-      .map((entry) => entry.binPath)
-      .find((bin) => isAbsolute(bin) && bin.split('/').pop()?.startsWith(cli));
-    found[cli] = await findExecutable(configured ?? cli);
+    const candidates = [
+      config.agent.cli === cli ? config.agent.binPath : null,
+      config.assistant.agent === cli ? config.assistant.binPath : null,
+      cli,
+    ].filter((candidate): candidate is string => candidate !== null);
+    found[cli] = null;
+    for (const candidate of candidates) {
+      found[cli] = await findExecutable(candidate);
+      if (found[cli]) break;
+    }
   }
   return found;
 }
@@ -99,7 +108,7 @@ export async function firstBriefPending(config: Config): Promise<boolean> {
  * Everything the setup steps show that the rest of the state doesn't already say.
  * The objective, the agent and the boards are in the state anyway.
  */
-export async function setupState(config: Config, opts: { briefExists: boolean; profileChosen: boolean }): Promise<SetupState> {
+export async function setupState(config: Config, opts: { profileChosen: boolean }): Promise<SetupState> {
   let sources: string | null = null;
   try {
     sources = await readFile(config.sourcesFile, 'utf8');
@@ -108,7 +117,10 @@ export async function setupState(config: Config, opts: { briefExists: boolean; p
   }
   const supported = process.platform === 'darwin';
   return {
-    needed: !opts.briefExists && !(await hasArchive(config)),
+    // The file, not whether it parsed: a brief that is there but broken is a
+    // problem for its banner to report, not a store to set up from scratch. The
+    // agent's clock asks the same question.
+    needed: await firstBriefPending(config),
     profile: config.profile,
     profileChosen: opts.profileChosen,
     sources: { exists: sources !== null, placeholders: sources === null ? 0 : placeholdersIn(sources) },

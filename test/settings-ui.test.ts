@@ -181,3 +181,41 @@ test('the gear is pressed while Settings is open, and a second press closes it',
   on.click();
   assert.deepEqual(calls, ['open', 'close']);
 });
+
+test('a calendar ticked because its name matches in another case can be unticked', () => {
+  const edits: [string, string | null][] = [];
+  const calendarPage: SettingsPage = {
+    ...page,
+    groups: [{ id: 'calendar', title: 'Calendar' }],
+    settings: [
+      {
+        key: 'DAILY_FOCUS_CALENDARS',
+        group: 'calendar',
+        label: 'Calendars',
+        help: 'Names.',
+        kind: 'list',
+        choices: null,
+        advanced: false,
+        value: 'work',
+        source: 'settings',
+        fallback: 'None',
+      },
+    ],
+  };
+  const calendarState = {
+    ...state,
+    setup: { ...state.setup, calendar: { supported: true, built: true, chosen: 1, buildCommand: 'npm run build:calendar' } },
+  } as unknown as DashboardState;
+  const root = mount(
+    h(SettingsView, {
+      state: calendarState,
+      ui: uiWith({ settings: calendarPage, texts: {}, calendars: [{ title: 'Work', source: 'iCloud' }] }),
+      handlers: handlersWith({ editSetting: (key, value) => void edits.push([key, value]) }),
+    }),
+  );
+  const box = root.querySelector<HTMLInputElement>('.calendar-picker input[type=checkbox]')!;
+  assert.equal(box.checked, true);
+  box.checked = false;
+  box.dispatchEvent(new Event('change', { bubbles: true }));
+  assert.deepEqual(edits, [['DAILY_FOCUS_CALENDARS', null]]);
+});

@@ -177,3 +177,16 @@ test('each board says how it is doing the same way: a mark, and words in one col
     ['ok', 'Connected, through acli.'],
   ]);
 });
+
+test('a source list still holding placeholders holds the first run back; none at all does not', () => {
+  const agent = { enabled: true, cli: 'claude', schedule: null, last: null, runs: [] };
+  const run = (root: HTMLElement) => [...root.querySelectorAll('button')].find((button) => button.textContent === 'Run the morning agent now')!;
+
+  const template = mount(h(SetupCard, { state: stateWith({ agentRun: agent, setup: { sources: { exists: true, placeholders: 2 } } }), ui: uiWith(), handlers: handlersWith() }));
+  assert.equal(run(template).disabled, true);
+  assert.match(template.textContent!, /Replace the source list's placeholders first/);
+
+  const none = mount(h(SetupCard, { state: stateWith({ agentRun: agent }), ui: uiWith(), handlers: handlersWith() }));
+  assert.equal(run(none).disabled, false);
+  assert.match(none.textContent!, /Without a source list it briefs from what it can reach/);
+});
