@@ -419,8 +419,9 @@ Check all of these, and fix anything that fails:
     `gh` probe.
 
 Then report back, briefly: how many items you wrote, which got a priority, what you
-dropped because the action log said it was handled, whether this was a first run, and
-anything you could not reach. **Say so plainly if a source was unavailable** — a
+dropped because the action log said it was handled, whether this was a first run,
+anything you could not reach, and anything you decided without being able to confirm
+it. **Say so plainly if a source was unavailable** — a
 silently incomplete brief is worse than an honest gap, because the user will trust it.
 
 ### Never
@@ -433,3 +434,9 @@ silently incomplete brief is worse than an honest gap, because the user will tru
   query, or from upstream silence. Only the action log decides that.
 - Never invent a link, a person, an amount or a deadline. Omit the field instead.
 - Never let an id drift between runs to make a title read better.
+- Never ask the user anything during the run, in a message or with a tool for asking
+  questions. Nobody is watching: the dashboard starts you on its clock or on a click,
+  and the first thing anyone reads is your finished report, so a question gets no
+  answer and only looks as if it did. Decide from what the sources show, mark it as
+  unconfirmed in the brief where that matters, and name it in your report. The user
+  can ask you about it afterwards; that conversation resumes this session.

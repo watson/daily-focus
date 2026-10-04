@@ -607,12 +607,12 @@ Check all of these, and fix anything that fails:
 14. No item or upstream id relies only on browser data.
 
 Then report back, briefly: how many items you wrote, which got a priority, what you
-dropped because the action log said it was handled, and anything you could not reach
-(a connector that failed, a `gh` command that wouldn't run, a calendar or document you
-could not read). **Say so plainly if a source was unavailable** — a silently incomplete
-brief is worse than an honest gap, because the user'll trust it. Give the link where
-there is one: an unread document the user can open in one click is a gap that closes
-itself.
+dropped because the action log said it was handled, anything you could not reach (a
+connector that failed, a `gh` command that wouldn't run, a calendar or document you
+could not read), and anything you decided without being able to confirm it. **Say so
+plainly if a source was unavailable** — a silently incomplete brief is worse than an
+honest gap, because the user'll trust it. Give the link where there is one: an unread
+document the user can open in one click is a gap that closes itself.
 
 ### Never
 
@@ -622,3 +622,9 @@ itself.
   query, or from upstream silence. Only the action log decides that.
 - Never invent a link, a person, a ticket, or a deadline. Omit the field instead.
 - Never let an id drift between runs to make a title read better.
+- Never ask the user anything during the run, in a message or with a tool for asking
+  questions. Nobody is watching: the dashboard starts you on its clock or on a click,
+  and the first thing anyone reads is your finished report, so a question gets no
+  answer and only looks as if it did. Decide from what the sources show, mark it as
+  unconfirmed in the brief where that matters, and name it in your report. The user
+  can ask you about it afterwards; that conversation resumes this session.
