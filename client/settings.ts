@@ -14,7 +14,15 @@ import { useEffect } from 'preact/hooks';
 import type { SettingView } from '../src/settings.ts';
 import type { DashboardState } from '../src/types.ts';
 import { el } from './el.ts';
-import type { CalendarName, Handlers, TextEditor, TextName, UiState } from './types.ts';
+import type { CalendarName, Handlers, TextEditor, TextName, UiState, View } from './types.ts';
+
+/** The views Settings can return to, by the names their tabs carry. */
+const VIEW_NAME: Readonly<Record<View, string>> = {
+  today: 'Today',
+  board: 'Pull requests',
+  tickets: 'Jira tickets',
+  settings: 'Settings',
+};
 
 export function SettingsView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element {
   // Loaded when first looked at, not with the page: most visits never come here.
@@ -33,7 +41,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
       'div',
       { class: 'settings__head' },
       el('h2', { class: 'settings__title' }, 'Settings'),
-      el('button', { type: 'button', class: 'button', onClick: () => handlers.setView('today') }, 'Back to Today'),
+      el('button', { type: 'button', class: 'button', onClick: () => handlers.closeSettings() }, `Back to ${VIEW_NAME[ui.settingsReturn.value]}`),
     ),
     page?.error ? el('p', { class: 'settings__problem', role: 'alert' }, page.error) : null,
     objectiveCard(state, ui, handlers),
