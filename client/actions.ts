@@ -477,10 +477,11 @@ function announceSessionEnd(active: ActiveSession): void {
 /* ---------- views ---------- */
 
 /** Which panel shows is decided by `body[data-view]` in the stylesheet, and nowhere else. */
-function setView(view: View): void {
+function showView(view: View): void {
   if (ui.view.value === view) return;
   // The number keys reach every view, including one whose tab is hidden.
   if (state.value && !availableViews(state.value).includes(view)) return;
+  if (view === 'settings') beforeSettings = ui.view.value;
   batch(() => {
     ui.view.value = view;
     // The selection belongs to the list it was made in. The panel does not: it
@@ -488,7 +489,55 @@ function setView(view: View): void {
     ui.selectedId.value = null;
     closeMenus();
   });
-  remember(VIEW_KEY, view);
+  // Settings is a page to visit, not one a pinned tab should reopen on.
+  remember(VIEW_KEY, view === 'settings' ? beforeSettings : view);
+}
+
+/** The view Settings returns to: the one it was opened from. */
+let beforeSettings: View = 'today';
+
+/** Marks the history entry Settings added, as against one a link arrived on. */
+const SETTINGS_ENTRY = 'dailyFocusSettings';
+
+function settingsEntry(): boolean {
+  try {
+    return Boolean((history.state as Record<string, unknown> | null)?.[SETTINGS_ENTRY]);
+  } catch {
+    return false;
+  }
+}
+
+/** The address without `#settings`, in place, for leaving Settings without Back. */
+function clearSettingsHash(): void {
+  try {
+    if (location.hash.startsWith('#settings')) history.replaceState(null, '', `${location.pathname}${location.search}`);
+  } catch {
+    // No history to speak of; the view still changes.
+  }
+}
+
+/**
+ * Switch to `view`. Settings is a page of its own as far as the browser goes:
+ * opening it adds a history entry, so Back returns to where it was opened from.
+ * Leaving it any other way, by its button, Escape or a tab, goes back through
+ * that entry rather than leaving it behind for Back to land on again. Arrived at
+ * by a link, it has no entry of its own, and leaving it only tidies the address,
+ * so Back never takes anyone out of the dashboard.
+ */
+function setView(view: View): void {
+  if (view === 'settings') {
+    openSettings();
+    return;
+  }
+  if (ui.view.value === 'settings') {
+    beforeSettings = view;
+    if (settingsEntry()) {
+      history.back();
+      return;
+    }
+    clearSettingsHash();
+  }
+  showView(view);
 }
 
 /**
@@ -664,12 +713,46 @@ async function listCalendars(): Promise<void> {
 }
 
 function openSettings(section: string | null = null): void {
-  setView('settings');
+  if (ui.view.value !== 'settings') {
+    try {
+      history.pushState({ [SETTINGS_ENTRY]: true }, '', '#settings');
+    } catch {
+      // No history to speak of; the view still changes.
+    }
+    showView('settings');
+  }
+  loadSettingsPage(section);
+}
+
+function loadSettingsPage(section: string | null): void {
   if (!ui.settings.value) void loadSettings();
   for (const name of ['focus', 'sources'] as const) if (!ui.texts.value[name]) void loadText(name);
   if (section) {
     afterRender(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
   }
+}
+
+/**
+ * Follow the address: Back and Forward, and a link to `#settings`, or to one
+ * section of it such as `#settings-sources`, which is how the menu bar app opens
+ * Settings. Called on load and on every history move.
+ */
+export function followLocation(): void {
+  const linked = /^#settings(?:-([a-z]+))?$/.exec(location.hash);
+  if (linked) {
+    if (ui.view.value !== 'settings') showView('settings');
+    loadSettingsPage(linked[1] ?? null);
+    // A link names a section only to scroll to it; the page is just Settings.
+    if (linked[1]) {
+      try {
+        history.replaceState(history.state, '', '#settings');
+      } catch {
+        // Fine either way.
+      }
+    }
+    return;
+  }
+  if (ui.view.value === 'settings') showView(beforeSettings);
 }
 
 /* ---------- the handlers ---------- */

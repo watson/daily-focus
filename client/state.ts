@@ -85,7 +85,8 @@ function remembered(): Partial<UiValues> {
   try {
     const view = localStorage.getItem(VIEW_KEY);
     return {
-      view: isView(view) ? view : 'today',
+      // Settings is a page to visit, so a reload returns to the view underneath.
+      view: isView(view) && view !== 'settings' ? view : 'today',
       unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
       agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
       focusMode: localStorage.getItem(FOCUS_MODE_KEY) === '1',
