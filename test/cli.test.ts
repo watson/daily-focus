@@ -45,3 +45,13 @@ test('only a source file counts as run directly, since every module of the packa
     process.argv.splice(1, 1, ...(original === undefined ? [] : [original]));
   }
 });
+
+test('a flag that belongs to another command is refused, not dropped', async () => {
+  for (const args of [['seed', '--remove'], ['service', '--force'], ['init', '--no-open'], ['audit', '--demo']]) {
+    await assert.rejects(run(process.execPath, [cli, ...args]), (err: { code?: number; stderr?: string }) => {
+      assert.equal(err.code, 1, args.join(' '));
+      assert.match(err.stderr ?? '', /doesn't apply to/);
+      return true;
+    });
+  }
+});
