@@ -250,3 +250,24 @@ test('SETUP.md, .env.example and config.ts name the same variables', async () =>
     assert.ok(read.has(name), `${name} is documented but config.ts never reads it`);
   }
 });
+
+/**
+ * The settings page is generated from `src/settings.ts`, so a variable `config.ts`
+ * reads but the table doesn't list is a setting nobody can change from the page.
+ * The launch settings are the deliberate exception: they say where the store is,
+ * so they can't be kept in it.
+ */
+test('the settings page lists every variable config.ts reads, except the launch settings', async () => {
+  const { SETTINGS } = await import('../src/settings.ts');
+  const { LAUNCH_SETTINGS } = await import('../src/env.ts');
+  const read = new Set([...(await readFile(resolve(root, 'src/config.ts'), 'utf8')).matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
+  const listed = new Set(SETTINGS.map((setting) => setting.key));
+  for (const name of read) {
+    if (LAUNCH_SETTINGS.includes(name)) {
+      assert.ok(!listed.has(name), `${name} is a launch setting, so it can't be on the settings page`);
+    } else {
+      assert.ok(listed.has(name), `${name} is read by config.ts but missing from the settings page in src/settings.ts`);
+    }
+  }
+  for (const name of listed) assert.ok(read.has(name), `${name} is on the settings page but config.ts never reads it`);
+});

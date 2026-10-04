@@ -20,20 +20,25 @@ instructions are [`prompts/assistant.md`](prompts/assistant.md) and its runner i
 
 - Use invented names, accounts, ticket keys, and content in tracked files, fixtures,
   screenshots, and commit messages. A real brief is private data, even as a fixture.
-  Personal configuration belongs in the store or gitignored `.env`.
+  Personal configuration belongs in the store (`settings.json`) or gitignored `.env`.
 - The default store is `~/.daily-focus`. For development, set `DAILY_FOCUS_DATA` to a
   temporary directory or gitignored `./data`. Do not put real briefs at the repo root.
-- The server must never open `sources.md`. Send focus text to the browser only through
-  `toPublicFocus`, which strips everything after `<!-- agent-only -->`.
+- `sources.md`, and the private half of `focus.md` after `<!-- agent-only -->`, reach
+  the browser only through the editor endpoints that ask for them (`/api/text/*`).
+  Never put either in `/api/state`, which every tab is sent: state carries
+  `toPublicFocus` and nothing of the source list.
 
 Each store file has one writer. There is no locking, so preserve these boundaries:
 
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `session.json`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json` |
-| User | `focus.md`, `sources.md` |
-| `npm run init` | `prompt.md`, `assistant.md`, `items.schema.json` symlinks |
+| Dashboard | `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `session.json`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
+| User, through the dashboard's editors or by hand | `focus.md`, `sources.md` |
+
+The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
+the file is unchanged since the editor loaded it (`src/editable.ts`), so a hand edit
+is never overwritten. It never writes them on the user's behalf.
 
 Never compact or rewrite `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl` or
 `agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
@@ -90,4 +95,6 @@ into `public/app.js`, which is not tracked: edit the source, never the bundle.
 
 `npm run audit` checks the brief in the selected store, not the code.
 `test/docs-contract.test.ts` checks prompt/schema, configuration, and board-label
-consistency. New settings must appear in `src/config.ts`, `.env.example`, and `SETUP.md`.
+consistency. New settings must appear in `src/config.ts`, `src/settings.ts` (the
+settings page), `.env.example`, and `SETUP.md`. Only `DAILY_FOCUS_DATA`, `_PORT` and
+`_HOST` stay off the page: they locate the store, so they can't be kept in it.

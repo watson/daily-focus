@@ -430,6 +430,11 @@ export class Assistant {
     return this.config.assistant.agent !== null;
   }
 
+  /** Whether any turn has a process going right now. */
+  get busy(): boolean {
+    return this.running.size > 0;
+  }
+
   /**
    * Read the log, and close whatever was left running when the last process
    * died. Cheap when the assistant is off: the log is read only if it exists.

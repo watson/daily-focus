@@ -16,7 +16,7 @@ instructions ahead of the row and the request on the first turn of a session. Th
 quick actions the panel offers are sentences in `src/assistant.ts`, not in the
 prompt, so what the button sends is what the panel shows was sent.
 
-`DAILY_FOCUS_PROFILE` decides which one `npm run init` links into a store. Each
+`DAILY_FOCUS_PROFILE` decides which one the dashboard links into a store. Each
 profile is its own instance, with its own store, server and agent, so a store only
 ever holds one. They are two complete files rather than a shared base with two
 overlays, because the agent must be able to follow its prompt from a single read.
@@ -25,15 +25,16 @@ A rule both agents need goes into both.
 ## The agent's world is the store, not this repo
 
 The briefing agent reads and writes one directory — `~/.daily-focus/` — and nothing
-else. `npm run init` symlinks this prompt into it as `prompt.md`, alongside
-`items.schema.json`, so a run only ever names a path inside the store:
+else. The dashboard symlinks this prompt into it as `prompt.md` each time it starts,
+alongside `items.schema.json`, so a run only ever names a path inside the store:
 
 ```
 ~/.daily-focus/
-  prompt.md           → prompts/morning-brief-work.md   (symlink, installed by npm run init)
-  items.schema.json   → schema/items.schema.json   (symlink, installed by npm run init)
-  focus.md            you write it
-  sources.md          you write it
+  prompt.md           → prompts/morning-brief-work.md   (symlink, made by the dashboard at start)
+  items.schema.json   → schema/items.schema.json   (symlink, made by the dashboard at start)
+  focus.md            you write it, in the dashboard or by hand
+  sources.md          you write it, in the dashboard or by hand
+  settings.json       the dashboard writes: what you set on its settings page
   items.json          the agent writes it
   actions.jsonl       the dashboard appends
   sessions.jsonl      the dashboard appends
@@ -53,8 +54,10 @@ never comes up.
 A symlink rather than a copy, because a second copy of a prompt this long drifts
 silently, and the first symptom is a brief that carefully followed a rule we replaced
 a month ago. The link keeps the content in git — reviewable, revertible — while the
-path a run names stays inside the store. A real file in its place is left alone by
-`npm run init` and by the audit, for anyone who wants a private prompt of their own.
+path a run names stays inside the store. Linked at every start rather than once,
+so the prompt the agent follows is always the running dashboard's own, however it
+was installed. A real file in its place is left alone by the dashboard, `npm run
+init` and the audit, for anyone who wants a private prompt of their own.
 
 ## How a run starts
 

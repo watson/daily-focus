@@ -4,7 +4,9 @@ import { stat } from 'node:fs/promises';
 import { basename, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig } from './config.ts';
+import { loadConfig, type Config } from './config.ts';
+import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
+import { envSources, layerEnv, readDotEnv, type EnvSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board } from './board.ts';
@@ -16,9 +18,12 @@ import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
 import { refusal } from './guard.ts';
-import { storeLinkWarning } from './links.ts';
+import { describeLink, linkStore, storeLinkWarning } from './links.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
+import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
+import { hydratePath } from './shellpath.ts';
+import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
 
 const PUBLIC_DIR = resolve(fileURLToPath(new URL('../public', import.meta.url)));
@@ -32,6 +37,12 @@ const MIME: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+};
+
+/** The files the dashboard's editors open, by the endpoint that serves them. */
+const TEXT_FILES: Readonly<Record<string, { file: 'focusFile' | 'sourcesFile'; name: string }>> = {
+  '/api/text/focus': { file: 'focusFile', name: 'focus.md' },
+  '/api/text/sources': { file: 'sourcesFile', name: 'sources.md' },
 };
 
 const VALID_ACTIONS: ReadonlySet<string> = new Set<ActionType>([
@@ -114,20 +125,120 @@ async function serveStatic(res: ServerResponse, urlPath: string): Promise<void> 
   }
 }
 
+/** Read a JSON object body, or answer 400 and return null. */
+async function readJsonObject(req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | null> {
+  let body: unknown;
+  try {
+    body = JSON.parse(await readBody(req));
+  } catch (err) {
+    sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+    return null;
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    sendJSON(res, 400, { error: 'body must be an object' });
+    return null;
+  }
+  return body as Record<string, unknown>;
+}
+
+/**
+ * The config to start with, and anything worth saying about how it was reached.
+ *
+ * A settings file that can't be read, or holds a value the config refuses, is
+ * set aside rather than allowed to stop the dashboard: the settings page is
+ * where it gets fixed, and it has to be up for that. The page normally refuses
+ * such a value before saving it, so this is for a file edited by hand.
+ */
+function configure(sources: EnvSources): { config: Config; warnings: string[] } {
+  const warnings: string[] = [];
+  if (sources.settingsError) {
+    warnings.push(`${sources.settingsError}. The dashboard is ignoring it; saving on the settings page writes a fresh one.`);
+  }
+  try {
+    return { config: loadConfig(layerEnv(sources)), warnings };
+  } catch (error) {
+    if (Object.keys(sources.settings).length === 0) throw error;
+    warnings.push(
+      `\`${sources.settingsPath}\` has a value the dashboard can't use, so it is ignoring the whole file: ` +
+        `${(error as Error).message}. Fix it on the settings page.`,
+    );
+    return { config: loadConfig(layerEnv(sources, {})), warnings };
+  }
+}
+
+/** The few facts the menu bar app shows, without the whole state. */
+function statusOf(state: DashboardState, config: Config): Record<string, unknown> {
+  const last = state.agentRun.last;
+  return {
+    dataDir: config.dataDir,
+    profile: config.profile,
+    setupNeeded: state.brief.generatedAt === null && last === null,
+    restartPending: state.restart !== null,
+    brief: {
+      generatedAt: state.brief.generatedAt,
+      ageHours: state.brief.ageHours,
+      stale: state.brief.stale,
+      open: state.stats.open,
+    },
+    agent: {
+      enabled: state.agentRun.enabled,
+      running: last?.status === 'running',
+      nextRunAt: state.agentRun.schedule?.nextRunAt ?? null,
+      last: last
+        ? { id: last.id, status: last.status, startedAt: last.startedAt, endedAt: last.endedAt, error: last.error }
+        : null,
+    },
+    waitingOnYou: state.board.enabled ? state.board.counts.you : 0,
+  };
+}
+
 export interface StartedServer {
   url: string;
   close(): Promise<void>;
 }
 
+export interface ServerOptions {
+  /**
+   * Called when saved settings can take effect: straight after the save, or once
+   * the morning agent or the assistant has finished what it was doing. `runServer`
+   * closes this instance and starts another, which reads the new settings. Without
+   * it, the page says to restart the dashboard by hand.
+   */
+  onRestart?: () => void;
+}
+
 /**
  * Start listening. `env` is the environment to configure from; the default reads
- * the real one over the repo's `.env`, and a test passes its own so a developer's
- * private file can't leak into it.
+ * the real one over the store's settings over the repo's `.env`, and a test
+ * passes its own so a developer's private file can't leak into it. The store's
+ * settings are read either way.
  */
-export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServer> {
-  const config = env ? loadConfig(env) : loadConfig();
+export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOptions = {}): Promise<StartedServer> {
+  // Everything a setting can come from, read again whenever the settings page
+  // asks: a save lands in the store before the restart that applies it.
+  const processEnv = env ?? process.env;
+  const dotenv = env ? {} : readDotEnv();
+  const readSources = (): EnvSources => envSources(processEnv, dotenv);
+  const { config, warnings: configWarnings } = configure(readSources());
+  for (const warning of configWarnings) console.warn(`[daily-focus] ${warning}`);
+
   const store = new Store(config);
   await store.ensureDataDir();
+
+  // The prompt, the schema and the assistant's instructions, linked to this copy so
+  // the agent follows whichever version is running, wherever it was installed from.
+  for (const outcome of await linkStore(config)) {
+    if (outcome.result === 'linked') console.log(`[daily-focus] linked ${describeLink(config, outcome)}`);
+    if (outcome.result === 'failed') console.warn(`[daily-focus] could not link ${outcome.name}: ${outcome.detail}`);
+  }
+
+  /**
+   * Whether saved settings are waiting for a restart. The agent's clock starts
+   * nothing new meanwhile, and the endpoints that would start a process refuse,
+   * so the wait can only get shorter.
+   */
+  let restart: DashboardState['restart'] = null;
+  let restarting = false;
 
   // The client is built from `client/` into `public/app.js`, which is not
   // tracked. A checkout that skipped the build would serve a blank page with
@@ -150,12 +261,35 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // Runs a CLI on request and broadcasts as its answer streams in. It writes
   // nothing to the store but its own log: what the assistant says stays in the
   // chat, and never becomes a note or an action on the item.
-  const assistant = new Assistant(config, { onChange: () => void broadcast() });
+  const assistant = new Assistant(config, {
+    onChange: () => {
+      void broadcast();
+      restartWhenIdle();
+    },
+  });
 
   // The morning agent, on the dashboard's clock and when the user asks for a
   // fresh brief. It writes the brief itself, and the watcher below picks it up
   // as it would any other; the runner keeps only its own log.
-  const agent = new AgentRunner(config, { onChange: () => void broadcast() });
+  const agent = new AgentRunner(config, {
+    onChange: () => {
+      void broadcast();
+      restartWhenIdle();
+    },
+  });
+
+  /** Ask for a restart to apply saved settings: now if nothing is running, otherwise once nothing is. */
+  function requestRestart(): void {
+    restart = options.onRestart ? 'waiting' : 'manual';
+    restartWhenIdle();
+  }
+
+  function restartWhenIdle(): void {
+    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy) return;
+    restarting = true;
+    // After the reply that asked for it has gone out.
+    setImmediate(() => options.onRestart?.());
+  }
 
   /**
    * State plus the things the store doesn't own: the asset fingerprint the client
@@ -178,7 +312,8 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       tickets: tickets.view(actions, now),
       assistant: assistant.view(),
       agentRun: agent.view(now),
-      setupWarnings: linkWarning ? [linkWarning] : [],
+      setupWarnings: [...configWarnings, ...(linkWarning ? [linkWarning] : [])],
+      restart,
       assetVersion,
     };
   }
@@ -292,7 +427,7 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   // asleep, but a check each time it is awake does.
   void agent.tick();
   const agentClock = setInterval(() => {
-    void agent.tick();
+    if (restart !== 'waiting') void agent.tick();
   }, AGENT_CLOCK_MS);
   agentClock.unref();
 
@@ -347,6 +482,17 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
 
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     const path = url.pathname;
+
+    // Saved settings waiting on a restart: nothing new starts until it has
+    // happened, or the wait could stretch out indefinitely.
+    if (
+      restart === 'waiting' &&
+      req.method === 'POST' &&
+      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask'].includes(path)
+    ) {
+      sendJSON(res, 409, { error: 'the dashboard is restarting to apply new settings; try again in a moment' });
+      return;
+    }
 
     if (path === '/api/state' && req.method === 'GET') {
       sendState(res, await buildState());
@@ -672,6 +818,100 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       return;
     }
 
+    if (path === '/api/settings' && req.method === 'GET') {
+      sendJSON(res, 200, { ...describeSettings(readSources()), restart });
+      return;
+    }
+
+    if (path === '/api/settings' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      const values = body.values;
+      if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+        sendJSON(res, 400, { error: '"values" must be an object of settings' });
+        return;
+      }
+      const sources = readSources();
+      const applied = applySettingsChange(sources, values as SettingsChange);
+      if ('error' in applied) {
+        sendJSON(res, 400, { error: applied.error });
+        return;
+      }
+      const changed = JSON.stringify(Object.entries(applied.settings).sort()) !== JSON.stringify(Object.entries(sources.settings).sort());
+      if (changed) {
+        await saveSettings(sources.settingsPath, applied.settings);
+        requestRestart();
+      }
+      sendJSON(res, 200, { ...describeSettings(readSources()), restart });
+      void broadcast();
+      return;
+    }
+
+    // The two files in the user's words, whole, for the editor that asked: the
+    // private part of focus.md included, which is why this is a request of its
+    // own and never part of the state every tab is sent.
+    const textFile = TEXT_FILES[path];
+    if (textFile && req.method === 'GET') {
+      const { text, version } = await readEditable(config[textFile.file]);
+      const template = textFile.file === 'focusFile' ? FOCUS_TEMPLATE : sourcesTemplate(config.profile);
+      sendJSON(res, 200, { text, version, template });
+      return;
+    }
+
+    if (textFile && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      const { text, version } = body;
+      if (typeof text !== 'string' || typeof version !== 'string') {
+        sendJSON(res, 400, { error: '"text" and "version" are required: the text, and the version it was edited from' });
+        return;
+      }
+      const result = await saveEditable(config[textFile.file], text, version);
+      if (!result.saved) {
+        sendJSON(res, 409, {
+          error: `${textFile.name} changed ${result.version === ABSENT ? 'on disk: it was deleted' : 'on disk'} since you opened it`,
+          text: result.text,
+          version: result.version,
+        });
+        return;
+      }
+      sendJSON(res, 200, { version: result.version });
+      void broadcast();
+      return;
+    }
+
+    if (path === '/api/focus/objective' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      const { objective, blocker } = body;
+      for (const [name, value] of [['objective', objective], ['blocker', blocker]] as const) {
+        if (value !== undefined && value !== null && typeof value !== 'string') {
+          sendJSON(res, 400, { error: `"${name}" must be text, or null to clear it` });
+          return;
+        }
+      }
+      const current = await readEditable(config.focusFile);
+      const next = setFocusFields(
+        current.text,
+        { objective: (objective as string | null | undefined) ?? null, blocker: (blocker as string | null | undefined) ?? null },
+        FOCUS_TEMPLATE,
+      );
+      const result = await saveEditable(config.focusFile, next, current.version);
+      if (!result.saved) {
+        sendJSON(res, 409, { error: 'focus.md changed on disk while saving; try again' });
+        return;
+      }
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
+    if (path === '/api/status' && req.method === 'GET') {
+      sendJSON(res, 200, statusOf(await buildState(), config));
+      return;
+    }
+
     if (path === '/api/health' && req.method === 'GET') {
       sendJSON(res, 200, { ok: true, dataDir: config.dataDir });
       return;
@@ -733,12 +973,51 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   };
 }
 
-// Only auto-start when run directly, so tests can import startServer without binding a port.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  const started = await startServer();
+/**
+ * Run the dashboard until the process is told to stop, restarting it in place
+ * whenever saved settings ask for that. In place rather than by exiting, so it
+ * works the same however it was started: a terminal, `npm run dev`'s watcher,
+ * the LaunchAgent, or the menu bar app, none of which has to know about it.
+ */
+export async function runServer(): Promise<void> {
+  // Before anything reads PATH: a dashboard started by launchd or an app has
+  // none of the CLIs it runs on its PATH until this finds your shell's.
+  hydratePath();
+
+  let current: StartedServer | null = null;
+  let stopping = false;
+
+  async function start(): Promise<void> {
+    current = await startServer(undefined, { onRestart: () => void restart() });
+  }
+
+  async function restart(): Promise<void> {
+    console.log('[daily-focus] restarting to apply new settings');
+    const previous = current;
+    current = null;
+    await previous?.close();
+    if (stopping) return;
+    try {
+      await start();
+    } catch (err) {
+      // The page checked the settings before saving them, so this is something
+      // else entirely; exiting non-zero lets a LaunchAgent or the app try again.
+      console.error(`[daily-focus] could not restart: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  }
+
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
-      void started.close().then(() => process.exit(0));
+      stopping = true;
+      void (current?.close() ?? Promise.resolve()).then(() => process.exit(0));
     });
   }
+
+  await start();
+}
+
+// Only auto-start when run directly, so tests can import startServer without binding a port.
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  await runServer();
 }

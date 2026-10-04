@@ -890,10 +890,17 @@ export interface DashboardState {
   warnings: string[];
   /**
    * What is wrong with how this dashboard is set up rather than with the brief:
-   * today, links in the store that don't point at this checkout (see `src/links.ts`).
-   * Markdown written by this repo, never by the agent.
+   * links in the store that don't point at this checkout (see `src/links.ts`), or
+   * a settings file it couldn't use. Markdown written by this repo, never by the
+   * agent.
    */
   setupWarnings: string[];
+  /**
+   * Settings were saved and the dashboard restarts to apply them as soon as
+   * nothing is running: `waiting` while the morning agent or the assistant is,
+   * `manual` when nothing here can restart it and the user has to.
+   */
+  restart: 'waiting' | 'manual' | null;
   /** Server time at render, so the client can place the "now" marker without clock skew. */
   now: string;
   /**
