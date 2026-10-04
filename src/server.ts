@@ -312,7 +312,6 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     ]);
     const sources = readSources();
     const setup = await setupState(config, {
-      briefExists: state.brief.generatedAt !== null,
       profileChosen: Boolean(layerEnv(sources).DAILY_FOCUS_PROFILE?.trim()),
     });
     return {

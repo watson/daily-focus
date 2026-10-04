@@ -63,10 +63,39 @@ test('the setup state counts placeholders without carrying the text', async () =
   const dir = await temp();
   const config = loadConfig({ DAILY_FOCUS_DATA: dir });
   await writeFile(config.sourcesFile, sourcesTemplate('work'));
-  const setup = await setupState(config, { briefExists: false, profileChosen: true });
+  const setup = await setupState(config, { profileChosen: true });
   assert.equal(setup.needed, true);
   assert.equal(setup.profile, 'work');
   assert.equal(setup.sources.exists, true);
   assert.ok(setup.sources.placeholders > 0);
   assert.ok(!JSON.stringify(setup).includes('Identity'), 'never the text itself');
+});
+
+test('a brief that is there but broken is not a new store', async () => {
+  const dir = await temp();
+  const config = loadConfig({ DAILY_FOCUS_DATA: dir });
+  await writeFile(config.itemsFile, '{ not json');
+  assert.equal((await setupState(config, { profileChosen: true })).needed, false, 'its banner reports it instead');
+});
+
+test('a CLI path set for the agent is used whatever the file is called, and a wrong one falls back to PATH', async () => {
+  const dir = await temp();
+  const wrapper = join(dir, 'morning-agent');
+  await writeFile(wrapper, '#!/bin/sh\n');
+  await chmod(wrapper, 0o755);
+  const named = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: wrapper });
+  assert.equal((await setupState(named, { profileChosen: true })).clis.claude, wrapper);
+
+  const bin = join(dir, 'bin');
+  await mkdir(bin);
+  await writeFile(join(bin, 'claude'), '#!/bin/sh\n');
+  await chmod(join(bin, 'claude'), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = bin;
+  try {
+    const wrong = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: join(dir, 'gone') });
+    assert.equal((await setupState(wrong, { profileChosen: true })).clis.claude, join(bin, 'claude'));
+  } finally {
+    process.env.PATH = path;
+  }
 });
