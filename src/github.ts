@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { unreachable } from './failure.ts';
 import { laterISO } from './time.ts';
 import type {
   CheckState,
@@ -54,11 +55,13 @@ export class GhMissingError extends Error {
   }
 }
 
-/** gh ran, but had no token to give. */
+/** gh ran, but had no token to give. `detail` is everything it said, where the message has its first line. */
 export class GhAuthError extends Error {
-  constructor(message: string) {
+  readonly detail: string;
+  constructor(message: string, detail = '') {
     super(message);
     this.name = 'GhAuthError';
+    this.detail = detail;
   }
 }
 
@@ -134,11 +137,14 @@ export async function ghToken(ghPath: string, login: string | null): Promise<str
   const { stdout, stderr, code } = await gh(ghPath, args);
   const token = stdout.trim();
   if (code !== 0 || token === '') {
-    const detail = stderr.trim().split('\n')[0] ?? '';
+    const lines = stderr.trim().split('\n');
+    const detail = lines[0] ?? '';
     throw new GhAuthError(
       login
         ? `gh has no login for ${login} on this machine (${detail || 'no token'}) — run \`gh auth login\` as that account`
         : `gh is not logged in to github.com (${detail || 'no token'}) — run \`gh auth login\``,
+      // The message quotes the first line; the rest is only worth sending when there is one.
+      lines.length > 1 ? stderr.trim() : '',
     );
   }
   return token;
@@ -160,13 +166,19 @@ export interface GraphQLResult<T> {
   rateLimitRemaining: number | null;
 }
 
-/** The request itself failed: network, auth, or a non-JSON reply. */
+/**
+ * The request itself failed: network, auth, or a non-JSON reply. The network's
+ * own error is kept as the `cause`, and anything else worth reading — a reply
+ * longer than the message quotes — as `detail`.
+ */
 export class GitHubRequestError extends Error {
   readonly status: number | null;
-  constructor(message: string, status: number | null = null) {
-    super(message);
+  readonly detail: string;
+  constructor(message: string, status: number | null = null, { cause, detail = '' }: { cause?: unknown; detail?: string } = {}) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = 'GitHubRequestError';
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -205,7 +217,7 @@ export async function graphql<T>(
       signal: combined,
     });
   } catch (err) {
-    throw new GitHubRequestError(`GitHub request failed: ${(err as Error).message}`);
+    throw new GitHubRequestError(unreachable(err, new URL(GRAPHQL_URL).host), null, { cause: err });
   }
 
   const remaining = Number(res.headers.get('x-ratelimit-remaining'));
@@ -213,15 +225,22 @@ export async function graphql<T>(
 
   if (res.status === 401) throw new GitHubRequestError('GitHub rejected the token (401) — run `gh auth login` again', 401);
   if (!res.ok) {
-    const text = (await res.text().catch(() => '')).slice(0, 200);
-    throw new GitHubRequestError(`GitHub answered ${res.status}${text ? `: ${text}` : ''}`, res.status);
+    const reply = await res.text().catch(() => '');
+    const text = reply.slice(0, 200);
+    // The request id is what GitHub's support asks for, and the rest of a long
+    // reply is often the only place that says which gateway gave up.
+    const id = res.headers.get('x-github-request-id');
+    const detail = [id ? `x-github-request-id: ${id}` : '', reply.length > text.length ? reply.trim() : '']
+      .filter(Boolean)
+      .join('\n\n');
+    throw new GitHubRequestError(`GitHub answered ${res.status}${text ? `: ${text}` : ''}`, res.status, { detail });
   }
 
   let body: { data?: T; errors?: GraphQLError[] };
   try {
     body = (await res.json()) as typeof body;
   } catch (err) {
-    throw new GitHubRequestError(`GitHub returned unreadable JSON: ${(err as Error).message}`, res.status);
+    throw new GitHubRequestError(`GitHub returned unreadable JSON: ${(err as Error).message}`, res.status, { cause: err });
   }
   return { data: body.data ?? null, errors: body.errors ?? [], rateLimitRemaining };
 }

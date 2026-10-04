@@ -15,6 +15,7 @@
 
 import type { Config } from './config.ts';
 import { CalendarHelperError, parseCalendarFacts, runHelper, selectEvents, type CalendarFacts } from './calendar.ts';
+import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import type { CalendarState } from './types.ts';
 
@@ -36,13 +37,15 @@ export class CalendarBoard {
   readonly #onChange: () => void;
 
   #facts: CalendarFacts | null = null;
-  #problem: string | null = null;
+  /** Why the last read failed, when it did. */
+  #failure: Failure | null = null;
+  /** Reads in a row that failed, which also spaces the next one out. */
+  #streak: Streak | null = null;
   #warnings: string[] = [];
 
   #reading: Promise<void> | null = null;
   #timer: NodeJS.Timeout | null = null;
   #audience = 0;
-  #failures = 0;
   #stopped = false;
   #lastReadAt = 0;
 
@@ -95,8 +98,8 @@ export class CalendarBoard {
 
     this.#reading = this.#read()
       .catch((err: unknown) => {
-        this.#problem = `The calendar read hit an unexpected error: ${(err as Error).message}`;
-        this.#failures++;
+        this.#failure = { message: `The calendar read hit an unexpected error: ${(err as Error).message}`, detail: unexpectedDetail(err) };
+        this.#streak = extend(this.#streak);
         console.error(`[daily-focus] calendar read failed: ${(err as Error).stack ?? String(err)}`);
       })
       .finally(() => {
@@ -105,7 +108,9 @@ export class CalendarBoard {
         if (this.#audience > 0 && !this.#stopped) this.#schedule();
         this.#onChange();
       });
-
+    // Said at the start as well as the end, as the boards do, so a banner's
+    // Retry shows that it is retrying.
+    this.#onChange();
     return this.#reading;
   }
 
@@ -114,11 +119,11 @@ export class CalendarBoard {
     try {
       const facts = await this.#deps.run(appPath, addresses);
       this.#facts = facts;
-      this.#problem = null;
-      this.#failures = 0;
+      this.#failure = null;
+      this.#streak = null;
       await writeJsonAtomic(this.#config.calendarFile, facts);
     } catch (err) {
-      this.#failures++;
+      this.#streak = extend(this.#streak);
       const message =
         err instanceof CalendarHelperError
           ? err.message
@@ -126,23 +131,32 @@ export class CalendarBoard {
       // A failed read keeps the previous answer, exactly as a failed account keeps
       // its rows on the board. Say so either way — a stale agenda that looks fresh
       // is the thing worth avoiding.
-      this.#problem = this.#facts
-        ? `${message}. Showing the last good read.`
-        : `${message}. Showing the events from this morning's brief instead.`;
+      this.#failure = {
+        message: this.#facts
+          ? `${message}. Showing the last good read.`
+          : `${message}. Showing the events from this morning's brief instead.`,
+        detail: errorDetail(err),
+      };
     }
   }
 
   /** The agenda as it stands, derived on every read rather than stored. */
   state(): CalendarState {
     if (!this.enabled) {
-      return { events: [], live: false, fetchedAt: null, problem: null, warnings: [] };
+      return { events: [], live: false, fetchedAt: null, problem: null, failure: null, warnings: [] };
     }
+    const reading = this.#reading !== null;
+    const failure = this.#failure
+      ? toReadFailure(this.#failure, this.#streak, this.#stopped ? null : this.#lastReadAt + this.#intervalMs(), reading)
+      : null;
     if (!this.#facts) {
       return {
         events: [],
         live: false,
         fetchedAt: null,
-        problem: this.#problem ?? 'The calendar has not been read yet.',
+        // A failure says why there is nothing; with none, there just hasn't been a read.
+        problem: failure ? null : 'The calendar has not been read yet.',
+        failure,
         warnings: this.#warnings,
       };
     }
@@ -170,17 +184,19 @@ export class CalendarBoard {
         fetchedAt: this.#facts.generatedAt,
         problem:
           'None of the configured calendars exist in Calendar.app, so the brief’s events are being shown instead.',
+        failure,
         warnings,
       };
     }
 
-    return { events, live: true, fetchedAt: this.#facts.generatedAt, problem: this.#problem, warnings };
+    return { events, live: true, fetchedAt: this.#facts.generatedAt, problem: null, failure, warnings };
   }
 
   #intervalMs(): number {
     const base = this.#config.calendar.pollMinutes * 60_000;
-    if (this.#failures === 0) return base;
-    return Math.min(base * 2 ** Math.min(this.#failures, 6), MAX_BACKOFF_MS);
+    const failures = this.#streak?.attempts ?? 0;
+    if (failures === 0) return base;
+    return Math.min(base * 2 ** Math.min(failures, 6), MAX_BACKOFF_MS);
   }
 
   #dueIn(): number {

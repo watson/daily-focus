@@ -133,6 +133,7 @@ export interface Handlers {
   unpark(id: string): void;
   refreshBoard(): void;
   refreshTickets(): void;
+  refreshCalendar(): void;
   ask(id: string, body: { action?: string; text?: string }): void;
   stopAssistant(id: string): void;
   runAgent(): void;

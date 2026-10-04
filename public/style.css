@@ -464,6 +464,79 @@ body[data-view='tickets'] #brief-refresh {
   align-self: center;
 }
 
+/*
+ * A read that keeps failing: the banner's one line as a fold, with how long, why
+ * and a Retry inside. Shared with the agenda's note, which brings its own box.
+ */
+.failure {
+  display: block;
+}
+.failure__summary {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  list-style: none;
+}
+.failure__summary::-webkit-details-marker {
+  display: none;
+}
+.failure__summary::after {
+  content: '▸';
+  flex: none;
+  color: var(--ink-3);
+}
+.failure[open] > .failure__summary::after {
+  content: '▾';
+}
+.failure__summary:hover::after {
+  color: var(--ink-1);
+}
+.failure__message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Under the message, not under the icon. */
+.banner .failure__body {
+  margin-left: 20px;
+}
+.failure__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.agenda__note .failure__facts {
+  font-size: inherit;
+}
+.failure__retry[aria-busy='true'] {
+  cursor: progress;
+}
+.failure__detail {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 16em;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agenda__note .failure__detail {
+  padding: 6px 8px;
+  background: var(--surface);
+  font-size: 10.5px;
+}
+
 /* A run of the morning agent the dashboard started, and what it reported. */
 .agent-run__progress {
   display: block;

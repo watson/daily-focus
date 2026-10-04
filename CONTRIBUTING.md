@@ -62,6 +62,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
 | `src/jira.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, ticket classification, and polling |
+| `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
@@ -111,6 +112,7 @@ see `src/server.ts` for request validation and additional session/calendar route
 | `POST /api/actions` | `{id, action, until?, text?}`. Appends to the log, returns fresh state |
 | `POST /api/board/refresh` | Polls GitHub now. Returns fresh state once it has |
 | `POST /api/tickets/refresh` | Reads Jira now. Returns fresh state once it has |
+| `POST /api/calendar/refresh` | Reads the calendar now, for the agenda's Retry. Returns fresh state once it has |
 | `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The dashboard's only write to anything outside this machine |
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |

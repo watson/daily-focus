@@ -11,11 +11,16 @@
  */
 
 import assert from 'node:assert/strict';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import {
   ANY_PR,
+  AcliAuthError,
   OPEN_PR,
+  acliIdentity,
   allPullRequestsClosed,
   buildJql,
   projectOf,
@@ -365,4 +370,23 @@ test('a mixed report fails on the item that failed', () => {
     successCount: 1,
   };
   assert.throws(() => readTransitionReport(JSON.stringify(mixed), 'A-2', 'Done'), /nope/);
+});
+
+/* ---------- what a refusal keeps ---------- */
+
+test('a refused session keeps one line for the page and the whole transcript for the details', async (t) => {
+  // A stand-in acli: real enough to exit non-zero with a complaint over two lines.
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-acli-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const acli = join(dir, 'acli');
+  await writeFile(acli, '#!/bin/sh\necho "✗ Error: not logged in" >&2\necho "  run acli jira auth login to sign in to acme.atlassian.net" >&2\nexit 1\n');
+  await chmod(acli, 0o755);
+
+  const err = await acliIdentity(acli).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  assert.ok(err instanceof AcliAuthError);
+  assert.equal(err.message, 'acli has no Jira session (not logged in) — run `acli jira auth login`');
+  assert.equal(err.detail, `$ ${acli} jira auth status\n✗ Error: not logged in\n  run acli jira auth login to sign in to acme.atlassian.net`);
 });

@@ -187,10 +187,39 @@ export interface AgendaSource {
   live: boolean;
   /** When the calendar was last read. Null when the brief is the source. */
   fetchedAt: string | null;
-  /** Why the live agenda isn't in use, or why it may be stale. */
+  /**
+   * Why the live agenda isn't in use when no read has failed: there has been no
+   * read yet, or none of the configured calendars exists.
+   */
   problem: string | null;
+  /** The last read failed, so these events are older than they look, or the brief's. */
+  failure: ReadFailure | null;
   /** Setup problems worth fixing that aren't stopping it working. */
   warnings: string[];
+}
+
+/**
+ * A read that keeps failing, as its banner tells it: `message` is the one line
+ * on the page, and the rest waits behind a click for whoever wants to know why.
+ * Shared by the three pollers: GitHub, Jira and the calendar.
+ */
+export interface ReadFailure {
+  /** What failed and, where there is something to do, what to do. Plain text: it quotes upstream errors. */
+  message: string;
+  /**
+   * What was underneath, verbatim and possibly several lines: an error's chain
+   * of causes, a command and what it printed, a stack. Empty when the message is
+   * all there was.
+   */
+  detail: string;
+  /** When the first failed attempt of this unbroken run was made. */
+  since: string;
+  /** Failed attempts in a row, the latest included. */
+  attempts: number;
+  /** When the poller will try again on its own, if nobody asks sooner. Null while it is trying. */
+  retryAt: string | null;
+  /** An attempt is in flight now. */
+  retrying: boolean;
 }
 
 /** What the calendar poller knows: where the events came from, and the events. */
@@ -486,7 +515,13 @@ export interface BoardRow extends PullRequest {
 export interface BoardState {
   enabled: boolean;
   /** Why the board can't run at all right now, when it can't: no gh, not logged in. */
-  reason: string | null;
+  reason: ReadFailure | null;
+  /**
+   * Accounts the last poll couldn't read, one entry per distinct error, so two
+   * accounts cut off by the same outage say so once. Their rows stay from the
+   * last poll that could. Empty when `reason` is set, which says it for them.
+   */
+  failures: ReadFailure[];
   fetchedAt: string | null;
   fetching: boolean;
   accounts: BoardAccount[];
@@ -620,8 +655,8 @@ export interface InProgressTicket extends Ticket {
 /** The ticket board as the client sees it. */
 export interface TicketBoardState {
   enabled: boolean;
-  /** Why nothing can be read at all: no acli, or acli not logged in. */
-  reason: string | null;
+  /** Why the last read failed: no acli, acli not logged in, or a search Jira refused. */
+  reason: ReadFailure | null;
   fetchedAt: string | null;
   fetching: boolean;
   /** Whoever `acli` is authenticated as, for the status line. Null when unknown. */

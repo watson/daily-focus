@@ -5,6 +5,7 @@ import { h, type JSX } from 'preact';
 import type { DashboardState, InProgressTicket, TicketBoardState, TicketRow } from '../src/types.ts';
 import { banner } from './banners.ts';
 import { el } from './el.ts';
+import { failureNotice } from './failure.ts';
 import { formatDay, formatTime } from './format.ts';
 import { cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
@@ -152,7 +153,23 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
 
   // In both views: they are about whether the read can be trusted, and that is
   // as true of the list of work in progress as of the list of what is wrong.
-  if (board.reason) parts.push(banner('critical', '!', board.reason));
+  if (board.reason) {
+    parts.push(
+      failureNotice(
+        board.reason,
+        {
+          fold: 'failure:tickets',
+          className: 'banner banner--critical',
+          icon: '!',
+          lastGood: board.fetchedAt,
+          now: new Date(state.now),
+          onRetry: () => handlers.refreshTickets(),
+        },
+        ui,
+        handlers,
+      ),
+    );
+  }
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
   if (mode === 'working') parts.push(...workingOnView(board, inProgress, state, ui, handlers));

@@ -5,6 +5,7 @@ import { h, type ComponentChild, type JSX } from 'preact';
 import type { BoardRow, BoardState, CourtReason, DashboardState, PendingCheck } from '../src/types.ts';
 import { banner } from './banners.ts';
 import { el } from './el.ts';
+import { failureNotice } from './failure.ts';
 import { formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
 import { cssId, onCard, renderSnoozeMenu, rowPills, sourceColor, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
@@ -39,7 +40,14 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
   }
 
   const parts: JSX.Element[] = [];
-  if (board.reason) parts.push(banner('critical', '!', board.reason));
+  const retry = { icon: '!', lastGood: board.fetchedAt, now: new Date(state.now), onRetry: () => handlers.refreshBoard() };
+  if (board.reason) {
+    parts.push(failureNotice(board.reason, { ...retry, fold: 'failure:board', className: 'banner banner--critical' }, ui, handlers));
+  }
+  // Absent from a server older than the page, as the ticket board's `inProgress` can be.
+  (board.failures ?? []).forEach((failure, i) => {
+    parts.push(failureNotice(failure, { ...retry, fold: `failure:board:${i}`, className: 'banner banner--warning' }, ui, handlers));
+  });
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
   const open = board.rows.filter((row) => row.status === 'open');

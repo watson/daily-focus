@@ -190,6 +190,7 @@ export class Store {
       live,
       fetchedAt: calendar?.fetchedAt ?? null,
       problem: calendar?.problem ?? null,
+      failure: calendar?.failure ?? null,
       warnings: calendar?.warnings ?? [],
     };
 

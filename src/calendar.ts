@@ -195,12 +195,15 @@ export function selectEvents(facts: CalendarFacts, calendarNames: readonly strin
 
 /**
  * The helper refused, never answered, or could not be launched. Its message goes
- * on screen as-is, so it says what to do rather than what macOS said.
+ * on screen as-is, so it says what to do rather than what macOS said; what macOS
+ * said is the `detail`, folded away under it for whoever is debugging.
  */
 export class CalendarHelperError extends Error {
-  constructor(message: string) {
+  readonly detail: string;
+  constructor(message: string, detail = '') {
     super(message);
     this.name = 'CalendarHelperError';
+    this.detail = detail;
   }
 }
 
@@ -232,9 +235,9 @@ export async function runHelper(appPath: string, selfAddresses: readonly string[
         timeout: HELPER_TIMEOUT_MS,
       });
     } catch (err) {
-      // The detail is for whoever is debugging, not for the agenda.
+      // The detail is for whoever is debugging, not for the agenda's one line.
       console.warn(`[daily-focus] could not launch the calendar helper: ${(err as Error).message}`);
-      throw new CalendarHelperError(`macOS couldn't launch the calendar helper at ${appPath}; the server log has the detail`);
+      throw new CalendarHelperError(`macOS couldn't launch the calendar helper at ${appPath}`, (err as Error).message);
     }
 
     const deadline = Date.now() + HELPER_TIMEOUT_MS;
@@ -250,7 +253,7 @@ export async function runHelper(appPath: string, selfAddresses: readonly string[
         const facts = parseCalendarFacts(raw);
         if (facts) return facts;
         const detail = (raw as { detail?: unknown; error?: unknown } | null) ?? {};
-        throw new CalendarHelperError(str(detail.detail) ?? str(detail.error) ?? 'the calendar helper refused');
+        throw new CalendarHelperError(str(detail.detail) ?? str(detail.error) ?? 'the calendar helper refused', text.trim());
       }
       if (Date.now() > deadline) {
         throw new CalendarHelperError(

@@ -286,6 +286,16 @@ async function refreshTickets(): Promise<void> {
   }
 }
 
+/** The same, for the calendar: only ever asked for by the agenda's Retry, so only while a read is failing. */
+async function refreshCalendar(): Promise<void> {
+  if (state.value?.agendaSource?.failure?.retrying) return;
+  try {
+    adoptState(await api.postCalendarRefresh());
+  } catch (err) {
+    showToast(`Could not refresh: ${(err as Error).message}`);
+  }
+}
+
 /**
  * Move a ticket to another status, in Jira.
  *
@@ -579,6 +589,7 @@ export const handlers: Handlers = {
   unpark: (id) => void unpark(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
+  refreshCalendar: () => void refreshCalendar(),
   ask: (id, body) => void ask(id, body),
   stopAssistant: (id) => void stopAssistant(id),
   runAgent: () => void runAgent(),

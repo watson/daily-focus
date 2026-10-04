@@ -70,6 +70,11 @@ export function postTicketsRefresh(): Promise<DashboardState> {
   return post('/api/tickets/refresh');
 }
 
+/** Ask the server to read the calendar now. Resolves once it has. */
+export function postCalendarRefresh(): Promise<DashboardState> {
+  return post('/api/calendar/refresh');
+}
+
 /**
  * Move a ticket to a status. Resolves once Jira has accepted it and the board
  * has been read back; rejects with Jira's own words when the workflow refuses,

@@ -3,9 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 
+import { errorDetail } from '../src/failure.ts';
 import {
+  GitHubRequestError,
   buildRemainingChecksQuery,
   buildSearchQuery,
+  graphql,
   isBot,
   isSamlError,
   mergeStatesFromNodes,
@@ -659,4 +662,55 @@ test('a draft is ready-at its creation, and the rollup collapses to three states
 test('a node that is not a pull request is dropped rather than thrown on', () => {
   assert.equal(normalizePullRequest({}, 'alice'), null);
   assert.equal(normalizePullRequest({ number: 1, title: 'x' }, 'alice'), null);
+});
+
+/* ---------- a request that never got an answer ---------- */
+
+/**
+ * Node's fetch rejects with "fetch failed" whatever went wrong, which is exactly
+ * what the board used to put on the page. Stubbed rather than provoked, so the
+ * test needs no network to fail to have.
+ */
+async function withFetch<T>(stub: typeof fetch, run: () => Promise<T>): Promise<T> {
+  const real = globalThis.fetch;
+  globalThis.fetch = stub;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+test('a request that never reached GitHub says why, and keeps the cause for the details', async () => {
+  const cause = Object.assign(new Error('getaddrinfo ENOTFOUND api.github.com'), { code: 'ENOTFOUND', syscall: 'getaddrinfo' });
+  const err = await withFetch(
+    async () => {
+      throw new TypeError('fetch failed', { cause });
+    },
+    () => graphql('token', '{ viewer { login } }', {}).then(
+      () => null,
+      (error: unknown) => error,
+    ),
+  );
+
+  assert.ok(err instanceof GitHubRequestError);
+  assert.equal(err.message, "couldn't reach api.github.com (the DNS lookup failed — is this machine online?)");
+  assert.match(errorDetail(err), /caused by TypeError: fetch failed\ncaused by Error: getaddrinfo ENOTFOUND api\.github\.com \(code ENOTFOUND/);
+});
+
+test("an error page keeps its line short and the rest of the page, with GitHub's request id, for the details", async () => {
+  const page = `<!DOCTYPE html><html>${'unicorn '.repeat(60)}</html>`;
+  const err = await withFetch(
+    async () => new Response(page, { status: 502, headers: { 'x-github-request-id': 'ABCD:1234' } }),
+    () => graphql('token', '{ viewer { login } }', {}).then(
+      () => null,
+      (error: unknown) => error,
+    ),
+  );
+
+  assert.ok(err instanceof GitHubRequestError);
+  assert.equal(err.status, 502);
+  assert.ok(err.message.length < 230, 'the line quotes the start of the page, not all of it');
+  assert.match(err.detail, /^x-github-request-id: ABCD:1234\n\n<!DOCTYPE html>/);
+  assert.ok(err.detail.includes('</html>'));
 });

@@ -193,8 +193,40 @@ test('a failed read keeps the rows it had, and says it is showing them', async (
 
   const state = board.view([], NOW);
   assert.equal(state.rows.length, 1);
-  assert.match(state.reason ?? '', /Jira said no/);
-  assert.match(state.reason ?? '', /last good read/);
+  assert.match(state.reason?.message ?? '', /Jira said no/);
+  assert.match(state.reason?.message ?? '', /last good read/);
+  board.stop();
+});
+
+test('a failed read keeps what acli printed for the details, and counts until a read succeeds', async () => {
+  const cfg = await config();
+  const transcript = "$ acli jira workitem search --jql '…'\n✗ Error: Jira said no\n  because the token expired";
+  const deps = fakeDeps({
+    fetches: [
+      async () => {
+        throw new JiraSearchError('Jira said no', transcript);
+      },
+      async () => {
+        throw new JiraSearchError('Jira said no', transcript);
+      },
+      ok([ticket('PROJ-1')]),
+    ],
+  });
+  const board = new TicketBoard(cfg, () => {}, deps);
+  await board.start();
+
+  let reason = board.view([], NOW).reason;
+  assert.equal(reason?.detail, transcript);
+  assert.equal(reason?.attempts, 1);
+  assert.ok(reason?.retryAt);
+
+  await board.refresh();
+  reason = board.view([], NOW).reason;
+  assert.equal(reason?.attempts, 2);
+  assert.ok(Date.parse(reason!.retryAt!) - Date.now() > 15 * 60_000, 'the next try is backed off, and says so');
+
+  await board.refresh();
+  assert.equal(board.view([], NOW).reason, null);
   board.stop();
 });
 
@@ -205,8 +237,8 @@ test('a first read that fails leaves no rows and the plain reason', async () => 
 
   const state = board.view([], NOW);
   assert.deepEqual(state.rows, []);
-  assert.match(state.reason ?? '', /Jira said no/);
-  assert.ok(!(state.reason ?? '').includes('last good read'));
+  assert.match(state.reason?.message ?? '', /Jira said no/);
+  assert.ok(!(state.reason?.message ?? '').includes('last good read'));
   board.stop();
 });
 
@@ -226,8 +258,8 @@ test('no acli and no session both say what to do, and offer the off switch', asy
     await board.start();
 
     const state = board.view([], NOW);
-    assert.match(state.reason ?? '', expected);
-    assert.match(state.reason ?? '', /DAILY_FOCUS_JIRA=off/);
+    assert.match(state.reason?.message ?? '', expected);
+    assert.match(state.reason?.message ?? '', /DAILY_FOCUS_JIRA=off/);
     // The account line would contradict the banner sitting next to it.
     assert.equal(state.account, null);
     board.stop();

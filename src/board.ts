@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import type { Config } from './config.ts';
+import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
   GhMissingError,
@@ -22,6 +23,7 @@ import type {
   PullActivity,
   PullRequest,
   PullsFile,
+  ReadFailure,
   ReviewDecision,
 } from './types.ts';
 
@@ -49,6 +51,14 @@ interface Identity {
   token: string;
 }
 
+/** What one poll is finding out, published whole once it's done. */
+interface Attempt {
+  accounts: BoardAccount[];
+  /** What lay under each failed account's error, by login. */
+  details: Map<string, string>;
+  warnings: string[];
+}
+
 /**
  * The live pull request board.
  *
@@ -72,16 +82,25 @@ export class Board {
 
   /** The last successful fetch, as on disk. */
   #file: PullsFile | null = null;
-  /** What the last attempt found out, successful or not. */
+  /**
+   * What the last attempt found out, successful or not. Replaced when an attempt
+   * ends rather than cleared when one starts, so a banner stays where it is
+   * through a poll — and one somebody opened to press Retry stays open to show
+   * how the retry went.
+   */
   #accounts: BoardAccount[] = [];
+  #accountDetails = new Map<string, string>();
   #attemptWarnings: string[] = [];
   /** Why nothing can be polled at all right now, when that's the case. */
-  #reason: string | null = null;
+  #reason: Failure | null = null;
+  /** Polls in a row that read nothing at all, which also spaces the next one out. */
+  #streak: Streak | null = null;
+  /** Each failing account's own run, by lowercased login: one can fail while the other answers. */
+  #accountStreaks = new Map<string, Streak>();
 
   #fetching: Promise<void> | null = null;
   #timer: NodeJS.Timeout | null = null;
   #audience = 0;
-  #failures = 0;
   #stopped = false;
   /** When the last poll finished, success or not. Zero until one has. */
   #lastPollAt = 0;
@@ -142,8 +161,8 @@ export class Board {
       .catch((err: unknown) => {
         // Bookkeeping errors, not GitHub ones — those are handled inside. A poll
         // that throws must still leave a board behind and say what happened.
-        this.#reason = `The board hit an unexpected error: ${(err as Error).message}`;
-        this.#failures++;
+        this.#reason = { message: `The board hit an unexpected error: ${(err as Error).message}`, detail: unexpectedDetail(err) };
+        this.#streak = extend(this.#streak);
         console.error(`[daily-focus] pull request poll failed: ${(err as Error).stack ?? String(err)}`);
       })
       .finally(() => {
@@ -170,9 +189,12 @@ export class Board {
     // The live accounts, unless there's a reason nothing was polled — then the
     // file's list would contradict the banner sitting next to it.
     const accounts = this.#reason ? [] : this.#accounts.length > 0 ? this.#accounts : (this.#file?.accounts ?? []);
+    const retrying = this.#fetching !== null;
+    const retryAt = this.#stopped ? null : Date.now() + this.#dueIn();
     return {
       enabled: this.enabled,
-      reason: this.enabled ? this.#reason : null,
+      reason: this.enabled && this.#reason ? toReadFailure(this.#reason, this.#streak, retryAt, retrying) : null,
+      failures: this.enabled && !this.#reason ? this.#accountFailures(retryAt, retrying) : [],
       fetchedAt: this.#file?.fetchedAt ?? null,
       fetching: this.#fetching !== null,
       accounts: accounts.map((account) => ({ ...account })),
@@ -184,10 +206,38 @@ export class Board {
     };
   }
 
+  /**
+   * The accounts the last poll couldn't read, one failure per distinct error.
+   * Two accounts cut off by the same outage are one problem, and two banners
+   * saying so only make it look like two.
+   */
+  #accountFailures(retryAt: number | null, retrying: boolean): ReadFailure[] {
+    const groups = new Map<string, BoardAccount[]>();
+    for (const account of this.#accounts) {
+      if (account.ok || !account.error) continue;
+      groups.set(account.error, [...(groups.get(account.error) ?? []), account]);
+    }
+    return [...groups].map(([error, members]) => {
+      const details = members.map((account) => this.#accountDetails.get(account.login) ?? '');
+      const detail =
+        new Set(details).size === 1
+          ? details[0]!
+          : members.map((account, i) => `${account.login}:\n${details[i] || '(nothing more)'}`).join('\n\n');
+      // The longest-running of them: the problem is as old as its oldest account.
+      const streaks = members.flatMap((account) => this.#accountStreaks.get(account.login.toLowerCase()) ?? []);
+      const streak =
+        streaks.length > 0
+          ? { since: Math.min(...streaks.map((s) => s.since)), attempts: Math.max(...streaks.map((s) => s.attempts)) }
+          : null;
+      const message = `${listNames(members.map((account) => account.login))}: ${error}`;
+      return toReadFailure({ message, detail }, streak, retryAt, retrying);
+    });
+  }
+
   /** Milliseconds until the next poll is due, from the last one, backoff and any hold. */
   #dueIn(): number {
     const base = this.#config.github.pollMinutes * 60_000;
-    const backoff = Math.min(MAX_BACKOFF_MS, base * 2 ** this.#failures);
+    const backoff = Math.min(MAX_BACKOFF_MS, base * 2 ** (this.#streak?.attempts ?? 0));
     const due = Math.max(this.#lastPollAt + backoff, this.#holdUntil);
     return Math.max(0, due - Date.now());
   }
@@ -209,22 +259,23 @@ export class Board {
    * account is used, and a second account being present is worth saying, since
    * "active" is whichever one was last switched to in a terminal.
    */
-  async #identities(): Promise<Identity[]> {
+  async #identities(attempt: Attempt): Promise<Identity[]> {
     const { ghPath, accounts } = this.#config.github;
 
     if (accounts.length > 0) {
-      const attempts = await Promise.allSettled(accounts.map((login) => this.#deps.token(ghPath, login)));
+      const tokens = await Promise.allSettled(accounts.map((login) => this.#deps.token(ghPath, login)));
       const found: Identity[] = [];
-      attempts.forEach((attempt, i) => {
+      tokens.forEach((token, i) => {
         const login = accounts[i]!;
-        if (attempt.status === 'fulfilled') {
+        if (token.status === 'fulfilled') {
           const account = { login, ok: true, error: null };
-          this.#accounts.push(account);
-          found.push({ account, token: attempt.value });
-        } else if (attempt.reason instanceof GhMissingError) {
-          throw attempt.reason;
+          attempt.accounts.push(account);
+          found.push({ account, token: token.value });
+        } else if (token.reason instanceof GhMissingError) {
+          throw token.reason;
         } else {
-          this.#accounts.push({ login, ok: false, error: (attempt.reason as Error).message });
+          attempt.accounts.push({ login, ok: false, error: (token.reason as Error).message });
+          attempt.details.set(login, errorDetail(token.reason));
         }
       });
       return found;
@@ -236,14 +287,14 @@ export class Board {
       throw new Error('gh is not logged in to github.com — run `gh auth login`, or set DAILY_FOCUS_GITHUB=off');
     }
     if (known.length > 1) {
-      this.#attemptWarnings.push(
+      attempt.warnings.push(
         `gh holds ${known.length} github.com accounts on this machine; polling only the active one, ${active.login}. ` +
           'Set DAILY_FOCUS_GITHUB_ACCOUNTS to poll more than one.',
       );
     }
     const token = await this.#deps.token(ghPath, null);
     const account = { login: active.login, ok: true, error: null };
-    this.#accounts.push(account);
+    attempt.accounts.push(account);
     return [{ account, token }];
   }
 
@@ -256,16 +307,20 @@ export class Board {
     }
 
     const previous = this.#file;
-    this.#accounts = [];
-    this.#attemptWarnings = [];
-    this.#reason = null;
+    const attempt: Attempt = { accounts: [], details: new Map(), warnings: [] };
+    const publish = (reason: Failure | null): void => {
+      this.#accounts = attempt.accounts;
+      this.#accountDetails = attempt.details;
+      this.#attemptWarnings = attempt.warnings;
+      this.#reason = reason;
+    };
 
     let identities: Identity[];
     try {
-      identities = await this.#identities();
+      identities = await this.#identities(attempt);
     } catch (err) {
-      this.#reason = (err as Error).message;
-      this.#failures++;
+      publish({ message: (err as Error).message, detail: errorDetail(err) });
+      this.#streak = extend(this.#streak);
       return;
     }
 
@@ -285,6 +340,7 @@ export class Board {
       if (result.status === 'rejected') {
         account.ok = false;
         account.error = (result.reason as Error).message;
+        attempt.details.set(account.login, errorDetail(result.reason));
         return;
       }
       account.login = result.value.login;
@@ -300,7 +356,7 @@ export class Board {
 
     // An account that failed this round keeps what it had last time, so one
     // account's outage doesn't make the other's PRs vanish along with it.
-    const failed = new Set(this.#accounts.filter((account) => !account.ok).map((account) => account.login.toLowerCase()));
+    const failed = new Set(attempt.accounts.filter((account) => !account.ok).map((account) => account.login.toLowerCase()));
     for (const pull of previous?.pulls ?? []) {
       if (failed.has(pull.account.toLowerCase())) pulls.push(pull);
     }
@@ -318,26 +374,30 @@ export class Board {
       }
     }
 
-    for (const account of this.#accounts) {
-      if (!account.ok && account.error) this.#attemptWarnings.push(`${account.login}: ${account.error}`);
-    }
-    this.#attemptWarnings.push(...warnings);
+    // Carried by account rather than by board, since the run of one that keeps
+    // failing goes on whatever the other is doing.
+    this.#accountStreaks = new Map(
+      [...failed].map((login) => [login, extend(this.#accountStreaks.get(login) ?? null)]),
+    );
+    attempt.warnings.push(...warnings);
 
-    if (!this.#accounts.some((account) => account.ok)) {
-      this.#failures++;
+    if (!attempt.accounts.some((account) => account.ok)) {
+      publish(null);
+      this.#streak = extend(this.#streak);
       return;
     }
 
     if (lowestRemaining !== null && lowestRemaining < RATE_LIMIT_FLOOR) {
       this.#holdUntil = Date.now() + MAX_BACKOFF_MS;
-      this.#attemptWarnings.push("Close to GitHub's rate limit; pausing the board for half an hour.");
+      attempt.warnings.push("Close to GitHub's rate limit; pausing the board for half an hour.");
     }
 
-    this.#failures = 0;
+    publish(null);
+    this.#streak = null;
     this.#file = {
       version: 1,
       fetchedAt: new Date().toISOString(),
-      accounts: this.#accounts.map((account) => ({ ...account })),
+      accounts: attempt.accounts.map((account) => ({ ...account })),
       scope: [...this.#config.github.scope],
       warnings,
       pulls,
@@ -349,6 +409,11 @@ export class Board {
       console.warn(`[daily-focus] could not write prs.json: ${(err as Error).message}`);
     }
   }
+}
+
+/** "alice", "alice and bob", "alice, bob and carol". */
+function listNames(names: readonly string[]): string {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
 /* ---------- prs.json ---------- */

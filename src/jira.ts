@@ -52,19 +52,23 @@ export class AcliMissingError extends Error {
   }
 }
 
-/** `acli` ran, but has no usable Jira session. */
+/** `acli` ran, but has no usable Jira session. `detail` is the call's whole transcript. */
 export class AcliAuthError extends Error {
-  constructor(message: string) {
+  readonly detail: string;
+  constructor(message: string, detail = '') {
     super(message);
     this.name = 'AcliAuthError';
+    this.detail = detail;
   }
 }
 
-/** A search ran and failed — bad JQL, a permission, or Jira being Jira. */
+/** A search ran and failed — bad JQL, a permission, or Jira being Jira. `detail` is the call's whole transcript. */
 export class JiraSearchError extends Error {
-  constructor(message: string) {
+  readonly detail: string;
+  constructor(message: string, detail = '') {
     super(message);
     this.name = 'JiraSearchError';
+    this.detail = detail;
   }
 }
 
@@ -111,6 +115,15 @@ async function acli(acliPath: string, args: string[]): Promise<{ stdout: string;
   }
 }
 
+/**
+ * A failed call as a terminal would have shown it: the command, then everything
+ * it printed. Its message quotes one line of this; the banner keeps the rest.
+ */
+function transcript(acliPath: string, args: readonly string[], { stdout, stderr }: { stdout: string; stderr: string }): string {
+  const command = [acliPath, ...args].map((word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`));
+  return [`$ ${command.join(' ')}`, stderr.trim(), stdout.trim()].filter(Boolean).join('\n');
+}
+
 /** The first line of a complaint, with acli's ✗ marker trimmed off. */
 function firstLine(stderr: string): string {
   return (
@@ -148,10 +161,14 @@ export interface JiraIdentity {
  * built from one would be well-formed and wrong.
  */
 export async function acliIdentity(acliPath: string): Promise<JiraIdentity> {
-  const { stdout, stderr, code } = await acli(acliPath, ['jira', 'auth', 'status']);
+  const args = ['jira', 'auth', 'status'];
+  const { stdout, stderr, code } = await acli(acliPath, args);
   if (code !== 0) {
     const detail = firstLine(stderr) || firstLine(stdout) || 'no Jira session';
-    throw new AcliAuthError(`acli has no Jira session (${detail}) — run \`acli jira auth login\``);
+    throw new AcliAuthError(
+      `acli has no Jira session (${detail}) — run \`acli jira auth login\``,
+      transcript(acliPath, args, { stdout, stderr }),
+    );
   }
   const site = /^\s*Site:\s*(\S+)\s*$/mu.exec(stdout)?.[1] ?? null;
   const account = /^\s*Email:\s*(\S+)\s*$/mu.exec(stdout)?.[1] ?? null;
@@ -239,7 +256,10 @@ async function search(
   if (paginate) args.push('--paginate');
   const { stdout, stderr, code } = await acli(acliPath, args);
   if (code !== 0) {
-    throw new JiraSearchError(firstLine(stderr) || firstLine(stdout) || 'the Jira search failed');
+    throw new JiraSearchError(
+      firstLine(stderr) || firstLine(stdout) || 'the Jira search failed',
+      transcript(acliPath, args, { stdout, stderr }),
+    );
   }
   let parsed: unknown;
   try {
@@ -248,7 +268,10 @@ async function search(
     // A zero exit with unreadable output is not an empty result, and must not be
     // allowed to read as one: an empty answer is what this board's every failure
     // mode looks like from the outside.
-    throw new JiraSearchError(`could not read acli's answer as JSON (${stdout.trim().slice(0, 120) || 'empty'})`);
+    throw new JiraSearchError(
+      `could not read acli's answer as JSON (${stdout.trim().slice(0, 120) || 'empty'})`,
+      transcript(acliPath, args, { stdout, stderr }),
+    );
   }
   if (!Array.isArray(parsed)) throw new JiraSearchError("acli's answer was not a list of work items");
   return parsed;
@@ -471,14 +494,16 @@ export function allPullRequestsClosed(dev: DevPullRequests | null): boolean {
  * confirmed settled — but only the first is a fault worth a different warning.
  */
 export async function fetchDevPullRequests(acliPath: string, key: string): Promise<DevPullRequests | null> {
-  const { stdout, stderr, code } = await acli(acliPath, [
+  const args = [
     'jira', 'workitem', 'view', key,
     '--fields', DEV_FIELD,
     '--json',
-  ]);
+  ];
+  const { stdout, stderr, code } = await acli(acliPath, args);
   if (code !== 0) {
     throw new JiraSearchError(
       firstLine(stderr) || firstLine(stdout) || `could not read the development panel for ${key}`,
+      transcript(acliPath, args, { stdout, stderr }),
     );
   }
   let parsed: unknown;

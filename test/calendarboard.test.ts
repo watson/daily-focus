@@ -109,7 +109,8 @@ test('a failed read keeps the previous answer and says so', async () => {
   const state = board.state();
   assert.equal(state.live, true, 'the last good read still stands');
   assert.deepEqual(state.events.map((e) => e.title), ['standup']);
-  assert.match(state.problem ?? '', /Showing the last good read/);
+  assert.match(state.failure?.message ?? '', /Showing the last good read/);
+  assert.equal(state.problem, null, 'the failure says it; nothing else needs to');
 });
 
 test('a first read that fails falls back to the brief and explains', async () => {
@@ -124,7 +125,46 @@ test('a first read that fails falls back to the brief and explains', async () =>
 
   const state = board.state();
   assert.equal(state.live, false);
-  assert.match(state.problem ?? '', /events from this morning's brief/);
+  assert.match(state.failure?.message ?? '', /events from this morning's brief/);
+  assert.equal(state.problem, null, 'not "has not been read yet": it has, and it failed');
+});
+
+test('a helper that would not launch keeps what macOS said behind the line', async () => {
+  const board = new CalendarBoard(
+    await config(),
+    () => {},
+    deps(async () => {
+      throw new CalendarHelperError("macOS couldn't launch the calendar helper at /x/dfcal.app", 'Command failed: /usr/bin/open -n -a /x/dfcal.app\nLSOpenURLsWithRole() failed with error -10810');
+    }),
+  );
+  await board.start();
+
+  const failure = board.state().failure;
+  assert.equal(failure?.message, "macOS couldn't launch the calendar helper at /x/dfcal.app. Showing the events from this morning's brief instead.");
+  assert.match(failure?.detail ?? '', /error -10810/);
+  assert.equal(failure?.attempts, 1);
+});
+
+test('a read in flight says the failure is being retried', async () => {
+  let release: (() => void) | null = null;
+  let attempt = 0;
+  const board = new CalendarBoard(
+    await config(),
+    () => {},
+    deps(async () => {
+      if (++attempt > 1) await new Promise<void>((resolve) => (release = resolve));
+      throw new CalendarHelperError('the helper wrote nothing');
+    }),
+  );
+  await board.start();
+  assert.equal(board.state().failure?.retrying, false);
+
+  const read = board.refresh();
+  while (!release) await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(board.state().failure?.retrying, true);
+  (release as () => void)();
+  await read;
+  assert.equal(board.state().failure?.attempts, 2);
 });
 
 test('warns when no addresses are configured, since declines then still block', async () => {
@@ -147,5 +187,5 @@ test('notifies on every read so open tabs see the change', async () => {
 
   await board.start();
   await board.refresh();
-  assert.equal(changes, 2);
+  assert.equal(changes, 4, 'as each read starts, so a retry shows, and as it lands');
 });

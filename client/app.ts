@@ -58,7 +58,7 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
       el(
         'aside',
         { class: 'layout__side', 'aria-label': "Today's agenda" },
-        el('div', { id: 'agenda' }, current && view === 'today' ? renderAgenda(current) : null),
+        el('div', { id: 'agenda' }, current && view === 'today' ? renderAgenda(current, ui, handlers) : null),
       ),
       current
         ? h(Flyout, { row, run, state: current, ui, handlers })

@@ -385,6 +385,14 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
       return;
     }
 
+    if (path === '/api/calendar/refresh' && req.method === 'POST') {
+      // The same again, for the agenda's Retry: a failed read otherwise waits
+      // out its backoff, and the calendar has no other way to be asked.
+      await calendar.refresh();
+      sendState(res, await buildState());
+      return;
+    }
+
     if (path === '/api/tickets/transition' && req.method === 'POST') {
       let body: unknown;
       try {

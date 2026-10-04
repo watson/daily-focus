@@ -15,6 +15,7 @@
 import { readFile } from 'node:fs/promises';
 
 import type { Config } from './config.ts';
+import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
   acliIdentity,
@@ -47,13 +48,14 @@ export class TicketBoard {
   /** The last successful read, as on disk. */
   #file: TicketsFile | null = null;
   #warnings: string[] = [];
-  /** Why nothing can be read at all right now, when that's the case. */
-  #reason: string | null = null;
+  /** Why the last read failed, when it did. */
+  #reason: Failure | null = null;
+  /** Reads in a row that failed, which also spaces the next one out. */
+  #streak: Streak | null = null;
 
   #reading: Promise<void> | null = null;
   #timer: NodeJS.Timeout | null = null;
   #audience = 0;
-  #failures = 0;
   #stopped = false;
   #lastReadAt = 0;
 
@@ -104,8 +106,8 @@ export class TicketBoard {
       .catch((err: unknown) => {
         // Bookkeeping errors, not Jira ones — those are handled inside. A read
         // that throws must still leave a board behind and say what happened.
-        this.#reason = `The ticket board hit an unexpected error: ${(err as Error).message}`;
-        this.#failures++;
+        this.#reason = { message: `The ticket board hit an unexpected error: ${(err as Error).message}`, detail: unexpectedDetail(err) };
+        this.#streak = extend(this.#streak);
         console.error(`[daily-focus] jira poll failed: ${(err as Error).stack ?? String(err)}`);
       })
       .finally(() => {
@@ -133,11 +135,15 @@ export class TicketBoard {
         warnings.push(`Could not judge the tickets on file: ${(err as Error).message}`);
       }
     }
+    const reading = this.#reading !== null;
     return {
       enabled: this.enabled,
-      reason: this.enabled ? this.#reason : null,
+      reason:
+        this.enabled && this.#reason
+          ? toReadFailure(this.#reason, this.#streak, this.#stopped ? null : Date.now() + this.#dueIn(), reading)
+          : null,
       fetchedAt: this.#file?.fetchedAt ?? null,
-      fetching: this.#reading !== null,
+      fetching: reading,
       // Suppressed alongside a reason, as the board's account list is: an
       // account line beside "acli is not logged in" contradicts the banner.
       account: this.#reason ? null : (this.#file?.account ?? null),
@@ -174,8 +180,9 @@ export class TicketBoard {
 
   #intervalMs(): number {
     const base = this.#config.jira.pollMinutes * 60_000;
-    if (this.#failures === 0) return base;
-    return Math.min(base * 2 ** Math.min(this.#failures, 6), MAX_BACKOFF_MS);
+    const failures = this.#streak?.attempts ?? 0;
+    if (failures === 0) return base;
+    return Math.min(base * 2 ** Math.min(failures, 6), MAX_BACKOFF_MS);
   }
 
   #dueIn(): number {
@@ -204,8 +211,8 @@ export class TicketBoard {
       // is worth fixing if the user never wanted this board. Either way the
       // previous rows stay on screen under the banner, since a status that was
       // wrong an hour ago is still wrong.
-      this.#reason = `${(err as Error).message}, or set DAILY_FOCUS_JIRA=off`;
-      this.#failures++;
+      this.#reason = { message: `${(err as Error).message}, or set DAILY_FOCUS_JIRA=off`, detail: errorDetail(err) };
+      this.#streak = extend(this.#streak);
       return;
     }
 
@@ -218,7 +225,7 @@ export class TicketBoard {
       const { tickets, statuses, warnings } = await this.#deps.fetch(acliPath, { projects, site });
       this.#reason = null;
       this.#warnings = warnings;
-      this.#failures = 0;
+      this.#streak = null;
       this.#file = {
         version: 1,
         fetchedAt: new Date().toISOString(),
@@ -235,12 +242,12 @@ export class TicketBoard {
         console.warn(`[daily-focus] could not write tickets.json: ${(err as Error).message}`);
       }
     } catch (err) {
-      this.#failures++;
+      this.#streak = extend(this.#streak);
       const message = `could not read Jira: ${(err as Error).message}`;
       // Say so either way. A stale board that looks current is the thing worth
       // avoiding, and this one's whole job is telling the user something is out
       // of date — it does not get to be out of date silently.
-      this.#reason = this.#file ? `${message}. Showing the last good read.` : message;
+      this.#reason = { message: this.#file ? `${message}. Showing the last good read.` : message, detail: errorDetail(err) };
     }
   }
 }

@@ -4,9 +4,11 @@ import type { JSX } from 'preact';
 
 import type { Agenda, AgendaSource, DashboardState, FreeWindow, ResolvedItem } from '../src/types.ts';
 import { el } from './el.ts';
+import { failureNotice } from './failure.ts';
 import { formatDuration, formatTime } from './format.ts';
+import type { Handlers, UiState } from './types.ts';
 
-export function renderAgenda(state: DashboardState): JSX.Element {
+export function renderAgenda(state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
   const now = new Date(state.now);
   const { events, conflictIds, freeWindows } = state.agenda;
 
@@ -31,7 +33,7 @@ export function renderAgenda(state: DashboardState): JSX.Element {
     'div',
     { class: 'agenda' },
     el('h2', { class: 'agenda__title' }, 'Today'),
-    agendaNotes(state.agendaSource),
+    agendaNotes(state.agendaSource, now, ui, handlers),
     rows.length > 0 ? el('ul', { class: 'agenda__list' }, rows) : el('p', { class: 'empty' }, 'No events today.'),
   );
 }
@@ -45,12 +47,21 @@ export function renderAgenda(state: DashboardState): JSX.Element {
  * agenda quietly served from this morning looks exactly like a live one right up
  * to the event you cancelled still sitting on it.
  */
-function agendaNotes(source: AgendaSource | null | undefined): JSX.Element[] {
+function agendaNotes(source: AgendaSource | null | undefined, now: Date, ui: UiState, handlers: Handlers): JSX.Element[] {
   if (!source) return [];
   const notes: JSX.Element[] = [];
-  if (source.problem) {
-    notes.push(el('p', { class: `agenda__note agenda__note--${source.live ? 'warn' : 'stale'}` }, source.problem));
+  const tone = `agenda__note agenda__note--${source.live ? 'warn' : 'stale'}`;
+  if (source.failure) {
+    notes.push(
+      failureNotice(
+        source.failure,
+        { fold: 'failure:calendar', className: tone, lastGood: source.fetchedAt, now, onRetry: () => handlers.refreshCalendar() },
+        ui,
+        handlers,
+      ),
+    );
   }
+  if (source.problem) notes.push(el('p', { class: tone }, source.problem));
   for (const warning of source.warnings ?? []) {
     notes.push(el('p', { class: 'agenda__note agenda__note--warn' }, warning));
   }

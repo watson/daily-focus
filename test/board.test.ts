@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { Board, normalizeStoredPull, readPullsFile, type BoardDeps } from '../src/board.ts';
-import { GhAuthError, GhMissingError, type AccountFetch } from '../src/github.ts';
+import { GhAuthError, GhMissingError, GitHubRequestError, type AccountFetch } from '../src/github.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 import type { PullRequest } from '../src/types.ts';
 
@@ -126,7 +126,8 @@ test('configured accounts are named to gh, and one gh lacks is a warning not a f
     { login: 'alice', ok: true, error: null },
     { login: 'alice_corp', ok: false, error: 'no token for alice_corp' },
   ]);
-  assert.match(view.warnings[0] ?? '', /^alice_corp: no token/);
+  assert.match(view.failures[0]?.message ?? '', /^alice_corp: no token/);
+  assert.deepEqual(view.warnings, [], 'a failure is told once, as a failure');
   assert.ok(view.fetchedAt, 'a partial success still counts as a fetch');
 });
 
@@ -155,7 +156,79 @@ test('an account that fails keeps what it had last time', async () => {
     [1, 9],
     'the failed account\'s PRs survive from the previous fetch',
   );
-  assert.match(view.warnings.join('\n'), /alice_corp: GitHub answered 502/);
+  assert.deepEqual(view.failures.map((failure) => failure.message), ['alice_corp: GitHub answered 502']);
+});
+
+test('two accounts cut off by the same outage are one failure naming both, counted until it ends', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice,alice_corp' });
+  let offline = true;
+  const answer = (login: string, number: number) => async (): Promise<AccountFetch> => {
+    if (offline) {
+      const lookup = Object.assign(new Error('getaddrinfo ENOTFOUND api.github.com'), { code: 'ENOTFOUND' });
+      throw new GitHubRequestError("couldn't reach api.github.com (the DNS lookup failed)", null, {
+        cause: new TypeError('fetch failed', { cause: lookup }),
+      });
+    }
+    return { login, pulls: [pull(login, number)], warnings: [], orgs: {}, rateLimitRemaining: 4000 };
+  };
+  const deps = fakeDeps({ tokens: { alice: 't1', alice_corp: 't2' }, fetches: { t1: answer('alice', 1), t2: answer('alice_corp', 2) } });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+
+  let view = board.view([], new Date());
+  assert.equal(view.reason, null, 'gh answered, so the board can run; it is the accounts that failed');
+  assert.equal(view.failures.length, 1, 'one outage, one banner');
+  const first = view.failures[0]!;
+  assert.equal(first.message, "alice and alice_corp: couldn't reach api.github.com (the DNS lookup failed)");
+  assert.match(first.detail, /caused by Error: getaddrinfo ENOTFOUND api\.github\.com \(code ENOTFOUND\)/);
+  assert.ok(!first.detail.includes('alice:'), 'the same detail for both is said once');
+  assert.equal(first.attempts, 1);
+  assert.ok(first.retryAt, 'it says when it will try again');
+  assert.deepEqual(view.warnings, []);
+
+  await board.refresh();
+  view = board.view([], new Date());
+  assert.equal(view.failures[0]?.attempts, 2);
+  assert.equal(view.failures[0]?.since, first.since, 'still the same outage');
+
+  offline = false;
+  await board.refresh();
+  view = board.view([], new Date());
+  assert.deepEqual(view.failures, []);
+  assert.equal(view.rows.length, 2);
+});
+
+test('a poll in flight keeps the last one\'s failures on screen, and says it is retrying', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice,alice_corp' });
+  let release: (() => void) | null = null;
+  let hold = false;
+  const deps = fakeDeps({
+    tokens: { alice: 't1', alice_corp: 't2' },
+    fetches: {
+      t1: ok('alice', [pull('alice', 1)]),
+      t2: async () => {
+        if (hold) await new Promise<void>((resolve) => (release = resolve));
+        throw new Error('GitHub answered 502');
+      },
+    },
+  });
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+  assert.equal(board.view([], new Date()).failures[0]?.retrying, false);
+
+  hold = true;
+  const poll = board.refresh();
+  while (!release) await new Promise((resolve) => setTimeout(resolve, 0));
+  const during = board.view([], new Date());
+  assert.equal(during.failures.length, 1, 'a banner somebody opened to press Retry must not vanish under them');
+  assert.equal(during.failures[0]?.retrying, true);
+  assert.equal(during.failures[0]?.retryAt, null);
+
+  (release as () => void)();
+  await poll;
+  const after = board.view([], new Date()).failures[0];
+  assert.equal(after?.retrying, false);
+  assert.equal(after?.attempts, 2, 'counted per account, though the other answered');
 });
 
 test('when nothing can be polled the reason says so and the last file still shows', async () => {
@@ -169,7 +242,7 @@ test('when nothing can be polled the reason says so and the last file still show
   await board.start();
 
   const view = board.view([], new Date());
-  assert.match(view.reason ?? '', /gh is not logged in/);
+  assert.match(view.reason?.message ?? '', /gh is not logged in/);
   assert.equal(view.rows.length, 1, 'yesterday\'s file is better than nothing');
   assert.equal(view.fetchedAt, '2026-09-14T06:00:00Z');
 });
@@ -187,7 +260,7 @@ test('a missing gh is reported as the reason', async () => {
   };
   const board = new Board(cfg, () => {}, deps);
   await board.start();
-  assert.match(board.view([], new Date()).reason ?? '', /could not run `\/nope\/gh`/);
+  assert.match(board.view([], new Date()).reason?.message ?? '', /could not run `\/nope\/gh`/);
 });
 
 test('the file on disk is the last good fetch, written atomically', async () => {
@@ -322,7 +395,9 @@ test('an unexpected error inside a poll is reported, not thrown', async () => {
   });
   const board = new Board(cfg, () => {}, deps);
   await board.start();
-  assert.match(board.view([], new Date()).reason ?? '', /unexpected error/);
+  const reason = board.view([], new Date()).reason;
+  assert.match(reason?.message ?? '', /unexpected error/);
+  assert.match(reason?.detail ?? '', /\n\s+at /, 'nobody planned for it, so the stack is the detail');
 });
 
 test('a tab opening on a stale board fetches at once; a fresh one waits', async () => {
