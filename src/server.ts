@@ -241,6 +241,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
    */
   let restart: DashboardState['restart'] = null;
   let restarting = false;
+  /** The settings save in progress, which the next one waits for. */
+  let settingsWrites: Promise<unknown> = Promise.resolve();
 
   // The client is built from `client/` into `public/app.js`, which is not
   // tracked. A checkout that skipped the build would serve a blank page with
@@ -844,16 +846,24 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         sendJSON(res, 400, { error: '"values" must be an object of settings' });
         return;
       }
-      const sources = readSources();
-      const applied = applySettingsChange(sources, values as SettingsChange);
-      if ('error' in applied) {
-        sendJSON(res, 400, { error: applied.error });
+      // One save at a time, each reading the file afresh: two tabs saving
+      // different settings at once must both land, not the later over the first.
+      const saved = settingsWrites.then(async (): Promise<string | null> => {
+        const sources = readSources();
+        const applied = applySettingsChange(sources, values as SettingsChange);
+        if ('error' in applied) return applied.error;
+        const changed = JSON.stringify(Object.entries(applied.settings).sort()) !== JSON.stringify(Object.entries(sources.settings).sort());
+        if (changed) {
+          await saveSettings(sources.settingsPath, applied.settings);
+          requestRestart();
+        }
+        return null;
+      });
+      settingsWrites = saved.catch(() => {});
+      const refused = await saved;
+      if (refused) {
+        sendJSON(res, 400, { error: refused });
         return;
-      }
-      const changed = JSON.stringify(Object.entries(applied.settings).sort()) !== JSON.stringify(Object.entries(sources.settings).sort());
-      if (changed) {
-        await saveSettings(sources.settingsPath, applied.settings);
-        requestRestart();
       }
       sendJSON(res, 200, { ...describeSettings(readSources()), restart });
       void broadcast();
@@ -1006,6 +1016,12 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       subscribers.clear();
       await new Promise<void>((done, fail) => {
         server.close((err) => (err ? fail(err) : done()));
+        // Closing waits for every connection, and Node closes only those idle at
+        // this moment: a request still in flight leaves its connection open for
+        // the whole keep-alive timeout once it is answered, and a restart waits
+        // that long. A tab simply reconnects, so a second is grace enough.
+        server.closeIdleConnections();
+        setTimeout(() => server.closeAllConnections(), 1_000).unref();
       });
     },
   };

@@ -107,6 +107,20 @@ test('a saved setting lands in the store and takes effect after the restart it a
   assert.equal(restarts, 1);
 });
 
+test('two settings saved at once both land', async () => {
+  const before = restarts;
+  const [a, b] = await Promise.all([
+    post('/api/settings', { values: { DAILY_FOCUS_WORK_START: '8' } }),
+    post('/api/settings', { values: { DAILY_FOCUS_MIN_FREE_WINDOW: '30' } }),
+  ]);
+  assert.deepEqual([a.status, b.status], [200, 200]);
+  const saved = JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8'));
+  assert.equal(saved.DAILY_FOCUS_WORK_START, '8');
+  assert.equal(saved.DAILY_FOCUS_MIN_FREE_WINDOW, '30');
+  // One restart applies both: the second save finds one already on its way.
+  await restarted(before + 1);
+});
+
 test('the editors read and save the whole file, and a stale save is refused', async () => {
   const opened = await json(await fetch(`${url}/api/text/focus`));
   assert.deepEqual([opened.text, opened.version], [null, 'absent']);
