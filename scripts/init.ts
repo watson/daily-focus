@@ -325,9 +325,12 @@ if (next.length === 0) {
 } else {
   next.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
   if (created > 0) {
-    console.log(`  ${next.length + 1}. \`npm run seed\` for sample data, or ${start}.`);
+    console.log(`  ${next.length + 1}. ${start}.`);
+    // Never `npm run seed` here. This is the real store, and the agent's first run
+    // carries every open task in the previous items.json forward, so sample tasks
+    // would become the user's work. The README's demo seeds a throwaway store.
     console.log(
-      `\n  \x1b[2mNo hurry on the agent — \`npm run seed\` writes a sample brief so you can\n  see the dashboard before an agent has ever run. It refuses to replace\n  items.json once a real brief exists.\x1b[0m`,
+      `\n  \x1b[2mTo look around before an agent has run, try the demo in the README. It\n  shows sample data from a throwaway store, so nothing lands in this one.\x1b[0m`,
     );
   } else {
     console.log(
