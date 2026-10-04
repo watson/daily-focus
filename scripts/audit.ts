@@ -12,10 +12,11 @@
  * Exits non-zero if anything failed, so it can gate a run.
  */
 
-import { lstat, readFile, readdir, readlink, stat } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
+import { linkState } from '../src/links.ts';
 import { Store } from '../src/store.ts';
 import { parseBrief } from '../src/validate.ts';
 import { runContractChecks } from '../src/checks.ts';
@@ -81,23 +82,12 @@ async function findPrevious(current: Brief): Promise<{ brief: Brief; from: strin
 // brief won't exist: the agent is told to read a file that isn't there. Renaming
 // a prompt in the repo leaves exactly that behind until `npm run init` runs again.
 section('Store');
-try {
-  const link = await lstat(config.promptFile);
-  if (!link.isSymbolicLink()) {
-    pass('prompt.md', 'a real file, not linked to the repo');
-  } else {
-    const target = resolve(config.dataDir, await readlink(config.promptFile));
-    try {
-      await stat(target);
-      if (target === config.promptSource) pass('prompt.md', `linked to the ${config.profile} prompt`);
-      else warn('prompt.md', `linked to ${target}, not the ${config.profile} prompt — run \`npm run init\``);
-    } catch {
-      fail('prompt.md', `links to ${target}, which does not exist — run \`npm run init\``);
-    }
-  }
-} catch {
-  fail('prompt.md', 'missing — run `npm run init`');
-}
+const promptLink = await linkState(config.promptFile, config.promptSource);
+if (promptLink.state === 'own') pass('prompt.md', 'a real file, not linked to the repo');
+else if (promptLink.state === 'linked') pass('prompt.md', `linked to the ${config.profile} prompt`);
+else if (promptLink.state === 'elsewhere') warn('prompt.md', `linked to ${promptLink.target}, not the ${config.profile} prompt — run \`npm run init\``);
+else if (promptLink.state === 'dangling') fail('prompt.md', `links to ${promptLink.target}, which does not exist — run \`npm run init\``);
+else fail('prompt.md', 'missing — run `npm run init`');
 
 /* ---------- payload ---------- */
 

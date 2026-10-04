@@ -253,6 +253,8 @@ export interface Config {
   /** The prompt in this repo that `promptFile` links to, chosen by the profile. */
   promptSource: string;
   schemaFile: string;
+  /** The schema in this repo that `schemaFile` links to. */
+  schemaSource: string;
   /** Dated snapshots of past briefs, written by the server. */
   archiveDir: string;
   /** The one running focus session, if any. */
@@ -593,6 +595,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     promptFile: resolve(dataDir, 'prompt.md'),
     promptSource: resolve(import.meta.dirname, '..', 'prompts', `morning-brief-${profile}.md`),
     schemaFile: resolve(dataDir, 'items.schema.json'),
+    schemaSource: resolve(import.meta.dirname, '..', 'schema', 'items.schema.json'),
     archiveDir: resolve(dataDir, 'archive'),
     sessionFile: resolve(dataDir, 'session.json'),
     sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
