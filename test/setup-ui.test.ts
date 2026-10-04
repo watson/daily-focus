@@ -31,7 +31,7 @@ function stateWith(overrides: { setup?: Partial<SetupState>; [key: string]: unkn
       profileChosen: false,
       sources: { exists: false, placeholders: 0 },
       clis: { claude: '/usr/local/bin/claude', codex: null },
-      calendar: { supported: false, built: false, chosen: 0 },
+      calendar: { supported: false, built: false, chosen: 0, buildCommand: 'npm run build:calendar' },
       ...setup,
     },
     ...rest,
@@ -56,14 +56,14 @@ test('a new store opens on the setup steps, not an empty list and an alarm', () 
 });
 
 test('each step says whether it is done', () => {
-  const card = mount(h(SetupCard, { state: stateWith(), handlers: handlersWith() }));
+  const card = mount(h(SetupCard, { state: stateWith(), ui: uiWith(), handlers: handlersWith() }));
   assert.deepEqual(steps(card), [
     ['What should it brief?', 'false'],
     ['What are you trying to achieve?', 'false'],
-    ['Who writes the brief?', 'false'],
-    ['Where should it look?', 'false'],
-    ['What else to show', null],
-    ['Write your first brief', null],
+    ['Which agent writes the brief?', 'false'],
+    ['Who are you, and where should it look?', 'false'],
+    ['What else should the dashboard show?', null],
+    ['Your first brief', null],
   ]);
 
   const done = mount(
@@ -73,6 +73,7 @@ test('each step says whether it is done', () => {
         focus: { objective: 'Ship the reliability fix', blocker: null, note: null },
         agentRun: { enabled: true, cli: 'claude', schedule: { at: '07:00', nextRunAt: null }, last: null, runs: [] },
       }),
+      ui: uiWith(),
       handlers: handlersWith(),
     }),
   );
@@ -80,12 +81,12 @@ test('each step says whether it is done', () => {
     steps(done).slice(0, 4).map(([, state]) => state),
     ['true', 'true', 'true', 'true'],
   );
-  assert.match(done.textContent!, /Claude Code, each scheduled morning at 07:00/);
+  assert.match(done.textContent!, /Claude Code\. After the first brief, it runs by itself each scheduled morning at 07:00/);
 });
 
 test('the choices are a click: the profile, the CLI it found, and turning off a board', () => {
   const chosen: Record<string, string | null>[] = [];
-  const card = mount(h(SetupCard, { state: stateWith(), handlers: handlersWith({ chooseSettings: (values) => void chosen.push(values) }) }));
+  const card = mount(h(SetupCard, { state: stateWith(), ui: uiWith(), handlers: handlersWith({ chooseSettings: (values) => void chosen.push(values) }) }));
   const click = (label: string) => [...card.querySelectorAll('button')].find((button) => button.textContent === label)!.click();
 
   assert.ok(buttonLabels(card).includes('Use Claude Code'));
@@ -97,20 +98,21 @@ test('the choices are a click: the profile, the CLI it found, and turning off a 
 });
 
 test('with no CLI installed, the step says what to install instead of offering nothing', () => {
-  const card = mount(h(SetupCard, { state: stateWith({ setup: { clis: { claude: null, codex: null } } }), handlers: handlersWith() }));
+  const card = mount(h(SetupCard, { state: stateWith({ setup: { clis: { claude: null, codex: null } } }), ui: uiWith(), handlers: handlersWith() }));
   assert.ok(!buttonLabels(card).some((label) => label.startsWith('Use ')));
   assert.match(card.textContent!, /Install Claude Code or the Codex CLI/);
 });
 
-test('the first brief waits for someone to write it, and a source list with placeholders is not done', () => {
+test('the first brief waits for the agent to be chosen, and a source list with placeholders is not done', () => {
   const runs: string[] = [];
   const card = mount(
     h(SetupCard, {
       state: stateWith({ setup: { sources: { exists: true, placeholders: 3 } } }),
+      ui: uiWith(),
       handlers: handlersWith({ runAgent: () => void runs.push('run') }),
     }),
   );
-  const write = [...card.querySelectorAll('button')].find((button) => button.textContent === 'Write my first brief')!;
+  const write = [...card.querySelectorAll('button')].find((button) => button.textContent === 'Run the morning agent now')!;
   assert.equal(write.disabled, true, 'nothing to run it with yet');
   assert.match(card.textContent!, /still has 3 of the template's placeholders/);
   assert.equal(steps(card)[3]![1], 'false');
@@ -121,4 +123,57 @@ test('a restart waiting on saved settings is said, and so is one nobody can do f
   assert.match(waiting.textContent!, /Settings saved\. The dashboard restarts to apply them/);
   const manual = mount(h('div', null, renderBanners(stateWith({ restart: 'manual', setup: { needed: false }, problem: null }), uiWith(), handlersWith())));
   assert.match(manual.textContent!, /Restart the dashboard to apply them/);
+});
+
+test('a choice draws its answers alike, so none looks like the one to pick', () => {
+  const card = mount(h(SetupCard, { state: stateWith({ setup: { clis: { claude: '/bin/claude', codex: '/bin/codex' } } }), ui: uiWith(), handlers: handlersWith() }));
+  for (const group of byClass(card, 'setup__choices')) {
+    const buttons = [...group.querySelectorAll('button')];
+    assert.ok(buttons.length > 1);
+    assert.ok(buttons.every((button) => button.className === 'button'), buttons.map((button) => button.className).join(', '));
+  }
+});
+
+test('the source list is written in its step, not on another page', () => {
+  const calls: string[] = [];
+  const handlers = handlersWith({
+    loadText: (name) => void calls.push(`load:${name}`),
+    toggleDrawer: (key, open) => void calls.push(`${key}:${open}`),
+    openSettings: () => void calls.push('settings'),
+  });
+  const closed = mount(h(SetupCard, { state: stateWith(), ui: uiWith(), handlers }));
+  [...closed.querySelectorAll('button')].find((button) => button.textContent === 'Write it')!.click();
+  assert.deepEqual(calls, ['load:sources', 'setup:sources:true'], 'it opens here, and loads the template');
+
+  const editor = {
+    saved: null,
+    version: 'absent',
+    template: '# Sources\n',
+    draft: '# Sources\n',
+    conflict: null,
+    saving: false,
+  };
+  const open = mount(
+    h(SetupCard, { state: stateWith(), ui: uiWith({ openDrawers: new Set(['setup:sources']), texts: { sources: editor } }), handlers }),
+  );
+  assert.equal(byClass(open, 'text-editor').length, 1);
+  assert.ok(open.querySelector('textarea[aria-label="sources.md"]'));
+});
+
+test('each board says how it is doing the same way: a mark, and words in one colour', () => {
+  const card = mount(
+    h(SetupCard, {
+      state: stateWith({
+        board: { enabled: true, fetchedAt: null, reason: null },
+        tickets: { enabled: true, fetchedAt: '2026-10-04T08:00:00Z', reason: null },
+      }),
+      ui: uiWith(),
+      handlers: handlersWith(),
+    }),
+  );
+  const rows = byClass(card, 'setup__board').map((row) => [row.dataset.health, row.querySelector('.setup__board-text')!.textContent]);
+  assert.deepEqual(rows, [
+    ['checking', 'Checking GitHub through gh…'],
+    ['ok', 'Connected, through acli.'],
+  ]);
 });
