@@ -39,7 +39,7 @@ export function SetupCard({ state, ui, handlers }: { state: DashboardState; ui: 
       'p',
       { class: 'setup__lede' },
       'Each morning an agent reads your mail, calendar, pull requests and the rest, and writes a short brief of what ' +
-        'needs you today. A few things to tell it first. Everything here can be changed later in ',
+        'needs to get done today. The steps below get it ready for its first run. Everything here can be changed later in ',
       el('button', { type: 'button', class: 'link-button', onClick: () => handlers.openSettings() }, 'Settings'),
       '.',
     ),
