@@ -13,8 +13,23 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
   const agent = state.agentRun;
   const running = agent?.last?.status === 'running';
 
-  if (state.problem) {
+  // Before the first brief, the missing brief is the setup steps' business, not
+  // an alarm: a new store has none, and the page says how to get one.
+  if (state.problem && !state.setup?.needed) {
     banners.push(banner('critical', '!', state.problem));
+  }
+  if (state.restart === 'waiting') {
+    banners.push(
+      banner(
+        'info',
+        'i',
+        running || state.agentRun?.last?.turns?.some((turn) => turn.status === 'running')
+          ? 'Settings saved. The dashboard restarts to apply them once the morning agent finishes.'
+          : 'Settings saved. The dashboard restarts to apply them as soon as nothing is running.',
+      ),
+    );
+  } else if (state.restart === 'manual') {
+    banners.push(banner('warning', '!', 'Settings saved. Restart the dashboard to apply them.'));
   }
   if (running && agent?.last) {
     // Supersedes the three below: each is a guess about when the next brief

@@ -11,6 +11,7 @@ import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board } from './board.ts';
 import { CalendarBoard } from './calendarboard.ts';
+import { runHelper } from './calendar.ts';
 import { TicketBoard } from './ticketboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
@@ -22,6 +23,7 @@ import { describeLink, linkStore, storeLinkWarning } from './links.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
+import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
@@ -172,7 +174,7 @@ function statusOf(state: DashboardState, config: Config): Record<string, unknown
   return {
     dataDir: config.dataDir,
     profile: config.profile,
-    setupNeeded: state.brief.generatedAt === null && last === null,
+    setupNeeded: state.setup.needed,
     restartPending: state.restart !== null,
     brief: {
       generatedAt: state.brief.generatedAt,
@@ -308,6 +310,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       // A link that can't be read is no reason to withhold the page.
       storeLinkWarning(config).catch(() => null),
     ]);
+    const sources = readSources();
+    const setup = await setupState(config, {
+      briefExists: state.brief.generatedAt !== null,
+      profileChosen: Boolean(layerEnv(sources).DAILY_FOCUS_PROFILE?.trim()),
+    });
     return {
       ...state,
       board: board.view(actions, now),
@@ -316,6 +323,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       agentRun: agent.view(now),
       setupWarnings: [...configWarnings, ...(linkWarning ? [linkWarning] : [])],
       restart,
+      setup,
       assetVersion,
     };
   }
@@ -426,10 +434,15 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // The morning agent's clock. Once now, so a dashboard opened after the hour
   // catches up on a brief it missed while closed, and then every half minute:
   // a timer set for six-thirty doesn't fire at six-thirty on a machine that was
-  // asleep, but a check each time it is awake does.
-  void agent.tick();
+  // asleep, but a check each time it is awake does. A new store's first brief
+  // comes from the setup steps' button instead; see `firstBriefPending`.
+  async function clockTick(): Promise<void> {
+    if (restart === 'waiting' || (await firstBriefPending(config))) return;
+    await agent.tick();
+  }
+  void clockTick();
   const agentClock = setInterval(() => {
-    if (restart !== 'waiting') void agent.tick();
+    void clockTick();
   }, AGENT_CLOCK_MS);
   agentClock.unref();
 
@@ -863,7 +876,14 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     const textFile = TEXT_FILES[path];
     if (textFile && req.method === 'GET') {
       const { text, version } = await readEditable(config[textFile.file]);
-      const template = textFile.file === 'focusFile' ? FOCUS_TEMPLATE : sourcesTemplate(config.profile);
+      // A new source list starts with whatever gh and git can say about who you
+      // are, for you to check before saving; a file that exists is shown as it is.
+      const template =
+        textFile.file === 'focusFile'
+          ? FOCUS_TEMPLATE
+          : text === null
+            ? fillIdentity(sourcesTemplate(config.profile), await detectIdentity(config))
+            : sourcesTemplate(config.profile);
       sendJSON(res, 200, { text, version, template });
       return;
     }
@@ -914,6 +934,24 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       const state = await buildState();
       sendState(res, state);
       void broadcast(state);
+      return;
+    }
+
+    // The calendars Calendar.app has, for the settings page to choose from. A POST
+    // though it changes nothing: it launches the helper, which may ask for calendar
+    // access, and only a POST is kept from other sites by the guard.
+    if (path === '/api/calendars/list' && req.method === 'POST') {
+      try {
+        const facts = await runHelper(config.calendar.appPath, []);
+        const seen = new Set<string>();
+        const calendars = facts.calendars
+          .filter((entry) => !seen.has(`${entry.title}\n${entry.source}`) && seen.add(`${entry.title}\n${entry.source}`))
+          .map(({ title, source }) => ({ title, source }))
+          .sort((a, b) => a.title.localeCompare(b.title));
+        sendJSON(res, 200, { calendars });
+      } catch (err) {
+        sendJSON(res, 409, { error: (err as Error).message });
+      }
       return;
     }
 

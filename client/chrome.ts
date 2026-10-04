@@ -70,6 +70,19 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
         {
           type: 'button',
           class: 'icon-button',
+          id: 'settings-toggle',
+          'aria-label': 'Settings',
+          title: 'Settings',
+          'aria-pressed': String(ui.view.value === 'settings'),
+          onClick: () => (ui.view.value === 'settings' ? handlers.setView('today') : handlers.openSettings()),
+        },
+        el('span', { 'aria-hidden': 'true' }, '⚙'),
+      ),
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'icon-button',
           id: 'help-toggle',
           'aria-label': 'Keyboard shortcuts',
           title: 'Keyboard shortcuts',
@@ -92,7 +105,8 @@ function freshness(state: DashboardState, handlers: Handlers): JSX.Element {
   let stale: string;
   if (state.brief.generatedAt === null) {
     text = 'no brief yet';
-    stale = 'true';
+    // Expected while the setup steps are showing; a warning only once it isn't.
+    stale = String(!state.setup?.needed);
   } else {
     const hours = state.brief.ageHours ?? 0;
     const when = hours < 1 ? 'just now' : hours === 1 ? '1 hour ago' : `${hours} hours ago`;
@@ -250,6 +264,7 @@ const SHORTCUTS: readonly [readonly string[], string][] = [
   [['p'], 'Start a focus session on the selected item'],
   [['r'], 'Refresh whichever board you are on'],
   [['w'], 'Jira tickets: switch between out of sync and working on'],
+  [[','], 'Settings: your objective, where the agent looks, and the rest'],
   [['?'], 'This help'],
 ];
 

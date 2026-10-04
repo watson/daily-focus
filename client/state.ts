@@ -23,7 +23,7 @@ import type { UiState, UiValues, View } from './types.ts';
  * what the keyboard's scan of visible rows depends on, and what the stylesheet
  * keys `body[data-view]` off.
  */
-export const VIEWS: readonly View[] = ['today', 'board', 'tickets'];
+export const VIEWS: readonly View[] = ['today', 'board', 'tickets', 'settings'];
 
 /**
  * The panel opens on rows by their id, and on a run of the morning agent by
@@ -67,6 +67,12 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     toast: signal(initial.toast ?? null),
     connectionError: signal(initial.connectionError ?? null),
     clock: signal(initial.clock ?? Date.now()),
+    settings: signal(initial.settings ?? null),
+    settingsDraft: signal(initial.settingsDraft ?? new Map<string, string | null>()),
+    settingsError: signal(initial.settingsError ?? null),
+    settingsSaving: signal(initial.settingsSaving ?? false),
+    texts: signal(initial.texts ?? {}),
+    calendars: signal(initial.calendars ?? null),
   };
 }
 
@@ -119,12 +125,14 @@ export function setDetailFor(target: UiState, id: string | null): void {
 /**
  * The views this instance offers. A switched-off board has nothing to show but a
  * line saying so, so its tab goes too — a personal instance with no Jira shouldn't
- * carry a Jira tab around.
+ * carry a Jira tab around. Settings is always there, behind the header's gear
+ * rather than a tab.
  */
 export function availableViews(current: DashboardState | null | undefined): View[] {
   const views: View[] = ['today'];
   if (current?.board?.enabled) views.push('board');
   if (current?.tickets?.enabled) views.push('tickets');
+  views.push('settings');
   return views;
 }
 
@@ -148,6 +156,7 @@ export function detailRow(current: DashboardState, target: UiState): DetailRow |
     today: current.items,
     board: current.board?.rows ?? [],
     tickets: target.ticketMode.value === 'working' ? [...inProgress, ...tickets] : [...tickets, ...inProgress],
+    settings: [],
   };
   const view = target.view.value;
   for (const candidate of [view, ...VIEWS.filter((other) => other !== view)]) {

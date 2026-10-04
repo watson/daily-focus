@@ -23,7 +23,7 @@ import {
 } from './state.ts';
 import { applyTheme, nextTheme } from './theme.ts';
 import { remainingSeconds } from './timer.ts';
-import type { ActionExtra, FocusField, Handlers, TicketMode, View } from './types.ts';
+import type { ActionExtra, FocusField, Handlers, SettingsPage, TextEditor, TextName, TicketMode, View } from './types.ts';
 
 /* ---------- small things ---------- */
 
@@ -514,6 +514,164 @@ function setFocusMode(on: boolean): void {
   remember(FOCUS_MODE_KEY, on ? '1' : null);
 }
 
+/* ---------- settings ---------- */
+
+/** Say what a save did: restarted, or waiting for the agent to finish first, or waiting for a hand. */
+function restartToast(page: SettingsPage): void {
+  if (page.restart === 'manual') showToast('Saved. Restart the dashboard to apply it.');
+  else if (page.restart === 'waiting' && state.value?.agentRun?.last?.status === 'running') {
+    showToast('Saved. The dashboard restarts to apply it once the morning agent finishes.');
+  } else if (page.restart === 'waiting') showToast('Saved. Restarting the dashboard to apply it…');
+  else showToast('Saved');
+}
+
+/**
+ * Follow a restart until the dashboard is back with the new settings. The live
+ * feed reconnects on its own, but only after a few seconds; asking every half
+ * second makes a setup step tick over as soon as its choice has taken effect.
+ * Gives up after fifteen seconds, which only a restart waiting on the morning
+ * agent takes, and the live feed carries on from there.
+ */
+async function followRestart(): Promise<void> {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await new Promise((done) => setTimeout(done, 500));
+    try {
+      const next = await api.fetchState();
+      adoptState(next);
+      if (next.restart === null) {
+        if (ui.settings.value) void loadSettings();
+        showToast('Settings applied');
+        return;
+      }
+    } catch {
+      // Between the old dashboard closing and the new one listening.
+    }
+  }
+}
+
+async function loadSettings(): Promise<void> {
+  try {
+    ui.settings.value = await api.fetchSettings();
+  } catch (err) {
+    showToast(`Could not load the settings: ${(err as Error).message}`);
+  }
+}
+
+/** Save `values`, which is the draft for the page's Save, or a setup step's one choice. */
+async function sendSettings(values: Record<string, string | null>, fromDraft: boolean): Promise<void> {
+  if (ui.settingsSaving.value) return;
+  batch(() => {
+    ui.settingsSaving.value = true;
+    ui.settingsError.value = null;
+  });
+  try {
+    const page = await api.postSettings(values);
+    batch(() => {
+      ui.settings.value = page;
+      if (fromDraft) ui.settingsDraft.value = new Map();
+    });
+    restartToast(page);
+    if (page.restart === 'waiting') void followRestart();
+  } catch (err) {
+    if (fromDraft) ui.settingsError.value = (err as Error).message;
+    else showToast(`Could not save: ${(err as Error).message}`);
+  } finally {
+    ui.settingsSaving.value = false;
+  }
+}
+
+function editSetting(key: string, value: string | null): void {
+  const next = new Map(ui.settingsDraft.value);
+  // Setting a field back to what is saved is no change at all, so it leaves the draft.
+  const current = ui.settings.value?.settings.find((setting) => setting.key === key);
+  const saved = current?.source === 'settings' ? current.value : null;
+  if ((value ?? null) === saved) next.delete(key);
+  else next.set(key, value);
+  batch(() => {
+    ui.settingsDraft.value = next;
+    ui.settingsError.value = null;
+  });
+}
+
+function patchText(name: TextName, patch: Partial<TextEditor>): void {
+  const current = ui.texts.value[name];
+  if (!current) return;
+  ui.texts.value = { ...ui.texts.value, [name]: { ...current, ...patch } };
+}
+
+async function loadText(name: TextName): Promise<void> {
+  try {
+    const file = await api.fetchText(name);
+    ui.texts.value = {
+      ...ui.texts.value,
+      [name]: {
+        saved: file.text,
+        version: file.version,
+        template: file.template,
+        draft: file.text ?? file.template,
+        conflict: null,
+        saving: false,
+      },
+    };
+  } catch (err) {
+    showToast(`Could not open ${name === 'focus' ? 'focus.md' : 'sources.md'}: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Save an editor. A file changed on disk since it was opened is never written
+ * over without asking: the editor keeps what was typed and offers the choice.
+ */
+async function saveText(name: TextName, overwrite = false): Promise<void> {
+  const editor = ui.texts.value[name];
+  if (!editor || editor.saving) return;
+  const version = overwrite && editor.conflict ? editor.conflict.version : editor.version;
+  patchText(name, { saving: true });
+  try {
+    const saved = await api.postText(name, editor.draft, version);
+    const text = editor.draft.endsWith('\n') ? editor.draft : `${editor.draft}\n`;
+    patchText(name, { saved: text, draft: text, version: saved.version, conflict: null, saving: false });
+    showToast(name === 'focus' ? 'Objective saved' : 'Source list saved. The next brief reads it.');
+  } catch (err) {
+    const failure = err as Error & { status?: number; body?: { text?: string | null; version?: string } };
+    if (failure.status === 409 && failure.body?.version) {
+      patchText(name, { conflict: { text: failure.body.text ?? null, version: failure.body.version }, saving: false });
+    } else {
+      patchText(name, { saving: false });
+      showToast(`Could not save: ${failure.message}`);
+    }
+  }
+}
+
+async function saveObjective(objective: string, blocker: string): Promise<void> {
+  try {
+    adoptState(await api.postObjective(objective, blocker));
+    // The editor, if it has been opened, now holds an older version of the file.
+    if (ui.texts.value.focus) void loadText('focus');
+    showToast(objective.trim() ? 'Objective saved' : 'Objective cleared');
+  } catch (err) {
+    showToast(`Could not save the objective: ${(err as Error).message}`);
+  }
+}
+
+async function listCalendars(): Promise<void> {
+  ui.calendars.value = null;
+  try {
+    ui.calendars.value = (await api.postListCalendars()).calendars;
+  } catch (err) {
+    ui.calendars.value = (err as Error).message;
+  }
+}
+
+function openSettings(section: string | null = null): void {
+  setView('settings');
+  if (!ui.settings.value) void loadSettings();
+  for (const name of ['focus', 'sources'] as const) if (!ui.texts.value[name]) void loadText(name);
+  if (section) {
+    afterRender(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  }
+}
+
 /* ---------- the handlers ---------- */
 
 export const handlers: Handlers = {
@@ -613,4 +771,20 @@ export const handlers: Handlers = {
   setFocusMode,
   openHelp: () => (document.getElementById('help') as HTMLDialogElement | null)?.showModal(),
   hideToast,
+  openSettings,
+  loadSettings: () => void loadSettings(),
+  editSetting,
+  discardSettings: () =>
+    batch(() => {
+      ui.settingsDraft.value = new Map();
+      ui.settingsError.value = null;
+    }),
+  saveSettings: () => void sendSettings(Object.fromEntries(ui.settingsDraft.value), true),
+  chooseSettings: (values) => void sendSettings(values, false),
+  loadText: (name) => void loadText(name),
+  editText: (name, text) => patchText(name, { draft: text }),
+  saveText: (name, overwrite) => void saveText(name, overwrite),
+  reloadText: (name) => void loadText(name),
+  saveObjective: (objective, blocker) => void saveObjective(objective, blocker),
+  listCalendars: () => void listCalendars(),
 };

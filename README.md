@@ -30,9 +30,19 @@ Open [localhost:4321](http://127.0.0.1:4321). This demo uses a temporary store a
 sample data, so you can explore without connecting accounts or replacing a real brief.
 Stop it with Ctrl+C. Close the terminal when you're done to clear the demo settings.
 
-To use your own data, follow [SETUP.md](SETUP.md). It covers your objective,
-the morning agent, optional integrations, and every setting. The dashboard runs
-locally, and runs the agent for you through the Codex CLI or Claude Code.
+To use your own data, open a new terminal and run:
+
+```sh
+npm install
+npm run service
+```
+
+On macOS that keeps the dashboard running in the background; elsewhere, use
+`npm start`. Open [localhost:4321](http://127.0.0.1:4321) and the Today tab walks
+you through the rest: what it briefs, your objective, which coding-agent CLI writes
+the brief (Claude Code or Codex), and where it should look. Everything stays on the
+settings page afterwards. [SETUP.md](SETUP.md) covers each step, the integrations
+and every setting.
 
 ## Your day at a glance
 
@@ -148,6 +158,7 @@ Press **?** in the dashboard to see the shortcuts.
 | `p` | Start / stop a focus session |
 | `r` | Refresh the current board |
 | `w` | Switch Jira views |
+| `,` | Settings |
 
 ## Where to go next
 

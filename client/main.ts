@@ -81,6 +81,18 @@ installKeyboard(handlers);
 await refresh();
 startLocalTick();
 
+// A link to `/#settings`, or to one section of it such as `/#settings-sources`,
+// opens the settings page there: the menu bar app's Settings item is one. The
+// hash is cleared once followed, so the same link works again from this tab.
+function followSettingsLink(): void {
+  const linked = /^#settings(?:-([a-z]+))?$/.exec(location.hash);
+  if (!linked) return;
+  handlers.openSettings(linked[1] ?? null);
+  history.replaceState(null, '', location.pathname);
+}
+followSettingsLink();
+window.addEventListener('hashchange', followSettingsLink);
+
 subscribe(
   // A server push is authoritative, but must not yank a row out from under an
   // in-flight click; adoptState keeps anything pending at its optimistic status.
