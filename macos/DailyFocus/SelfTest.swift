@@ -37,9 +37,19 @@ func runSelfTest() -> Bool {
         "merged path keeps the shell's order for the fallbacks"
     )
     equal(mergedPath(shellPath: nil, ownPath: nil), "/opt/homebrew/bin:/usr/local/bin", "merged path from nothing")
-    equal(shellCandidates(environment: ["SHELL": "/bin/zsh"]).last, "/bin/zsh", "zsh is the last resort")
-    equal(shellCandidates(environment: ["SHELL": "/bin/zsh"]).filter { $0 == "/bin/zsh" }.count, 1, "shells are asked once")
-    equal(shellCandidates(environment: ["SHELL": "/opt/homebrew/bin/fish"]).first, "/opt/homebrew/bin/fish", "SHELL is asked first")
+    // The account's shell is passed in, since the real one differs from Mac to Mac:
+    // bash on a CI runner, zsh on most desktops.
+    equal(
+        shellCandidates(environment: ["SHELL": "/opt/homebrew/bin/fish"], accountShell: "/bin/bash"),
+        ["/opt/homebrew/bin/fish", "/bin/bash", "/bin/zsh"],
+        "SHELL first, then the account's shell, then zsh as the last resort"
+    )
+    equal(
+        shellCandidates(environment: ["SHELL": "/bin/zsh"], accountShell: "/bin/zsh").filter { $0 == "/bin/zsh" }.count,
+        1,
+        "shells are asked once"
+    )
+    equal(shellCandidates(environment: [:], accountShell: nil), ["/bin/zsh"], "zsh when nothing else is known")
 
     // Node versions.
     equal(versionNumbers("v22.18.0\n"), [22, 18, 0], "version numbers")

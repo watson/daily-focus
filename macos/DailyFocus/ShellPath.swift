@@ -43,15 +43,19 @@ func mergedPath(shellPath: String?, ownPath: String?) -> String {
 
 /// The shells to ask, in order: the one the environment names, the account's login
 /// shell, and zsh, which every Mac has.
-func shellCandidates(environment: [String: String]) -> [String] {
+func shellCandidates(environment: [String: String], accountShell: String? = currentAccountShell()) -> [String] {
     var shells: [String] = []
     if let shell = environment["SHELL"], !shell.isEmpty { shells.append(shell) }
-    if let account = getpwuid(getuid()), let shell = account.pointee.pw_shell {
-        shells.append(String(cString: shell))
-    }
+    if let accountShell, !accountShell.isEmpty { shells.append(accountShell) }
     shells.append("/bin/zsh")
     var seen: Set<String> = []
     return shells.filter { seen.insert($0).inserted }
+}
+
+/// The login shell the user account has, from the directory services.
+func currentAccountShell() -> String? {
+    guard let account = getpwuid(getuid()), let shell = account.pointee.pw_shell else { return nil }
+    return String(cString: shell)
 }
 
 /// Collects a child's output from whatever thread the pipe delivers it on.
