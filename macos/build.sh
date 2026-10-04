@@ -1,5 +1,6 @@
 #!/bin/sh
-# Builds the menu bar app: macos/build/Daily Focus.app, and a zip of it beside it.
+# Builds the menu bar app: macos/build/Daily Focus.app, a zip of it, and the disk
+# image people download, which shows the app beside a link to Applications.
 #
 #   sh macos/build.sh [--server DIR] [--test]
 #
@@ -8,6 +9,9 @@
 #               dashboard of its own, and runs the one DAILY_FOCUS_APP_SERVER_ENTRY
 #               names, which is how it is developed against a checkout.
 # --test        runs the app's self-test after building.
+#
+# The app carries its own Node.js, at the version in macos/node-version, downloaded
+# from nodejs.org on the first build and checked against its published checksums.
 #
 # Signing uses DAILY_FOCUS_SIGN_IDENTITY when set, else the first Developer ID
 # Application identity in the keychain, else the first Apple Development one, else
@@ -58,12 +62,51 @@ cp "$here/Info.plist" "$app/Contents/Info.plist"
 # One slice per architecture, joined into one binary, so the same download runs on
 # Apple silicon and Intel.
 for arch in arm64 x86_64; do
-  swiftc -O -target "$arch-apple-macos13.0" -o "$build/slices/Daily Focus-$arch" "$here"/DailyFocus/*.swift
+  swiftc -O -target "$arch-apple-macos13.5" -o "$build/slices/Daily Focus-$arch" "$here"/DailyFocus/*.swift
 done
 lipo -create -output "$app/Contents/MacOS/Daily Focus" "$build/slices/Daily Focus-arm64" "$build/slices/Daily Focus-x86_64"
 rm -rf "$build/slices"
 
 sh "$repo/tools/dfcal/build.sh" --universal "$app/Contents/Helpers"
+
+# The app's icon and the disk image's background, drawn by code in this repo.
+swiftc -O -o "$build/artwork" "$here/Artwork/main.swift"
+"$build/artwork" "$build/art"
+cp "$build/art/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+
+# The Node.js the dashboard runs on, carried in the app so that nothing has to be
+# installed first: the official release for each architecture, at the version in
+# macos/node-version, joined into one binary. Each download is checked against the
+# checksums nodejs.org publishes, fetched over HTTPS from the same place, and kept
+# in macos/build/ so a rebuild doesn't fetch them again. It is signed again below
+# with this app's identity, since the official build carries get-task-allow, a
+# debugging entitlement notarisation refuses.
+node_version=$(tr -d '[:space:]' < "$here/node-version")
+node_cache="$build/node-v$node_version"
+mkdir -p "$node_cache"
+if [ ! -s "$node_cache/SHASUMS256.txt" ]; then
+  curl -fsSL "https://nodejs.org/dist/v$node_version/SHASUMS256.txt" -o "$node_cache/SHASUMS256.txt"
+fi
+for arch in arm64 x64; do
+  name="node-v$node_version-darwin-$arch"
+  if [ ! -s "$node_cache/$name.tar.gz" ]; then
+    echo "downloading Node.js $node_version for $arch"
+    curl -fsSL "https://nodejs.org/dist/v$node_version/$name.tar.gz" -o "$node_cache/$name.tar.gz"
+  fi
+  expected=$(awk -v file="$name.tar.gz" '$2 == file { print $1 }' "$node_cache/SHASUMS256.txt")
+  actual=$(shasum -a 256 "$node_cache/$name.tar.gz" | awk '{ print $1 }')
+  if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+    rm -f "$node_cache/$name.tar.gz"
+    echo "$name.tar.gz doesn't match the checksum nodejs.org publishes; refusing to bundle it" >&2
+    exit 1
+  fi
+  tar -xzf "$node_cache/$name.tar.gz" -C "$node_cache" "$name/bin/node" "$name/LICENSE"
+done
+lipo -create -output "$app/Contents/Helpers/node" \
+  "$node_cache/node-v$node_version-darwin-arm64/bin/node" "$node_cache/node-v$node_version-darwin-x64/bin/node"
+# Node's licence, and those of what it bundles, go wherever Node does.
+cp "$node_cache/node-v$node_version-darwin-arm64/LICENSE" "$app/Contents/Resources/Node.js LICENSE"
+echo "bundled Node.js $node_version"
 
 if [ -n "$server" ]; then
   ditto "$server" "$app/Contents/Resources/server"
@@ -126,6 +169,9 @@ sign() {
   esac
 }
 sign "$app/Contents/Helpers/Daily Focus Calendar.app" "$here/Calendar.entitlements"
+# V8 compiles JavaScript to machine code as it runs, which the hardened runtime
+# allows only with these two entitlements.
+sign "$app/Contents/Helpers/node" "$here/Node.entitlements"
 sign "$app" "$here/DailyFocus.entitlements"
 codesign --verify --deep --strict "$app"
 echo "signature verified"
@@ -134,23 +180,30 @@ if [ "$test" = yes ]; then
   "$app/Contents/MacOS/Daily Focus" --self-test
 fi
 
+# Notarisation: the app first, so the ticket can be stapled into the app itself and
+# it opens offline from wherever it is copied; then the disk image it ships in.
+notarise() {
+  # notarytool can exit 0 for a submission Apple rejected, so the verdict is read
+  # from what it prints.
+  result=$(xcrun notarytool submit "$1" --keychain-profile "$DAILY_FOCUS_NOTARY_PROFILE" --wait 2>&1) || true
+  printf '%s\n' "$result"
+  if ! printf '%s\n' "$result" | grep -q "status: Accepted"; then
+    echo "notarisation failed; \`xcrun notarytool log <id> --keychain-profile $DAILY_FOCUS_NOTARY_PROFILE\` says why" >&2
+    exit 1
+  fi
+}
+
+notarising=no
 if [ -n "${DAILY_FOCUS_NOTARY_PROFILE:-}" ]; then
   case "$identity_name" in
-    "Developer ID Application:"*) ;;
+    "Developer ID Application:"*) notarising=yes ;;
     *)
       echo "can't notarise: the app is signed by $identity_name, and notarisation needs a Developer ID Application certificate" >&2
       exit 1
       ;;
   esac
   ditto -c -k --keepParent "$app" "$zip"
-  # notarytool can exit 0 for a submission Apple rejected, so the verdict is read
-  # from what it prints.
-  result=$(xcrun notarytool submit "$zip" --keychain-profile "$DAILY_FOCUS_NOTARY_PROFILE" --wait 2>&1) || true
-  printf '%s\n' "$result"
-  if ! printf '%s\n' "$result" | grep -q "status: Accepted"; then
-    echo "notarisation failed; \`xcrun notarytool log <id> --keychain-profile $DAILY_FOCUS_NOTARY_PROFILE\` says why" >&2
-    exit 1
-  fi
+  notarise "$zip"
   xcrun stapler staple "$app"
   rm -f "$zip"
 else
@@ -162,3 +215,32 @@ fi
 ditto -c -k --keepParent "$app" "$zip"
 echo "built $app"
 echo "and $zip"
+
+# The disk image people download: the app beside a link to Applications, laid out
+# by dmgbuild (see macos/dmg-settings.py). dmgbuild is a Python package, installed
+# at a pinned version into a virtual environment under macos/build/, and it needs
+# Python 3.10 or newer. Without one the image is skipped and the zip still stands.
+dmg="$build/Daily Focus.dmg"
+rm -f "$dmg"
+if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+  venv="$build/dmgbuild"
+  if [ ! -x "$venv/bin/dmgbuild" ]; then
+    python3 -m venv "$venv"
+    "$venv/bin/pip" install --quiet --disable-pip-version-check dmgbuild==1.6.7 ds-store==1.3.3 mac-alias==2.2.3
+  fi
+  "$venv/bin/dmgbuild" -s "$here/dmg-settings.py" \
+    -D app="$app" -D background="$build/art/dmg-background.tiff" -D icon="$build/art/AppIcon.icns" \
+    "Daily Focus" "$dmg" >/dev/null
+  if [ "$identity" = "-" ]; then
+    codesign --force --sign - "$dmg"
+  else
+    codesign --force --timestamp --sign "$identity" "$dmg"
+  fi
+  if [ "$notarising" = yes ]; then
+    notarise "$dmg"
+    xcrun stapler staple "$dmg"
+  fi
+  echo "and $dmg"
+else
+  echo "no disk image: making one needs Python 3.10 or newer, for dmgbuild" >&2
+fi

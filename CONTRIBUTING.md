@@ -189,11 +189,18 @@ project:
 npm run app -- --test
 ```
 
-That packs the npm package, puts exactly what it ships inside the app, builds the
-calendar helper into it, signs both, and runs the app's self-test. Signing uses a
-Developer ID Application certificate when the keychain has one, otherwise Apple
-Development, which runs only on the Mac that built it. Set
-`DAILY_FOCUS_NOTARY_PROFILE` to a `notarytool store-credentials` profile to notarise.
+That packs the npm package and puts exactly what it ships inside the app. It adds
+the calendar helper, and Node.js at the version in `macos/node-version`: the official
+release for both architectures, checked against nodejs.org's checksums and cached
+in `macos/build/`. To move to a newer Node, change that file. It draws the icon and
+the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
+app's self-test, and makes `Daily Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
+which needs Python 3.10 or newer.
+
+Signing uses a Developer ID Application certificate when the keychain has one,
+otherwise Apple Development, which runs only on the Mac that built it. Set
+`DAILY_FOCUS_NOTARY_PROFILE` to a `notarytool store-credentials` profile to notarise
+and staple both the app and the disk image.
 
 The app starts the server with `--exit-with-stdin` and holds its standard input, so
 the server stops with the app however the app goes. To develop it against a

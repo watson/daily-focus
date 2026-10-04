@@ -59,6 +59,12 @@ func probePort(_ environment: [String: String]) -> Int? {
     return (1...65535).contains(port) ? port : 4321
 }
 
+/// The Node.js this app carries, when this build has one.
+func bundledNode() -> String? {
+    let node = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/node").path
+    return FileManager.default.isExecutableFile(atPath: node) ? node : nil
+}
+
 /// The script Node runs: a development checkout's when one is named, else the copy in the app.
 func serverEntry(environment: [String: String], resources: URL?) -> String {
     if let entry = environment["DAILY_FOCUS_APP_SERVER_ENTRY"]?.trimmingCharacters(in: .whitespaces), !entry.isEmpty {
@@ -341,7 +347,7 @@ final class Dashboard {
         let environment = self.environment
         DispatchQueue.global().async { [weak self] in
             let hydrated = hydratedPath(environment: environment)
-            let check = checkNode(on: hydrated.path)
+            let check = chooseNode(bundled: bundledNode(), path: hydrated.path)
             DispatchQueue.main.async {
                 guard let self, self.state != .stopping, self.state != .stopped else { return }
                 self.log.note("PATH from \(hydrated.source): \(hydrated.path)")
@@ -376,7 +382,7 @@ final class Dashboard {
         child.arguments = [entry, "--no-open", "--exit-with-stdin"]
         child.environment = childEnvironment(
             environment,
-            path: path ?? environment["PATH"] ?? "",
+            path: appendingToPath(path ?? environment["PATH"] ?? "", bundledNode().map { ($0 as NSString).deletingLastPathComponent }),
             calendarHelper: FileManager.default.fileExists(atPath: helper) ? helper : nil
         )
         // A relative path in a setting means the same as it would from a fresh Terminal.

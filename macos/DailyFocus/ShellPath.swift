@@ -176,10 +176,32 @@ enum NodeCheck: Equatable {
     case missing
 }
 
-/// The Node.js the dashboard will run on: the first `node` on `path`, as a shell
-/// would pick it, because that is also the one the agent's CLIs start with.
+/// The first `node` on `path`, as a shell would pick it.
 func checkNode(on path: String) -> NodeCheck {
     guard let node = findExecutable("node", on: path) else { return .missing }
     let version = (output(of: node, ["--version"], timeout: 5) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     return isSupportedNode(version) ? .found(path: node, version: version) : .tooOld(path: node, version: version)
+}
+
+/// The Node.js the dashboard runs on: the one this app carries, so it needs nothing
+/// installed and runs on the version it was built with. The first `node` on `path`
+/// is the fallback, for a development build without one, or a macOS too old for
+/// the one it carries, which then fails to answer `--version`.
+func chooseNode(bundled: String?, path: String) -> NodeCheck {
+    if let bundled, FileManager.default.isExecutableFile(atPath: bundled) {
+        let version = (output(of: bundled, ["--version"], timeout: 5) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if isSupportedNode(version) { return .found(path: bundled, version: version) }
+    }
+    return checkNode(on: path)
+}
+
+/// `path` with `directory` last, unless it is on it already. The dashboard runs the
+/// agents' CLIs, and one installed with npm starts with `#!/usr/bin/env node`: with
+/// the folder of the Node this app carries at the end of the PATH, such a CLI runs
+/// even on a Mac with no Node of its own, while one the user installed still wins.
+func appendingToPath(_ path: String, _ directory: String?) -> String {
+    guard let directory, !directory.isEmpty else { return path }
+    let entries = path.split(separator: ":").map(String.init)
+    if entries.contains(directory) { return path }
+    return (entries + [directory]).joined(separator: ":")
 }

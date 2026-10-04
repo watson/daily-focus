@@ -101,6 +101,13 @@ func runSelfTest() -> Bool {
           helper, "an empty setting is no setting")
     equal(childEnvironment([:], path: "", calendarHelper: nil)["DAILY_FOCUS_CALENDAR_APP"], nil, "no helper, no setting")
 
+    // The Node.js this app carries goes last on the dashboard's PATH, once.
+    let helpers = "/Applications/Daily Focus.app/Contents/Helpers"
+    equal(appendingToPath("/opt/homebrew/bin:/usr/bin", helpers), "/opt/homebrew/bin:/usr/bin:\(helpers)", "bundled Node is the last resort")
+    equal(appendingToPath("/usr/bin:\(helpers)", helpers), "/usr/bin:\(helpers)", "and is added only once")
+    equal(appendingToPath("/usr/bin", nil), "/usr/bin", "a build without one changes nothing")
+    equal(chooseNode(bundled: "/nonexistent/node", path: ""), .missing, "a bundled Node that isn't there falls back to PATH")
+
     // The status line.
     let json = """
     {"dataDir":"/Users/x/.daily-focus","profile":"work","setupNeeded":false,"restartPending":false,

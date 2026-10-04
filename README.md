@@ -40,7 +40,8 @@ daily-focus service
 ```
 
 Or, on a Mac, let the menu bar app keep it running: it starts the dashboard at login,
-shows the brief's age at a glance, and tells you when a new brief arrives. See
+shows the brief's age at a glance, and tells you when a new brief arrives. It carries
+everything it needs, Node.js included. See
 [SETUP.md](SETUP.md#keep-the-dashboard-running).
 
 [SETUP.md](SETUP.md) covers each step, the integrations and every setting. The

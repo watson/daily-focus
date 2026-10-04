@@ -71,5 +71,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build the menu bar app and run its self-test
+      # dmgbuild, which lays out the disk image, needs Python 3.10 or newer.
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      # The app carries Node.js, downloaded from nodejs.org at the pinned version.
+      - name: Cache the Node.js the app carries
+        uses: actions/cache@v6
+        with:
+          path: macos/build/node-v*
+          key: app-node-${{ hashFiles('macos/node-version') }}
+
+      - name: Build the menu bar app and its disk image, and run its self-test
         run: npm run app -- --test
