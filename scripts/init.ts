@@ -10,8 +10,9 @@
  *
  * It never overwrites. Everything in the store is either hand-written or the only
  * record of something (the action log is append-only and unreproducible), so a
- * second run reports what is already there and touches nothing. That makes it safe
- * to run when you can't remember whether you have.
+ * second run reports what is already there and touches nothing but the links into
+ * this repo, which it points at this checkout. That makes it safe to run when you
+ * can't remember whether you have.
  *
  * The three files this deliberately does *not* create are `items.json`,
  * `actions.jsonl` and `sessions.jsonl`. Each has exactly one writer — the agent for
@@ -313,7 +314,13 @@ const start = platform() === 'darwin' ? '`npm run service` to run the board in t
 
 section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
-  console.log('  The store was already set up. Nothing was changed.');
+  // A repointed link is the one change a second run makes, and the one worth hearing about:
+  // it means the briefs before it followed another checkout's prompt.
+  console.log(
+    linked > 0
+      ? `  The store was already set up. Linked ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout; nothing else changed.`
+      : '  The store was already set up. Nothing was changed.',
+  );
   console.log(`  ${start}, \`npm run audit\` to check the current brief.`);
 } else {
   next.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
