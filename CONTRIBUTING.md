@@ -57,6 +57,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
 | `src/config.ts`, `src/env.ts` | Settings and `.env` loading |
 | `src/store.ts`, `src/validate.ts`, `src/ids.ts` | Read the brief, salvage malformed items, and apply actions |
+| `src/links.ts` | Whether the store's links into the repo point at this checkout |
 | `src/focus.ts`, `src/archive.ts` | Objective privacy and progress history |
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |

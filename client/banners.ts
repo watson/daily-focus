@@ -1,10 +1,11 @@
-/** The strips under the tabs: what is wrong with the brief, and what the morning agent is doing. */
+/** The strips under the tabs: what is wrong with the brief or the setup, and what the morning agent is doing. */
 
 import type { ComponentChildren, JSX } from 'preact';
 
 import type { AgentRun, AgentRunState, DashboardState } from '../src/types.ts';
 import { el, type Props } from './el.ts';
 import { daysFromToday, formatTime, formatWeekday, localDateKey, parseDate, relativeDay, relativeTime } from './format.ts';
+import { renderMarkdown } from './markdown.ts';
 import type { Handlers, UiState } from './types.ts';
 
 export function renderBanners(state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element[] {
@@ -59,6 +60,10 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
     localDateKey(parseDate(agent.last.startedAt) ?? new Date(0)) === localDateKey(new Date(state.now))
   ) {
     banners.push(agentRunBanner(agent.last, state, handlers));
+  }
+  // Written by this repo, so they may carry code and links; see `banner` below.
+  for (const warning of state.setupWarnings ?? []) {
+    banners.push(banner('warning', '!', renderMarkdown(warning)));
   }
   for (const warning of state.warnings) {
     banners.push(banner('warning', '!', warning));
@@ -157,7 +162,8 @@ function nextRunPhrase(state: DashboardState): string {
 /**
  * `text` may be a string or elements, which is how the two boards' warnings come
  * to carry links: theirs name a pull request or a ticket key and are written by
- * this repo, so they are handed over through `renderMarkdown`. The brief's
+ * this repo, so they are handed over through `renderMarkdown`, as the setup
+ * warnings are for their file names and command. The brief's
  * warnings are deliberately not — they quote titles and ids an LLM wrote, and a
  * stray bracket in one should read as the stray bracket it is rather than become
  * a link.

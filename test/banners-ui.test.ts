@@ -39,6 +39,21 @@ test('a broken brief takes precedence over refresh reassurance', () => {
   assert.equal(byClass(container, 'banner--info').length, 0);
 });
 
+test('a setup warning is a warning strip, with its file names and command as code', () => {
+  const state = {
+    brief: { generatedAt: '2026-09-10T06:30:00Z', ageHours: 2, refreshPending: false, stale: false },
+    schedule: { runsToday: true },
+    problem: null,
+    warnings: [],
+    setupWarnings: ['`prompt.md` in the store links to another checkout. Run `npm run init` here to relink it.'],
+  } as unknown as DashboardState;
+  const container = mount(h('div', null, renderBanners(state, uiWith(), handlersWith())));
+
+  assert.equal(byClass(container, 'banner--warning').length, 1);
+  assert.deepEqual(byTag(container, 'code').map((node) => node.textContent), ['prompt.md', 'npm run init']);
+  assert.match(container.textContent!, /links to another checkout\. Run npm run init here/);
+});
+
 function renderWithRun(last: Record<string, unknown> | null, brief: Record<string, unknown> = {}, ui: Partial<UiValues> = {}) {
   const calls: string[] = [];
   const handlers = handlersWith({

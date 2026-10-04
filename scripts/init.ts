@@ -280,7 +280,7 @@ section('Files linked from the repo');
 // Which prompt follows DAILY_FOCUS_PROFILE, and a link to the other one — or to the
 // work prompt's old name, before there were two — is stale and gets repointed.
 await linkIntoStore(config.promptFile, config.promptSource, `the ${config.profile} morning prompt`);
-await linkIntoStore(config.schemaFile, resolve(repoRoot, 'schema/items.schema.json'), 'the payload schema');
+await linkIntoStore(config.schemaFile, config.schemaSource, 'the payload schema');
 // The assistant's instructions, which the server reads and hands to the CLI. Linked
 // for the same reason the morning prompt is; the server falls back to the repo's
 // copy until this exists, so an unlinked store still works.

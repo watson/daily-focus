@@ -853,6 +853,12 @@ export interface DashboardState {
   problem: string | null;
   /** Non-fatal complaints about the agent's payload, e.g. dropped malformed items. */
   warnings: string[];
+  /**
+   * What is wrong with how this dashboard is set up rather than with the brief:
+   * today, links in the store that don't point at this checkout (see `src/links.ts`).
+   * Markdown written by this repo, never by the agent.
+   */
+  setupWarnings: string[];
   /** Server time at render, so the client can place the "now" marker without clock skew. */
   now: string;
   /**

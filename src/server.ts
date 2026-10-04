@@ -15,6 +15,7 @@ import { Assistant, type AskContext } from './assistant.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
+import { storeLinkWarning } from './links.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
@@ -165,13 +166,18 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     // have to agree about what has been handled.
     const actions = await store.readActions();
     const now = new Date();
-    const state = await store.getState(now, actions, calendar.state());
+    const [state, linkWarning] = await Promise.all([
+      store.getState(now, actions, calendar.state()),
+      // A link that can't be read is no reason to withhold the page.
+      storeLinkWarning(config).catch(() => null),
+    ]);
     return {
       ...state,
       board: board.view(actions, now),
       tickets: tickets.view(actions, now),
       assistant: assistant.view(),
       agentRun: agent.view(now),
+      setupWarnings: linkWarning ? [linkWarning] : [],
       assetVersion,
     };
   }
