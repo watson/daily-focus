@@ -91,3 +91,13 @@ test('a file with no frontmatter gets one at the top', () => {
   const next = setFocusFields('Just a sentence.\n', { objective: 'A goal', blocker: null }, FOCUS_TEMPLATE);
   assert.equal(next, '---\nobjective: A goal\nblocker:\n---\n\nJust a sentence.\n');
 });
+
+test('two saves from the same version at once: the first lands, the second is told it is stale', async () => {
+  const path = await file();
+  await writeFile(path, 'start\n');
+  const { version } = await readEditable(path);
+  const [first, second] = await Promise.all([saveEditable(path, 'one', version), saveEditable(path, 'two', version)]);
+  assert.equal(first.saved, true);
+  assert.equal(second.saved, false);
+  assert.equal(await readFile(path, 'utf8'), 'one\n');
+});

@@ -84,3 +84,13 @@ test('with --exit-with-stdin, the dashboard stops when whatever holds its input 
     await rm(store, { recursive: true, force: true });
   }
 });
+
+test('a flag that belongs to another command is refused, not dropped', async () => {
+  for (const args of [['seed', '--remove'], ['service', '--force'], ['init', '--no-open'], ['audit', '--demo'], ['init', '--exit-with-stdin']]) {
+    await assert.rejects(run(process.execPath, [cli, ...args]), (err: { code?: number; stderr?: string }) => {
+      assert.equal(err.code, 1, args.join(' '));
+      assert.match(err.stderr ?? '', /doesn't apply to/);
+      return true;
+    });
+  }
+});

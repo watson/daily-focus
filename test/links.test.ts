@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readlink, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
@@ -136,6 +136,8 @@ test('linking the store makes what is missing, repoints what points elsewhere, a
   assert.equal(await readlink(config.promptFile), config.promptSource);
   assert.equal(await readlink(config.schemaFile), config.schemaSource);
   assert.deepEqual(await linkState(config.assistantPromptFile, config.assistantPromptSource), { state: 'own' });
+
+  assert.deepEqual((await readdir(config.dataDir)).filter((name) => name.endsWith('.link')), [], 'nothing staged is left behind');
 
   // A second pass has nothing to do.
   assert.deepEqual(

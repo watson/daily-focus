@@ -18,7 +18,7 @@
  * and everything here leaves it alone.
  */
 
-import { lstat, readlink, stat, symlink, unlink } from 'node:fs/promises';
+import { lstat, readlink, rename, stat, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, relative, resolve } from 'node:path';
 
@@ -168,16 +168,21 @@ async function linkOne(name: string, target: string, source: string): Promise<Li
     if (!stats.isSymbolicLink()) return { name, result: 'own', detail: null };
     before = resolve(dirname(target), await readlink(target));
     if (before === source) return { name, result: 'kept', detail: null };
-    await unlink(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       return { name, result: 'failed', detail: error instanceof Error ? error.message : String(error) };
     }
   }
+  // The new link is made beside the old one and renamed over it, so the agent
+  // never finds no link at all, and a link that can't be made leaves the old one.
+  const staged = `${target}.${process.pid}.link`;
   try {
-    await symlink(source, target);
+    await unlink(staged).catch(() => {});
+    await symlink(source, staged);
+    await rename(staged, target);
     return { name, result: 'linked', detail: before };
   } catch (error) {
+    await unlink(staged).catch(() => {});
     // Windows needs Developer Mode or an elevated shell for this. Copying would
     // work, so say so rather than leaving the store half set up with no hint why.
     const code = (error as NodeJS.ErrnoException).code;

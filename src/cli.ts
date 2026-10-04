@@ -17,7 +17,7 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
@@ -124,20 +124,26 @@ async function buildCalendar(): Promise<void> {
     console.log('The calendar helper reads Calendar.app, so it is macOS-only. Nothing to build.');
     return;
   }
-  const script = join(ROOT, 'tools', 'dfcal', 'build.sh');
-  const built = join(ROOT, 'tools', 'dfcal', 'build', 'Daily Focus Calendar.app');
+  // Built in a temporary copy of its sources: a global install may well be owned
+  // by root, and nothing here should write inside the package anyway.
+  const work = await mkdtemp(join(tmpdir(), 'daily-focus-calendar-'));
   try {
-    const { stdout } = await run('/bin/sh', [script]);
-    process.stdout.write(stdout);
-  } catch (err) {
-    console.error((err as { stderr?: string }).stderr?.trim() || (err as Error).message);
-    process.exitCode = 1;
-    return;
+    await cp(join(ROOT, 'tools', 'dfcal'), work, { recursive: true });
+    try {
+      const { stdout } = await run('/bin/sh', [join(work, 'build.sh')]);
+      process.stdout.write(stdout);
+    } catch (err) {
+      console.error((err as { stderr?: string }).stderr?.trim() || (err as Error).message);
+      process.exitCode = 1;
+      return;
+    }
+    await mkdir(join(USER_CALENDAR_APP, '..'), { recursive: true });
+    rmSync(USER_CALENDAR_APP, { recursive: true, force: true });
+    // `ditto` keeps the bundle's signature intact, which a plain copy may not.
+    await run('/usr/bin/ditto', [join(work, 'build', 'Daily Focus Calendar.app'), USER_CALENDAR_APP]);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
   }
-  await mkdir(join(USER_CALENDAR_APP, '..'), { recursive: true });
-  rmSync(USER_CALENDAR_APP, { recursive: true, force: true });
-  // `ditto` keeps the bundle's signature intact, which a plain copy may not.
-  await run('/usr/bin/ditto', [built, USER_CALENDAR_APP]);
   console.log(`installed ${USER_CALENDAR_APP}`);
   console.log('Restart the dashboard, choose calendars in its settings, and allow access when macOS asks.');
 }
@@ -182,6 +188,24 @@ async function main(argv: string[]): Promise<void> {
 
   const [command, ...rest] = positionals;
   if (rest.length > 0) throw new Error(`unexpected ${rest[0]}; see daily-focus --help`);
+
+  // Every flag is parsed for every command, so one given to the wrong command
+  // would otherwise be dropped without a word: `seed --remove` would seed.
+  const only: Record<string, readonly string[]> = {
+    demo: ['start'],
+    'exit-with-stdin': ['start'],
+    open: ['start'],
+    remove: ['service'],
+    force: ['seed'],
+    against: ['audit'],
+  };
+  const given = command ?? 'start';
+  for (const [flag, commands] of Object.entries(only)) {
+    const set = (values as Record<string, unknown>)[flag];
+    // --open is on by default, so only --no-open counts as given.
+    if (set === undefined || (flag === 'open' && set === true)) continue;
+    if (!commands.includes(given)) throw new Error(`--${flag === 'open' ? 'no-open' : flag} doesn't apply to ${given}; see daily-focus --help`);
+  }
 
   switch (command) {
     case undefined:

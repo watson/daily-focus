@@ -141,7 +141,7 @@ if (next.length === 0) {
       ? `  The store was already set up. Linked ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout; nothing else changed.`
       : '  The store was already set up. Nothing was changed.',
   );
-  console.log(`  ${start}, \`npm run audit\` to check the current brief.`);
+  console.log(`  ${start}, \`${command('audit')}\` to check the current brief.`);
 } else {
   next.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
   if (created > 0) {

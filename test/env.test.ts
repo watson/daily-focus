@@ -195,3 +195,16 @@ test('a settings file that cannot be used is reported, not thrown', async () => 
     assert.ok(read.error, contents);
   }
 });
+
+test('a number or true/false written by hand is read as its text, and anything else is reported', async () => {
+  const dir = await store({ DAILY_FOCUS_SESSION_MINUTES: 50, DAILY_FOCUS_GITHUB: false, DAILY_FOCUS_CALENDARS: ['Work'] });
+  const read = readSettingsFile(join(dir, 'settings.json'));
+  assert.deepEqual(read.values, { DAILY_FOCUS_SESSION_MINUTES: '50', DAILY_FOCUS_GITHUB: 'false' });
+  assert.match(read.error ?? '', /DAILY_FOCUS_CALENDARS/);
+});
+
+test('a blank value in the environment hides nothing saved below it', async () => {
+  const dir = await store({ DAILY_FOCUS_AGENT: 'claude' });
+  const env = layerEnv(envSources({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: '  ' }, {}));
+  assert.equal(env.DAILY_FOCUS_AGENT, 'claude', 'as the settings page reports it');
+});

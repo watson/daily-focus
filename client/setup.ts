@@ -23,6 +23,10 @@ export function SetupCard({ state, ui, handlers }: { state: DashboardState; ui: 
   const setup = state.setup;
   const agent = state.agentRun;
   const running = agent.last?.status === 'running';
+  // A source list still holding the template's placeholders sends the agent
+  // looking for `Your Name`, which is worse than no list at all; no list is fine,
+  // the agent briefs from what it can reach and says what it missed.
+  const placeholders = setup.sources.exists && setup.sources.placeholders > 0;
 
   return el(
     'section',
@@ -101,15 +105,19 @@ export function SetupCard({ state, ui, handlers }: { state: DashboardState; ui: 
               ? 'The morning agent is writing it now. Click the banner above to watch.'
               : 'The morning agent writes it now, which takes a few minutes, and from then on by itself every scheduled ' +
                   'morning. When it is done, click "updated … ago" at the top to read its report: what it found, and ' +
-                  'anything it could not reach.',
+                  'anything it could not reach.' +
+                  (setup.sources.exists ? '' : ' Without a source list it briefs from what it can reach on its own, and says what it missed.'),
           ),
+          placeholders
+            ? el('p', { class: 'setup__note setup__note--todo' }, "Replace the source list's placeholders first, or the agent goes looking for them.")
+            : null,
           el(
             'button',
             {
               type: 'button',
               class: 'button button--primary',
-              disabled: !agent.enabled || running || state.restart === 'waiting',
-              title: agent.enabled ? undefined : 'Choose the agent first',
+              disabled: !agent.enabled || running || state.restart === 'waiting' || placeholders,
+              title: !agent.enabled ? 'Choose the agent first' : placeholders ? "Replace the source list's placeholders first" : undefined,
               onClick: () => handlers.runAgent(),
             },
             running ? 'Running…' : 'Run the morning agent now',

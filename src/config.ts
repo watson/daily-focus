@@ -345,6 +345,19 @@ function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number 
 }
 
 /**
+ * A whole number within a range, or a startup error naming the setting. The
+ * settings page checks a change by building the config from it, so a bound here
+ * is also what keeps an unusable value from being saved there.
+ */
+function envBounded(name: string, fallback: number, min: number, max: number, env: NodeJS.ProcessEnv): number {
+  const n = envInt(name, fallback, env);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`${name} must be a whole number from ${min} to ${max}, got ${JSON.stringify(env[name])}`);
+  }
+  return n;
+}
+
+/**
  * A comma-separated list, trimmed, empties and duplicates dropped.
  *
  * Commas only, unlike `envList`: GitHub check names contain spaces often enough
@@ -569,6 +582,16 @@ function envString(name: string, fallback: string, env: NodeJS.ProcessEnv): stri
   return raw === undefined || raw.trim() === '' ? fallback : raw.trim();
 }
 
+/** The working day's hours, which have to be hours of one day, in order. */
+function workingDay(env: NodeJS.ProcessEnv): { workStartHour: number; workEndHour: number } {
+  const workStartHour = envBounded('DAILY_FOCUS_WORK_START', 9, 0, 23, env);
+  const workEndHour = envBounded('DAILY_FOCUS_WORK_END', 17, 1, 24, env);
+  if (workEndHour <= workStartHour) {
+    throw new Error(`DAILY_FOCUS_WORK_END (${workEndHour}) must be later than DAILY_FOCUS_WORK_START (${workStartHour})`);
+  }
+  return { workStartHour, workEndHour };
+}
+
 /** An unknown profile throws: read as `work`, it would quietly poll work accounts. */
 function envProfile(env: NodeJS.ProcessEnv): Profile {
   const raw = envString('DAILY_FOCUS_PROFILE', 'work', env).toLowerCase();
@@ -604,15 +627,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
-    sessionMinutes: envInt('DAILY_FOCUS_SESSION_MINUTES', 25, env),
-    awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, env),
-    port: envInt('DAILY_FOCUS_PORT', 4321, env),
+    // The same 1 to 120 the session endpoint holds a start to.
+    sessionMinutes: envBounded('DAILY_FOCUS_SESSION_MINUTES', 25, 1, 120, env),
+    awayAfterMinutes: envBounded('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, 0, 24 * 60, env),
+    port: envBounded('DAILY_FOCUS_PORT', 4321, 0, 65535, env),
     host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
     freeWindows: envFlag('DAILY_FOCUS_FREE_WINDOWS', profile !== 'personal', env),
-    workStartHour: envInt('DAILY_FOCUS_WORK_START', 9, env),
-    workEndHour: envInt('DAILY_FOCUS_WORK_END', 17, env),
-    minFreeWindowMinutes: envInt('DAILY_FOCUS_MIN_FREE_WINDOW', 45, env),
-    staleAfterHours: envInt('DAILY_FOCUS_STALE_AFTER_HOURS', 24, env),
+    ...workingDay(env),
+    minFreeWindowMinutes: envBounded('DAILY_FOCUS_MIN_FREE_WINDOW', 45, 1, 24 * 60, env),
+    staleAfterHours: envBounded('DAILY_FOCUS_STALE_AFTER_HOURS', 24, 1, 24 * 30, env),
     agentDays: envWeekdays('DAILY_FOCUS_AGENT_DAYS', env),
     github: envGitHub(env),
     calendar: envCalendar(env),

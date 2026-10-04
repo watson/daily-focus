@@ -24,7 +24,8 @@ daily-focus service
 
 From a checkout of this repo, `npm install` and then `npm run service` does the same,
 and `npm start` runs it in the terminal. Each `daily-focus <command>` below is
-`npm run <command>` in a checkout.
+`npm run <command>` in a checkout, with two differences: `build-calendar` is
+`build:calendar`, and flags go after `--`, as in `npm run audit -- --against <file>`.
 
 Until the first brief exists, the Today tab walks you through setting it up:
 

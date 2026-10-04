@@ -614,7 +614,13 @@ async function sendSettings(values: Record<string, string | null>, fromDraft: bo
     const page = await api.postSettings(values);
     batch(() => {
       ui.settings.value = page;
-      if (fromDraft) ui.settingsDraft.value = new Map();
+      // Only what was sent, and only where it hasn't been changed again since:
+      // a field edited while the save was on its way keeps its new value.
+      if (fromDraft) {
+        const draft = new Map(ui.settingsDraft.value);
+        for (const [key, value] of Object.entries(values)) if (draft.get(key) === value) draft.delete(key);
+        ui.settingsDraft.value = draft;
+      }
     });
     restartToast(page);
     if (page.restart === 'waiting') void followRestart();
@@ -693,7 +699,10 @@ async function saveObjective(objective: string, blocker: string): Promise<void> 
   try {
     adoptState(await api.postObjective(objective, blocker));
     // The editor, if it has been opened, now holds an older version of the file.
-    if (ui.texts.value.focus) void loadText('focus');
+    // Reloaded only if nothing is typed in it: otherwise it keeps what is typed,
+    // and saving it meets the changed file and offers the choice.
+    const editor = ui.texts.value.focus;
+    if (editor && editor.draft === (editor.saved ?? editor.template)) void loadText('focus');
     showToast(objective.trim() ? 'Objective saved' : 'Objective cleared');
   } catch (err) {
     showToast(`Could not save the objective: ${(err as Error).message}`);
@@ -722,10 +731,14 @@ function openSettings(section: string | null = null): void {
 }
 
 function loadSettingsPage(section: string | null): void {
-  if (!ui.settings.value) void loadSettings();
+  const loading = ui.settings.value ? Promise.resolve() : loadSettings();
   for (const name of ['focus', 'sources'] as const) if (!ui.texts.value[name]) void loadText(name);
+  // Most sections are the server's setting groups, which exist only once the
+  // settings have loaded: scrolling before then would find nothing to scroll to.
   if (section) {
-    afterRender(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    void loading.then(() =>
+      afterRender(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })),
+    );
   }
 }
 
