@@ -48,6 +48,11 @@ throwaway store:
 DAILY_FOCUS_DATA=$(mktemp -d) npm run seed
 ```
 
+`npm run service` points a LaunchAgent at the checkout it runs from and replaces any
+service for the same store. Never run it from a worktree against the real store. To
+test it, give it a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`, and
+run it again with `--remove` afterwards.
+
 ## Behavior to preserve
 
 - Keep new brief fields optional and parsing forgiving. One malformed item must not

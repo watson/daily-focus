@@ -14,16 +14,22 @@ don't carry over. Run these commands from the repo:
 ```sh
 npm install
 npm run init
-npm start
+npm run service
 ```
 
-Open [localhost:4321](http://127.0.0.1:4321). Keep the server running while you use
-the dashboard. The Today tab stays empty until your agent writes its first brief.
+Open [localhost:4321](http://127.0.0.1:4321). The Today tab stays empty until your
+agent writes its first brief.
 
 `npm run init` creates templates in `~/.daily-focus/` and links the work prompt and
 schema into that directory. For your personal life, see
 [A personal instance](#a-personal-instance). It preserves existing files and updates stale symlinks.
 You can safely run it again.
+
+`npm run service` runs the dashboard in the background on macOS. It starts it now,
+at every login, and again if it crashes, so the dashboard is up when the morning
+agent is due. See [Keep the dashboard running](#keep-the-dashboard-running). On
+another system, or to watch the server in a terminal, run `npm start` instead and
+keep that terminal open while you use the dashboard.
 
 ## Set your objective and sources
 
@@ -263,6 +269,36 @@ them opens the same way.
 
 The dashboard runs one thing at a time: a run, or a question about one.
 
+## Keep the dashboard running
+
+On macOS, `npm run service` installs a LaunchAgent for your user that runs this
+checkout's dashboard. It starts at login and again after a crash. If you stop the
+dashboard yourself, it stays stopped until the next login. The command waits until
+the dashboard answers and prints its address, or prints the end of its log if it
+doesn't.
+
+Run `npm run service` again to restart it after editing `.env`, pulling changes, or
+switching Node versions. It rebuilds the page each time the dashboard starts.
+
+The LaunchAgent is written for this machine and isn't tracked in git, so each
+machine runs the command once. It uses the Node.js that ran it and keeps two things
+from your shell: `PATH`, so the dashboard finds `gh`, `acli` and your agent's CLI,
+and any `DAILY_FOCUS_` variables set there. Everything else comes from `.env`, which
+is read each time the dashboard starts. A CLI that relies on a token exported in your
+shell profile, rather than its own login, won't find it.
+
+Each store gets one service. Running the command again for the same store replaces
+the service, and another store gets a service of its own. It refuses to install if
+something already has the port, such as a dashboard you started with `npm start`;
+stop that one first.
+
+The dashboard's output goes to `~/Library/Logs/local.daily-focus.log`, or a log
+named after the store if you use another one. To stop the service and uninstall it:
+
+```sh
+npm run service -- --remove
+```
+
 ## A personal instance
 
 Daily Focus can brief your personal life as well as your work: email, family
@@ -294,7 +330,13 @@ instead: it has no login, and a personal brief holds your mail and messages.
 
 To run both instances on one machine, start the second with its own
 `DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_PROFILE` in its environment,
-which takes precedence over `.env`.
+which takes precedence over `.env`. `npm run service` keeps those variables, so this
+installs the second service beside the first. Use the same variables each time you
+run it for that instance:
+
+```sh
+DAILY_FOCUS_PROFILE=personal DAILY_FOCUS_DATA=~/.daily-focus-personal DAILY_FOCUS_PORT=4322 npm run service
+```
 
 ## Match your working week
 
@@ -356,6 +398,10 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 
 ## If something looks wrong
 
+- If the dashboard is gone after a restart, it was probably started with `npm start`,
+  which ends with its terminal. Run `npm run service` to keep it running. If the
+  service is installed and the page still doesn't load, read
+  `~/Library/Logs/local.daily-focus.log`.
 - An empty Today tab means the agent hasn't written `items.json` yet. Without
   `DAILY_FOCUS_AGENT` nothing runs it; with it, start a run from the refresh icon
   beside "no brief yet".

@@ -307,14 +307,18 @@ if (wroteFocus) next.push(`Edit ${config.focusFile} — say what you are trying 
 if (wroteSources) next.push(`Edit ${config.sourcesFile} — say where to look.`);
 if (!config.agent.cli) next.push('Set DAILY_FOCUS_AGENT=codex or claude in .env, so the dashboard runs the morning agent. See SETUP.md.');
 
+// A Mac can keep the board running as a LaunchAgent, which outlives the terminal
+// and a restart. Anywhere else, `npm start` is the way in.
+const start = platform() === 'darwin' ? '`npm run service` to run the board in the background' : '`npm start` to open the board';
+
 section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
   console.log('  The store was already set up. Nothing was changed.');
-  console.log(`  \`npm start\` to open the board, \`npm run audit\` to check the current brief.`);
+  console.log(`  ${start}, \`npm run audit\` to check the current brief.`);
 } else {
   next.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
   if (created > 0) {
-    console.log(`  ${next.length + 1}. \`npm run seed\` for sample data, or \`npm start\` to open the board.`);
+    console.log(`  ${next.length + 1}. \`npm run seed\` for sample data, or ${start}.`);
     console.log(
       `\n  \x1b[2mNo hurry on the agent — \`npm run seed\` writes a sample brief so you can\n  see the dashboard before an agent has ever run. It refuses to replace\n  items.json once a real brief exists.\x1b[0m`,
     );

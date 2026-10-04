@@ -24,9 +24,10 @@ npm run seed
 npm run dev
 ```
 
-Open [localhost:4321](http://127.0.0.1:4321). The server restarts on changes, and the
-client is rebuilt. An open tab reloads when the bundle changes, or offers a reload if
-you're writing a note.
+Open [localhost:4321](http://127.0.0.1:4321). If your own dashboard runs as a
+service, it already has that port: export `DAILY_FOCUS_PORT=4322` as well and open
+that one. The server restarts on changes, and the client is rebuilt. An open tab
+reloads when the bundle changes, or offers a reload if you're writing a note.
 Close this terminal when done to clear the temporary settings.
 
 Use invented data for fixtures and screenshots. Never copy a real brief, calendar,
@@ -65,7 +66,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
 | `public/` | The page shell, the stylesheet, and the built bundle |
-| `scripts/` | Store initialization, sample data, and brief audits |
+| `scripts/` | Store initialization, the macOS background service, sample data, and brief audits |
 | `tools/dfcal/` | The macOS calendar helper |
 | `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
