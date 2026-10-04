@@ -57,10 +57,17 @@ let gate = DispatchSemaphore(value: 0)
 var granted = false
 var failure: String?
 
-store.requestFullAccessToEvents { ok, err in
+let answered: (Bool, Error?) -> Void = { ok, err in
     granted = ok
     if let err { failure = String(describing: err) }
     gate.signal()
+}
+// Full access is how macOS 14 and later ask. The menu bar app carries this helper
+// down to macOS 13, where the older request is the only one there is.
+if #available(macOS 14.0, *) {
+    store.requestFullAccessToEvents(completion: answered)
+} else {
+    store.requestAccess(to: .event, completion: answered)
 }
 
 // Long enough for a person to answer the TCC prompt the first time, bounded so a
