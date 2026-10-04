@@ -55,19 +55,15 @@ if [ -n "$server" ] && [ ! -f "$server/dist/cli.js" ]; then
   exit 1
 fi
 
-rm -rf "$app" "$zip" "$build/slices"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers" "$build/slices"
+rm -rf "$app" "$zip"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 
-# One slice per architecture, joined into one binary, so the same download runs on
-# Apple silicon and Intel.
-for arch in arm64 x86_64; do
-  swiftc -O -target "$arch-apple-macos13.5" -o "$build/slices/Daily Focus-$arch" "$here"/DailyFocus/*.swift
-done
-lipo -create -output "$app/Contents/MacOS/Daily Focus" "$build/slices/Daily Focus-arm64" "$build/slices/Daily Focus-x86_64"
-rm -rf "$build/slices"
+# Apple silicon only, as is everything in the app: Intel Macs stopped at macOS 26,
+# and carrying Node for both would double the download for them.
+swiftc -O -target arm64-apple-macos13.5 -o "$app/Contents/MacOS/Daily Focus" "$here"/DailyFocus/*.swift
 
-sh "$repo/tools/dfcal/build.sh" --universal "$app/Contents/Helpers"
+sh "$repo/tools/dfcal/build.sh" --app "$app/Contents/Helpers"
 
 # The app's icon and the disk image's background, drawn by code in this repo.
 swiftc -O -o "$build/artwork" "$here/Artwork/main.swift"
@@ -75,37 +71,34 @@ swiftc -O -o "$build/artwork" "$here/Artwork/main.swift"
 cp "$build/art/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 # The Node.js the dashboard runs on, carried in the app so that nothing has to be
-# installed first: the official release for each architecture, at the version in
-# macos/node-version, joined into one binary. Each download is checked against the
-# checksums nodejs.org publishes, fetched over HTTPS from the same place, and kept
-# in macos/build/ so a rebuild doesn't fetch them again. It is signed again below
-# with this app's identity, since the official build carries get-task-allow, a
-# debugging entitlement notarisation refuses.
+# installed first: the official Apple silicon release, at the version in
+# macos/node-version. The download is checked against the checksums nodejs.org
+# publishes, fetched over HTTPS from the same place, and kept in macos/build/ so a
+# rebuild doesn't fetch it again. It is signed again below with this app's
+# identity, since the official build carries get-task-allow, a debugging
+# entitlement notarisation refuses.
 node_version=$(tr -d '[:space:]' < "$here/node-version")
 node_cache="$build/node-v$node_version"
 mkdir -p "$node_cache"
 if [ ! -s "$node_cache/SHASUMS256.txt" ]; then
   curl -fsSL "https://nodejs.org/dist/v$node_version/SHASUMS256.txt" -o "$node_cache/SHASUMS256.txt"
 fi
-for arch in arm64 x64; do
-  name="node-v$node_version-darwin-$arch"
-  if [ ! -s "$node_cache/$name.tar.gz" ]; then
-    echo "downloading Node.js $node_version for $arch"
-    curl -fsSL "https://nodejs.org/dist/v$node_version/$name.tar.gz" -o "$node_cache/$name.tar.gz"
-  fi
-  expected=$(awk -v file="$name.tar.gz" '$2 == file { print $1 }' "$node_cache/SHASUMS256.txt")
-  actual=$(shasum -a 256 "$node_cache/$name.tar.gz" | awk '{ print $1 }')
-  if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-    rm -f "$node_cache/$name.tar.gz"
-    echo "$name.tar.gz doesn't match the checksum nodejs.org publishes; refusing to bundle it" >&2
-    exit 1
-  fi
-  tar -xzf "$node_cache/$name.tar.gz" -C "$node_cache" "$name/bin/node" "$name/LICENSE"
-done
-lipo -create -output "$app/Contents/Helpers/node" \
-  "$node_cache/node-v$node_version-darwin-arm64/bin/node" "$node_cache/node-v$node_version-darwin-x64/bin/node"
+name="node-v$node_version-darwin-arm64"
+if [ ! -s "$node_cache/$name.tar.gz" ]; then
+  echo "downloading Node.js $node_version"
+  curl -fsSL "https://nodejs.org/dist/v$node_version/$name.tar.gz" -o "$node_cache/$name.tar.gz"
+fi
+expected=$(awk -v file="$name.tar.gz" '$2 == file { print $1 }' "$node_cache/SHASUMS256.txt")
+actual=$(shasum -a 256 "$node_cache/$name.tar.gz" | awk '{ print $1 }')
+if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+  rm -f "$node_cache/$name.tar.gz"
+  echo "$name.tar.gz doesn't match the checksum nodejs.org publishes; refusing to bundle it" >&2
+  exit 1
+fi
+tar -xzf "$node_cache/$name.tar.gz" -C "$node_cache" "$name/bin/node" "$name/LICENSE"
+cp "$node_cache/$name/bin/node" "$app/Contents/Helpers/node"
 # Node's licence, and those of what it bundles, go wherever Node does.
-cp "$node_cache/node-v$node_version-darwin-arm64/LICENSE" "$app/Contents/Resources/Node.js LICENSE"
+cp "$node_cache/$name/LICENSE" "$app/Contents/Resources/Node.js LICENSE"
 echo "bundled Node.js $node_version"
 
 if [ -n "$server" ]; then

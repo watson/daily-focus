@@ -317,8 +317,8 @@ is and how many items are open, opens the dashboard or its settings, and starts 
 fresh brief; it posts a notification when a new brief arrives or the morning agent
 fails. It carries everything it runs: its own copy of the dashboard, the Node.js
 that runs it, and the calendar helper, so there is nothing else to install, and the
-calendar permission is asked for once, by an app you recognise. It needs macOS 13.5
-or newer.
+calendar permission is asked for once, by an app you recognise. It needs a Mac with
+Apple silicon and macOS 13.5 or newer.
 
 Open `Daily Focus.dmg` and drag the app to Applications, then open it from there.
 It has no window and no Dock icon: look for it in the menu bar.

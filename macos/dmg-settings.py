@@ -12,7 +12,9 @@ import os.path
 application = defines["app"]  # noqa: F821 -- dmgbuild provides `defines`
 name = os.path.basename(application)
 
-format = "UDZO"
+# LZMA, which macOS opens from 10.15 on: the download is mostly Node, which it
+# packs well under half the size zlib does.
+format = "ULMO"
 filesystem = "HFS+"
 files = [application]
 symlinks = {"Applications": "/Applications"}

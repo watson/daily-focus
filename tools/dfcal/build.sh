@@ -1,8 +1,8 @@
 #!/bin/sh
 # Builds the calendar helper as a .app bundle.
 #
-#   sh tools/dfcal/build.sh                      # into tools/dfcal/build/, for this Mac
-#   sh tools/dfcal/build.sh --universal OUT_DIR  # into OUT_DIR/, for the menu bar app
+#   sh tools/dfcal/build.sh                # into tools/dfcal/build/, for this Mac
+#   sh tools/dfcal/build.sh --app OUT_DIR  # into OUT_DIR/, for the menu bar app
 #
 # A bundle rather than a plain binary, and this is not stylistic. macOS attributes
 # a calendar-access request to the *responsible process*, so a bare CLI spawned by
@@ -13,16 +13,16 @@
 # bundle directly fails the same way; only launching it *as an app* gives it an
 # identity of its own. Hence `open`, and hence the plist.
 #
-# `--universal` builds for Apple silicon and Intel alike, down to the macOS 13 the
-# menu bar app supports, because the copy inside the app goes to other Macs. The
-# default stays a build for this Mac, which is all a checkout needs.
+# `--app` builds for the Macs the menu bar app supports, Apple silicon on macOS 13.5
+# and later, because the copy inside the app goes to other Macs. The default stays
+# a build for this Mac, which is all a checkout needs.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 
-universal=no
-if [ "${1:-}" = "--universal" ]; then
-  universal=yes
+for_app=no
+if [ "${1:-}" = "--app" ]; then
+  for_app=yes
   shift
 fi
 out=${1:-"$here/build"}
@@ -36,12 +36,8 @@ app="$(cd "$out" && pwd)/Daily Focus Calendar.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
-if [ "$universal" = yes ]; then
-  for arch in arm64 x86_64; do
-    swiftc -O -target "$arch-apple-macos13.0" "$here/main.swift" -o "$app/Contents/MacOS/dfcal-$arch"
-  done
-  lipo -create -output "$app/Contents/MacOS/dfcal" "$app/Contents/MacOS/dfcal-arm64" "$app/Contents/MacOS/dfcal-x86_64"
-  rm "$app/Contents/MacOS/dfcal-arm64" "$app/Contents/MacOS/dfcal-x86_64"
+if [ "$for_app" = yes ]; then
+  swiftc -O -target arm64-apple-macos13.5 "$here/main.swift" -o "$app/Contents/MacOS/dfcal"
 else
   swiftc -O "$here/main.swift" -o "$app/Contents/MacOS/dfcal"
 fi
