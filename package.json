@@ -2,15 +2,39 @@
   "name": "daily-focus",
   "version": "0.1.0",
   "description": "An interactive dashboard of what you should focus on today at work",
+  "keywords": [
+    "dashboard",
+    "focus",
+    "productivity",
+    "morning-brief",
+    "claude-code",
+    "codex",
+    "github",
+    "jira"
+  ],
   "author": "Thomas Watson <w@tson.dk> (https://wa.tson.dk/)",
   "license": "MIT",
-  "private": true,
   "homepage": "https://github.com/watson/daily-focus#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/watson/daily-focus.git"
   },
   "type": "module",
+  "bin": {
+    "daily-focus": "dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "public/index.html",
+    "public/style.css",
+    "public/app.js",
+    "prompts/",
+    "schema/",
+    "tools/dfcal/build.sh",
+    "tools/dfcal/main.swift",
+    "tools/dfcal/Info.plist",
+    "SETUP.md"
+  ],
   "engines": {
     "node": ">=22.18"
   },
@@ -18,6 +42,7 @@
     "start": "node src/server.ts",
     "prestart": "node scripts/build.ts",
     "dev": "node scripts/dev.ts",
+    "demo": "node scripts/build.ts && node src/cli.ts --demo",
     "build": "node scripts/build.ts",
     "init": "node scripts/init.ts",
     "service": "node scripts/service.ts",
@@ -25,16 +50,16 @@
     "audit": "node scripts/audit.ts",
     "build:calendar": "sh tools/dfcal/build.sh",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "package": "node scripts/package.ts",
+    "prepack": "node scripts/build.ts && node scripts/package.ts"
   },
   "devDependencies": {
+    "@preact/signals": "2.11.2",
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
     "happy-dom": "20.14.5",
+    "preact": "10.29.8",
     "typescript": "7.0.2"
-  },
-  "dependencies": {
-    "@preact/signals": "2.11.2",
-    "preact": "10.29.8"
   }
 }

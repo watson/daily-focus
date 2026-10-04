@@ -292,7 +292,7 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
       'p',
       { class: 'field__note' },
       'The live agenda needs the calendar helper. Build it once with ',
-      el('code', null, 'npm run build:calendar'),
+      el('code', null, calendar.buildCommand),
       ', and allow calendar access when macOS asks.',
     );
   }

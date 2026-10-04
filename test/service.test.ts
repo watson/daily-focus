@@ -56,6 +56,7 @@ const spec = {
   repo: '/Users/alice/src/R&D <focus>',
   log: '/Users/alice/Library/Logs/local.daily-focus.log',
   env: { PATH: '/usr/bin:/bin', DAILY_FOCUS_GITHUB_SCOPE: 'acme & co' },
+  packaged: false,
 };
 
 test('the plist escapes what XML would misread', () => {
@@ -79,4 +80,11 @@ test('the plist is one launchd accepts, and says what the dashboard runs', { ski
     StandardOutPath: spec.log,
     StandardErrorPath: spec.log,
   });
+});
+
+test('installed from npm, the service runs the bundled CLI and builds nothing', () => {
+  const plist = servicePlist({ ...spec, repo: '/Users/alice/.npm-global/lib/node_modules/daily-focus', packaged: true });
+  assert.ok(plist.includes('<string>/Users/alice/.npm-global/lib/node_modules/daily-focus/dist/cli.js</string>'));
+  assert.ok(plist.includes('<string>--no-open</string>'));
+  assert.ok(!plist.includes('scripts/build.ts'));
 });

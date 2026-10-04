@@ -16,6 +16,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
+import { command } from '../src/install.ts';
 import { linkState } from '../src/links.ts';
 import { Store } from '../src/store.ts';
 import { parseBrief } from '../src/validate.ts';
@@ -79,15 +80,15 @@ async function findPrevious(current: Brief): Promise<{ brief: Brief; from: strin
 /* ---------- store ---------- */
 
 // Checked before the brief, because a prompt link that dangles is why tomorrow's
-// brief won't exist: the agent is told to read a file that isn't there. Renaming
-// a prompt in the repo leaves exactly that behind until `npm run init` runs again.
+// brief won't exist: the agent is told to read a file that isn't there. The
+// dashboard relinks at every start, and so does init.
 section('Store');
 const promptLink = await linkState(config.promptFile, config.promptSource);
 if (promptLink.state === 'own') pass('prompt.md', 'a real file, not linked to the repo');
 else if (promptLink.state === 'linked') pass('prompt.md', `linked to the ${config.profile} prompt`);
-else if (promptLink.state === 'elsewhere') warn('prompt.md', `linked to ${promptLink.target}, not the ${config.profile} prompt — run \`npm run init\``);
-else if (promptLink.state === 'dangling') fail('prompt.md', `links to ${promptLink.target}, which does not exist — run \`npm run init\``);
-else fail('prompt.md', 'missing — run `npm run init`');
+else if (promptLink.state === 'elsewhere') warn('prompt.md', `linked to ${promptLink.target}, not the ${config.profile} prompt — restart the dashboard, or run \`${command('init')}\``);
+else if (promptLink.state === 'dangling') fail('prompt.md', `links to ${promptLink.target}, which does not exist — restart the dashboard, or run \`${command('init')}\``);
+else fail('prompt.md', `missing — restart the dashboard, or run \`${command('init')}\``);
 
 /* ---------- payload ---------- */
 

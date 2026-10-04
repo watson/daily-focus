@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { startServer, type StartedServer } from '../src/server.ts';
+import { PortInUseError, startServer, type StartedServer } from '../src/server.ts';
 
 let server: StartedServer;
 let dataDir: string;
@@ -216,4 +216,13 @@ test('the assistant is off by default, says so in state, and refuses to be asked
     body: JSON.stringify({ text: 'no id' }),
   });
   assert.equal(bad.status, 400);
+});
+
+test('a port already in use says so plainly, and leaves nothing running', async () => {
+  const port = new URL(server.url).port;
+  await assert.rejects(startServer({ ...process.env, DAILY_FOCUS_PORT: port }), (err: Error) => {
+    assert.ok(err instanceof PortInUseError);
+    assert.match(err.message, new RegExp(`port ${port} on 127\\.0\\.0\\.1 is already in use`));
+    return true;
+  });
 });

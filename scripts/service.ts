@@ -26,13 +26,12 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { loadConfig } from '../src/config.ts';
+import { command, IN_NPX_CACHE, PACKAGED, ranDirectly, ROOT } from '../src/install.ts';
 
 const run = promisify(execFile);
-const repoRoot = resolve(import.meta.dirname, '..');
 
 /**
  * The launchd label for the dashboard on `dataDir`. The default store gets the
@@ -78,8 +77,10 @@ export interface ServiceSpec {
   label: string;
   /** The Node binary to run the server with. */
   node: string;
-  /** The checkout to run. */
+  /** The checkout, or the installed package, to run. */
   repo: string;
+  /** Whether `repo` is the npm package, which runs its bundled CLI rather than building a checkout. */
+  packaged: boolean;
   /** Where launchd writes the server's output. */
   log: string;
   env: Record<string, string>;
@@ -114,7 +115,12 @@ export function servicePlist(spec: ServiceSpec): string {
     // after `exec` the job's process is the server itself, so launchd's SIGTERM
     // reaches the handler that closes it cleanly. Node arrives as `$0` rather than
     // spliced into the command, so its path never needs quoting.
-    ProgramArguments: ['/bin/sh', '-c', '"$0" scripts/build.ts && exec "$0" src/server.ts', spec.node],
+    //
+    // The npm package has nothing to build: the page is shipped built, and the
+    // CLI starts the same server.
+    ProgramArguments: spec.packaged
+      ? [spec.node, join(spec.repo, 'dist', 'cli.js'), '--no-open']
+      : ['/bin/sh', '-c', '"$0" scripts/build.ts && exec "$0" src/server.ts', spec.node],
     WorkingDirectory: spec.repo,
     EnvironmentVariables: spec.env,
     RunAtLoad: true,
@@ -194,15 +200,27 @@ function reachable(host: string): string {
   return host.includes(':') ? `[${host}]` : host;
 }
 
-async function main(args: readonly string[]): Promise<number> {
+export async function main(args: readonly string[]): Promise<number> {
   const remove = args.includes('--remove');
   const unknown = args.filter((arg) => arg !== '--remove');
   if (unknown.length > 0) {
-    console.error(`unknown argument ${unknown[0]}. Usage: npm run service [-- --remove]`);
+    console.error(`unknown argument ${unknown[0]}. Usage: ${command('service', '[--remove]')}`);
     return 1;
   }
   if (platform() !== 'darwin') {
-    console.error('npm run service installs a macOS LaunchAgent. Elsewhere, run `npm start` under your own service manager.');
+    console.error(
+      `${command('service')} installs a macOS LaunchAgent. Elsewhere, run ${PACKAGED ? '`daily-focus --no-open`' : '`npm start`'} under your own service manager.`,
+    );
+    return 1;
+  }
+  // npx keeps its copy in npm's cache, which the next version replaces and npm may
+  // clear: a LaunchAgent pointing into it would stop working with no warning.
+  if (IN_NPX_CACHE && !remove) {
+    console.error(
+      'This copy of Daily Focus is in npx\'s cache, which npm replaces or clears, so a service\n' +
+        'pointing at it would stop working. Install it first, then run the service from there:\n\n' +
+        '    npm install -g daily-focus\n    daily-focus service\n',
+    );
     return 1;
   }
 
@@ -239,7 +257,7 @@ async function main(args: readonly string[]): Promise<number> {
     const pid = await listeningPid(config.port);
     const by = pid ? ` (process ${pid})` : '';
     if (found.dataDir === config.dataDir) {
-      bad(`this dashboard is already running at ${url}${by}`, 'stop the one started with `npm start`, then run this again');
+      bad(`this dashboard is already running at ${url}${by}`, 'stop the one started by hand, then run this again');
     } else if (found.dataDir) {
       bad(`port ${config.port} is taken by the dashboard for ${tilde(found.dataDir)}${by}`, 'give one of them its own DAILY_FOCUS_PORT');
     } else {
@@ -252,9 +270,9 @@ async function main(args: readonly string[]): Promise<number> {
   const env = serviceEnvironment(process.env, dirname(process.execPath));
   await mkdir(dirname(plistPath), { recursive: true });
   await mkdir(dirname(log), { recursive: true });
-  await writeFile(plistPath, servicePlist({ label, node: process.execPath, repo: repoRoot, log, env }), 'utf8');
+  await writeFile(plistPath, servicePlist({ label, node: process.execPath, repo: ROOT, packaged: PACKAGED, log, env }), 'utf8');
   ok('wrote the LaunchAgent', tilde(plistPath));
-  kept('runs', `${tilde(repoRoot)} on Node ${process.version}`);
+  kept('runs', `${tilde(ROOT)} on Node ${process.version}`);
   kept('kept from this shell', Object.keys(env).join(', '));
 
   // Only what this start writes is worth showing if it fails.
@@ -274,7 +292,9 @@ async function main(args: readonly string[]): Promise<number> {
     if ((await occupant(url))?.dataDir === config.dataDir) {
       ok('running', url);
       console.log(`\n  It starts at login and again if it crashes. Logs: ${tilde(log)}`);
-      console.log('  Run `npm run service` again after editing .env or pulling; `npm run service -- --remove` to stop it.\n');
+      console.log(
+        `  Run \`${command('service')}\` again after ${PACKAGED ? 'updating' : 'pulling'}; \`${command('service', '--remove')}\` to stop it.\n`,
+      );
       return 0;
     }
     await sleep(250);
@@ -283,11 +303,11 @@ async function main(args: readonly string[]): Promise<number> {
   bad(`installed, but nothing answered at ${url} within 30 seconds`);
   const output = (await readFile(log).catch(() => Buffer.alloc(0))).subarray(logFrom).toString('utf8').trim();
   if (output) console.log(`\n${output.split('\n').slice(-20).map((line) => `    ${line}`).join('\n')}`);
-  console.log(`\n  launchd retries after a crash. Full log: ${tilde(log)}. To stop it: npm run service -- --remove\n`);
+  console.log(`\n  launchd retries after a crash. Full log: ${tilde(log)}. To stop it: ${command('service', '--remove')}\n`);
   return 1;
 }
 
 // Only run when executed directly, so tests can import the plist builders.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+if (ranDirectly(import.meta.url)) {
   process.exit(await main(process.argv.slice(2)));
 }

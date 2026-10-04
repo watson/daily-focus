@@ -225,7 +225,7 @@ function boards(state: DashboardState, handlers: Handlers): JSX.Element {
   if (calendar.supported && state.agendaSource) {
     const live = state.agendaSource.live;
     const text = !calendar.built
-      ? 'The live agenda needs the calendar helper: run npm run build:calendar once. Until then it uses the brief.'
+      ? `The live agenda needs the calendar helper: run ${calendar.buildCommand} once. Until then it uses the brief.`
       : calendar.chosen === 0
         ? 'Choose which calendars to show, and the agenda follows them live.'
         : live

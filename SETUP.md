@@ -8,16 +8,24 @@ the dashboard runs for you through a coding-agent CLI.
 
 ## Start the dashboard
 
-If you tried the README demo, open a new terminal first so its temporary settings
-don't carry over. Run these commands from the repo:
-
 ```sh
-npm install
-npm run service
+npx daily-focus
 ```
 
-Open [localhost:4321](http://127.0.0.1:4321). Until the first brief exists, the
-Today tab walks you through setting it up:
+That starts the dashboard and opens [localhost:4321](http://127.0.0.1:4321) in your
+browser. To keep it running in the background on macOS, install it and run it as a
+service instead:
+
+```sh
+npm install -g daily-focus
+daily-focus service
+```
+
+From a checkout of this repo, `npm install` and then `npm run service` does the same,
+and `npm start` runs it in the terminal. Each `daily-focus <command>` below is
+`npm run <command>` in a checkout.
+
+Until the first brief exists, the Today tab walks you through setting it up:
 
 1. **What it briefs**: your work, or your personal life. See
    [A personal instance](#a-personal-instance) for running both.
@@ -34,13 +42,13 @@ Everything in it stays on the settings page afterwards: the gear in the header, 
 <kbd>,</kbd>. The dashboard keeps its files in `~/.daily-focus/`, and links the
 prompt and schema there each time it starts.
 
-`npm run service` runs the dashboard in the background on macOS. It starts it now,
-at every login, and again if it crashes, so the dashboard is up when the morning
+`daily-focus service` runs the dashboard in the background on macOS. It starts it
+now, at every login, and again if it crashes, so the dashboard is up when the morning
 agent is due. See [Keep the dashboard running](#keep-the-dashboard-running). On
-another system, or to watch the server in a terminal, run `npm start` instead and
-keep that terminal open while you use the dashboard.
+another system, or to watch the server in a terminal, run `daily-focus` and keep that
+terminal open while you use the dashboard. `daily-focus --help` lists the rest.
 
-If you'd rather write the files by hand, `npm run init` creates the store with
+If you'd rather write the files by hand, `daily-focus init` creates the store with
 templates for both. It preserves existing files, so you can safely run it again.
 
 ## Set your objective and sources
@@ -127,14 +135,14 @@ After the first run, read its report (click "updated … ago"): it says which so
 it couldn't reach. To check the brief against the payload contract, run:
 
 ```sh
-npm run audit
+daily-focus audit
 ```
 
 The audit checks the brief for duplicate or drifting IDs, missing history, handled
 items raised again, and other contract problems. To compare with a particular brief:
 
 ```sh
-npm run audit -- --against /path/to/earlier-items.json
+daily-focus audit --against /path/to/earlier-items.json
 ```
 
 For Google Tasks, this repo includes an optional
@@ -214,10 +222,11 @@ Set `DAILY_FOCUS_JIRA=off` to disable the board.
 ### Live calendar on macOS
 
 The live agenda reads Calendar.app, so meeting changes appear during the day.
-It requires the Xcode command line tools with `swiftc`. Build the helper once:
+It requires the Xcode command line tools with `swiftc`. Build the helper once; it
+goes in `~/Library/Application Support/Daily Focus/`, where every copy finds it:
 
 ```sh
-npm run build:calendar
+daily-focus build-calendar
 ```
 
 Choose calendar names exactly as Calendar.app shows them, and list your own email
@@ -295,14 +304,17 @@ The dashboard runs one thing at a time: a run, or a question about one.
 
 ## Keep the dashboard running
 
-On macOS, `npm run service` installs a LaunchAgent for your user that runs this
-checkout's dashboard. It starts at login and again after a crash. If you stop the
+On macOS, `daily-focus service` installs a LaunchAgent for your user that runs this
+copy of the dashboard: the global install, or the checkout it was run from. It
+starts at login and again after a crash. If you stop the
 dashboard yourself, it stays stopped until the next login. The command waits until
 the dashboard answers and prints its address, or prints the end of its log if it
 doesn't.
 
-Run `npm run service` again to restart it after editing `.env`, pulling changes, or
-switching Node versions. It rebuilds the page each time the dashboard starts.
+Run `daily-focus service` again to restart it after updating (`npm install -g
+daily-focus`), pulling changes into a checkout, or switching Node versions. From a
+checkout it rebuilds the page each time the dashboard starts. It won't install from
+`npx`, whose copy npm replaces with the next version: install it globally first.
 
 The LaunchAgent is written for this machine and isn't tracked in git, so each
 machine runs the command once. It uses the Node.js that ran it and keeps two things
@@ -315,14 +327,14 @@ exported in your shell profile, rather than its own login, won't find it.
 
 Each store gets one service. Running the command again for the same store replaces
 the service, and another store gets a service of its own. It refuses to install if
-something already has the port, such as a dashboard you started with `npm start`;
+something already has the port, such as a dashboard you started in a terminal;
 stop that one first.
 
 The dashboard's output goes to `~/Library/Logs/local.daily-focus.log`, or a log
 named after the store if you use another one. To stop the service and uninstall it:
 
 ```sh
-npm run service -- --remove
+daily-focus service --remove
 ```
 
 ## A personal instance
@@ -362,19 +374,19 @@ other way, it replies `403` and names the host it was reached as.
 
 To run both instances on one machine, start the second with its own
 `DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_PROFILE` in its environment,
-which takes precedence over `.env`. `npm run service` keeps those variables, so this
+which takes precedence over `.env`. `daily-focus service` keeps those variables, so this
 installs the second service beside the first. Use the same variables each time you
 run it for that instance:
 
 ```sh
-DAILY_FOCUS_PROFILE=personal DAILY_FOCUS_DATA=~/.daily-focus-personal DAILY_FOCUS_PORT=4322 npm run service
+DAILY_FOCUS_PROFILE=personal DAILY_FOCUS_DATA=~/.daily-focus-personal DAILY_FOCUS_PORT=4322 daily-focus service
 ```
 
 ## Match your working week
 
 Set `DAILY_FOCUS_AGENT_DAYS` to the days the dashboard runs the agent. It uses cron
 weekday numbers: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, or `0,6`
-for weekends. Unset means Monday to Friday. `npm run audit` shows the schedule in
+for weekends. Unset means Monday to Friday. `daily-focus audit` shows the schedule in
 use. Days without scheduled runs don't make a brief overdue. Once a refresh is due,
 the dashboard allows 45 minutes before showing a warning.
 
@@ -412,7 +424,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_CALENDARS` | *none* | Calendar names to show, comma-separated and spelled as Calendar.app spells them. Empty means nothing is read |
 | `DAILY_FOCUS_CALENDAR_ADDRESSES` | *none* | Your own email addresses, comma-separated, used to find your reply among an event's attendees |
 | `DAILY_FOCUS_CALENDAR_POLL_MINUTES` | `5` | Minutes between calendar reads while a tab is open |
-| `DAILY_FOCUS_CALENDAR_APP` | *built copy* | Path to the calendar helper bundle, if it isn't the one `npm run build:calendar` produces |
+| `DAILY_FOCUS_CALENDAR_APP` | *built copy* | Path to the calendar helper bundle, if it isn't the one `daily-focus build-calendar` installs |
 | `DAILY_FOCUS_JIRA` | `on`; `off` for personal | `off` disables the Jira ticket board; nothing is read |
 | `DAILY_FOCUS_JIRA_PROJECTS` | *everything* | Project keys to limit the search to, comma-separated |
 | `DAILY_FOCUS_JIRA_HOLD_STATUSES` | *none* | Statuses where standing still is deliberate, comma-separated and spelled as your Jira spells them. Their rows are exempt from *In flight with nothing linked*, and from nothing else |
@@ -434,8 +446,8 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 
 ## If something looks wrong
 
-- If the dashboard is gone after a restart, it was probably started with `npm start`,
-  which ends with its terminal. Run `npm run service` to keep it running. If the
+- If the dashboard is gone after a restart, it was probably started in a terminal,
+  which it ends with. Run `daily-focus service` to keep it running. If the
   service is installed and the page still doesn't load, read
   `~/Library/Logs/local.daily-focus.log`.
 - Before the first brief, the Today tab shows the setup steps. Once a brief has
@@ -451,6 +463,6 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
   line for the age of the data.
 - If port 4321 is already in use, set `DAILY_FOCUS_PORT` to another port.
 
-`npm run seed` refuses to replace an existing brief and prints the path it found.
+`daily-focus seed` refuses to replace an existing brief and prints the path it found.
 Use the [temporary demo](README.md#try-it) for sample data, never your real store.
-`npm run seed -- --force` overwrites the brief anyway.
+`daily-focus seed --force` overwrites the brief anyway.
