@@ -998,7 +998,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
 export async function runServer(): Promise<void> {
   // Before anything reads PATH: a dashboard started by launchd or an app has
   // none of the CLIs it runs on its PATH until this finds your shell's.
-  hydratePath();
+  await hydratePath();
 
   let current: StartedServer | null = null;
   let stopping = false;
