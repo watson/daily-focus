@@ -34,6 +34,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Pack the npm package
+        run: npm pack --dry-run
+
       - name: Initialize an isolated sample store
         run: npm run init
         env:
