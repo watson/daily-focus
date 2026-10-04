@@ -317,8 +317,11 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
     .map((name) => name.trim())
     .filter(Boolean);
   const listed = ui.calendars.value;
+  // Case-insensitive throughout, as the server matches the names: a saved `work`
+  // shows `Work` ticked, so it has to be able to untick it too.
   const toggle = (title: string, on: boolean) => {
-    const next = on ? [...chosen.filter((name) => name !== title), title] : chosen.filter((name) => name !== title);
+    const others = chosen.filter((name) => name.toLowerCase() !== title.toLowerCase());
+    const next = on ? [...others, title] : others;
     handlers.editSetting('DAILY_FOCUS_CALENDARS', next.length > 0 ? next.join(',') : null);
   };
   return el(
