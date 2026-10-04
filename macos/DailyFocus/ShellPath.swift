@@ -83,20 +83,49 @@ final class OutputBuffer: @unchecked Sendable {
 /// printed when there is one, rather than waiting for the end of the output: an
 /// interactive shell can leave a background job behind that holds the pipe open
 /// long after the shell itself is done.
+///
+/// The command runs in a session of its own, with no terminal. An interactive shell
+/// started with the terminal the app was run from makes itself that terminal's
+/// foreground, and doesn't give it back to the app when it exits, so Ctrl-C no
+/// longer reached the app. Process can't start a session, so this uses posix_spawn.
 func output(of executable: String, _ arguments: [String], environment: [String: String]? = nil,
             timeout: TimeInterval, stopAfter marker: String? = nil) -> String? {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = arguments
-    if let environment { process.environment = environment }
-    process.standardInput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    let pipe = Pipe()
-    process.standardOutput = pipe
+    var ends: [Int32] = [0, 0]
+    guard pipe(&ends) == 0 else { return nil }
+    let (readEnd, writeEnd) = (ends[0], ends[1])
+
+    var actions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&actions)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+    posix_spawn_file_actions_adddup2(&actions, writeEnd, 1)
+    posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0)
+
+    var attributes: posix_spawnattr_t?
+    posix_spawnattr_init(&attributes)
+    defer { posix_spawnattr_destroy(&attributes) }
+    // Nothing but those three is inherited: not the app's other pipes, not its log.
+    posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
+
+    let argv = ([executable] + arguments).map { strdup($0) } + [nil]
+    let envp = environment.map { $0.map { strdup("\($0.key)=\($0.value)") } + [nil] }
+    defer {
+        argv.forEach { free($0) }
+        envp?.forEach { free($0) }
+    }
+    var pid: pid_t = 0
+    let started = envp.map { posix_spawn(&pid, executable, &actions, &attributes, argv, $0) }
+        ?? posix_spawn(&pid, executable, &actions, &attributes, argv, environ)
+    close(writeEnd)
+    guard started == 0 else {
+        close(readEnd)
+        return nil
+    }
 
     let buffer = OutputBuffer()
     let done = DispatchSemaphore(value: 0)
-    pipe.fileHandleForReading.readabilityHandler = { handle in
+    let reader = FileHandle(fileDescriptor: readEnd, closeOnDealloc: true)
+    reader.readabilityHandler = { handle in
         let chunk = handle.availableData
         if chunk.isEmpty {
             handle.readabilityHandler = nil
@@ -106,17 +135,13 @@ func output(of executable: String, _ arguments: [String], environment: [String: 
         buffer.append(chunk)
         if let marker, buffer.text.contains(marker) { done.signal() }
     }
-
-    do {
-        try process.run()
-    } catch {
-        pipe.fileHandleForReading.readabilityHandler = nil
-        return nil
-    }
     _ = done.wait(timeout: .now() + timeout)
-    pipe.fileHandleForReading.readabilityHandler = nil
-    // An interactive shell ignores SIGTERM, and by now nothing it could still say is wanted.
-    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    reader.readabilityHandler = nil
+    // The whole session, which is the shell and anything it left running. An
+    // interactive shell ignores SIGTERM, and by now nothing it could still say is wanted.
+    kill(-pid, SIGKILL)
+    var status: Int32 = 0
+    waitpid(pid, &status, 0)
     return buffer.text
 }
 

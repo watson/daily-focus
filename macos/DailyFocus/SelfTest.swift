@@ -51,6 +51,17 @@ func runSelfTest() -> Bool {
     )
     equal(shellCandidates(environment: [:], accountShell: nil), ["/bin/zsh"], "zsh when nothing else is known")
 
+    // A command runs as the leader of a session of its own (`s` in its state), so an
+    // interactive shell has no terminal to take from the one the app was run from.
+    let state = output(of: "/bin/sh", ["-c", "ps -o stat= -p $$"], timeout: 5) ?? ""
+    check(state.contains("s"), "a command runs in a session of its own: state \(state.debugDescription)")
+    equal(output(of: "/usr/bin/printenv", ["ANSWER"], environment: ["ANSWER": "42"], timeout: 5), "42\n", "a command gets the environment it is given")
+    let begun = Date()
+    equal(output(of: "/bin/sh", ["-c", "echo early; echo __DF_PATH_END__; sleep 30 & wait"], timeout: 10, stopAfter: "__DF_PATH_END__"),
+          "early\n__DF_PATH_END__\n", "output up to the marker")
+    check(Date().timeIntervalSince(begun) < 5, "the marker ends the wait, and what was left running is stopped")
+    equal(output(of: "/nonexistent/command", [], timeout: 5), nil, "a command that can't start")
+
     // Node versions.
     equal(versionNumbers("v22.18.0\n"), [22, 18, 0], "version numbers")
     equal(versionNumbers("v23.0.0-nightly2026"), [23, 0, 0], "pre-release version")
