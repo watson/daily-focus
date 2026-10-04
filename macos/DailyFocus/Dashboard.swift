@@ -224,6 +224,10 @@ final class Dashboard {
     private var path: String?
     private var node: String?
     private var process: Process?
+    /// The write end of the server's standard input. Held, never written: when the
+    /// app goes, however it goes, the kernel closes it, and a server started with
+    /// `--exit-with-stdin` stops instead of running on without the app.
+    private var lifeline: Pipe?
     private var startedAt = Date()
     private var output = Data()
     private var attempt = 0
@@ -369,7 +373,7 @@ final class Dashboard {
         let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Daily Focus Calendar.app").path
         let child = Process()
         child.executableURL = URL(fileURLWithPath: node)
-        child.arguments = [entry, "--no-open"]
+        child.arguments = [entry, "--no-open", "--exit-with-stdin"]
         child.environment = childEnvironment(
             environment,
             path: path ?? environment["PATH"] ?? "",
@@ -377,7 +381,8 @@ final class Dashboard {
         )
         // A relative path in a setting means the same as it would from a fresh Terminal.
         child.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-        child.standardInput = FileHandle.nullDevice
+        let lifeline = Pipe()
+        child.standardInput = lifeline
         // One pipe for both, so the log keeps the server's lines in the order it wrote them.
         let pipe = Pipe()
         child.standardOutput = pipe
@@ -398,7 +403,7 @@ final class Dashboard {
             DispatchQueue.main.async { self?.exited(child, code: code, signalled: signalled) }
         }
 
-        log.note("starting \(node) \(entry) --no-open")
+        log.note("starting \(node) \(entry) --no-open --exit-with-stdin")
         do {
             try child.run()
         } catch {
@@ -411,6 +416,7 @@ final class Dashboard {
             return
         }
         process = child
+        self.lifeline = lifeline
         startedAt = Date()
         output = Data()
         rememberChild(child.processIdentifier, node: node)
@@ -435,6 +441,7 @@ final class Dashboard {
     private func exited(_ child: Process, code: Int32, signalled: Bool) {
         guard child === process else { return }
         process = nil
+        lifeline = nil
         forgetChild()
         let uptime = Date().timeIntervalSince(startedAt)
         log.note(signalled ? "the dashboard was stopped by signal \(code)" : "the dashboard exited with code \(code)")

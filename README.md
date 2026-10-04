@@ -39,6 +39,10 @@ npm install -g daily-focus
 daily-focus service
 ```
 
+Or, on a Mac, let the menu bar app keep it running: it starts the dashboard at login,
+shows the brief's age at a glance, and tells you when a new brief arrives. See
+[SETUP.md](SETUP.md#keep-the-dashboard-running).
+
 [SETUP.md](SETUP.md) covers each step, the integrations and every setting. The
 dashboard runs locally; nothing about your day leaves your machine except through
 the CLI you choose.

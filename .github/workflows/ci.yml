@@ -51,3 +51,25 @@ jobs:
         run: npm run audit
         env:
           DAILY_FOCUS_DATA: ${{ runner.temp }}/daily-focus
+
+  app:
+    # The menu bar app is Swift and macOS-only. Signed ad hoc here, since a runner
+    # has no certificate, which is enough for the build and the self-test.
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the menu bar app and run its self-test
+        run: npm run app -- --test

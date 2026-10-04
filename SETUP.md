@@ -304,6 +304,33 @@ The dashboard runs one thing at a time: a run, or a question about one.
 
 ## Keep the dashboard running
 
+There are two ways on macOS: the menu bar app, or a LaunchAgent. Use one, not both;
+the app notices a dashboard that is already running and only watches it.
+
+### The menu bar app
+
+Daily Focus as a Mac app lives in the menu bar. It starts the dashboard, again if it
+stops, and at login once you tick **Open at Login**. Its menu says how old the brief
+is and how many items are open, opens the dashboard or its settings, and starts a
+fresh brief; it posts a notification when a new brief arrives or the morning agent
+fails. It carries its own copy of the dashboard and the calendar helper, so the
+calendar permission is asked for once, by an app you recognise. It needs Node.js
+22.18 or newer, which it finds the way your terminal does.
+
+Build it from a checkout with:
+
+```sh
+npm run app
+```
+
+That leaves `macos/build/Daily Focus.app`; move it to Applications. Its log is
+`~/Library/Logs/Daily Focus.log`. Everything the dashboard starts runs inside the
+app as far as macOS is concerned, so a permission prompt from the morning agent's
+CLI, for Reminders, Messages or your calendars, names Daily Focus, and Full Disk
+Access, if a source needs it, is granted to the app.
+
+### A LaunchAgent
+
 On macOS, `daily-focus service` installs a LaunchAgent for your user that runs this
 copy of the dashboard: the global install, or the checkout it was run from. It
 starts at login and again after a crash. If you stop the

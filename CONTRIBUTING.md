@@ -83,7 +83,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `public/` | The page shell, the stylesheet, and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
-| `macos/` | The macOS menu bar app, which runs the dashboard in place of `npm run service`; `sh macos/build.sh --test` builds and checks it |
+| `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
 | `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
 
@@ -176,3 +176,26 @@ Two things follow from the bundle:
 
 To release, bump the version and run `npm publish`. Check what ships with
 `npm pack --dry-run` first.
+
+## The menu bar app
+
+`macos/` is a Swift app that keeps the dashboard running from the menu bar: it starts
+the server as its child, restarts it when it stops, shows the brief's age and the
+morning agent's state from `GET /api/status`, and posts a notification when a brief
+arrives or a run fails. It is built with `swiftc` and a shell script, no Xcode
+project:
+
+```sh
+npm run app -- --test
+```
+
+That packs the npm package, puts exactly what it ships inside the app, builds the
+calendar helper into it, signs both, and runs the app's self-test. Signing uses a
+Developer ID Application certificate when the keychain has one, otherwise Apple
+Development, which runs only on the Mac that built it. Set
+`DAILY_FOCUS_NOTARY_PROFILE` to a `notarytool store-credentials` profile to notarise.
+
+The app starts the server with `--exit-with-stdin` and holds its standard input, so
+the server stops with the app however the app goes. To develop it against a
+checkout, run the built binary with `DAILY_FOCUS_APP_SERVER_ENTRY=$PWD/src/cli.ts`,
+a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`.

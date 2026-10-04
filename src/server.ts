@@ -1018,7 +1018,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // "any free port", which tests rely on.
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : config.port;
-  const url = `http://${config.host}:${port}`;
+  // An address to open rather than the one bound: a wildcard listens on loopback
+  // too, and an IPv6 address needs brackets in a URL. The menu bar app reads this line.
+  const shown =
+    config.host === '0.0.0.0' ? '127.0.0.1' : config.host === '::' ? '[::1]' : config.host.includes(':') ? `[${config.host}]` : config.host;
+  const url = `http://${shown}:${port}`;
   console.log(`[daily-focus] dashboard  ${url}`);
   console.log(`[daily-focus] store      ${config.dataDir}`);
 

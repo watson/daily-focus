@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let statusLineItem = NSMenuItem()
     private let attachedItem = NSMenuItem()
     private let openItem = NSMenuItem(title: "Open Daily Focus", action: nil, keyEquivalent: "o")
+    private let settingsItem = NSMenuItem(title: "Settings…", action: nil, keyEquivalent: ",")
     private let briefItem = NSMenuItem(title: "Write a Fresh Brief", action: nil, keyEquivalent: "")
     private let nodeItem = NSMenuItem(title: "Download Node.js…", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Open at Login", action: nil, keyEquivalent: "")
@@ -115,11 +116,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         attachedItem.isEnabled = false
         // The app never takes over a dashboard it didn't start: the other one may
         // be a LaunchAgent that would fight it for the port. Say how to hand it over.
-        attachedItem.toolTip = "Something other than this app, such as npm run service or npm start, runs the dashboard "
+        attachedItem.toolTip = "Something other than this app, such as daily-focus service or a terminal, runs the dashboard "
             + "on this port. To have the app run it, stop that one, then quit and reopen Daily Focus."
 
         for (menuItem, action) in [
             (openItem, #selector(openDashboard)),
+            (settingsItem, #selector(openSettings)),
             (briefItem, #selector(writeBrief)),
             (nodeItem, #selector(downloadNode)),
             (loginItem, #selector(toggleOpenAtLogin)),
@@ -131,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             menuItem.action = action
         }
 
-        for menuItem in [statusLineItem, attachedItem, openItem, briefItem, nodeItem, NSMenuItem.separator(),
+        for menuItem in [statusLineItem, attachedItem, openItem, settingsItem, briefItem, nodeItem, NSMenuItem.separator(),
                          loginItem, restartItem, logItem, NSMenuItem.separator(), quitItem] {
             menu.addItem(menuItem)
         }
@@ -148,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         attachedItem.isHidden = !dashboard.isAttached
         nodeItem.isHidden = state != .needsNode
         openItem.isEnabled = dashboard.url != nil
+        settingsItem.isEnabled = dashboard.url != nil
         briefItem.isEnabled = canWriteBrief
         switch state {
         case .attached, .preparing, .stopping, .stopped: restartItem.isEnabled = false
@@ -209,6 +212,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     @objc private func openDashboard() {
         guard let url = dashboard.expectedURL else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// The dashboard's own settings page: everything is set there, nothing here.
+    @objc private func openSettings() {
+        guard let url = dashboard.expectedURL, let settings = URL(string: "#settings", relativeTo: url) else { return }
+        NSWorkspace.shared.open(settings.absoluteURL)
     }
 
     @objc private func writeBrief() {
