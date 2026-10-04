@@ -90,16 +90,19 @@ func runSelfTest() -> Bool {
         "bundled entry"
     )
 
-    let helper = "/Applications/Daily Focus.app/Contents/Helpers/Daily Focus Calendar.app"
-    let child = childEnvironment(["PATH": "/usr/bin", "HOME": "/Users/x"], path: "/a:/b", calendarHelper: helper)
+    let child = childEnvironment(["PATH": "/usr/bin", "HOME": "/Users/x", "DAILY_FOCUS_CALENDAR_APP": "/mine.app"], path: "/a:/b")
     equal(child["PATH"], "/a:/b", "child PATH")
     equal(child["HOME"], "/Users/x", "child keeps the rest")
-    equal(child["DAILY_FOCUS_CALENDAR_APP"], helper, "child gets the bundled helper")
-    equal(childEnvironment(["DAILY_FOCUS_CALENDAR_APP": "/mine.app"], path: "", calendarHelper: helper)["DAILY_FOCUS_CALENDAR_APP"],
-          "/mine.app", "a named helper wins")
-    equal(childEnvironment(["DAILY_FOCUS_CALENDAR_APP": " "], path: "", calendarHelper: helper)["DAILY_FOCUS_CALENDAR_APP"],
-          helper, "an empty setting is no setting")
-    equal(childEnvironment([:], path: "", calendarHelper: nil)["DAILY_FOCUS_CALENDAR_APP"], nil, "no helper, no setting")
+    equal(child["DAILY_FOCUS_CALENDAR_APP"], "/mine.app", "a helper the user named is passed on as it is")
+    equal(childEnvironment([:], path: "")["DAILY_FOCUS_CALENDAR_APP"], nil, "the app's own helper is the dashboard's to find")
+
+    // Where to look for a dashboard already running.
+    equal(probeURL([:])?.absoluteString, "http://127.0.0.1:4321", "loopback by default")
+    equal(probeURL(["DAILY_FOCUS_HOST": "::1", "DAILY_FOCUS_PORT": "4396"])?.absoluteString, "http://[::1]:4396", "IPv6 bracketed")
+    equal(probeURL(["DAILY_FOCUS_HOST": "0.0.0.0"])?.absoluteString, "http://127.0.0.1:4321", "a wildcard is looked for on loopback")
+    equal(probeURL(["DAILY_FOCUS_HOST": "::"])?.absoluteString, "http://[::1]:4321", "an IPv6 wildcard too")
+    equal(probeURL(["DAILY_FOCUS_HOST": "100.99.1.2"])?.absoluteString, "http://100.99.1.2:4321", "a named address as it is")
+    equal(probeURL(["DAILY_FOCUS_PORT": "0"]), nil, "no telling where any free port is")
 
     // The Node.js this app carries goes last on the dashboard's PATH, once.
     let helpers = "/Applications/Daily Focus.app/Contents/Helpers"
@@ -215,6 +218,7 @@ func runSelfTest() -> Bool {
     equal(errorMessage(Data("<html>".utf8)), nil, "not JSON")
     check(isDashboardHealth(Data(#"{"ok":true,"dataDir":"/tmp/x"}"#.utf8)), "a dashboard's health")
     check(!isDashboardHealth(Data(#"{"status":"ok"}"#.utf8)), "someone else's health")
+    check(!isDashboardHealth(Data(#"{"ok":true}"#.utf8)), "ok, but not a dashboard: no store")
 
     print(failures == 0 ? "self-test passed: \(checks) checks" : "self-test failed: \(failures) of \(checks) checks")
     return failures == 0

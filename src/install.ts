@@ -44,6 +44,16 @@ export function ranDirectly(url: string): boolean {
 }
 
 /**
+ * The calendar helper the Mac app carries, when this copy of the dashboard is the
+ * one inside the app (`Daily Focus.app/Contents/Resources/server`). Found here by
+ * the dashboard itself rather than handed over by the app, so that a helper set
+ * in Settings still wins, and the setting stays one the page can change.
+ */
+export const APP_CALENDAR_APP = ROOT.includes(`.app${sep}Contents${sep}Resources${sep}`)
+  ? resolve(ROOT, '..', '..', 'Helpers', 'Daily Focus Calendar.app')
+  : null;
+
+/**
  * Where `daily-focus build-calendar` puts the calendar helper: outside the
  * package, which an update replaces, and in one place for every copy, since
  * macOS keeps the calendar permission with the helper that asked for it.

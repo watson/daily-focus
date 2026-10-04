@@ -118,6 +118,12 @@ fi
 # The identity. Matched by hash, since a renewed certificate leaves two with one name.
 identity=${DAILY_FOCUS_SIGN_IDENTITY:-}
 identity_name=$identity
+# A certificate named by its hash is still checked by its name below, for whether
+# it can notarise, so look the name up.
+if [ -n "$identity" ] && [ "$identity" != "-" ]; then
+  named=$(security find-identity -v -p codesigning 2>/dev/null | grep -F "$identity" | head -n 1 | sed 's/^[^"]*"\(.*\)"$/\1/' || true)
+  [ -n "$named" ] && identity_name=$named
+fi
 if [ -z "$identity" ]; then
   identities=$(security find-identity -v -p codesigning 2>/dev/null || true)
   for kind in "Developer ID Application" "Apple Development"; do

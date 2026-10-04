@@ -48,6 +48,22 @@ func dashboardURL(fromLine line: String) -> URL? {
     return URL(string: "\(scheme)://\(host):\(port)")
 }
 
+/// Where to look for an existing dashboard: `DAILY_FOCUS_HOST` and the port, as
+/// the server would listen there, with a wildcard bind looked for on loopback and
+/// an IPv6 address bracketed. Nil when the port is `0`, any free one.
+func probeURL(_ environment: [String: String]) -> URL? {
+    guard let port = probePort(environment) else { return nil }
+    var host = (environment["DAILY_FOCUS_HOST"] ?? "").trimmingCharacters(in: .whitespaces)
+    if host.isEmpty || host == "0.0.0.0" {
+        host = "127.0.0.1"
+    } else if host == "::" || host == "[::]" {
+        host = "[::1]"
+    } else if host.contains(":") && !host.hasPrefix("[") {
+        host = "[\(host)]"
+    }
+    return URL(string: "http://\(host):\(port)")
+}
+
 /// The port to look for an existing dashboard on, or nil when there is no telling
 /// in advance: `0` asks the server for any free port.
 func probePort(_ environment: [String: String]) -> Int? {
@@ -74,13 +90,12 @@ func serverEntry(environment: [String: String], resources: URL?) -> String {
 }
 
 /// The server's environment: the app's own, with the PATH that finds Node and the
-/// CLIs, and the calendar helper this app carries unless the user named another.
-func childEnvironment(_ base: [String: String], path: String, calendarHelper: String?) -> [String: String] {
+/// CLIs. The calendar helper this app carries is not passed along: the dashboard
+/// finds it beside itself, below whatever is set in Settings, where a variable
+/// from here would override that and lock the setting.
+func childEnvironment(_ base: [String: String], path: String) -> [String: String] {
     var environment = base
     environment["PATH"] = path
-    if let calendarHelper, (environment["DAILY_FOCUS_CALENDAR_APP"] ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
-        environment["DAILY_FOCUS_CALENDAR_APP"] = calendarHelper
-    }
     return environment
 }
 
@@ -260,7 +275,7 @@ final class Dashboard {
     /// Where a dashboard is expected before the app knows for sure, for a
     /// notification clicked while it is still starting.
     var expectedURL: URL? {
-        url ?? probePort(environment).flatMap { URL(string: "http://127.0.0.1:\($0)") }
+        url ?? probeURL(environment)
     }
 
     func start() {
@@ -321,7 +336,10 @@ final class Dashboard {
 
     private func probeThenSpawn() {
         guard state != .stopping, state != .stopped else { return }
-        guard let port = probePort(environment), let base = URL(string: "http://127.0.0.1:\(port)") else {
+        // Preparing from here until a child runs, so Restart is refused meanwhile:
+        // a second press would otherwise start a second lookup, and two children.
+        state = .preparing
+        guard let base = probeURL(environment), let port = base.port else {
             prepareThenSpawn()
             return
         }
@@ -376,14 +394,12 @@ final class Dashboard {
             state = .blocked("This build of the app has no dashboard in it")
             return
         }
-        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Daily Focus Calendar.app").path
         let child = Process()
         child.executableURL = URL(fileURLWithPath: node)
         child.arguments = [entry, "--no-open", "--exit-with-stdin"]
         child.environment = childEnvironment(
             environment,
-            path: appendingToPath(path ?? environment["PATH"] ?? "", bundledNode().map { ($0 as NSString).deletingLastPathComponent }),
-            calendarHelper: FileManager.default.fileExists(atPath: helper) ? helper : nil
+            path: appendingToPath(path ?? environment["PATH"] ?? "", bundledNode().map { ($0 as NSString).deletingLastPathComponent })
         )
         // A relative path in a setting means the same as it would from a fresh Terminal.
         child.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser

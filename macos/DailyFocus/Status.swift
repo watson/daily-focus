@@ -173,5 +173,6 @@ func errorMessage(_ data: Data?) -> String? {
 /// Whether a `/api/health` answer came from a Daily Focus dashboard.
 func isDashboardHealth(_ data: Data?) -> Bool {
     guard let data, let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
-    return body["ok"] as? Bool == true
+    // A dashboard says which store it serves; plenty of other things say ok.
+    return body["ok"] as? Bool == true && (body["dataDir"] as? String).map { !$0.isEmpty } == true
 }
