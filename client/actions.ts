@@ -481,7 +481,7 @@ function showView(view: View): void {
   if (ui.view.value === view) return;
   // The number keys reach every view, including one whose tab is hidden.
   if (state.value && !availableViews(state.value).includes(view)) return;
-  if (view === 'settings') beforeSettings = ui.view.value;
+  if (view === 'settings') ui.settingsReturn.value = ui.view.value;
   batch(() => {
     ui.view.value = view;
     // The selection belongs to the list it was made in. The panel does not: it
@@ -490,11 +490,8 @@ function showView(view: View): void {
     closeMenus();
   });
   // Settings is a page to visit, not one a pinned tab should reopen on.
-  remember(VIEW_KEY, view === 'settings' ? beforeSettings : view);
+  remember(VIEW_KEY, view === 'settings' ? ui.settingsReturn.value : view);
 }
-
-/** The view Settings returns to: the one it was opened from. */
-let beforeSettings: View = 'today';
 
 /** Marks the history entry Settings added, as against one a link arrived on. */
 const SETTINGS_ENTRY = 'dailyFocusSettings';
@@ -530,7 +527,7 @@ function setView(view: View): void {
     return;
   }
   if (ui.view.value === 'settings') {
-    beforeSettings = view;
+    ui.settingsReturn.value = view;
     if (settingsEntry()) {
       history.back();
       return;
@@ -752,7 +749,7 @@ export function followLocation(): void {
     }
     return;
   }
-  if (ui.view.value === 'settings') showView(beforeSettings);
+  if (ui.view.value === 'settings') showView(ui.settingsReturn.value);
 }
 
 /* ---------- the handlers ---------- */
@@ -855,6 +852,7 @@ export const handlers: Handlers = {
   openHelp: () => (document.getElementById('help') as HTMLDialogElement | null)?.showModal(),
   hideToast,
   openSettings,
+  closeSettings: () => setView(ui.settingsReturn.value),
   loadSettings: () => void loadSettings(),
   editSetting,
   discardSettings: () =>

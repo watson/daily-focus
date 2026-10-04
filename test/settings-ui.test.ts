@@ -156,3 +156,28 @@ test('an editor saves only a change, and a file changed on disk offers both ways
   }
   assert.deepEqual(calls, ['reload', 'save:true']);
 });
+
+test('leaving says where it goes: back to the view Settings was opened from', () => {
+  let closed = 0;
+  const root = render({ settingsReturn: 'tickets' }, handlersWith({ closeSettings: () => void closed++ }));
+  const back = [...root.querySelectorAll('button')].find((button) => button.textContent?.startsWith('Back to'))!;
+  assert.equal(back.textContent, 'Back to Jira tickets');
+  back.click();
+  assert.equal(closed, 1);
+});
+
+test('the gear is pressed while Settings is open, and a second press closes it', async () => {
+  const { Header } = await import('../client/chrome.ts');
+  const calls: string[] = [];
+  const handlers = handlersWith({ openSettings: () => void calls.push('open'), closeSettings: () => void calls.push('close') });
+  const gear = (view: 'today' | 'settings') => mount(h(Header, { state: null, ui: uiWith({ view }), handlers })).querySelector<HTMLButtonElement>('#settings-toggle')!;
+
+  const off = gear('today');
+  assert.equal(off.getAttribute('aria-pressed'), 'false');
+  assert.ok(off.querySelector('svg'), 'drawn, not a character');
+  off.click();
+  const on = gear('settings');
+  assert.equal(on.getAttribute('aria-pressed'), 'true');
+  on.click();
+  assert.deepEqual(calls, ['open', 'close']);
+});
