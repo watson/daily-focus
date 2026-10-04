@@ -128,6 +128,12 @@ export interface UiState {
   connectionError: Signal<Error | null>;
   /** The wall clock in milliseconds, ticked every second while a focus session runs. */
   clock: Signal<number>;
+  /**
+   * The view Settings returns to: the one it was opened from. Kept so leaving it,
+   * by its button, the gear, Escape or Back, lands where the user was, and so the
+   * button can say where that is.
+   */
+  settingsReturn: Signal<View>;
   /** The settings page as the server last described it. Null until the page is first opened. */
   settings: Signal<SettingsPage | null>;
   /**
@@ -193,6 +199,8 @@ export interface Handlers {
   hideToast(): void;
   /** Go to the settings page, scrolled to a section when one is named. */
   openSettings(section?: string | null): void;
+  /** Leave the settings page for the view it was opened from. */
+  closeSettings(): void;
   loadSettings(): void;
   /** Change a field on the settings page without saving it; null means back to the default. */
   editSetting(key: string, value: string | null): void;
