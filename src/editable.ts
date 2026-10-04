@@ -37,12 +37,30 @@ export async function readEditable(path: string): Promise<{ text: string | null;
 
 export type SaveResult = { saved: true; version: string } | { saved: false; text: string | null; version: string };
 
+/** The save in progress for each file, so that the next waits for it. */
+const saving = new Map<string, Promise<unknown>>();
+
 /**
  * Save `text` if the file is still at `expected`, through a sibling temp file and
  * a rename so the agent never reads half of it. Otherwise hand back what is there
  * now, for the editor to show.
+ *
+ * Saves of one file run one at a time, so two tabs saving at once compare against
+ * each other's result rather than both against the file before either, and never
+ * share the temp file. A hand edit can still land in the moment between the check
+ * and the rename, the time it takes to write a few kilobytes; nothing short of a
+ * lock the editor would also have to honour closes that.
  */
-export async function saveEditable(path: string, text: string, expected: string): Promise<SaveResult> {
+export function saveEditable(path: string, text: string, expected: string): Promise<SaveResult> {
+  const next = (saving.get(path) ?? Promise.resolve()).catch(() => {}).then(() => saveNow(path, text, expected));
+  saving.set(path, next);
+  void next.finally(() => {
+    if (saving.get(path) === next) saving.delete(path);
+  }).catch(() => {});
+  return next;
+}
+
+async function saveNow(path: string, text: string, expected: string): Promise<SaveResult> {
   const current = await readEditable(path);
   if (current.version !== expected) return { saved: false, ...current };
   const normalised = text.endsWith('\n') ? text : `${text}\n`;

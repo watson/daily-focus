@@ -78,6 +78,20 @@ test('a value the dashboard would refuse to start with is refused before it is s
     assert.ok('error' in applied, `${key}=${value} should be refused`);
     assert.match(applied.error, new RegExp(key), `the refusal names ${key}`);
   }
+  // Numbers the dashboard can't use, refused before they are saved rather than
+  // failing later: a session it won't start, an hour that isn't one, a day that ends
+  // before it begins.
+  const unusable: Record<string, string>[] = [
+    { DAILY_FOCUS_SESSION_MINUTES: '-1' },
+    { DAILY_FOCUS_SESSION_MINUTES: '500' },
+    { DAILY_FOCUS_WORK_START: '24' },
+    { DAILY_FOCUS_WORK_START: '17', DAILY_FOCUS_WORK_END: '9' },
+    { DAILY_FOCUS_MIN_FREE_WINDOW: '0' },
+    { DAILY_FOCUS_STALE_AFTER_HOURS: '2.5' },
+  ];
+  for (const change of unusable) {
+    assert.ok('error' in applySettingsChange(sources(), change), JSON.stringify(change));
+  }
   // A time with no agent to run would be a schedule that never fires.
   assert.ok('error' in applySettingsChange(sources(), { DAILY_FOCUS_AGENT_AT: '06:30' }));
 });

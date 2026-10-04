@@ -85,12 +85,17 @@ export function readSettingsFile(path: string): { values: Record<string, string>
     return { values: {}, error: `${path} should hold an object of settings` };
   }
   const values: Record<string, string> = {};
+  const unreadable: string[] = [];
   for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value === 'string' && key.startsWith('DAILY_FOCUS_') && !LAUNCH_SETTINGS.includes(key)) {
-      values[key] = value;
-    }
+    if (!key.startsWith('DAILY_FOCUS_') || LAUNCH_SETTINGS.includes(key)) continue;
+    // The page writes text, but a hand edit may well write 50 or true, which mean
+    // what "50" and "true" do; read them so, rather than dropping them unsaid.
+    if (typeof value === 'string') values[key] = value;
+    else if ((typeof value === 'number' && Number.isFinite(value)) || typeof value === 'boolean') values[key] = String(value);
+    else unreadable.push(key);
   }
-  return { values, error: null };
+  const error = unreadable.length > 0 ? `${path} has values that aren't text, a number or true/false: ${unreadable.join(', ')}` : null;
+  return { values, error };
 }
 
 /** Only the keys with the project prefix, so a stray `PATH=` line can't rewire the process. */
@@ -152,7 +157,20 @@ export function envSources(processEnv: NodeJS.ProcessEnv = process.env, dotenv: 
  * one launch — a test, a second instance, the LaunchAgent — still beats both.
  */
 export function layerEnv(sources: EnvSources, settings: Readonly<Record<string, string>> = sources.settings): NodeJS.ProcessEnv {
-  return { ...sources.dotenv, ...settings, ...sources.process };
+  return { ...sources.dotenv, ...withoutBlanks(settings), ...withoutBlanks(sources.process) };
+}
+
+/**
+ * A blank value is no value: `config.ts` reads one as the default, and the
+ * settings page shows the layer below. Left in, a blank in the environment would
+ * hide a saved setting the page says is in effect.
+ */
+function withoutBlanks(record: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value !== undefined && value.trim() !== '') kept[key] = value;
+  }
+  return kept;
 }
 
 /** The environment as `loadConfig` reads it by default. */
