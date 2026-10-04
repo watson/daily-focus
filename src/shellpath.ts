@@ -16,7 +16,7 @@
  * since is found the next time the dashboard starts.
  */
 
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { userInfo } from 'node:os';
 
 const START = '__DAILY_FOCUS_PATH_START__';
@@ -25,10 +25,44 @@ const END = '__DAILY_FOCUS_PATH_END__';
 /** How long a shell gets to start up and answer. */
 const SHELL_TIMEOUT_MS = 5_000;
 
-export type ExecFile = (file: string, args: readonly string[], options: { encoding: 'utf8'; timeout: number }) => string;
+/** Runs a program and resolves with what it printed, or rejects when it fails or takes longer than `timeout`. */
+export type ExecFile = (file: string, args: readonly string[], options: { timeout: number }) => Promise<string>;
 
-const defaultExec: ExecFile = (file, args, options) =>
-  execFileSync(file, args, { ...options, stdio: ['ignore', 'pipe', 'ignore'] });
+/**
+ * Run a program in a session of its own, with no terminal to take.
+ *
+ * An interactive shell started with the terminal of the process that started it
+ * makes itself that terminal's foreground, and on the way out hands it to its
+ * parent's process group rather than back to whoever had it. Started from a
+ * terminal, that left Ctrl-C going to the dashboard alone, or to nobody, instead
+ * of to what the user ran. A new session has no controlling terminal, so the
+ * shell reads its startup files and prints PATH, and the terminal is untouched.
+ */
+const defaultExec: ExecFile = (file, args, { timeout }) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(file, args, { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    let output = '';
+    let settled = false;
+    const finish = (error: Error | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(output);
+    };
+    const timer = setTimeout(() => {
+      // The whole session: an interactive shell may have started things of its own.
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        // Already gone.
+      }
+      finish(new Error(`${file} took longer than ${timeout} ms`));
+    }, timeout);
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (output += chunk));
+    child.on('error', (error) => finish(error));
+    child.on('close', () => finish(null));
+  });
 
 /** The shells worth asking, in order, without repeats: `$SHELL`, your login shell, then the platform's own. */
 export function shellCandidates(envShell: string | undefined, loginShell: string | undefined, platform: NodeJS.Platform): string[] {
@@ -63,14 +97,14 @@ export function mergePaths(preferred: string | null | undefined, inherited: stri
   return entries.join(':');
 }
 
-function readLoginShellPath(shell: string, exec: ExecFile): string | null {
+async function readLoginShellPath(shell: string, exec: ExecFile): Promise<string | null> {
   const command = `printf '%s\\n' '${START}'; printenv PATH || true; printf '%s\\n' '${END}'`;
-  return pathBetweenMarkers(exec(shell, ['-ilc', command], { encoding: 'utf8', timeout: SHELL_TIMEOUT_MS }));
+  return pathBetweenMarkers(await exec(shell, ['-ilc', command], { timeout: SHELL_TIMEOUT_MS }));
 }
 
-function readLaunchctlPath(exec: ExecFile): string | null {
+async function readLaunchctlPath(exec: ExecFile): Promise<string | null> {
   try {
-    const value = exec('/bin/launchctl', ['getenv', 'PATH'], { encoding: 'utf8', timeout: 2_000 }).trim();
+    const value = (await exec('/bin/launchctl', ['getenv', 'PATH'], { timeout: 2_000 })).trim();
     return value === '' ? null : value;
   } catch {
     return null;
@@ -90,18 +124,18 @@ function currentLoginShell(): string | undefined {
  * where PATH comes from the registry and a GUI process has the same one.
  * Returns the shell it came from, or null when none answered.
  */
-export function hydratePath(
+export async function hydratePath(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   exec: ExecFile = defaultExec,
   loginShell: string | undefined = currentLoginShell(),
-): string | null {
+): Promise<string | null> {
   if (platform === 'win32') return null;
   let found: string | null = null;
   let from: string | null = null;
   for (const shell of shellCandidates(env.SHELL, loginShell, platform)) {
     try {
-      found = readLoginShellPath(shell, exec);
+      found = await readLoginShellPath(shell, exec);
     } catch {
       // Missing, too slow, or broken startup files: try the next one.
     }
@@ -111,7 +145,7 @@ export function hydratePath(
     }
   }
   if (!found && platform === 'darwin') {
-    found = readLaunchctlPath(exec);
+    found = await readLaunchctlPath(exec);
     if (found) from = 'launchctl';
   }
   const merged = mergePaths(found, env.PATH);
