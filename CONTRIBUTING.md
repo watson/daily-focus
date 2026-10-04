@@ -83,6 +83,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `public/` | The page shell, the stylesheet, and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
+| `macos/` | The macOS menu bar app, which runs the dashboard in place of `npm run service`; `sh macos/build.sh --test` builds and checks it |
 | `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
 

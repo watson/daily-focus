@@ -404,6 +404,9 @@ final class Dashboard {
         } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
             log.note("could not start Node: \(error.localizedDescription)")
+            // It may have been uninstalled or upgraded away; look for it again next time.
+            self.node = nil
+            self.path = nil
             scheduleStart(showing: .restarting)
             return
         }

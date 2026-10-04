@@ -113,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         statusLineItem.isEnabled = false
         attachedItem.title = "Run by another process"
         attachedItem.isEnabled = false
+        // The app never takes over a dashboard it didn't start: the other one may
+        // be a LaunchAgent that would fight it for the port. Say how to hand it over.
+        attachedItem.toolTip = "Something other than this app, such as npm run service or npm start, runs the dashboard "
+            + "on this port. To have the app run it, stop that one, then quit and reopen Daily Focus."
 
         for (menuItem, action) in [
             (openItem, #selector(openDashboard)),
@@ -174,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             case .status(let status): return statusLine(status, now: Date())
             case .healthOnly: return "Running"
             case .unreachable: return "The dashboard isn't answering"
-            case .nothing: return dashboard.isAttached ? "Run by another process" : "Starting…"
+            case .nothing: return dashboard.isAttached ? "Checking the dashboard…" : "Starting…"
             }
         }
     }
