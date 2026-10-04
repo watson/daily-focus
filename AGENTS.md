@@ -66,6 +66,9 @@ run it again with `--remove` afterwards.
 - `transitionTicket` is the dashboard's only external write. It moves one Jira ticket
   to one status after a user click. Do not add automatic transitions or other external
   writes without an explicit scope change.
+- The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
+  `Host` before any route runs; keep every route behind it and every `GET` free of
+  side effects, or any page open in the browser can act through the dashboard.
 - The assistant may read anything and create a Gmail draft; it must never send, post,
   or edit. It runs in an empty directory with editing tools denied, so keep that a
   property of the process: no checkout, no worktree, no repository path setting.

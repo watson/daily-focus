@@ -328,6 +328,11 @@ tailscale serve --bg http://127.0.0.1:4321
 Only your tailnet can reach it, over HTTPS. Don't bind the server to your LAN
 instead: it has no login, and a personal brief holds your mail and messages.
 
+The dashboard answers only when it is reached as localhost, by IP address, by a
+Tailscale `ts.net` name, or by the name in `DAILY_FOCUS_HOST`. That stops a web page
+from pointing its own name at your dashboard and reading your brief. Reached any
+other way, it replies `403` and names the host it was reached as.
+
 To run both instances on one machine, start the second with its own
 `DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_PROFILE` in its environment,
 which takes precedence over `.env`. `npm run service` keeps those variables, so this
@@ -357,7 +362,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt `npm run init` links and the defaults marked below |
 | `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
 | `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
-| `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data |
+| `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data. A name here is also one the dashboard answers to, besides localhost, IP addresses and `ts.net` names |
 | `DAILY_FOCUS_FREE_WINDOWS` | `on`; `off` for personal | `off` shows events only: no free windows in the agenda, and the next event in place of focus time left |
 | `DAILY_FOCUS_WORK_START` | `9` | Local hour the working day starts, when the brief doesn't say |
 | `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends when the brief does not specify it |

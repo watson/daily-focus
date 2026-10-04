@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -134,18 +135,43 @@ test('GET /favicon.svg serves the profile icon', async () => {
   assert.match(await res.text(), /fill="#2a78d6"/);
 });
 
-test('rerunning the morning agent is off by default, and refuses a request that is not JSON', async () => {
+test('a form on another site cannot post here, even with a body that parses as JSON', async () => {
+  // A text/plain form can be shaped to send exactly this, with no preflight.
+  for (const path of ['/api/actions', '/api/tickets/transition', '/api/assistant/ask', '/api/agent/ask', '/api/agent/run']) {
+    const res = await fetch(`${server.url}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', origin: 'https://evil.example' },
+      body: JSON.stringify({ id: 'gh:1', action: 'dismiss', key: 'PROJ-1', status: 'Done', run: 'r1', text: 'hi' }),
+    });
+    assert.equal(res.status, 415, path);
+  }
+  const state = await json(await fetch(`${server.url}/api/state`));
+  assert.notEqual(state.items[0].status, 'dismissed', 'and nothing was recorded');
+});
+
+test('a page that rebinds its own name to this server is refused', async () => {
+  const port = new URL(server.url).port;
+  /** fetch won't send a Host of our choosing, so this goes through node:http. */
+  const getAs = (host: string) =>
+    new Promise<number>((done, fail) => {
+      request({ host: '127.0.0.1', port, path: '/api/state', headers: { host } }, (res) => {
+        res.resume();
+        done(res.statusCode ?? 0);
+      })
+        .on('error', fail)
+        .end();
+    });
+  assert.equal(await getAs(`evil.example:${port}`), 403);
+  assert.equal(await getAs(`localhost:${port}`), 200);
+  assert.equal(await getAs(`[::1]:${port}`), 200);
+  // How a second device reaches it through Tailscale Serve, if Serve passes the name on.
+  assert.equal(await getAs('my-mac.example-tailnet.ts.net:8443'), 200);
+});
+
+test('rerunning the morning agent is off by default', async () => {
   const state = await json(await fetch(`${server.url}/api/state`));
   assert.equal(state.agentRun.enabled, false);
   assert.equal(state.agentRun.last, null);
-
-  // What a form on another site can send without a preflight.
-  const form = await fetch(`${server.url}/api/agent/run`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: '',
-  });
-  assert.equal(form.status, 415);
 
   const res = await fetch(`${server.url}/api/agent/run`, {
     method: 'POST',

@@ -105,6 +105,13 @@ out of client state, and keep computed board classifications out of the caches.
 The server binds to localhost by default. These are the endpoints used by the UI;
 see `src/server.ts` for request validation and additional session/calendar routes.
 
+There is no login, so `src/guard.ts` keeps other pages in the same browser out
+before any route runs. Every `POST` must be `application/json`, which a form on
+another site can't send, and every request's `Host` must be localhost, an IP
+address, a `ts.net` name or `DAILY_FOCUS_HOST`, which a page that points its own
+name at this server can't fake. Anything else gets `415` or `403`. Keep `GET`
+free of side effects, since only `POST` is checked for its content type.
+
 | Endpoint | Behavior |
 |---|---|
 | `GET /api/state` | The folded state: items with status, agenda, stats, warnings |
@@ -116,7 +123,7 @@ see `src/server.ts` for request validation and additional session/calendar route
 | `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The dashboard's only write to anything outside this machine |
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
-| `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `application/json` only, so another site can't start one. `409` when it is off or already running |
+| `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `409` when it is off or already running |
 | `POST /api/agent/ask` | `{run, text}`. Asks a finished run a question in its own session; returns state with the answer coming. The reply streams in over SSE. `409` when it is off, busy, or the run can't be continued |
 | `POST /api/agent/stop` | Kills whatever the morning agent is doing: a run, or a question about one |
 | `GET /api/health` | Server health check |

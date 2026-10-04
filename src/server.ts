@@ -15,6 +15,7 @@ import { Assistant, type AskContext } from './assistant.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
+import { refusal } from './guard.ts';
 import { storeLinkWarning } from './links.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
@@ -336,6 +337,14 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
   });
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // Before anything else, so no route can forget it: the server has no login,
+    // and this is what keeps other pages in the same browser out.
+    const refused = refusal(req, config.host);
+    if (refused) {
+      sendJSON(res, refused.status, { error: refused.error });
+      return;
+    }
+
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     const path = url.pathname;
 
@@ -497,14 +506,6 @@ export async function startServer(env?: NodeJS.ProcessEnv): Promise<StartedServe
     }
 
     if (path === '/api/agent/run' && req.method === 'POST') {
-      // A run is expensive and replaces the brief, and this request has no body
-      // to validate — so without this any page open in the browser could start
-      // one with a plain form post. A JSON content type can't be sent across
-      // origins without a preflight, and this server never answers one.
-      if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
-        sendJSON(res, 415, { error: 'send this as application/json' });
-        return;
-      }
       try {
         await agent.run();
       } catch (err) {

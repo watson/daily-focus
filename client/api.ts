@@ -10,13 +10,16 @@ async function stateFrom(res: Response, what: string): Promise<DashboardState> {
   return res.json() as Promise<DashboardState>;
 }
 
-/** A POST that resolves with the server's fresh state, so the caller can skip a refetch. */
-async function post(path: string, body?: unknown): Promise<DashboardState> {
+/**
+ * A POST that resolves with the server's fresh state, so the caller can skip a refetch.
+ * Always JSON, even with nothing to say: the server refuses anything else, so a
+ * page on another site can't post here with a form.
+ */
+async function post(path: string, body: unknown = {}): Promise<DashboardState> {
   const res = await fetch(path, {
     method: 'POST',
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
   });
   return stateFrom(res, `POST ${path}`);
 }
@@ -101,11 +104,9 @@ export function postAssistantStop(id: string): Promise<DashboardState> {
 /**
  * Start the morning agent now. Resolves once it is running; the brief lands
  * through the store like any other, and the report streams in over SSE.
- * JSON, though there is nothing to say: the server refuses anything else, so a
- * page on another site can't start a run with a form post.
  */
 export function postAgentRun(): Promise<DashboardState> {
-  return post('/api/agent/run', {});
+  return post('/api/agent/run');
 }
 
 /**
