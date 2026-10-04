@@ -202,6 +202,16 @@ a {
   color: var(--ink-1);
   border-color: var(--ink-3);
 }
+.icon-button__icon {
+  width: 15px;
+  height: 15px;
+}
+/* A toggle that is on, such as the gear while Settings is open: drawn as the selected tab is, in the accent. */
+.icon-button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
 
 /*
  * Lost connection to the server. A pill in the header, because it is about the

@@ -68,7 +68,7 @@ export function installKeyboard(handlers: Handlers): void {
     if (event.key === 'Escape') {
       const typing = event.target instanceof HTMLElement && event.target.matches('input, textarea, select');
       if (ui.view.value === 'settings' && !typing && !ui.detailFor.value) {
-        handlers.setView('today');
+        handlers.closeSettings();
         return;
       }
       if (ui.menuFor.value || ui.statusFor.value) {
@@ -137,7 +137,7 @@ export function installKeyboard(handlers: Handlers): void {
         return;
       case ',':
         event.preventDefault();
-        if (ui.view.value === 'settings') handlers.setView('today');
+        if (ui.view.value === 'settings') handlers.closeSettings();
         else handlers.openSettings();
         return;
       case 'u':

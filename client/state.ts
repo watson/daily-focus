@@ -67,6 +67,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     toast: signal(initial.toast ?? null),
     connectionError: signal(initial.connectionError ?? null),
     clock: signal(initial.clock ?? Date.now()),
+    settingsReturn: signal(initial.settingsReturn ?? 'today'),
     settings: signal(initial.settings ?? null),
     settingsDraft: signal(initial.settingsDraft ?? new Map<string, string | null>()),
     settingsError: signal(initial.settingsError ?? null),
