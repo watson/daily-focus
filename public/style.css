@@ -1129,6 +1129,14 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
   color: #fff;
   filter: brightness(1.08);
 }
+/* Not yet: it reads as waiting, not as the next thing to press. */
+.button:disabled,
+.button:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+  border-color: var(--border);
+}
 
 /* note composer */
 
@@ -2261,7 +2269,7 @@ body[data-flyout='open'] .layout__side {
 }
 .setup__board {
   display: grid;
-  grid-template-columns: 110px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 104px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: baseline;
   font-size: 13px;
@@ -2272,8 +2280,32 @@ body[data-flyout='open'] .layout__side {
 .setup__board-text {
   color: var(--ink-2);
 }
-.setup__board[data-ok='true'] .setup__board-text {
+/*
+ * The mark says how a board is doing; the words beside it say it again, so the
+ * colour is never the only cue, and the words stay one colour for every state.
+ */
+.setup__board-mark {
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink-3);
+}
+.setup__board[data-health='ok'] .setup__board-mark {
   color: var(--good-ink);
+}
+.setup__board[data-health='problem'] .setup__board-mark {
+  color: var(--serious);
+}
+.setup__board[data-health='todo'] .setup__board-mark {
+  color: var(--accent);
+}
+.setup__body .setup__note {
+  color: var(--ink-3);
+}
+.setup__body .setup__note--todo {
+  color: var(--serious);
+}
+.setup__editor {
+  margin-top: 12px;
 }
 
 /* ---------- settings ---------- */
