@@ -157,3 +157,25 @@ test('the status the menu bar app reads is small and says what it needs', async 
   assert.equal(status.agent.last, null);
   assert.equal(status.waitingOnYou, 0);
 });
+
+test("the morning agent's clock waits for the first brief, which comes from the setup steps", async () => {
+  const store = await mkdtemp(join(tmpdir(), 'daily-focus-first-brief-'));
+  // Due every minute of the day, so only the first-brief rule can be holding it back.
+  const due = await startServer({
+    ...env,
+    DAILY_FOCUS_DATA: store,
+    DAILY_FOCUS_AGENT: 'codex',
+    DAILY_FOCUS_AGENT_AT: '00:00',
+    DAILY_FOCUS_AGENT_DAYS: '0-6',
+    DAILY_FOCUS_AGENT_BIN: '/usr/bin/false',
+  });
+  try {
+    await new Promise((done) => setTimeout(done, 200));
+    const state = await json(await fetch(`${due.url}/api/state`));
+    assert.equal(state.setup.needed, true);
+    assert.equal(state.agentRun.runs.length, 0, 'nothing started on its own');
+  } finally {
+    await due.close();
+    await rm(store, { recursive: true, force: true });
+  }
+});

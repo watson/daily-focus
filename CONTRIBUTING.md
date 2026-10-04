@@ -57,6 +57,8 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
 | `src/config.ts`, `src/env.ts` | Settings, layered: the environment over the store's `settings.json` over `.env` |
 | `src/settings.ts` | The settings page: every setting's label, help and field, and checking a change before it is saved |
+| `src/setup.ts`, `client/setup.ts` | What a new store still needs, and the setup steps Today shows until the first brief |
+| `client/settings.ts` | The settings page, built from `src/settings.ts`, and the editors for `focus.md` and `sources.md` |
 | `src/editable.ts`, `src/templates.ts` | Saving `focus.md` and `sources.md` from the editors without overwriting a hand edit, and what they start as |
 | `src/shellpath.ts` | Your login shell's PATH, for a dashboard started by launchd or an app |
 | `src/store.ts`, `src/validate.ts`, `src/ids.ts` | Read the brief, salvage malformed items, and apply actions |
@@ -135,6 +137,7 @@ free of side effects, since only `POST` is checked for its content type.
 | `GET /api/text/focus`, `GET /api/text/sources` | The whole file for its editor, private part included, with its version and the template a new one starts from. Never part of `/api/state` |
 | `POST /api/text/focus`, `POST /api/text/sources` | `{text, version}`. Saves only if the file is still at `version`; otherwise `409` with what is there now |
 | `POST /api/focus/objective` | `{objective, blocker}`. Sets the two frontmatter fields and keeps the rest of `focus.md`; returns fresh state |
+| `POST /api/calendars/list` | The calendars Calendar.app has, for the settings page to choose from. A `POST` because it launches the helper, which may ask for access |
 | `GET /api/status` | The few facts the menu bar app shows: brief age, open items, the morning agent's last run, setup and restart |
 | `GET /api/health` | Server health check |
 

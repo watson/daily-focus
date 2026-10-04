@@ -13,18 +13,26 @@ don't carry over. Run these commands from the repo:
 
 ```sh
 npm install
-npm run init
 npm run service
 ```
 
-Open [localhost:4321](http://127.0.0.1:4321). The Today tab stays empty until your
-agent writes its first brief.
+Open [localhost:4321](http://127.0.0.1:4321). Until the first brief exists, the
+Today tab walks you through setting it up:
 
-`npm run init` creates templates in `~/.daily-focus/` and links the work prompt and
-schema into that directory; the dashboard makes the same links each time it starts,
-to the copy that is running. For your personal life, see
-[A personal instance](#a-personal-instance). It preserves existing files and updates stale symlinks.
-You can safely run it again.
+1. **What it briefs**: your work, or your personal life. See
+   [A personal instance](#a-personal-instance) for running both.
+2. **Your objective**: the one thing you're trying to achieve, which the agent
+   ranks the day against.
+3. **Who writes the brief**: Claude Code or Codex, whichever it finds installed.
+4. **Where it should look**: your source list, which starts from a template with
+   what `gh` and `git` know about you filled in.
+5. **What else to show**: the pull request board, the Jira board and the live
+   agenda, each with its status and a button to turn it off.
+6. **Write my first brief**, which runs the agent once while you watch.
+
+Everything in it stays on the settings page afterwards: the gear in the header, or
+<kbd>,</kbd>. The dashboard keeps its files in `~/.daily-focus/`, and links the
+prompt and schema there each time it starts.
 
 `npm run service` runs the dashboard in the background on macOS. It starts it now,
 at every login, and again if it crashes, so the dashboard is up when the morning
@@ -32,9 +40,13 @@ agent is due. See [Keep the dashboard running](#keep-the-dashboard-running). On
 another system, or to watch the server in a terminal, run `npm start` instead and
 keep that terminal open while you use the dashboard.
 
+If you'd rather write the files by hand, `npm run init` creates the store with
+templates for both. It preserves existing files, so you can safely run it again.
+
 ## Set your objective and sources
 
-Edit the two files created by `npm run init`:
+Both are on the settings page: **Your objective**, and **Where the agent looks**.
+They are kept as two files in the store, which you can also edit by hand:
 
 | File | What to put in it |
 |---|---|
@@ -51,13 +63,17 @@ blocker: Reproduce the staging failure
 Start with the staging repro before picking up new work.
 ```
 
-Leave `objective:` blank between objectives; the dashboard shows a quiet reminder and
-the agent ranks by urgency alone. To turn the feature off entirely, delete `focus.md`.
-Running `npm run init` again recreates it.
+Leave the objective blank between objectives; the dashboard shows a quiet reminder
+and the agent ranks by urgency alone. To turn the feature off entirely, delete
+`focus.md`.
 
 Add `<!-- agent-only -->` on its own line before context you don't want displayed.
-The agent can read that section, but the server removes it before sending focus
-text to the browser. The server never reads `sources.md`.
+The agent reads that section, and the board never shows it; only the editor on the
+settings page does. The source list is likewise shown only in its editor.
+
+The dashboard saves a file only if it hasn't changed since the editor opened it, so
+an edit made by hand meanwhile is never overwritten: the editor says so, and offers
+to load the new version.
 
 Keep real names, account handles, and work details in this private store, outside git.
 
@@ -65,22 +81,24 @@ Keep real names, account handles, and work details in this private store, outsid
 
 The dashboard runs the agent through a coding-agent CLI you already have. Install
 and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
-[Claude Code](https://code.claude.com/docs), then set:
+[Claude Code](https://code.claude.com/docs), and choose it in the setup steps or
+under **Morning agent** in the settings. In `.env` or the environment that is:
 
 ```dotenv
 DAILY_FOCUS_AGENT=codex
 ```
 
-Restart the server. Each scheduled morning at 07:00 local time the dashboard starts
-the agent through that CLI, headless, in the store, and the brief appears when it
-finishes. Set `DAILY_FOCUS_AGENT_AT` to another time, such as `06:30`. The dashboard
-has to be running at the time; if it wasn't, it runs the agent as soon as it is
-started that day, provided nothing has produced a brief for the day yet. It runs
-once a day, whatever became of the run: a failed morning is reported once, not
-retried every half minute. The days are Monday to Friday unless
-`DAILY_FOCUS_AGENT_DAYS` says otherwise; see
-[Match your working week](#match-your-working-week). `DAILY_FOCUS_AGENT_AT=off`
-means the dashboard never starts a run on its own; the refresh icon still does.
+Each scheduled morning at 07:00 local time the dashboard starts the agent through
+that CLI, headless, in the store, and the brief appears when it finishes. Set
+`DAILY_FOCUS_AGENT_AT` to another time, such as `06:30`. The dashboard has to be
+running at the time; if it wasn't, it runs the agent as soon as it is started that
+day, provided nothing has produced a brief for the day yet. It runs once a day,
+whatever became of the run: a failed morning is reported once, not retried every
+half minute. The days are Monday to Friday unless `DAILY_FOCUS_AGENT_DAYS` says
+otherwise; see [Match your working week](#match-your-working-week).
+`DAILY_FOCUS_AGENT_AT=off` means the dashboard never starts a run on its own; the
+refresh icon still does. A new store's first brief always comes from the setup
+steps' button, so the clock never runs the agent before you've told it where to look.
 
 Whichever way it starts, every run lands in the same place: the report it gives when
 it finishes, and a chat where you can ask it why it did what it did. See
@@ -105,8 +123,8 @@ server can't find the CLI, set `DAILY_FOCUS_AGENT_BIN`.
 The agent writes `items.json`. The dashboard records your actions and focus sessions
 for the next run to read.
 
-Start the first run by hand, from the refresh icon beside "no brief yet" in the
-header, to check access and see your first brief. Then run:
+After the first run, read its report (click "updated … ago"): it says which sources
+it couldn't reach. To check the brief against the payload contract, run:
 
 ```sh
 npm run audit
@@ -227,13 +245,14 @@ is failing, what a thread is asking of you, a reply to an email drafted straight
 Gmail as a draft on the thread.
 
 Install and log in to [Claude Code](https://code.claude.com/docs) or the
-[Codex CLI](https://developers.openai.com/codex/cli), then set:
+[Codex CLI](https://developers.openai.com/codex/cli), then choose it under
+**Assistant** in the settings, or set:
 
 ```dotenv
 DAILY_FOCUS_ASSISTANT=claude
 ```
 
-Restart the server and the assistant appears in the panel. Model and effort default to whatever
+Once the dashboard has restarted, the assistant appears in the panel. Model and effort default to whatever
 the CLI is configured with; `DAILY_FOCUS_ASSISTANT_MODEL` and
 `DAILY_FOCUS_ASSISTANT_EFFORT` override them. If the server can't find the CLI,
 set `DAILY_FOCUS_ASSISTANT_BIN` to its path.
@@ -247,8 +266,8 @@ Gmail tool the CLI has: with Claude Code that is the claude.ai Gmail connector, 
 from the Codex app, which the CLI finds through its plugin catalogue. Without either,
 the assistant hands you the text instead and says so.
 
-Its instructions live in `prompts/assistant.md`, linked into the store by
-`npm run init` as `assistant.md`. What it says stays in the chat in the panel: it
+Its instructions live in `prompts/assistant.md`, linked into the store as
+`assistant.md` each time the dashboard starts. What it says stays in the chat in the panel: it
 never leaves notes on the item or marks it handled. That is yours to do once you have
 read the reply.
 
@@ -310,15 +329,16 @@ npm run service -- --remove
 
 Daily Focus can brief your personal life as well as your work: email, family
 calendars, Apple Reminders, Apple Messages, e-Boks and your own GitHub projects. Run it as a second instance
-with its own store, server and morning agent, and set:
+with its own store, server and morning agent, and choose **Personal life** in its
+setup steps, or set:
 
 ```dotenv
 DAILY_FOCUS_PROFILE=personal
 ```
 
-Run `npm run init` with that set. It links the personal prompt,
-`prompts/morning-brief-personal.md`, into the store as `prompt.md`, and writes a
-`sources.md` template with sections for those sources. The profile also switches off
+The dashboard then links the personal prompt, `prompts/morning-brief-personal.md`,
+into the store as `prompt.md`, and the source list starts from a template with
+sections for those sources. The profile also switches off
 the Jira board and away detection, and gives the tab a green house icon instead of the blue briefcase. The pull request
 board stays on for side projects; point it at your personal account with
 `DAILY_FOCUS_GITHUB_ACCOUNTS`, or set `DAILY_FOCUS_GITHUB=off`.
@@ -370,7 +390,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt `npm run init` links and the defaults marked below |
+| `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt the dashboard links and the defaults marked below |
 | `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
 | `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
 | `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data. A name here is also one the dashboard answers to, besides localhost, IP addresses and `ts.net` names |
@@ -418,9 +438,9 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
   which ends with its terminal. Run `npm run service` to keep it running. If the
   service is installed and the page still doesn't load, read
   `~/Library/Logs/local.daily-focus.log`.
-- An empty Today tab means the agent hasn't written `items.json` yet. Without
-  `DAILY_FOCUS_AGENT` nothing runs it; with it, start a run from the refresh icon
-  beside "no brief yet".
+- Before the first brief, the Today tab shows the setup steps. Once a brief has
+  existed, an empty Today tab means the agent hasn't written a new `items.json`:
+  start a run from the refresh icon beside the brief's age.
 - A stale brief needs an agent run. Refreshing a board doesn't regenerate the brief;
   the icon beside the brief's age does. Click "updated … ago" to see what the last
   run said, or whether there was one: the dashboard has to be running at

@@ -1,6 +1,7 @@
 /** Everything that talks to the server. */
 
 import type { DashboardState } from '../src/types.ts';
+import type { CalendarName, SettingsPage, TextName } from './types.ts';
 
 async function stateFrom(res: Response, what: string): Promise<DashboardState> {
   if (!res.ok) {
@@ -120,4 +121,57 @@ export function postAgentAsk(run: string, text: string): Promise<DashboardState>
 /** Stop the morning agent, whether it is writing a brief or answering a question. */
 export function postAgentStop(): Promise<DashboardState> {
   return post('/api/agent/stop');
+}
+
+/** An answer that isn't state, or the error the server gave instead. */
+async function jsonFrom<T>(res: Response, what: string): Promise<T> {
+  const body = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw Object.assign(new Error(body.error ?? `${what} returned ${res.status}`), { status: res.status, body });
+  return body;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return jsonFrom<T>(res, `POST ${path}`);
+}
+
+export async function fetchSettings(): Promise<SettingsPage> {
+  return jsonFrom<SettingsPage>(await fetch('/api/settings'), 'GET /api/settings');
+}
+
+/** Save settings: a value per setting, or null for the default. Rejects with the server's reason when it refuses one. */
+export function postSettings(values: Record<string, string | null>): Promise<SettingsPage> {
+  return postJson<SettingsPage>('/api/settings', { values });
+}
+
+export interface TextFile {
+  text: string | null;
+  version: string;
+  template: string;
+}
+
+export async function fetchText(name: TextName): Promise<TextFile> {
+  return jsonFrom<TextFile>(await fetch(`/api/text/${name}`), `GET /api/text/${name}`);
+}
+
+/**
+ * Save an editor over the version it started from. A file changed on disk since
+ * rejects with status 409, and the error's `body` carries what is there now.
+ */
+export function postText(name: TextName, text: string, version: string): Promise<{ version: string }> {
+  return postJson<{ version: string }>(`/api/text/${name}`, { text, version });
+}
+
+/** Set the objective and what blocks it, keeping the rest of focus.md. */
+export function postObjective(objective: string, blocker: string): Promise<DashboardState> {
+  return post('/api/focus/objective', { objective, blocker });
+}
+
+/** The calendars Calendar.app has. Launches the helper, which may ask for access the first time. */
+export function postListCalendars(): Promise<{ calendars: CalendarName[] }> {
+  return postJson<{ calendars: CalendarName[] }>('/api/calendars/list', {});
 }

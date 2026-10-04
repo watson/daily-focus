@@ -901,6 +901,8 @@ export interface DashboardState {
    * `manual` when nothing here can restart it and the user has to.
    */
   restart: 'waiting' | 'manual' | null;
+  /** What a new store still needs; see `src/setup.ts`. */
+  setup: SetupState;
   /** Server time at render, so the client can place the "now" marker without clock skew. */
   now: string;
   /**
@@ -908,4 +910,26 @@ export interface DashboardState {
    * changes, because the SSE stream carries state but never code.
    */
   assetVersion: string;
+}
+
+/**
+ * What a new store still needs before a morning brief can work. The Today tab
+ * walks through it while `needed`; the objective, the agent and the boards are
+ * read from the rest of the state.
+ */
+export interface SetupState {
+  /** Nothing has ever written a brief to this store. */
+  needed: boolean;
+  /** What this instance briefs, and whether that was chosen anywhere rather than defaulted to work. */
+  profile: 'work' | 'personal';
+  profileChosen: boolean;
+  /**
+   * Whether `sources.md` exists, and how many of the template's placeholders it
+   * still holds. Never its text: that goes only to the editor that asks for it.
+   */
+  sources: { exists: boolean; placeholders: number };
+  /** Where each CLI the dashboard can run was found, or null when it wasn't. */
+  clis: Record<'claude' | 'codex', string | null>;
+  /** The live agenda: whether this machine can have one, whether the helper is built, how many calendars are chosen. */
+  calendar: { supported: boolean; built: boolean; chosen: number };
 }

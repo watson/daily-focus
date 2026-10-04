@@ -11,15 +11,15 @@ import type { DashboardState } from '../src/types.ts';
 const of = (state: unknown) => availableViews(state as DashboardState | null);
 
 test('every view is offered when both boards are on', () => {
-  assert.deepEqual(of({ board: { enabled: true }, tickets: { enabled: true } }), ['today', 'board', 'tickets']);
+  assert.deepEqual(of({ board: { enabled: true }, tickets: { enabled: true } }), ['today', 'board', 'tickets', 'settings']);
 });
 
 test('a switched-off board has no view', () => {
-  assert.deepEqual(of({ board: { enabled: true }, tickets: { enabled: false } }), ['today', 'board']);
-  assert.deepEqual(of({ board: { enabled: false }, tickets: { enabled: true } }), ['today', 'tickets']);
+  assert.deepEqual(of({ board: { enabled: true }, tickets: { enabled: false } }), ['today', 'board', 'settings']);
+  assert.deepEqual(of({ board: { enabled: false }, tickets: { enabled: true } }), ['today', 'tickets', 'settings']);
 });
 
-test('Today is always offered, even before the first state', () => {
-  assert.deepEqual(of(null), ['today']);
-  assert.deepEqual(of({}), ['today']);
+test('Today and the settings are always offered, even before the first state', () => {
+  assert.deepEqual(of(null), ['today', 'settings']);
+  assert.deepEqual(of({}), ['today', 'settings']);
 });
