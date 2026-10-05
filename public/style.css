@@ -2317,6 +2317,19 @@ body[data-flyout='open'] .layout__side {
 .setup__editor {
   margin-top: 12px;
 }
+/* The settings page's own fold and fields, inside a step. */
+.setup__body .setup__advanced p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.setup__advanced .field {
+  max-width: 480px;
+}
+.setup__advanced-actions {
+  display: flex;
+  justify-content: flex-start;
+}
 
 /* ---------- settings ---------- */
 
@@ -2365,16 +2378,19 @@ body[data-flyout='open'] .layout__side {
   color: var(--serious);
   font-size: 13px;
 }
-.settings-card__more {
+.settings-card__more,
+.setup__advanced {
   margin-top: 6px;
 }
-.settings-card__more > summary {
+.settings-card__more > summary,
+.setup__advanced > summary {
   cursor: pointer;
   color: var(--ink-2);
   font-size: 13px;
   padding: 4px 0;
 }
-.settings-card__more[open] > summary {
+.settings-card__more[open] > summary,
+.setup__advanced[open] > summary {
   margin-bottom: 10px;
 }
 

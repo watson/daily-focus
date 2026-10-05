@@ -205,8 +205,8 @@ export interface Handlers {
   /** Change a field on the settings page without saving it; null means back to the default. */
   editSetting(key: string, value: string | null): void;
   discardSettings(): void;
-  /** Save what has been changed on the settings page. */
-  saveSettings(): void;
+  /** Save what has been changed on the settings page, or only the named settings of it. */
+  saveSettings(keys?: readonly string[]): void;
   /** Save these values at once, for a setup step's buttons. */
   chooseSettings(values: Record<string, string | null>): void;
   loadText(name: TextName): void;

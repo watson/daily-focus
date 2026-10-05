@@ -4,10 +4,12 @@ import { test } from 'node:test';
 import { h } from 'preact';
 
 // Imported ahead of the client, for the document it installs.
-import { buttonLabels, byClass, handlersWith, mount, uiWith } from './dom.ts';
+import { buttonLabels, byClass, handlersWith, mount, settle, uiWith } from './dom.ts';
 import { renderBanners } from '../client/banners.ts';
 import { SetupCard } from '../client/setup.ts';
 import { TodayView } from '../client/today.ts';
+import type { SettingsPage } from '../client/types.ts';
+import type { SettingView } from '../src/settings.ts';
 import type { DashboardState, SetupState } from '../src/types.ts';
 
 function stateWith(overrides: { setup?: Partial<SetupState>; [key: string]: unknown } = {}): DashboardState {
@@ -189,4 +191,77 @@ test('a source list still holding placeholders holds the first run back; none at
   const none = mount(h(SetupCard, { state: stateWith({ agentRun: agent }), ui: uiWith(), handlers: handlersWith() }));
   assert.equal(run(none).disabled, false);
   assert.match(none.textContent!, /Without a source list it briefs from what it can reach/);
+});
+
+test("the agent's model, effort and tools are folded away in its step, and saved on their own", async () => {
+  const setting = (key: string, label: string, kind: SettingView['kind']): SettingView => ({
+    key,
+    group: 'agent',
+    label,
+    help: '',
+    kind,
+    choices: kind === 'choice' ? [{ value: 'high', label: 'high' }] : null,
+    advanced: false,
+    value: null,
+    source: 'default',
+    fallback: "The CLI's own",
+  });
+  const page: SettingsPage = {
+    groups: [{ id: 'agent', title: 'Morning agent' }],
+    settings: [
+      setting('DAILY_FOCUS_AGENT_MODEL', 'Model', 'text'),
+      setting('DAILY_FOCUS_AGENT_EFFORT', 'Effort', 'choice'),
+      setting('DAILY_FOCUS_AGENT_TOOLS', 'Tools Claude Code may use', 'list'),
+    ],
+    error: null,
+    restart: null,
+  };
+  const agent = (cli: string) => ({ agentRun: { enabled: true, cli, schedule: null, last: null, runs: [] } });
+  const labels = (root: HTMLElement) => byClass(byClass(root, 'setup__advanced')[0]!, 'field__label').map((label) => label.textContent);
+
+  // Closed until asked for, and the settings load when it is first opened.
+  const calls: string[] = [];
+  const unloaded = mount(
+    h(SetupCard, {
+      state: stateWith(agent('claude')),
+      ui: uiWith(),
+      handlers: handlersWith({ loadSettings: () => void calls.push('load'), toggleDrawer: (key, open) => void calls.push(`${key}:${open}`) }),
+    }),
+  );
+  const fold = byClass(unloaded, 'setup__advanced')[0] as HTMLDetailsElement;
+  assert.equal(fold.open, false);
+  assert.equal(fold.querySelector('summary')!.textContent, 'Advanced: model, effort and tools');
+  fold.open = true;
+  await settle();
+  assert.deepEqual(calls, ['load', 'setup:agent-advanced:true']);
+
+  // Save sends only these settings, and only once one of them has changed.
+  const saved: (readonly string[] | undefined)[] = [];
+  const handlers = handlersWith({ saveSettings: (keys) => void saved.push(keys) });
+  const open = (cli: string, draft: [string, string | null][] = []) =>
+    mount(
+      h(SetupCard, {
+        state: stateWith(agent(cli)),
+        ui: uiWith({ settings: page, settingsDraft: new Map(draft), openDrawers: new Set(['setup:agent-advanced']) }),
+        handlers,
+      }),
+    );
+  const save = (root: HTMLElement) => [...root.querySelectorAll('button')].find((button) => button.textContent === 'Save')!;
+
+  const untouched = open('claude');
+  assert.deepEqual(labels(untouched), ['Model', 'Effort', 'Tools Claude Code may use']);
+  assert.equal(save(untouched).disabled, true);
+
+  const edited = open('claude', [
+    ['DAILY_FOCUS_AGENT_MODEL', 'opus'],
+    ['DAILY_FOCUS_WORK_START', '8'],
+  ]);
+  assert.equal((edited.querySelector('#setting-DAILY_FOCUS_AGENT_MODEL') as HTMLInputElement).value, 'opus');
+  save(edited).click();
+  assert.deepEqual(saved, [['DAILY_FOCUS_AGENT_MODEL', 'DAILY_FOCUS_AGENT_EFFORT', 'DAILY_FOCUS_AGENT_TOOLS']]);
+
+  // Codex ignores the tool list, so it isn't offered.
+  const codex = open('codex');
+  assert.equal(byClass(codex, 'setup__advanced')[0]!.querySelector('summary')!.textContent, 'Advanced: model and effort');
+  assert.deepEqual(labels(codex), ['Model', 'Effort']);
 });
