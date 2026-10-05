@@ -66,6 +66,11 @@ export function installKeyboard(handlers: Handlers): void {
     const help = document.getElementById('help') as HTMLDialogElement | null;
 
     if (event.key === 'Escape') {
+      const typing = event.target instanceof HTMLElement && event.target.matches('input, textarea, select');
+      if (ui.view.value === 'settings' && !typing && !ui.detailFor.value) {
+        handlers.closeSettings();
+        return;
+      }
       if (ui.menuFor.value || ui.statusFor.value) {
         batch(() => {
           ui.menuFor.value = null;
@@ -129,6 +134,11 @@ export function installKeyboard(handlers: Handlers): void {
       case '?':
         event.preventDefault();
         handlers.openHelp();
+        return;
+      case ',':
+        event.preventDefault();
+        if (ui.view.value === 'settings') handlers.closeSettings();
+        else handlers.openSettings();
         return;
       case 'u':
         event.preventDefault();

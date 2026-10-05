@@ -122,7 +122,6 @@ if (platform() !== 'darwin') {
 const next: string[] = [];
 if (wroteFocus) next.push(`Edit ${config.focusFile} — say what you are trying to achieve.`);
 if (wroteSources) next.push(`Edit ${config.sourcesFile} — say where to look.`);
-if (!config.agent.cli) next.push('Set DAILY_FOCUS_AGENT=codex or claude in .env, so the dashboard runs the morning agent. See SETUP.md.');
 
 // A Mac can keep the board running as a LaunchAgent, which outlives the terminal
 // and a restart. Anywhere else, `npm start` is the way in.
@@ -141,12 +140,12 @@ if (next.length === 0) {
 } else {
   next.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
   if (created > 0) {
-    console.log(`  ${next.length + 1}. ${start}.`);
+    console.log(`  ${next.length + 1}. ${start}, and open it to choose the CLI that writes the brief.`);
     // Never `npm run seed` here. This is the real store, and the agent's first run
     // carries every open task in the previous items.json forward, so sample tasks
     // would become the user's work. The README's demo seeds a throwaway store.
     console.log(
-      `\n  \x1b[2mTo look around before an agent has run, try the demo in the README. It\n  shows sample data from a throwaway store, so nothing lands in this one.\x1b[0m`,
+      `\n  \x1b[2mThe two files can be written in the dashboard too: until the first brief,\n  Today walks through everything it needs. To look around before an agent\n  has run, try the demo in the README. It shows sample data from a throwaway\n  store, so nothing lands in this one.\x1b[0m`,
     );
   } else {
     console.log(

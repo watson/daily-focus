@@ -5,9 +5,39 @@
  */
 
 import type { Signal } from '@preact/signals';
-import type { ActionType } from '../src/types.ts';
+import type { SettingsView } from '../src/settings.ts';
+import type { ActionType, DashboardState } from '../src/types.ts';
 
-export type View = 'today' | 'board' | 'tickets';
+export type View = 'today' | 'board' | 'tickets' | 'settings';
+
+/** The settings page as the server describes it, with whether saved settings are still waiting on a restart. */
+export interface SettingsPage extends SettingsView {
+  restart: DashboardState['restart'];
+}
+
+/** The two files in the user's words that the settings page edits. */
+export type TextName = 'focus' | 'sources';
+
+/** One of those files in its editor. */
+export interface TextEditor {
+  /** The file as it was loaded, or null when it doesn't exist yet. */
+  saved: string | null;
+  /** The version the edit started from, which a save has to match. */
+  version: string;
+  /** What a new file starts as. */
+  template: string;
+  /** What is in the editor now. */
+  draft: string;
+  /** The file changed on disk since it was loaded: what is there now, for the editor to offer. */
+  conflict: { text: string | null; version: string } | null;
+  saving: boolean;
+}
+
+/** A calendar Calendar.app has, as the helper reported it. */
+export interface CalendarName {
+  title: string;
+  source: string;
+}
 export type TicketMode = 'sync' | 'working';
 export type FocusField = 'note' | 'assistant';
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -98,6 +128,27 @@ export interface UiState {
   connectionError: Signal<Error | null>;
   /** The wall clock in milliseconds, ticked every second while a focus session runs. */
   clock: Signal<number>;
+  /**
+   * The view Settings returns to: the one it was opened from. Kept so leaving it,
+   * by its button, the gear, Escape or Back, lands where the user was, and so the
+   * button can say where that is.
+   */
+  settingsReturn: Signal<View>;
+  /** The settings page as the server last described it. Null until the page is first opened. */
+  settings: Signal<SettingsPage | null>;
+  /**
+   * Values changed on the settings page and not saved yet, by setting. Null means
+   * back to the default. In memory only: a reload is a way to throw them away.
+   */
+  settingsDraft: Signal<ReadonlyMap<string, string | null>>;
+  /** Why the last save was refused, in the server's words, until the next edit. */
+  settingsError: Signal<string | null>;
+  /** Whether a save is on its way. */
+  settingsSaving: Signal<boolean>;
+  /** `focus.md` and `sources.md` in their editors, once loaded. */
+  texts: Signal<Partial<Record<TextName, TextEditor>>>;
+  /** The calendars Calendar.app has, once asked for; a string is why they couldn't be listed. */
+  calendars: Signal<readonly CalendarName[] | string | null>;
 }
 
 /** The same facts as plain values, which is how a test says what it wants. */
@@ -146,4 +197,24 @@ export interface Handlers {
   setFocusMode(on: boolean): void;
   openHelp(): void;
   hideToast(): void;
+  /** Go to the settings page, scrolled to a section when one is named. */
+  openSettings(section?: string | null): void;
+  /** Leave the settings page for the view it was opened from. */
+  closeSettings(): void;
+  loadSettings(): void;
+  /** Change a field on the settings page without saving it; null means back to the default. */
+  editSetting(key: string, value: string | null): void;
+  discardSettings(): void;
+  /** Save what has been changed on the settings page, or only the named settings of it. */
+  saveSettings(keys?: readonly string[]): void;
+  /** Save these values at once, for a setup step's buttons. */
+  chooseSettings(values: Record<string, string | null>): void;
+  loadText(name: TextName): void;
+  editText(name: TextName, text: string): void;
+  /** Save an editor: over the version it was loaded at, or over the newer one when `overwrite` says so. */
+  saveText(name: TextName, overwrite?: boolean): void;
+  /** Throw away an editor's changes and load the file as it is now. */
+  reloadText(name: TextName): void;
+  saveObjective(objective: string, blocker: string): void;
+  listCalendars(): void;
 }

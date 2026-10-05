@@ -15,6 +15,7 @@ import { BoardView } from './board.ts';
 import { Header, HelpDialog, Tabs } from './chrome.ts';
 import { el } from './el.ts';
 import { Flyout } from './flyout.ts';
+import { SettingsView } from './settings.ts';
 import { detailRow, detailRun, state } from './state.ts';
 import { TicketsView } from './tickets.ts';
 import { Timer } from './timer.ts';
@@ -53,6 +54,11 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
           'div',
           { id: 'tickets', role: 'tabpanel', 'aria-labelledby': 'tab-tickets' },
           current && view === 'tickets' ? h(TicketsView, { state: current, ui, handlers }) : null,
+        ),
+        el(
+          'div',
+          { id: 'settings', role: 'region', 'aria-label': 'Settings' },
+          current && view === 'settings' ? h(SettingsView, { state: current, ui, handlers }) : null,
         ),
       ),
       el(

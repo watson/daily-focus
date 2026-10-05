@@ -1,6 +1,6 @@
 /** The Today tab: the objective, the numbers, the headline, and the brief itself. */
 
-import type { JSX } from 'preact';
+import { h, type JSX } from 'preact';
 
 import type { Agenda, DashboardState, ObjectiveProgress, ResolvedItem } from '../src/types.ts';
 import { nextEventStat, stat } from './agenda.ts';
@@ -9,21 +9,20 @@ import { daysFromToday, formatDuration } from './format.ts';
 import { SOURCE_LABEL, SOURCE_ORDER, renderItem } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { drawer, section } from './section.ts';
+import { SetupCard } from './setup.ts';
 import type { Handlers, UiState } from './types.ts';
 
 export function TodayView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
-  return [
-    el(
-      'p',
-      { class: 'focus-bar', id: 'focus-bar', hidden: !ui.focusMode.value },
-      'Focus mode — everything but the top item is hidden. ',
-      el('button', { type: 'button', class: 'button', id: 'focus-exit', onClick: () => handlers.setFocusMode(false) }, 'Show everything'),
-    ),
-    renderObjective(state),
-    renderStats(state),
-    renderHeadline(state),
-    renderSections(state, ui, handlers),
-  ];
+  const focusBar = el(
+    'p',
+    { class: 'focus-bar', id: 'focus-bar', hidden: !ui.focusMode.value },
+    'Focus mode — everything but the top item is hidden. ',
+    el('button', { type: 'button', class: 'button', id: 'focus-exit', onClick: () => handlers.setFocusMode(false) }, 'Show everything'),
+  );
+  // Before the first brief there is nothing to rank and nothing to count: the
+  // page is the way to the first brief instead.
+  if (state.setup?.needed) return [focusBar, h(SetupCard, { state, ui, handlers })];
+  return [focusBar, renderObjective(state, handlers), renderStats(state), renderHeadline(state), renderSections(state, ui, handlers)];
 }
 
 /* ---------- standing objective ---------- */
@@ -33,8 +32,12 @@ export function TodayView({ state, ui, handlers }: { state: DashboardState; ui: 
  * above the stats deliberately: the point is that you read it before you read
  * the list of things other people want.
  */
-export function renderObjective(state: Pick<DashboardState, 'focus'>): JSX.Element {
+export function renderObjective(state: Pick<DashboardState, 'focus'>, handlers: Handlers | null = null): JSX.Element {
   const focus = state.focus;
+  const edit = (label: string) =>
+    handlers
+      ? el('button', { type: 'button', class: 'link-button objective__edit', onClick: () => handlers.openSettings('objective') }, label)
+      : null;
 
   // No focus.md at all means the feature is off, not forgotten: show nothing.
   if (!focus) {
@@ -48,22 +51,24 @@ export function renderObjective(state: Pick<DashboardState, 'focus'>): JSX.Eleme
       'section',
       { class: 'objective objective--empty', id: 'objective', 'aria-label': 'Current objective', hidden: false },
       el('p', { class: 'objective__label' }, 'No current objective'),
-      el(
-        'p',
-        { class: 'objective__note' },
-        'Set ',
-        el('code', null, 'objective:'),
-        ' in ',
-        el('code', null, 'focus.md'),
-        ' in your store to have the day ranked against it.',
-      ),
+      handlers
+        ? el('p', { class: 'objective__note' }, edit('Set one'), ' to have the day ranked against it.')
+        : el(
+            'p',
+            { class: 'objective__note' },
+            'Set ',
+            el('code', null, 'objective:'),
+            ' in ',
+            el('code', null, 'focus.md'),
+            ' in your store to have the day ranked against it.',
+          ),
     );
   }
 
   return el(
     'section',
     { class: 'objective', id: 'objective', 'aria-label': 'Current objective', hidden: false },
-    el('p', { class: 'objective__label' }, 'Current objective'),
+    el('p', { class: 'objective__label' }, 'Current objective', edit('Edit')),
     el('p', { class: 'objective__text' }, renderMarkdown(focus.objective)),
     focus.blocker
       ? el(

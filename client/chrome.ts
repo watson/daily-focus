@@ -70,6 +70,39 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
         {
           type: 'button',
           class: 'icon-button',
+          id: 'settings-toggle',
+          'aria-label': 'Settings',
+          title: 'Settings',
+          'aria-pressed': String(ui.view.value === 'settings'),
+          // Pressed while Settings is open, and a second press goes back to where
+          // it was opened from, as a toggle should.
+          onClick: () => (ui.view.value === 'settings' ? handlers.closeSettings() : handlers.openSettings()),
+        },
+        // Drawn, not a ⚙ character, which sits smaller than the theme toggle's
+        // icons at the same font size. Same size and stroke as those.
+        el(
+          'svg',
+          {
+            class: 'icon-button__icon',
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': '1.7',
+            'stroke-linejoin': 'round',
+            'aria-hidden': 'true',
+          },
+          // An eight-tooth gear, worked out rather than traced, and its hub.
+          el('path', {
+            d: 'M10.10 5.16L10.63 2.80L13.37 2.80L13.90 5.16A7.1 7.1 0 0 1 15.50 5.82L17.53 4.52L19.48 6.47L18.18 8.50A7.1 7.1 0 0 1 18.84 10.10L21.20 10.63L21.20 13.37L18.84 13.90A7.1 7.1 0 0 1 18.18 15.50L19.48 17.53L17.53 19.48L15.50 18.18A7.1 7.1 0 0 1 13.90 18.84L13.37 21.20L10.63 21.20L10.10 18.84A7.1 7.1 0 0 1 8.50 18.18L6.47 19.48L4.52 17.53L5.82 15.50A7.1 7.1 0 0 1 5.16 13.90L2.80 13.37L2.80 10.63L5.16 10.10A7.1 7.1 0 0 1 5.82 8.50L4.52 6.47L6.47 4.52L8.50 5.82A7.1 7.1 0 0 1 10.10 5.16Z',
+          }),
+          el('circle', { cx: '12', cy: '12', r: '3' }),
+        ),
+      ),
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'icon-button',
           id: 'help-toggle',
           'aria-label': 'Keyboard shortcuts',
           title: 'Keyboard shortcuts',
@@ -92,7 +125,8 @@ function freshness(state: DashboardState, handlers: Handlers): JSX.Element {
   let stale: string;
   if (state.brief.generatedAt === null) {
     text = 'no brief yet';
-    stale = 'true';
+    // Expected while the setup steps are showing; a warning only once it isn't.
+    stale = String(!state.setup?.needed);
   } else {
     const hours = state.brief.ageHours ?? 0;
     const when = hours < 1 ? 'just now' : hours === 1 ? '1 hour ago' : `${hours} hours ago`;
@@ -250,6 +284,7 @@ const SHORTCUTS: readonly [readonly string[], string][] = [
   [['p'], 'Start a focus session on the selected item'],
   [['r'], 'Refresh whichever board you are on'],
   [['w'], 'Jira tickets: switch between out of sync and working on'],
+  [[','], 'Settings: your objective, where the agent looks, and the rest'],
   [['?'], 'This help'],
 ];
 

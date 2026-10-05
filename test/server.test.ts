@@ -72,6 +72,7 @@ test('POST /api/actions records an action and returns fresh state', async () => 
   assert.ok(state.board, 'the action reply carries the board');
   assert.equal(state.board.enabled, false);
   assert.ok(state.assetVersion, 'and the asset fingerprint');
+  assert.ok(state.storeId, "and the store's");
 });
 
 test('POST /api/actions rejects a bad payload', async () => {

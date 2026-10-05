@@ -6,7 +6,7 @@
 import { effect } from '@preact/signals';
 import { h, render } from 'preact';
 
-import { adoptState, handlers, refresh, startLocalTick } from './actions.ts';
+import { adoptState, followLocation, handlers, refresh, startLocalTick } from './actions.ts';
 import { subscribe } from './api.ts';
 import { App } from './app.ts';
 import { installKeyboard } from './keyboard.ts';
@@ -80,6 +80,12 @@ installKeyboard(handlers);
 
 await refresh();
 startLocalTick();
+
+// Settings lives at `#settings`: a link there opens it, and Back and Forward move
+// in and out of it. See `setView` for how the history entries are kept.
+followLocation();
+window.addEventListener('popstate', followLocation);
+window.addEventListener('hashchange', followLocation);
 
 subscribe(
   // A server push is authoritative, but must not yank a row out from under an
