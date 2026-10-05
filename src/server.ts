@@ -227,6 +227,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
 
   const store = new Store(config);
   await store.ensureDataDir();
+  const storeId = await store.fingerprint();
 
   // The prompt, the schema and the assistant's instructions, linked to this copy so
   // the agent follows whichever version is running, wherever it was installed from.
@@ -329,6 +330,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       restart,
       setup,
       assetVersion,
+      storeId,
     };
   }
 
