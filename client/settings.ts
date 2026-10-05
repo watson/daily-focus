@@ -55,14 +55,14 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
             'section',
             { class: 'settings-card', id: `settings-${group.id}`, key: group.id, 'aria-labelledby': `settings-${group.id}-title` },
             el('h3', { class: 'settings-card__title', id: `settings-${group.id}-title` }, group.title),
-            plain.map((setting) => field(setting, draft, handlers)),
+            plain.map((setting) => settingField(setting, draft, handlers)),
             group.id === 'calendar' ? calendarPicker(state, ui, handlers, page.settings) : null,
             advanced.length > 0
               ? el(
                   'details',
                   { class: 'settings-card__more' },
                   el('summary', null, 'More'),
-                  advanced.map((setting) => field(setting, draft, handlers)),
+                  advanced.map((setting) => settingField(setting, draft, handlers)),
                 )
               : null,
           );
@@ -241,7 +241,8 @@ function flagValue(raw: string): string {
   return ['off', 'false', '0', 'no'].includes(raw.trim().toLowerCase()) ? 'off' : 'on';
 }
 
-function field(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers): JSX.Element {
+/** One setting's field, editing the draft. Setup shows a few of them too, from the same draft. */
+export function settingField(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers): JSX.Element {
   const id = `setting-${setting.key}`;
   const locked = setting.source === 'environment';
   const value = shownValue(setting, draft);

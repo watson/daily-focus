@@ -14,7 +14,7 @@ import type { JSX } from 'preact';
 
 import type { DashboardState } from '../src/types.ts';
 import { el } from './el.ts';
-import { objectiveForm, textEditor } from './settings.ts';
+import { objectiveForm, settingField, textEditor } from './settings.ts';
 import type { Handlers, UiState } from './types.ts';
 
 const CLI_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -78,15 +78,18 @@ export function SetupCard({ state, ui, handlers }: { state: DashboardState; ui: 
         agent.cli !== null,
         'Which agent writes the brief?',
         agent.cli
-          ? el(
-              'p',
-              null,
-              `${CLI_LABEL[agent.cli]}. ` +
-                (agent.schedule
-                  ? `After the first brief, it runs by itself each scheduled morning at ${agent.schedule.at}. `
-                  : 'It runs when you press refresh. ') +
-                'It has to be logged in; the first run says if it is not.',
-            )
+          ? [
+              el(
+                'p',
+                null,
+                `${CLI_LABEL[agent.cli]}. ` +
+                  (agent.schedule
+                    ? `After the first brief, it runs by itself each scheduled morning at ${agent.schedule.at}. `
+                    : 'It runs when you press refresh. ') +
+                  'It has to be logged in; the first run says if it is not.',
+              ),
+              agentAdvanced(agent.cli, ui, handlers),
+            ]
           : agentChoice(state, handlers),
       ),
 
@@ -175,6 +178,56 @@ function agentChoice(state: DashboardState, handlers: Handlers): JSX.Element[] {
       ),
     ),
   ];
+}
+
+/** Where the agent's model and effort are folded away, and stay open while they are being chosen. */
+const AGENT_ADVANCED = 'setup:agent-advanced';
+
+/**
+ * The agent's model, effort and, for Claude Code, the tools it may use, folded
+ * away: the CLI's own defaults write a fine brief, but whoever has a preference
+ * can say so before the first run rather than after it. The fields are the
+ * settings page's own, on its draft, and Save here saves only these.
+ */
+function agentAdvanced(cli: keyof typeof CLI_LABEL, ui: UiState, handlers: Handlers): JSX.Element {
+  // Codex ignores the tool list, so it isn't offered for Codex.
+  const keys = ['DAILY_FOCUS_AGENT_MODEL', 'DAILY_FOCUS_AGENT_EFFORT', ...(cli === 'claude' ? ['DAILY_FOCUS_AGENT_TOOLS'] : [])];
+  const page = ui.settings.value;
+  const draft = ui.settingsDraft.value;
+  const changed = keys.some((key) => draft.has(key));
+  const error = changed ? ui.settingsError.value : null;
+  return el(
+    'details',
+    {
+      class: 'setup__advanced',
+      open: ui.openDrawers.value.has(AGENT_ADVANCED),
+      onToggle: (event: Event) => {
+        const open = (event.currentTarget as HTMLDetailsElement).open;
+        // The settings are loaded when first looked at, here as on their page.
+        if (open && !ui.settings.peek()) handlers.loadSettings();
+        handlers.toggleDrawer(AGENT_ADVANCED, open);
+      },
+    },
+    el('summary', null, cli === 'claude' ? 'Advanced: model, effort and tools' : 'Advanced: model and effort'),
+    page
+      ? [
+          ...keys.flatMap((key) => {
+            const setting = page.settings.find((entry) => entry.key === key);
+            return setting ? [settingField(setting, draft, handlers)] : [];
+          }),
+          error ? el('p', { class: 'setup__note setup__note--todo', role: 'alert' }, error) : null,
+          el(
+            'div',
+            { class: 'setup__advanced-actions' },
+            el(
+              'button',
+              { type: 'button', class: 'button', disabled: !changed || ui.settingsSaving.value, onClick: () => handlers.saveSettings(keys) },
+              ui.settingsSaving.value ? 'Saving…' : 'Save',
+            ),
+          ),
+        ]
+      : el('p', null, 'Loading the settings…'),
+  );
 }
 
 /** Where the source list's editor opens in its step, and stays open while it is being written. */
