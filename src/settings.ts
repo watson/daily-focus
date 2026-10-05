@@ -105,7 +105,7 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_AGENT_MODEL',
     group: 'agent',
     label: 'Model',
-    help: "Passed to the CLI as it is, such as opus. Empty uses the CLI's own default.",
+    help: "Passed to the CLI as it is, such as opus for Claude Code. Empty uses the CLI's own default.",
     kind: 'text',
     fallback: always("The CLI's own"),
   },
