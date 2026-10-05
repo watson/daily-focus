@@ -1,4 +1,5 @@
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { appendFile, mkdir, readFile, stat } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type {
@@ -47,6 +48,17 @@ export class Store {
 
   async ensureDataDir(): Promise<void> {
     await mkdir(this.config.dataDir, { recursive: true });
+  }
+
+  /**
+   * Which store this is, as an opaque fingerprint: its path, and the directory's
+   * inode and birth time, so a store deleted and made again at the same path
+   * counts as another one. A tab compares it across reconnects; see the client's
+   * `checkStore`.
+   */
+  async fingerprint(): Promise<string> {
+    const info = await stat(this.config.dataDir);
+    return createHash('sha256').update(`${this.config.dataDir}\0${info.ino}\0${info.birthtimeMs}`).digest('hex').slice(0, 16);
   }
 
   /**
@@ -161,7 +173,7 @@ export class Store {
     now: Date = new Date(),
     actions?: readonly Action[],
     calendar?: CalendarState,
-  ): Promise<Omit<DashboardState, 'assetVersion' | 'board' | 'tickets' | 'assistant' | 'agentRun' | 'setupWarnings' | 'restart' | 'setup'>> {
+  ): Promise<Omit<DashboardState, 'assetVersion' | 'storeId' | 'board' | 'tickets' | 'assistant' | 'agentRun' | 'setupWarnings' | 'restart' | 'setup'>> {
     const [{ brief, error, warnings }, readActions, focus] = await Promise.all([
       this.readBrief(),
       // The caller may have read the log already, to fold the board from the same

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
@@ -97,6 +97,19 @@ test('a corrupt line in the log does not lose the others', async () => {
     actions.map((a) => a.id),
     ['a', 'b'],
   );
+});
+
+test('a store is told apart from another, and from itself made again at the same path', async () => {
+  const store = await makeStore();
+  const other = await makeStore();
+  const first = await store.fingerprint();
+  assert.equal(await store.fingerprint(), first, 'the same store, read again');
+  assert.notEqual(await other.fingerprint(), first);
+
+  // A fresh store for a fresh try at setup, at the path the last one had.
+  await rm(store.config.dataDir, { recursive: true });
+  await mkdir(store.config.dataDir);
+  assert.notEqual(await store.fingerprint(), first);
 });
 
 // Dates are pinned to a known week so the weekend rules are testable at all:
