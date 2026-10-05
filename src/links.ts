@@ -1,21 +1,26 @@
 /**
- * Whether the store's links into the repo point at this checkout.
+ * The store's links into this checkout, and whether they still point here.
  *
- * `npm run init` links `prompt.md`, `items.schema.json` and `assistant.md` into the
- * store from whichever checkout it runs in. Run it from a worktree that is later
- * left behind and the links keep pointing there: the morning agent goes on following
- * that copy of its instructions while this checkout's moves on, and the briefs look
- * no different. `npm run audit` reports it, but only when someone runs it, so the
- * dashboard checks every time it builds state. Three `lstat`s are cheap, and the
- * store watcher rebuilds the moment `npm run init` relinks.
+ * `prompt.md`, `items.schema.json` and `assistant.md` live in the repo, or in the
+ * installed package, and are linked into the store so the briefing agent needs
+ * nothing outside its own directory. A link rather than a copy, because two
+ * copies of a long prompt drift apart silently, and the first symptom is a brief
+ * that carefully followed a rule replaced a month ago.
  *
- * A real file where a link should be is someone's own prompt, put there on purpose;
- * init and audit leave it alone, and so does this.
+ * The dashboard links them to its own copy each time it starts (`linkStore`), so
+ * whichever version is running is the one the agent follows, wherever it was
+ * installed from. Something else can still repoint them while it runs — `npm run
+ * init` from another worktree, or a second dashboard on the same store — and the
+ * briefs would look no different, so the dashboard also checks every time it
+ * builds state (`storeLinkWarning`). Three `lstat`s are cheap.
+ *
+ * A real file where a link should be is someone's own prompt, put there on purpose,
+ * and everything here leaves it alone.
  */
 
-import { lstat, readlink, stat } from 'node:fs/promises';
+import { lstat, readlink, rename, stat, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, relative, resolve } from 'node:path';
 
 import type { Config } from './config.ts';
 
@@ -138,6 +143,73 @@ export async function storeLinkWarning(config: Config, home: string = homedir())
 
   const count = elsewhere.length + dangling.length + missing.length;
   const checkout = shown(dirname(dirname(config.promptSource)), home);
-  sentences.push(`Run \`npm run init\` in \`${checkout}\` to relink ${count === 1 ? 'it' : 'them'}.`);
+  sentences.push(`Restart the dashboard to link ${count === 1 ? 'it' : 'them'} back to \`${checkout}\`.`);
   return sentences.join(' ');
+}
+
+/** What became of one link when the store was linked. */
+export interface LinkOutcome {
+  name: string;
+  /** `linked` means it was made or repointed just now; `kept` that it already pointed here. */
+  result: 'linked' | 'kept' | 'own' | 'failed';
+  /** Where it pointed before being repointed, or why it failed. */
+  detail: string | null;
+}
+
+/**
+ * Point `target` in the store at `source` in this checkout. A link pointing
+ * anywhere else is repointed, since a stale link is a stale prompt; a real file is
+ * left strictly alone.
+ */
+async function linkOne(name: string, target: string, source: string): Promise<LinkOutcome> {
+  let before: string | null = null;
+  try {
+    const stats = await lstat(target);
+    if (!stats.isSymbolicLink()) return { name, result: 'own', detail: null };
+    before = resolve(dirname(target), await readlink(target));
+    if (before === source) return { name, result: 'kept', detail: null };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      return { name, result: 'failed', detail: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  // The new link is made beside the old one and renamed over it, so the agent
+  // never finds no link at all, and a link that can't be made leaves the old one.
+  const staged = `${target}.${process.pid}.link`;
+  try {
+    await unlink(staged).catch(() => {});
+    await symlink(source, staged);
+    await rename(staged, target);
+    return { name, result: 'linked', detail: before };
+  } catch (error) {
+    await unlink(staged).catch(() => {});
+    // Windows needs Developer Mode or an elevated shell for this. Copying would
+    // work, so say so rather than leaving the store half set up with no hint why.
+    const code = (error as NodeJS.ErrnoException).code;
+    const hint = code === 'EPERM' || code === 'EACCES' ? '; copy it there by hand instead' : '';
+    return { name, result: 'failed', detail: `${error instanceof Error ? error.message : String(error)}${hint}` };
+  }
+}
+
+/**
+ * Link the prompt for this profile, the schema and the assistant's instructions
+ * into the store, from wherever this code is running. All three, whether or not
+ * the agent and the assistant are on today, so switching one on needs nothing more.
+ */
+export async function linkStore(config: Config): Promise<LinkOutcome[]> {
+  return [
+    await linkOne('prompt.md', config.promptFile, config.promptSource),
+    await linkOne('items.schema.json', config.schemaFile, config.schemaSource),
+    await linkOne('assistant.md', config.assistantPromptFile, config.assistantPromptSource),
+  ];
+}
+
+/** `prompt.md → prompts/morning-brief-work.md`, for saying what was linked. */
+export function describeLink(config: Config, outcome: LinkOutcome): string {
+  const source = {
+    'prompt.md': config.promptSource,
+    'items.schema.json': config.schemaSource,
+    'assistant.md': config.assistantPromptSource,
+  }[outcome.name];
+  return source ? `${outcome.name} → ${relative(dirname(dirname(config.promptSource)), source)}` : outcome.name;
 }

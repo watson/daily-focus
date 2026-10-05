@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig, parseScope } from '../src/config.ts';
-import { mergeEnv, readDotEnv } from '../src/env.ts';
+import { envSources, layerEnv, mergeEnv, readDotEnv, readSettingsFile } from '../src/env.ts';
 
 const dirs: string[] = [];
 
@@ -151,4 +151,60 @@ test('DAILY_FOCUS_CALENDAR=off disables the live agenda', () => {
 
 test('a calendar poll interval under a minute is refused at startup', () => {
   assert.throws(() => loadConfig({ DAILY_FOCUS_CALENDAR_POLL_MINUTES: '0' }), /at least 1/);
+});
+
+async function store(settings: unknown): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-settings-'));
+  dirs.push(dir);
+  if (settings !== undefined) {
+    await writeFile(join(dir, 'settings.json'), typeof settings === 'string' ? settings : JSON.stringify(settings), 'utf8');
+  }
+  return dir;
+}
+
+test("the store's settings sit between .env and the environment", async () => {
+  const dir = await store({ DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_START: '8' });
+  const sources = envSources(
+    { DAILY_FOCUS_DATA: dir, DAILY_FOCUS_WORK_START: '10' },
+    { DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_WORK_END: '18' },
+  );
+  const env = layerEnv(sources);
+  assert.equal(env.DAILY_FOCUS_AGENT, 'claude', 'a saved setting beats .env');
+  assert.equal(env.DAILY_FOCUS_WORK_START, '10', 'the environment beats a saved setting');
+  assert.equal(env.DAILY_FOCUS_WORK_END, '18', '.env still fills in what nothing else sets');
+  assert.equal(sources.settingsError, null);
+});
+
+test('the store is found from .env when the environment does not say', async () => {
+  const dir = await store({ DAILY_FOCUS_SESSION_MINUTES: '50' });
+  const sources = envSources({}, { DAILY_FOCUS_DATA: dir });
+  assert.equal(layerEnv(sources).DAILY_FOCUS_SESSION_MINUTES, '50');
+});
+
+test('a settings file cannot move the store or the server', async () => {
+  const dir = await store({ DAILY_FOCUS_DATA: '/elsewhere', DAILY_FOCUS_PORT: '1', DAILY_FOCUS_HOST: '0.0.0.0', PATH: '/tmp', DAILY_FOCUS_GH: '/opt/gh' });
+  assert.deepEqual(readSettingsFile(join(dir, 'settings.json')).values, { DAILY_FOCUS_GH: '/opt/gh' });
+});
+
+test('a settings file that cannot be used is reported, not thrown', async () => {
+  assert.deepEqual(readSettingsFile('/definitely/not/here/settings.json'), { values: {}, error: null });
+  for (const contents of ['{not json', '["DAILY_FOCUS_AGENT"]', '"claude"']) {
+    const dir = await store(contents);
+    const read = readSettingsFile(join(dir, 'settings.json'));
+    assert.deepEqual(read.values, {}, contents);
+    assert.ok(read.error, contents);
+  }
+});
+
+test('a number or true/false written by hand is read as its text, and anything else is reported', async () => {
+  const dir = await store({ DAILY_FOCUS_SESSION_MINUTES: 50, DAILY_FOCUS_GITHUB: false, DAILY_FOCUS_CALENDARS: ['Work'] });
+  const read = readSettingsFile(join(dir, 'settings.json'));
+  assert.deepEqual(read.values, { DAILY_FOCUS_SESSION_MINUTES: '50', DAILY_FOCUS_GITHUB: 'false' });
+  assert.match(read.error ?? '', /DAILY_FOCUS_CALENDARS/);
+});
+
+test('a blank value in the environment hides nothing saved below it', async () => {
+  const dir = await store({ DAILY_FOCUS_AGENT: 'claude' });
+  const env = layerEnv(envSources({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: '  ' }, {}));
+  assert.equal(env.DAILY_FOCUS_AGENT, 'claude', 'as the settings page reports it');
 });

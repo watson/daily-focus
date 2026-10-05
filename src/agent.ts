@@ -280,6 +280,11 @@ export class AgentRunner {
     }
   }
 
+  /** Whether a run, or a question about one, has a process going right now. */
+  get busy(): boolean {
+    return this.running !== null;
+  }
+
   /** The newest run, whatever became of it. */
   get last(): AgentRun | null {
     return this.runs.at(-1) ?? null;

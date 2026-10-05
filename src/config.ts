@@ -1,7 +1,6 @@
-import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
-import { loadEnv } from './env.ts';
+import { DEFAULT_DATA_DIR, expandHome, loadEnv, SETTINGS_FILE } from './env.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 
 /**
@@ -224,9 +223,10 @@ export interface AgentRunConfig {
 }
 
 /**
- * All configuration is environment-driven so the agent and the dashboard can be
- * pointed at the same store without either one hardcoding a path. The environment
- * itself is the real one layered over the repo-root `.env`, see `env.ts`.
+ * All configuration is read as environment variables, so a setting has one name
+ * wherever it is set. The values come from the real environment, layered over the
+ * store's `settings.json` (which the settings page writes), layered over the repo's
+ * `.env`; see `env.ts`. Every one has a default that suits most people.
  */
 export interface Config {
   profile: Profile;
@@ -234,20 +234,22 @@ export interface Config {
   dataDir: string;
   itemsFile: string;
   actionsFile: string;
-  /** The standing objective, hand-written by the user. */
+  /** The standing objective, in the user's words, saved from the dashboard or by hand. */
   focusFile: string;
+  /** The store's own settings, written by the settings page. See `env.ts`. */
+  settingsFile: string;
   /**
    * The source list the briefing agent reads: which calendars, which account, which
-   * recurring documents. Hand-written, and the server never opens it — the path
-   * lives here only so `npm run init` and the docs can't disagree about where it is.
+   * recurring documents. The user's words, saved from the dashboard's editor. The
+   * server reads it only for that editor and the setup check; it never goes into
+   * the state every tab is sent.
    */
   sourcesFile: string;
   /**
    * The morning prompt, and the payload schema it validates against. Both are
-   * authored in this repo and installed into the store as symlinks by `npm run
-   * init`, so the briefing agent needs nothing outside its own directory — see
-   * `prompts/README.md`. The server never opens either; the paths live here for the
-   * same reason `sourcesFile` does.
+   * authored in this repo and linked into the store each time the dashboard starts,
+   * so the briefing agent needs nothing outside its own directory — see
+   * `prompts/README.md` and `links.ts`. The server never opens either.
    */
   promptFile: string;
   /** The prompt in this repo that `promptFile` links to, chosen by the profile. */
@@ -312,11 +314,11 @@ export interface Config {
    */
   assistantDir: string;
   /**
-   * The assistant's instructions, linked into the store by `npm run init` as the
-   * morning prompt is. Unlike that one, the server does open this: it is the
-   * server that starts the assistant, so it is the server that hands over the
-   * text. `assistantPromptSource` is the copy in this repo it falls back to before
-   * init has run.
+   * The assistant's instructions, linked into the store as the morning prompt is.
+   * Unlike that one, the server does open this: it is the server that starts the
+   * assistant, so it is the server that hands over the text.
+   * `assistantPromptSource` is the copy in this repo it falls back to when the
+   * link is missing.
    */
   assistantPromptFile: string;
   assistantPromptSource: string;
@@ -332,6 +334,19 @@ function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number 
   const n = Number(raw);
   if (!Number.isFinite(n)) {
     throw new Error(`${name} must be a number, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+}
+
+/**
+ * A whole number within a range, or a startup error naming the setting. The
+ * settings page checks a change by building the config from it, so a bound here
+ * is also what keeps an unusable value from being saved there.
+ */
+function envBounded(name: string, fallback: number, min: number, max: number, env: NodeJS.ProcessEnv): number {
+  const n = envInt(name, fallback, env);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`${name} must be a whole number from ${min} to ${max}, got ${JSON.stringify(env[name])}`);
   }
   return n;
 }
@@ -555,18 +570,20 @@ function envWeekdays(name: string, env: NodeJS.ProcessEnv): readonly Weekday[] |
   }
 }
 
-/** `~` and `~/…` become the home directory; a bare command name (`gh`) is left for PATH. */
-function expandHome(p: string): string {
-  if (p === '~') return homedir();
-  if (p.startsWith('~/')) return resolve(homedir(), p.slice(2));
-  if (!p.includes('/')) return p;
-  return isAbsolute(p) ? p : resolve(process.cwd(), p);
-}
-
 /** A string knob; an empty value in `.env` means the default, as it does for numbers. */
 function envString(name: string, fallback: string, env: NodeJS.ProcessEnv): string {
   const raw = env[name];
   return raw === undefined || raw.trim() === '' ? fallback : raw.trim();
+}
+
+/** The working day's hours, which have to be hours of one day, in order. */
+function workingDay(env: NodeJS.ProcessEnv): { workStartHour: number; workEndHour: number } {
+  const workStartHour = envBounded('DAILY_FOCUS_WORK_START', 9, 0, 23, env);
+  const workEndHour = envBounded('DAILY_FOCUS_WORK_END', 17, 1, 24, env);
+  if (workEndHour <= workStartHour) {
+    throw new Error(`DAILY_FOCUS_WORK_END (${workEndHour}) must be later than DAILY_FOCUS_WORK_START (${workStartHour})`);
+  }
+  return { workStartHour, workEndHour };
 }
 
 /** An unknown profile throws: read as `work`, it would quietly poll work accounts. */
@@ -579,11 +596,12 @@ function envProfile(env: NodeJS.ProcessEnv): Profile {
 }
 
 /**
- * Build the config. With no argument it reads the real environment layered over
- * the repo's `.env`; tests pass an explicit object and never touch the file.
+ * Build the config. With no argument it reads the real environment over the
+ * store's settings over the repo's `.env`; tests pass an explicit object and
+ * never touch either file.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
-  const dataDir = expandHome(envString('DAILY_FOCUS_DATA', '~/.daily-focus', env));
+  const dataDir = expandHome(envString('DAILY_FOCUS_DATA', DEFAULT_DATA_DIR, env));
   const profile = envProfile(env);
   return {
     profile,
@@ -591,6 +609,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     itemsFile: resolve(dataDir, 'items.json'),
     actionsFile: resolve(dataDir, 'actions.jsonl'),
     focusFile: resolve(dataDir, 'focus.md'),
+    settingsFile: resolve(dataDir, SETTINGS_FILE),
     sourcesFile: resolve(dataDir, 'sources.md'),
     promptFile: resolve(dataDir, 'prompt.md'),
     promptSource: resolve(import.meta.dirname, '..', 'prompts', `morning-brief-${profile}.md`),
@@ -602,15 +621,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
-    sessionMinutes: envInt('DAILY_FOCUS_SESSION_MINUTES', 25, env),
-    awayAfterMinutes: envInt('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, env),
-    port: envInt('DAILY_FOCUS_PORT', 4321, env),
+    // The same 1 to 120 the session endpoint holds a start to.
+    sessionMinutes: envBounded('DAILY_FOCUS_SESSION_MINUTES', 25, 1, 120, env),
+    awayAfterMinutes: envBounded('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, 0, 24 * 60, env),
+    port: envBounded('DAILY_FOCUS_PORT', 4321, 0, 65535, env),
     host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
     freeWindows: envFlag('DAILY_FOCUS_FREE_WINDOWS', profile !== 'personal', env),
-    workStartHour: envInt('DAILY_FOCUS_WORK_START', 9, env),
-    workEndHour: envInt('DAILY_FOCUS_WORK_END', 17, env),
-    minFreeWindowMinutes: envInt('DAILY_FOCUS_MIN_FREE_WINDOW', 45, env),
-    staleAfterHours: envInt('DAILY_FOCUS_STALE_AFTER_HOURS', 24, env),
+    ...workingDay(env),
+    minFreeWindowMinutes: envBounded('DAILY_FOCUS_MIN_FREE_WINDOW', 45, 1, 24 * 60, env),
+    staleAfterHours: envBounded('DAILY_FOCUS_STALE_AFTER_HOURS', 24, 1, 24 * 30, env),
     agentDays: envWeekdays('DAILY_FOCUS_AGENT_DAYS', env),
     github: envGitHub(env),
     calendar: envCalendar(env),

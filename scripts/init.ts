@@ -21,14 +21,15 @@
  * depends on.
  */
 
-import { lstat, mkdir, readlink, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { relative, resolve } from 'node:path';
+import { relative } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
+import { describeLink, linkStore } from '../src/links.ts';
+import { FOCUS_TEMPLATE, sourcesTemplate } from '../src/templates.ts';
 
 const config = loadConfig();
-const repoRoot = resolve(import.meta.dirname, '..');
 
 let created = 0;
 let linked = 0;
@@ -71,189 +72,6 @@ async function writeIfAbsent(path: string, contents: string, what: string): Prom
   }
 }
 
-/**
- * Point `target` in the store at `source` in this repo.
- *
- * A symlink rather than a copy, because the alternative is two versions of a long
- * prompt drifting apart silently — and the first symptom is a brief that carefully
- * followed a rule we replaced a month ago. The link means a run can name a path
- * inside the store while the content stays in git, reviewable.
- *
- * Unlike the files the user owns, this one *should* be refreshed: a stale link is a
- * stale prompt. So a link pointing somewhere else gets repointed — but a real file
- * is left strictly alone, since that is someone having deliberately put their own
- * prompt there and it is not ours to overwrite.
- */
-async function linkIntoStore(target: string, source: string, what: string): Promise<void> {
-  const where = relative(config.dataDir, target);
-  const shown = `${where} → ${relative(repoRoot, source)}`;
-
-  try {
-    const stats = await lstat(target);
-    if (!stats.isSymbolicLink()) {
-      kept(`${what} is a real file, left alone`, `${where} — delete it to track the repo again`);
-      return;
-    }
-    if (resolve(config.dataDir, await readlink(target)) === source) {
-      kept(`${what} already linked`, shown);
-      return;
-    }
-    await unlink(target);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      bad(`could not check ${what}`, error instanceof Error ? error.message : String(error));
-      return;
-    }
-  }
-
-  try {
-    await symlink(source, target);
-    linked++;
-    ok(`linked ${what}`, shown);
-  } catch (error) {
-    // Windows needs Developer Mode or an elevated shell for this. Copying would
-    // work, so say so rather than leaving the store half set up with no hint why.
-    const code = (error as NodeJS.ErrnoException).code;
-    const hint = code === 'EPERM' || code === 'EACCES' ? ' — copy it there by hand instead' : '';
-    bad(`could not link ${what}`, `${error instanceof Error ? error.message : String(error)}${hint}`);
-  }
-}
-
-const FOCUS_TEMPLATE = `---
-objective:
-blocker:
----
-
-<!--
-Fill in the two lines above: the one thing you are actually trying to achieve right
-now, and what is in the way today, if anything. Leaving \`objective\` blank is fine:
-the dashboard shows a quiet reminder instead. Delete this file to turn the feature
-off entirely.
-
-The dashboard renders them at the top of the board, and the briefing agent ranks the
-whole day against them — so an objective phrased as a project ("ship the thing")
-gives it less to work with than one phrased as a next move ("get the staging path
-working again").
-
-Prose below the frontmatter is shown under the objective. Comments like this one are
-not. Keep it short and keep it current. This file is the only input describing what
-you are trying to do, as opposed to what other people sent you overnight.
--->
-
-<!-- agent-only -->
-Everything below this marker is read by the agent and never reaches the browser —
-\`toPublicFocus\` strips it server-side, and a test asserts it can't survive
-serialisation.
-
-Put context here that should steer the ranking but shouldn't be on screen during a
-screen share: why this objective matters right now, who is watching it, what is
-riding on it. The agent weighs it, and is told never to quote it into a title or
-detail.
-`;
-
-const WORK_SOURCES_TEMPLATE = `# Sources
-
-The personal half of your morning brief. The prompt next to this file
-(\`prompt.md\`) says *what* to gather and how to judge it; this file says *who* and
-*where*. The briefing agent reads it; the dashboard never opens it.
-
-Replace the placeholders below and delete whatever doesn't apply. A section you leave
-out is fine — the agent falls back to your primary calendar and connected accounts,
-and reports the gap. A section that is *wrong* is worse than one that is missing.
-
-## Identity
-
-Meeting notes, Doc assignments and tickets attribute work by name rather than by
-account, so the agent needs to know which name is yours before it can tell your action
-items from everyone else's. Leaving this out doesn't fail loudly — it just quietly
-stops raising anything from those sources.
-
-- Name, as meeting notes and Doc assignments write it: \`Your Name\`
-- Work email: \`you@example.com\`
-- GitHub login: \`your-github-login\` — review requests and authorship are judged
-  against it
-
-## Calendars
-
-Query:
-
-- the primary work calendar
-- \`Some Shared Calendar\` — a second calendar whose events should still block time
-
-Never query or include: \`Some Noisy Calendar\`.
-
-## Holiday calendars
-
-- \`Holidays in <where your colleagues are>\` — a holiday there means slow replies, and
-  it is worth saying so.
-- \`Holidays in <where you are>\` — call one out today, or within the next 14 days.
-
-## Recurring meeting notes
-
-Documents to re-read on every run. Name the tab where it matters, since these tend to
-be long and only one part is current:
-
-- https://docs.google.com/document/d/<document id>/edit?tab=t.0 — what meeting it is
-`;
-
-const PERSONAL_SOURCES_TEMPLATE = `# Sources
-
-The private half of your morning brief. The prompt next to this file
-(\`prompt.md\`) says *what* to gather and how to judge it; this file says *who* and
-*where*. The briefing agent reads it; the dashboard never opens it.
-
-Replace the placeholders below and delete whatever doesn't apply. A section you leave
-out is fine — the agent reports the gap. A section that is *wrong* is worse than one
-that is missing.
-
-## Identity
-
-- Name: \`Your Name\`
-- Personal email: \`you@personal.example\`
-- GitHub login: \`your-github-login\` — review requests and authorship are judged
-  against it
-
-## My weeks
-
-What decides how much of a day is yours, so the agent can set the day's bounds: when
-work ends, regular pickups, a rhythm that alternates week to week and how to tell
-which week it is.
-
-- Workdays end at 16:00; personal time is from then until 22:00.
-
-## Calendars
-
-- \`Personal\`
-- \`Family\` — shared; its events block time too
-
-Never query or include: \`Some Noisy Calendar\`.
-
-## Holiday calendars
-
-- \`Holidays in <where you live>\` — including school holidays, if there is one
-
-## Email
-
-Which tool reaches the account, and any senders to always raise or always skip.
-
-## e-Boks
-
-Which tool or CLI reaches it.
-
-## Reminders
-
-Which tool reaches Apple Reminders, and which lists to read. Unset means all of them.
-
-## Messages
-
-Which tool reaches Apple Messages, and any conversations to skip.
-
-## GitHub
-
-Which repositories or organisations are your own projects. Unset means everything
-the login above has open.
-`;
-
 console.log(`\n\x1b[1mDaily Focus — store setup\x1b[0m`);
 console.log(`\x1b[2m${config.dataDir} (${config.profile} profile)\x1b[0m`);
 
@@ -268,23 +86,21 @@ try {
 
 section('Files you own');
 const wroteFocus = await writeIfAbsent(config.focusFile, FOCUS_TEMPLATE, 'the standing objective');
-const wroteSources = await writeIfAbsent(
-  config.sourcesFile,
-  config.profile === 'personal' ? PERSONAL_SOURCES_TEMPLATE : WORK_SOURCES_TEMPLATE,
-  'the source list the agent reads',
-);
+const wroteSources = await writeIfAbsent(config.sourcesFile, sourcesTemplate(config.profile), 'the source list the agent reads');
 
-// Linked in so the briefing agent never needs to reach into this repo: everything
-// it reads lives in one directory. Keeping it a link keeps the content in git.
+// The same links the dashboard makes each time it starts, made here too so a
+// store set up by hand is complete before the dashboard has ever run. Which prompt
+// follows DAILY_FOCUS_PROFILE, and a link to the other one is repointed.
 section('Files linked from the repo');
-// Which prompt follows DAILY_FOCUS_PROFILE, and a link to the other one — or to the
-// work prompt's old name, before there were two — is stale and gets repointed.
-await linkIntoStore(config.promptFile, config.promptSource, `the ${config.profile} morning prompt`);
-await linkIntoStore(config.schemaFile, config.schemaSource, 'the payload schema');
-// The assistant's instructions, which the server reads and hands to the CLI. Linked
-// for the same reason the morning prompt is; the server falls back to the repo's
-// copy until this exists, so an unlinked store still works.
-await linkIntoStore(config.assistantPromptFile, config.assistantPromptSource, "the assistant's instructions");
+for (const outcome of await linkStore(config)) {
+  const shown = describeLink(config, outcome);
+  if (outcome.result === 'linked') {
+    linked++;
+    ok(`linked ${outcome.name}`, shown);
+  } else if (outcome.result === 'kept') kept(`${outcome.name} already linked`, shown);
+  else if (outcome.result === 'own') kept(`${outcome.name} is a real file, left alone`, 'delete it to track the repo again');
+  else bad(`could not link ${outcome.name}`, outcome.detail ?? '');
+}
 
 section('Files you do not own');
 kept('items.json', 'the briefing agent writes it; absent reads as no brief yet');

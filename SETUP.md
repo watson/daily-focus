@@ -21,7 +21,8 @@ Open [localhost:4321](http://127.0.0.1:4321). The Today tab stays empty until yo
 agent writes its first brief.
 
 `npm run init` creates templates in `~/.daily-focus/` and links the work prompt and
-schema into that directory. For your personal life, see
+schema into that directory; the dashboard makes the same links each time it starts,
+to the copy that is running. For your personal life, see
 [A personal instance](#a-personal-instance). It preserves existing files and updates stale symlinks.
 You can safely run it again.
 
@@ -124,15 +125,19 @@ agent to read.
 
 ## Configure integrations
 
-Copy the settings template once:
+Settings are saved in the store, in `settings.json`, by the dashboard's settings
+page; saving one restarts the dashboard to apply it once nothing is running. The
+settings below can also go in a `.env` in the repo, which is how they were set
+before the store kept its own:
 
 ```sh
 cp .env.example .env
 ```
 
-If you already have a `.env`, edit it instead. Uncomment the settings you need and
-restart the server. Environment variables override `.env`. The file is gitignored
-because account and organisation names belong outside git.
+A value saved in the store beats the same one in `.env`, and a variable set in the
+environment the dashboard starts with beats both; the settings page shows such a
+value but can't change it. `.env` is gitignored because account and organisation
+names belong outside git.
 
 ### GitHub
 
@@ -283,9 +288,11 @@ switching Node versions. It rebuilds the page each time the dashboard starts.
 The LaunchAgent is written for this machine and isn't tracked in git, so each
 machine runs the command once. It uses the Node.js that ran it and keeps two things
 from your shell: `PATH`, so the dashboard finds `gh`, `acli` and your agent's CLI,
-and any `DAILY_FOCUS_` variables set there. Everything else comes from `.env`, which
-is read each time the dashboard starts. A CLI that relies on a token exported in your
-shell profile, rather than its own login, won't find it.
+and any `DAILY_FOCUS_` variables set there. Each time it starts, the dashboard also
+asks your login shell for its `PATH`, so a CLI installed since is found without
+reinstalling the service. Everything else comes from the store's settings and
+`.env`, which are read each time the dashboard starts. A CLI that relies on a token
+exported in your shell profile, rather than its own login, won't find it.
 
 Each store gets one service. Running the command again for the same store replaces
 the service, and another store gets a service of its own. It refuses to install if
@@ -353,7 +360,11 @@ the dashboard allows 45 minutes before showing a warning.
 
 ## Settings reference
 
-All settings can go in `.env` or the environment. Restart after changing them.
+All settings can be changed on the settings page, which saves them in the store,
+or set in `.env` or the environment; restart after changing those two by hand.
+`DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_HOST` say where the store is
+and how the dashboard listens, so they are never kept in the store and only the
+environment or `.env` can change them. Their defaults suit almost everyone.
 The brief's `dayStart` and `dayEnd` override the configured working hours. Neither
 matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 

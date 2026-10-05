@@ -55,9 +55,12 @@ its store. The audit checks content and history; it doesn't replace the test sui
 |---|---|
 | `src/server.ts` | HTTP endpoints and live state updates over SSE |
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
-| `src/config.ts`, `src/env.ts` | Settings and `.env` loading |
+| `src/config.ts`, `src/env.ts` | Settings, layered: the environment over the store's `settings.json` over `.env` |
+| `src/settings.ts` | The settings page: every setting's label, help and field, and checking a change before it is saved |
+| `src/editable.ts`, `src/templates.ts` | Saving `focus.md` and `sources.md` from the editors without overwriting a hand edit, and what they start as |
+| `src/shellpath.ts` | Your login shell's PATH, for a dashboard started by launchd or an app |
 | `src/store.ts`, `src/validate.ts`, `src/ids.ts` | Read the brief, salvage malformed items, and apply actions |
-| `src/links.ts` | Whether the store's links into the repo point at this checkout |
+| `src/links.ts` | Linking the prompt, schema and assistant's instructions into the store at every start, and noticing when something repoints them |
 | `src/focus.ts`, `src/archive.ts` | Objective privacy and progress history |
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
@@ -76,8 +79,9 @@ its store. The audit checks content and history; it doesn't replace the test sui
 ## Keep the contracts in sync
 
 Each store file has one writer. The agent writes `items.json`; the dashboard
-appends actions and sessions, archives briefs, and maintains integration caches.
-The user edits `focus.md` and `sources.md`. See the
+appends actions and sessions, archives briefs, maintains integration caches, saves
+settings, and links the prompt. The user edits `focus.md` and `sources.md`, in the
+dashboard's editors or by hand. See the
 [file ownership table](AGENTS.md#private-data-and-store-ownership) before adding
 another write path. Never compact or rewrite the action log.
 
@@ -94,7 +98,7 @@ When changing a contract, update the documents that describe it:
 - Agent instructions belong in the prompt for the profile they apply to, or both.
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
   symlink makes changes live on the next run.
-- Settings belong in `src/config.ts`, `.env.example`, and `SETUP.md`.
+- Settings belong in `src/config.ts`, `src/settings.ts`, `.env.example`, and `SETUP.md`.
 - Board buckets belong in server types, the client renderer, and the README.
 
 `test/docs-contract.test.ts` checks these lists for drift. Keep private focus text
@@ -126,6 +130,12 @@ free of side effects, since only `POST` is checked for its content type.
 | `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `409` when it is off or already running |
 | `POST /api/agent/ask` | `{run, text}`. Asks a finished run a question in its own session; returns state with the answer coming. The reply streams in over SSE. `409` when it is off, busy, or the run can't be continued |
 | `POST /api/agent/stop` | Kills whatever the morning agent is doing: a run, or a question about one |
+| `GET /api/settings` | Every setting: its value, where it came from (environment, settings, `.env` or default), its default, and the page's label and help |
+| `POST /api/settings` | `{values: {NAME: value or null}}`. Checks the change by building the config from it, saves `settings.json`, and restarts the dashboard in place once nothing is running. `400` names the setting it refused |
+| `GET /api/text/focus`, `GET /api/text/sources` | The whole file for its editor, private part included, with its version and the template a new one starts from. Never part of `/api/state` |
+| `POST /api/text/focus`, `POST /api/text/sources` | `{text, version}`. Saves only if the file is still at `version`; otherwise `409` with what is there now |
+| `POST /api/focus/objective` | `{objective, blocker}`. Sets the two frontmatter fields and keeps the rest of `focus.md`; returns fresh state |
+| `GET /api/status` | The few facts the menu bar app shows: brief age, open items, the morning agent's last run, setup and restart |
 | `GET /api/health` | Server health check |
 
 ## Update the screenshot

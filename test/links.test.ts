@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig, type Config } from '../src/config.ts';
-import { linkState, storeLinkWarning } from '../src/links.ts';
+import { linkState, linkStore, storeLinkWarning } from '../src/links.ts';
 
 const repo = resolve(import.meta.dirname, '..');
 const dirs: string[] = [];
@@ -69,7 +69,7 @@ test("a real file where a link should be is someone's own prompt, left alone", a
   assert.equal(await storeLinkWarning(config, home), null);
 });
 
-test('names every link into another checkout, who follows it, and the one command that fixes them', async () => {
+test('names every link into another checkout, who follows it, and how to link them back', async () => {
   const { home, config } = await setup();
   const old = await otherCheckout(home);
   await symlink(old.prompt, config.promptFile);
@@ -81,7 +81,7 @@ test('names every link into another checkout, who follows it, and the one comman
     await storeLinkWarning(config, home),
     '`prompt.md`, `items.schema.json` and `assistant.md` in the store link to another checkout (`~/old-worktree`), ' +
       'so the morning agent and the assistant follow that copy, not this one. ' +
-      `Run \`npm run init\` in \`${repo}\` to relink them.`,
+      `Restart the dashboard to link them back to \`${repo}\`.`,
   );
 });
 
@@ -96,7 +96,7 @@ test("a link to a file that's gone, or no link at all, means the agent can't rea
     await storeLinkWarning(config, home),
     "`prompt.md` in the store links to a file that no longer exists (`~/old-worktree/prompts/renamed.md`), so the morning agent can't read it. " +
       "`items.schema.json` is missing from the store, so the morning agent can't read it. " +
-      `Run \`npm run init\` in \`${repo}\` to relink them.`,
+      `Restart the dashboard to link them back to \`${repo}\`.`,
   );
 });
 
@@ -114,4 +114,34 @@ test('only the links something here reads are checked', async () => {
   const old = await otherCheckout(home);
   await symlink(old.assistant, config.assistantPromptFile);
   assert.match((await storeLinkWarning(config, home)) ?? '', /^`assistant\.md` in the store links to another checkout .*, so the assistant follows that copy/);
+});
+
+test('linking the store makes what is missing, repoints what points elsewhere, and leaves a real file alone', async () => {
+  const { home, config } = await setup();
+  const old = await otherCheckout(home);
+  await symlink(old.schema, config.schemaFile);
+  await writeFile(config.assistantPromptFile, 'my own instructions\n');
+
+  const outcomes = await linkStore(config);
+
+  assert.deepEqual(
+    outcomes.map(({ name, result }) => [name, result]),
+    [
+      ['prompt.md', 'linked'],
+      ['items.schema.json', 'linked'],
+      ['assistant.md', 'own'],
+    ],
+  );
+  assert.equal(outcomes[1]!.detail, old.schema, 'says where it pointed before');
+  assert.equal(await readlink(config.promptFile), config.promptSource);
+  assert.equal(await readlink(config.schemaFile), config.schemaSource);
+  assert.deepEqual(await linkState(config.assistantPromptFile, config.assistantPromptSource), { state: 'own' });
+
+  assert.deepEqual((await readdir(config.dataDir)).filter((name) => name.endsWith('.link')), [], 'nothing staged is left behind');
+
+  // A second pass has nothing to do.
+  assert.deepEqual(
+    (await linkStore(config)).map(({ result }) => result),
+    ['kept', 'kept', 'own'],
+  );
 });
