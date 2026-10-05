@@ -873,7 +873,8 @@ export const handlers: Handlers = {
       ui.settingsDraft.value = new Map();
       ui.settingsError.value = null;
     }),
-  saveSettings: () => void sendSettings(Object.fromEntries(ui.settingsDraft.value), true),
+  saveSettings: (keys) =>
+    void sendSettings(Object.fromEntries([...ui.settingsDraft.value].filter(([key]) => !keys || keys.includes(key))), true),
   chooseSettings: (values) => void sendSettings(values, false),
   loadText: (name) => void loadText(name),
   editText: (name, text) => patchText(name, { draft: text }),
