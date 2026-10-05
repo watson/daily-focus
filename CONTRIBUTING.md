@@ -19,10 +19,16 @@ store so your changes don't affect a real brief:
 ```sh
 npm install
 export DAILY_FOCUS_DATA=$(mktemp -d)
+export DAILY_FOCUS_AGENT=off DAILY_FOCUS_ASSISTANT=off
 export DAILY_FOCUS_GITHUB=off DAILY_FOCUS_JIRA=off DAILY_FOCUS_CALENDAR=off
 npm run seed
 npm run dev
 ```
+
+Set the agent and the assistant off explicitly: a variable left unset falls through
+to your `.env`, and a dashboard with the agent on starts a real run the moment it is
+past the morning's hour. `npm run demo` is the quicker look, on its own throwaway
+store with everything off, and is what `npx daily-focus --demo` runs.
 
 Open [localhost:4321](http://127.0.0.1:4321). If your own dashboard runs as a
 service, it already has that port: export `DAILY_FOCUS_PORT=4322` as well and open
@@ -71,9 +77,11 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
+| `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
+| `src/sample.ts` | The sample brief behind `npm run seed` and the demo |
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
 | `public/` | The page shell, the stylesheet, and the built bundle |
-| `scripts/` | Store initialization, the macOS background service, sample data, and brief audits |
+| `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
 | `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
@@ -147,3 +155,23 @@ Use the temporary demo above with integrations disabled. Add an invented objecti
 to the temporary store's `focus.md` if needed. Capture the Today tab from the running
 app, check that every visible name and detail is fictional, and save the image as
 `docs/images/daily-focus.png`. Keep the README caption clear that it is sample data.
+
+## The npm package
+
+`npx daily-focus` runs the same code as a checkout, bundled. Node runs the
+TypeScript in `src/` for a checkout but refuses it under `node_modules`, so
+`npm run package` bundles `src/cli.ts` and everything it reaches into `dist/` with
+esbuild, and `prepack` runs it along with the page's build. `test/package.test.ts`
+builds it, installs it the way npm would, and runs the demo from there.
+
+Two things follow from the bundle:
+
+- Every module ends up in the CLI's files, so "was this file run directly" must be
+  asked with `ranDirectly` from `src/install.ts`, which is only ever true for a
+  `.ts` file. A module comparing its own URL with `process.argv[1]` would start
+  itself inside any `daily-focus` command.
+- Commands shown to the user come from `command()` there too: `npm run service`
+  in a checkout is `daily-focus service` in the package.
+
+To release, bump the version and run `npm publish`. Check what ships with
+`npm pack --dry-run` first.

@@ -936,6 +936,9 @@ export interface SetupState {
   sources: { exists: boolean; placeholders: number };
   /** Where each CLI the dashboard can run was found, or null when it wasn't. */
   clis: Record<'claude' | 'codex', string | null>;
-  /** The live agenda: whether this machine can have one, whether the helper is built, how many calendars are chosen. */
-  calendar: { supported: boolean; built: boolean; chosen: number };
+  /**
+   * The live agenda: whether this machine can have one, whether the helper is
+   * built, how many calendars are chosen, and the command that builds the helper.
+   */
+  calendar: { supported: boolean; built: boolean; chosen: number; buildCommand: string };
 }

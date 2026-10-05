@@ -17,3 +17,8 @@ tools/dfcal/build/
 # The client bundle, built from client/ by `npm run build` (and by `npm start`).
 public/app.js
 public/app.js.map
+
+# The npm package build, from `npm run package`.
+dist/
+# What `npm pack` writes.
+*.tgz

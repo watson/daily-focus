@@ -1,6 +1,8 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { DEFAULT_DATA_DIR, expandHome, loadEnv, SETTINGS_FILE } from './env.ts';
+import { USER_CALENDAR_APP } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 
 /**
@@ -86,7 +88,11 @@ export interface CalendarConfig {
   addresses: readonly string[];
   /** Minutes between reads while a browser is watching. */
   pollMinutes: number;
-  /** The helper bundle built by `npm run build:calendar`. */
+  /**
+   * The helper bundle: the one `daily-focus build-calendar` installs for every
+   * copy, when it exists, otherwise the one a checkout's `npm run build:calendar`
+   * builds in place.
+   */
   appPath: string;
 }
 
@@ -431,7 +437,7 @@ function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
     pollMinutes,
     appPath: expandHome(
       (env.DAILY_FOCUS_CALENDAR_APP ?? '').trim() ||
-        resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app'),
+        (existsSync(USER_CALENDAR_APP) ? USER_CALENDAR_APP : resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app')),
     ),
   };
 }

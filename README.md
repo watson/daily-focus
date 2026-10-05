@@ -16,33 +16,32 @@ account. GitHub and Jira boards refresh throughout the day.
 
 You'll need Node.js 22.18 or newer. Node 24 is recommended.
 
-From a checkout of this repo, run these commands in the same terminal:
-
 ```sh
-npm install
-export DAILY_FOCUS_DATA=$(mktemp -d)
-export DAILY_FOCUS_GITHUB=off DAILY_FOCUS_JIRA=off DAILY_FOCUS_CALENDAR=off
-npm run seed
-npm start
+npx daily-focus --demo
 ```
 
-Open [localhost:4321](http://127.0.0.1:4321). This demo uses a temporary store and
-sample data, so you can explore without connecting accounts or replacing a real brief.
-Stop it with Ctrl+C. Close the terminal when you're done to clear the demo settings.
+That opens the dashboard on sample data in a throwaway store, so you can explore
+without connecting anything. Stop it with Ctrl+C, and the store goes with it.
 
-To use your own data, open a new terminal and run:
+To use your own data:
 
 ```sh
-npm install
-npm run service
+npx daily-focus
 ```
 
-On macOS that keeps the dashboard running in the background; elsewhere, use
-`npm start`. Open [localhost:4321](http://127.0.0.1:4321) and the Today tab walks
-you through the rest: what it briefs, your objective, which coding-agent CLI writes
-the brief (Claude Code or Codex), and where it should look. Everything stays on the
-settings page afterwards. [SETUP.md](SETUP.md) covers each step, the integrations
-and every setting.
+Until the first brief exists, the Today tab walks you through the rest: what it
+briefs, your objective, which coding-agent CLI writes the brief (Claude Code or
+Codex), and where it should look. Everything stays on the settings page afterwards.
+To keep it running in the background on macOS, install it and run it as a service:
+
+```sh
+npm install -g daily-focus
+daily-focus service
+```
+
+[SETUP.md](SETUP.md) covers each step, the integrations and every setting. The
+dashboard runs locally; nothing about your day leaves your machine except through
+the CLI you choose.
 
 ## Your day at a glance
 

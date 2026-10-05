@@ -25,6 +25,7 @@ import { reconcileSession, startSession, stopSession } from './sessions.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
 import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
+import { command, PACKAGED, ranDirectly } from './install.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
 
@@ -249,7 +250,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // tracked. A checkout that skipped the build would serve a blank page with
   // nothing on it to say why.
   await stat(join(PUBLIC_DIR, 'app.js')).catch(() => {
-    console.warn('[daily-focus] public/app.js is missing: run `npm run build` (npm start does so on its own)');
+    console.warn(
+      PACKAGED
+        ? '[daily-focus] public/app.js is missing from the package: reinstall it'
+        : '[daily-focus] public/app.js is missing: run `npm run build` (npm start does so on its own)',
+    );
   });
 
   /** Open SSE connections. Each gets every state change until it disconnects. */
@@ -987,9 +992,38 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     sendJSON(res, 405, { error: 'method not allowed' });
   }
 
-  await new Promise<void>((resolvePromise) => {
-    server.listen(config.port, config.host, resolvePromise);
-  });
+  /** Everything started above, stopped; the listening socket is the caller's to close. */
+  async function stopEverything(): Promise<void> {
+    clearInterval(heartbeat);
+    clearInterval(presencePoll);
+    clearInterval(agentClock);
+    if (sessionTick) clearTimeout(sessionTick);
+    board.stop();
+    calendar.stop();
+    tickets.stop();
+    await assistant.close();
+    await agent.close();
+    stopWatching();
+    stopWatchingAssets();
+    for (const res of subscribers) res.end();
+    subscribers.clear();
+  }
+
+  try {
+    await new Promise<void>((resolvePromise, reject) => {
+      server.once('error', reject);
+      server.listen(config.port, config.host, () => {
+        server.off('error', reject);
+        resolvePromise();
+      });
+    });
+  } catch (err) {
+    await stopEverything();
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      throw new PortInUseError(config.host, config.port);
+    }
+    throw err;
+  }
 
   // Read the port back off the socket rather than trusting config: port 0 means
   // "any free port", which tests rely on.
@@ -1002,19 +1036,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   return {
     url,
     async close() {
-      clearInterval(heartbeat);
-      clearInterval(presencePoll);
-      clearInterval(agentClock);
-      if (sessionTick) clearTimeout(sessionTick);
-      board.stop();
-      calendar.stop();
-      tickets.stop();
-      await assistant.close();
-      await agent.close();
-      stopWatching();
-      stopWatchingAssets();
-      for (const res of subscribers) res.end();
-      subscribers.clear();
+      await stopEverything();
       await new Promise<void>((done, fail) => {
         server.close((err) => (err ? fail(err) : done()));
         // Closing waits for every connection, and Node closes only those idle at
@@ -1029,12 +1051,28 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
 }
 
 /**
+ * Something already listens where the dashboard would. Usually it is the
+ * dashboard itself, started by the service or another terminal, so the message
+ * says where to look before it says how to pick another port.
+ */
+export class PortInUseError extends Error {
+  constructor(host: string, port: number) {
+    super(
+      `port ${port} on ${host} is already in use. If that is this dashboard, running as a service or in ` +
+        `another terminal, open http://${host.includes(':') ? `[${host}]` : host}:${port}. ` +
+        'To run this one beside it, give it another port with DAILY_FOCUS_PORT or --port.',
+    );
+    this.name = 'PortInUseError';
+  }
+}
+
+/**
  * Run the dashboard until the process is told to stop, restarting it in place
  * whenever saved settings ask for that. In place rather than by exiting, so it
  * works the same however it was started: a terminal, `npm run dev`'s watcher,
  * the LaunchAgent, or the menu bar app, none of which has to know about it.
  */
-export async function runServer(): Promise<void> {
+export async function runServer(options: { onStarted?: (url: string) => void } = {}): Promise<void> {
   // Before anything reads PATH: a dashboard started by launchd or an app has
   // none of the CLIs it runs on its PATH until this finds your shell's.
   await hydratePath();
@@ -1069,10 +1107,17 @@ export async function runServer(): Promise<void> {
     });
   }
 
-  await start();
+  try {
+    await start();
+  } catch (err) {
+    if (!(err instanceof PortInUseError)) throw err;
+    console.error(`[daily-focus] ${err.message}`);
+    process.exit(1);
+  }
+  options.onStarted?.((current as StartedServer | null)?.url ?? '');
 }
 
 // Only auto-start when run directly, so tests can import startServer without binding a port.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+if (ranDirectly(import.meta.url)) {
   await runServer();
 }

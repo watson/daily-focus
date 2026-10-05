@@ -26,6 +26,7 @@ import { platform } from 'node:os';
 import { relative } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
+import { command, PACKAGED } from '../src/install.ts';
 import { describeLink, linkStore } from '../src/links.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from '../src/templates.ts';
 
@@ -125,7 +126,11 @@ if (wroteSources) next.push(`Edit ${config.sourcesFile} — say where to look.`)
 
 // A Mac can keep the board running as a LaunchAgent, which outlives the terminal
 // and a restart. Anywhere else, `npm start` is the way in.
-const start = platform() === 'darwin' ? '`npm run service` to run the board in the background' : '`npm start` to open the board';
+const start =
+  platform() === 'darwin'
+    ? `\`${command('service')}\` to run the board in the background`
+    : `\`${PACKAGED ? 'daily-focus' : 'npm start'}\` to open the board`;
+const demo = PACKAGED ? 'daily-focus --demo' : 'npm run demo';
 
 section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
@@ -136,7 +141,7 @@ if (next.length === 0) {
       ? `  The store was already set up. Linked ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout; nothing else changed.`
       : '  The store was already set up. Nothing was changed.',
   );
-  console.log(`  ${start}, \`npm run audit\` to check the current brief.`);
+  console.log(`  ${start}, \`${command('audit')}\` to check the current brief.`);
 } else {
   next.forEach((step, i) => console.log(`  ${i + 1}. ${step}`));
   if (created > 0) {
@@ -145,7 +150,7 @@ if (next.length === 0) {
     // carries every open task in the previous items.json forward, so sample tasks
     // would become the user's work. The README's demo seeds a throwaway store.
     console.log(
-      `\n  \x1b[2mThe two files can be written in the dashboard too: until the first brief,\n  Today walks through everything it needs. To look around before an agent\n  has run, try the demo in the README. It shows sample data from a throwaway\n  store, so nothing lands in this one.\x1b[0m`,
+      `\n  \x1b[2mThe two files can be written in the dashboard too: until the first brief,\n  Today walks through everything it needs. To look around before an agent\n  has run, try \`${demo}\`. It shows sample data from a throwaway store, so\n  nothing lands in this one.\x1b[0m`,
     );
   } else {
     console.log(

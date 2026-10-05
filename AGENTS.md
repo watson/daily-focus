@@ -89,7 +89,10 @@ run it again with `--remove` afterwards.
 
 ## Checks
 
-Run `npm run typecheck` and `npm test` for code changes. Keep tests independent of
+Run `npm run typecheck` and `npm test` for code changes. The npm package bundles
+every module into the CLI's files: a module that runs when executed directly must
+check with `ranDirectly` from `src/install.ts`, never by comparing its URL with
+`process.argv[1]`. Never commit `dist/`. Keep tests independent of
 live accounts and calendar permission prompts. The client is built from `client/`
 into `public/app.js`, which is not tracked: edit the source, never the bundle.
 

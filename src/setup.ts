@@ -14,6 +14,7 @@ import { delimiter, isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { CLI_NAMES, type CliName, type Config } from './config.ts';
+import { command } from './install.ts';
 import type { SetupState } from './types.ts';
 
 const run = promisify(execFile);
@@ -128,6 +129,7 @@ export async function setupState(config: Config, opts: { profileChosen: boolean 
       supported,
       built: supported && (await exists(config.calendar.appPath)),
       chosen: config.calendar.names.length,
+      buildCommand: command('build-calendar'),
     },
   };
 }

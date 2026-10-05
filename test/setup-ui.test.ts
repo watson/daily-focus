@@ -33,7 +33,7 @@ function stateWith(overrides: { setup?: Partial<SetupState>; [key: string]: unkn
       profileChosen: false,
       sources: { exists: false, placeholders: 0 },
       clis: { claude: '/usr/local/bin/claude', codex: null },
-      calendar: { supported: false, built: false, chosen: 0 },
+      calendar: { supported: false, built: false, chosen: 0, buildCommand: 'npm run build:calendar' },
       ...setup,
     },
     ...rest,

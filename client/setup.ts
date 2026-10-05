@@ -19,9 +19,6 @@ import type { Handlers, UiState } from './types.ts';
 
 const CLI_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
-/** How the calendar helper is built from a checkout. */
-const CALENDAR_BUILD = 'npm run build:calendar';
-
 export function SetupCard({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element {
   const setup = state.setup;
   const agent = state.agentRun;
@@ -307,7 +304,7 @@ function boards(state: DashboardState, handlers: Handlers): JSX.Element {
   if (calendar.supported && state.agendaSource) {
     const live = state.agendaSource.live;
     const [health, text]: [BoardHealth, string] = !calendar.built
-      ? ['todo', `Needs the calendar helper: run ${CALENDAR_BUILD} once. Until then the agenda uses the brief.`]
+      ? ['todo', `Needs the calendar helper: run ${calendar.buildCommand} once. Until then the agenda uses the brief.`]
       : calendar.chosen === 0
         ? ['todo', 'No calendars chosen yet. Choose them, and the agenda follows them live.']
         : live

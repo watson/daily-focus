@@ -35,7 +35,7 @@ test('a first run never suggests seeding the store it just set up', async () => 
 
   // The agent's first brief would carry the sample tasks forward as real work.
   assert.doesNotMatch(stdout, /npm run seed/);
-  assert.match(stdout, /demo in the README/);
+  assert.match(stdout, /npm run demo/);
 });
 
 test('a second run reports that nothing changed', async () => {

@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { Item } from './types.ts';
+import { command } from './install.ts';
 
 const run = promisify(execFile);
 
@@ -223,7 +224,7 @@ export async function runHelper(appPath: string, selfAddresses: readonly string[
     await stat(appPath);
   } catch {
     throw new CalendarHelperError(
-      `the calendar helper isn't built at ${appPath} — run npm run build:calendar, ` +
+      `the calendar helper isn't built at ${appPath} — run ${command('build-calendar')}, ` +
         'or point DAILY_FOCUS_CALENDAR_APP at an existing build',
     );
   }
