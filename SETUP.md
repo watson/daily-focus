@@ -2,7 +2,8 @@
 
 [Back to the README](README.md)
 
-Daily Focus needs Node.js 22.18 or newer. Node 24 is recommended. GitHub, Jira,
+Daily Focus needs Node.js 22.18 or newer; Node 24 is recommended. The Mac app is
+the exception: it carries its own. GitHub, Jira,
 and the live macOS calendar are optional. The morning brief is written by an agent
 the dashboard runs for you through a coding-agent CLI.
 
@@ -304,6 +305,37 @@ them opens the same way.
 The dashboard runs one thing at a time: a run, or a question about one.
 
 ## Keep the dashboard running
+
+There are two ways on macOS: the menu bar app, or a LaunchAgent. Use one, not both;
+the app notices a dashboard that is already running and only watches it.
+
+### The menu bar app
+
+Daily Focus as a Mac app lives in the menu bar. It starts the dashboard, again if it
+stops, and at login once you tick **Open at Login**. Its menu says how old the brief
+is and how many items are open, opens the dashboard or its settings, and starts a
+fresh brief; it posts a notification when a new brief arrives or the morning agent
+fails. It carries everything it runs: its own copy of the dashboard, the Node.js
+that runs it, and the calendar helper, so there is nothing else to install, and the
+calendar permission is asked for once, by an app you recognise. It needs a Mac with
+Apple silicon and macOS 13.5 or newer.
+
+Open `Daily Focus.dmg` and drag the app to Applications, then open it from there.
+It has no window and no Dock icon: look for it in the menu bar.
+
+To build it yourself from a checkout:
+
+```sh
+npm run app
+```
+
+That leaves `Daily Focus.dmg` and the app itself in `macos/build/`. Its log is
+`~/Library/Logs/Daily Focus.log`. Everything the dashboard starts runs inside the
+app as far as macOS is concerned, so a permission prompt from the morning agent's
+CLI, for Reminders, Messages or your calendars, names Daily Focus, and Full Disk
+Access, if a source needs it, is granted to the app.
+
+### A LaunchAgent
 
 On macOS, `daily-focus service` installs a LaunchAgent for your user that runs this
 copy of the dashboard: the global install, or the checkout it was run from. It

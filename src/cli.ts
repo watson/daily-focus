@@ -44,6 +44,7 @@ Options
   --host <host>     the address to listen on (default 127.0.0.1)
   --profile <name>  work or personal, for a new store
   --no-open         don't open the browser
+  --exit-with-stdin stop when standard input closes, for an app running it as a child
   -v, --version     print the version
   -h, --help        print this
 
@@ -158,6 +159,7 @@ async function main(argv: string[]): Promise<void> {
       host: { type: 'string' },
       profile: { type: 'string' },
       open: { type: 'boolean', default: true },
+      'exit-with-stdin': { type: 'boolean' },
       demo: { type: 'boolean' },
       remove: { type: 'boolean' },
       force: { type: 'boolean' },
@@ -191,6 +193,7 @@ async function main(argv: string[]): Promise<void> {
   // would otherwise be dropped without a word: `seed --remove` would seed.
   const only: Record<string, readonly string[]> = {
     demo: ['start'],
+    'exit-with-stdin': ['start'],
     open: ['start'],
     remove: ['service'],
     force: ['seed'],
@@ -211,6 +214,13 @@ async function main(argv: string[]): Promise<void> {
       if (IN_NPX_CACHE) {
         console.log('  Running from npx. To keep it running in the background, install it:');
         console.log('  npm install -g daily-focus, then daily-focus service.\n');
+      }
+      // For an app that runs the dashboard as its child: the app holds the other
+      // end of standard input, and when it goes, however it went, the end closes
+      // and the dashboard stops instead of running on without it.
+      if (values['exit-with-stdin']) {
+        const stop = () => process.kill(process.pid, 'SIGTERM');
+        process.stdin.once('end', stop).once('close', stop).resume();
       }
       return start(open);
     case 'service': {

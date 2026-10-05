@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleDisplayName</key><string>Daily Focus</string>
+  <key>CFBundleExecutable</key><string>Daily Focus</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIdentifier</key><string>dk.tson.daily-focus</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>Daily Focus</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>0.1.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+  <key>LSMinimumSystemVersion</key><string>13.5</string>
+  <key>LSUIElement</key><true/>
+  <key>NSHumanReadableCopyright</key><string>Copyright © Thomas Watson. MIT licensed.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>The morning agent and the assistant run inside Daily Focus, and may ask apps such as Reminders, Messages or Mail for what belongs in your brief.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>The morning agent and the assistant run inside Daily Focus, and may read your calendars and reminders to write your brief.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>The morning agent and the assistant run inside Daily Focus, and may read your calendars to write your brief.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>The morning agent and the assistant run inside Daily Focus, and may read your reminders to write your brief.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>The morning agent and the assistant run inside Daily Focus, and may read your reminders to write your brief.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>The morning agent and the assistant run inside Daily Focus, and may look up who a message is from to write your brief.</string>
+</dict>
+</plist>

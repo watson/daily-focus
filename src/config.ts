@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { DEFAULT_DATA_DIR, expandHome, loadEnv, SETTINGS_FILE } from './env.ts';
-import { USER_CALENDAR_APP } from './install.ts';
+import { APP_CALENDAR_APP, USER_CALENDAR_APP } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 
 /**
@@ -435,9 +435,12 @@ function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
     names: envNameList('DAILY_FOCUS_CALENDARS', env),
     addresses: envNameList('DAILY_FOCUS_CALENDAR_ADDRESSES', env),
     pollMinutes,
+    // What the user set, then the helper the Mac app carries, then the one
+    // `daily-focus build-calendar` installs, then a checkout's own build.
     appPath: expandHome(
       (env.DAILY_FOCUS_CALENDAR_APP ?? '').trim() ||
-        (existsSync(USER_CALENDAR_APP) ? USER_CALENDAR_APP : resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app')),
+        [APP_CALENDAR_APP, USER_CALENDAR_APP].find((path): path is string => path !== null && existsSync(path)) ||
+        resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app'),
     ),
   };
 }

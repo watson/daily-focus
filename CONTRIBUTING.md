@@ -83,6 +83,7 @@ its store. The audit checks content and history; it doesn't replace the test sui
 | `public/` | The page shell, the stylesheet, and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
+| `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
 | `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
 
@@ -175,3 +176,33 @@ Two things follow from the bundle:
 
 To release, bump the version and run `npm publish`. Check what ships with
 `npm pack --dry-run` first.
+
+## The menu bar app
+
+`macos/` is a Swift app that keeps the dashboard running from the menu bar: it starts
+the server as its child, restarts it when it stops, shows the brief's age and the
+morning agent's state from `GET /api/status`, and posts a notification when a brief
+arrives or a run fails. It is built with `swiftc` and a shell script, no Xcode
+project:
+
+```sh
+npm run app -- --test
+```
+
+That packs the npm package and puts exactly what it ships inside the app. It adds
+the calendar helper, and Node.js at the version in `macos/node-version`: the official
+Apple silicon release, checked against nodejs.org's checksums and cached in
+`macos/build/`. The app is Apple silicon only, throughout. To move to a newer Node, change that file. It draws the icon and
+the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
+app's self-test, and makes `Daily Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
+which needs Python 3.10 or newer.
+
+Signing uses a Developer ID Application certificate when the keychain has one,
+otherwise Apple Development, which runs only on the Mac that built it. Set
+`DAILY_FOCUS_NOTARY_PROFILE` to a `notarytool store-credentials` profile to notarise
+and staple both the app and the disk image.
+
+The app starts the server with `--exit-with-stdin` and holds its standard input, so
+the server stops with the app however the app goes. To develop it against a
+checkout, run the built binary with `DAILY_FOCUS_APP_SERVER_ENTRY=$PWD/src/cli.ts`,
+a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`.
