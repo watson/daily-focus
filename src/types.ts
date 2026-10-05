@@ -910,6 +910,12 @@ export interface DashboardState {
    * changes, because the SSE stream carries state but never code.
    */
   assetVersion: string;
+  /**
+   * Which store this dashboard is on; see `Store.fingerprint`. A tab outlives the
+   * dashboard that served it, and its live feed reconnects to whichever one is
+   * next on the same address, on whatever store.
+   */
+  storeId: string;
 }
 
 /**

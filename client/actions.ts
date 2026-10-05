@@ -108,12 +108,14 @@ export function adoptState(next: DashboardState): void {
     ui.connectionError.value = null;
   });
   startLocalTick();
+  checkStore(next.storeId);
   checkAssetVersion(next.assetVersion);
 }
 
 export async function refresh(): Promise<void> {
   try {
     const next = await api.fetchState();
+    checkStore(next.storeId);
     checkAssetVersion(next.assetVersion);
     batch(() => {
       state.value = next;
@@ -149,6 +151,22 @@ function checkAssetVersion(next: string | undefined): void {
     return;
   }
   location.reload();
+}
+
+/**
+ * The live feed reconnects to whatever dashboard is next on this address, and
+ * that may be one on another store: stop one, start another on a different
+ * store. Everything this tab holds would then be the old store's — the
+ * settings it loaded, a draft, a fold left open — shown against the new one's
+ * state, so a new store gets a fresh page. Without a prompt, half-typed or not:
+ * nothing typed for the old store belongs in the new one.
+ */
+let loadedStore: string | null = null;
+
+function checkStore(next: string | undefined): void {
+  if (!next) return;
+  loadedStore ??= next;
+  if (next !== loadedStore) location.reload();
 }
 
 /* ---------- actions ---------- */
