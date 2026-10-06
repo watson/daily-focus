@@ -185,8 +185,10 @@ jobs:
           node-version: 24
           check-latest: true
 
-      # A tarball is published as it is, with no scripts run. A rerun after the
-      # GitHub release failed finds this version already published.
+      # A tarball is published as it is, with no scripts run. The leading ./ is
+      # what makes it a file: npm reads "release/x.tgz" as a GitHub repository,
+      # owner "release". A rerun after the GitHub release failed finds this
+      # version already published.
       - name: Publish to npm
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -195,7 +197,7 @@ jobs:
           if [ "$(npm view "daily-focus@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
             echo "daily-focus@$VERSION is already on npm"
           else
-            npm publish "release/daily-focus-$VERSION.tgz" --tag "$CHANNEL" --ignore-scripts
+            npm publish "./release/daily-focus-$VERSION.tgz" --tag "$CHANNEL" --ignore-scripts
           fi
 
       - name: Make the GitHub release
