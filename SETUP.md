@@ -330,7 +330,7 @@ To build it yourself from a checkout:
 npm run app
 ```
 
-That leaves `Daily Focus.dmg` and the app itself in `macos/build/`. Its log is
+That leaves `Daily-Focus.dmg` and the app itself in `macos/build/`. Its log is
 `~/Library/Logs/Daily Focus.log`. Everything the dashboard starts runs inside the
 app as far as macOS is concerned, so a permission prompt from the morning agent's
 CLI, for Reminders, Messages or your calendars, names Daily Focus, and Full Disk

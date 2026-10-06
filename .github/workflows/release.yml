@@ -151,8 +151,7 @@ jobs:
           CHANNEL: ${{ steps.version.outputs.channel }}
         run: |
           tag="v$VERSION"
-          dmg="$RUNNER_TEMP/Daily-Focus.dmg"
-          cp "macos/build/Daily Focus.dmg" "$dmg"
+          dmg=macos/build/Daily-Focus.dmg
           node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release edit "$tag" --notes-file "$RUNNER_TEMP/notes.md"

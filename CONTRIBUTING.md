@@ -199,7 +199,7 @@ the calendar helper, and Node.js at the version in `macos/node-version`: the off
 Apple silicon release, checked against nodejs.org's checksums and cached in
 `macos/build/`. The app is Apple silicon only, throughout. To move to a newer Node, change that file. It draws the icon and
 the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
-app's self-test, and makes `Daily Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
+app's self-test, and makes `Daily-Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
 which needs Python 3.10 or newer.
 
 Signing uses a Developer ID Application certificate when the keychain has one,

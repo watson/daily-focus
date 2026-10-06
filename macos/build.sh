@@ -225,7 +225,9 @@ echo "and $zip"
 # by dmgbuild (see macos/dmg-settings.py). dmgbuild is a Python package, installed
 # at a pinned version into a virtual environment under macos/build/, and it needs
 # Python 3.10 or newer. Without one the image is skipped and the zip still stands.
-dmg="$build/Daily Focus.dmg"
+# Hyphenated, as GitHub would rename it on a release anyway: an asset can't have a
+# space. The volume it mounts as is still "Daily Focus".
+dmg="$build/Daily-Focus.dmg"
 rm -f "$dmg"
 if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
   venv="$build/dmgbuild"
