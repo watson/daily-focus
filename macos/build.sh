@@ -59,6 +59,12 @@ rm -rf "$app" "$zip"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 
+# The app's version is the package's, which the Release workflow stamps into
+# package.json from the commits (scripts/release.ts); a checkout's is a placeholder.
+version=$(plutil -extract version raw -o - "${server:-$repo}/package.json")
+plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
+
 # Apple silicon only, as is everything in the app: Intel Macs stopped at macOS 26,
 # and carrying Node for both would double the download for them.
 swiftc -O -target arm64-apple-macos13.5 -o "$app/Contents/MacOS/Daily Focus" "$here"/DailyFocus/*.swift
@@ -219,7 +225,9 @@ echo "and $zip"
 # by dmgbuild (see macos/dmg-settings.py). dmgbuild is a Python package, installed
 # at a pinned version into a virtual environment under macos/build/, and it needs
 # Python 3.10 or newer. Without one the image is skipped and the zip still stands.
-dmg="$build/Daily Focus.dmg"
+# Hyphenated, as GitHub would rename it on a release anyway: an asset can't have a
+# space. The volume it mounts as is still "Daily Focus".
+dmg="$build/Daily-Focus.dmg"
 rm -f "$dmg"
 if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
   venv="$build/dmgbuild"

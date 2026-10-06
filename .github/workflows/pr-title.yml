@@ -1,0 +1,33 @@
+name: PR title
+
+# A pull request is squash-merged with its title as the commit on main, and the
+# version numbers and release notes are worked out from those commits, so the
+# title has to be a Conventional Commit. scripts/release.ts says which types.
+on:
+  pull_request:
+    # edited, so that fixing the title clears the check without a push.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Through the environment, never inline: a title is text anyone opening a
+      # pull request chooses.
+      - name: Check the title is a Conventional Commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/release.ts check-title "$TITLE"

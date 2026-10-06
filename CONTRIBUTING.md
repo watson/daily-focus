@@ -55,6 +55,11 @@ rendered row can be asked the same questions a browser would answer.
 To check a generated brief, run `npm run audit` with `DAILY_FOCUS_DATA` pointing to
 its store. The audit checks content and history; it doesn't replace the test suite.
 
+A pull request's title must be a [Conventional Commit](https://www.conventionalcommits.org/),
+such as `feat(board): show draft pull requests` or `fix!: read settings from the
+store`. It is squash-merged with that title as the commit on main, which is where
+versions and release notes come from, so CI checks it.
+
 ## Find your way around
 
 | Path | Responsibility |
@@ -174,8 +179,8 @@ Two things follow from the bundle:
 - Commands shown to the user come from `command()` there too: `npm run service`
   in a checkout is `daily-focus service` in the package.
 
-To release, bump the version and run `npm publish`. Check what ships with
-`npm pack --dry-run` first.
+Check what ships with `npm pack --dry-run`. Publishing is the Release workflow's
+job, below; the version in `package.json` is a placeholder it stamps.
 
 ## The menu bar app
 
@@ -194,7 +199,7 @@ the calendar helper, and Node.js at the version in `macos/node-version`: the off
 Apple silicon release, checked against nodejs.org's checksums and cached in
 `macos/build/`. The app is Apple silicon only, throughout. To move to a newer Node, change that file. It draws the icon and
 the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
-app's self-test, and makes `Daily Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
+app's self-test, and makes `Daily-Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
 which needs Python 3.10 or newer.
 
 Signing uses a Developer ID Application certificate when the keychain has one,
@@ -206,3 +211,42 @@ The app starts the server with `--exit-with-stdin` and holds its standard input,
 the server stops with the app however the app goes. To develop it against a
 checkout, run the built binary with `DAILY_FOCUS_APP_SERVER_ENTRY=$PWD/src/cli.ts`,
 a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`.
+
+## Releases
+
+`.github/workflows/release.yml` makes every release, from main, and main only
+moves by pull request. Each one is a tag, a GitHub release holding the release
+notes and `Daily-Focus.dmg`, signed and notarised, and the same version on npm:
+
+- Every push to main is a development build, such as `0.2.0-dev.3`: a GitHub
+  prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest.
+- A stable release is cut by hand: Actions → Release → Run workflow, on main. It
+  goes to npm's `latest` and is the GitHub release marked Latest. Leave the
+  version empty to work it out, or give one, such as `1.0.0`, after the last.
+
+`scripts/release.ts` works out the version from the commits since the last `vX.Y.Z`
+tag: a breaking change bumps the major, a `feat` the minor, anything else the
+patch, and below 1.0.0 a breaking change bumps the minor. A development build adds
+`-dev.N`, N counting those commits. The notes follow conventional-changelog's
+layout: breaking changes, features, fixes, performance and reverts, in that order,
+with housekeeping types left out. To preview them:
+
+```sh
+node scripts/release.ts version --dev
+node scripts/release.ts notes "$(node scripts/release.ts version --dev)"
+```
+
+npm takes the package from the workflow by trusted publishing, with no token. On
+npmjs.com the package's settings name `watson/daily-focus` and `release.yml` as
+its trusted publisher. Signing and notarising need five repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `DEVELOPER_ID_P12` | The Developer ID Application certificate and its private key, exported from Keychain Access as a `.p12`, then `base64 -i cert.p12 \| pbcopy` |
+| `DEVELOPER_ID_P12_PASSWORD` | The password the `.p12` was exported with |
+| `NOTARY_KEY` | The contents of an App Store Connect API key's `AuthKey_XXXXXXXXXX.p8` (Users and Access → Integrations → Team Keys, Developer access) |
+| `NOTARY_KEY_ID` | That key's ID |
+| `NOTARY_ISSUER_ID` | The issuer ID shown above the team keys |
+
+A run that fails can be rerun: it finds a version already on npm, or a release
+already made, and finishes the rest.
