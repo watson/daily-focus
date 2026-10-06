@@ -189,8 +189,11 @@ fi
 # it opens offline from wherever it is copied; then the disk image it ships in.
 notarise() {
   # notarytool can exit 0 for a submission Apple rejected, so the verdict is read
-  # from what it prints.
-  result=$(xcrun notarytool submit "$1" --keychain-profile "$DAILY_FOCUS_NOTARY_PROFILE" --wait 2>&1) || true
+  # from what it prints. Apple usually answers within minutes but can hold a
+  # submission for hours, so the wait is bounded: past it, this fails with the
+  # submission's id, and the submission carries on at Apple.
+  echo "notarising $(basename "$1"); waiting up to an hour for Apple"
+  result=$(xcrun notarytool submit "$1" --keychain-profile "$DAILY_FOCUS_NOTARY_PROFILE" --wait --timeout 1h 2>&1) || true
   printf '%s\n' "$result"
   if ! printf '%s\n' "$result" | grep -q "status: Accepted"; then
     echo "notarisation failed; \`xcrun notarytool log <id> --keychain-profile $DAILY_FOCUS_NOTARY_PROFILE\` says why" >&2
