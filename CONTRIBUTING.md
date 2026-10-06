@@ -238,7 +238,16 @@ node scripts/release.ts notes "$(node scripts/release.ts version --dev)"
 
 npm takes the package from the workflow by trusted publishing, with no token. On
 npmjs.com the package's settings name `watson/daily-focus` and `release.yml` as
-its trusted publisher. Signing and notarising need five repository secrets:
+its trusted publisher, with **Allow npm publish** ticked so a build goes out
+without waiting for a 2FA approval, and **Allow npm dist-tag** left off: the tag
+is set as part of the publish. Since that lets the workflow publish unattended,
+the job that can is kept apart from everything that runs a dependency. `build`
+installs, tests, packs and signs on macOS; `publish` has no checkout and no
+`node_modules`, and only publishes the tarball and attaches the disk image
+`build` handed it. The signing certificate likewise goes into the keychain only
+after the last npm package has run.
+
+Signing and notarising need five repository secrets:
 
 | Secret | What it is |
 |---|---|
@@ -249,4 +258,5 @@ its trusted publisher. Signing and notarising need five repository secrets:
 | `NOTARY_ISSUER_ID` | The issuer ID shown above the team keys |
 
 A run that fails can be rerun: it finds a version already on npm, or a release
-already made, and finishes the rest.
+already made, and finishes the rest. If only `publish` failed, Re-run failed jobs
+reuses what `build` made.

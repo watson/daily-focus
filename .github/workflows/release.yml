@@ -5,6 +5,11 @@ name: Release
 # the `dev` tag. A stable release is cut from main by hand, with Run workflow,
 # and goes to npm's `latest`. Versions and notes come from the Conventional
 # Commits since the last release: see scripts/release.ts.
+#
+# Two jobs, so that what can publish never runs a dependency. `build` installs
+# packages, tests, packs and signs, and can't publish. `publish` can, through
+# npm's trusted publishing, which lets this workflow publish without 2FA, and it
+# runs nothing but npm and gh on what `build` handed it.
 on:
   push:
     branches: [main]
@@ -25,13 +30,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 45
-    permissions:
-      contents: write # the tag and the GitHub release
-      id-token: write # npm's trusted publishing, which needs no token
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      channel: ${{ steps.version.outputs.channel }}
 
     steps:
       - name: Check out the repository
@@ -76,6 +81,18 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      # The tarball npm gets, and the app is built around, unpacked as npm would,
+      # the way `npm run app` does it. The last step to run npm packages, so none
+      # of them runs once the signing certificate is in reach.
+      - name: Pack the package and write the release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release" "$RUNNER_TEMP/server"
+          npm pack --pack-destination "$RUNNER_TEMP/release"
+          tar -xzf "$RUNNER_TEMP/release/daily-focus-$VERSION.tgz" -C "$RUNNER_TEMP/server"
+          node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/release/notes.md"
 
       # dmgbuild, which lays out the disk image, needs Python 3.10 or newer.
       - name: Set up Python
@@ -126,42 +143,73 @@ jobs:
           echo "DAILY_FOCUS_NOTARY_PROFILE=daily-focus-release" >> "$GITHUB_ENV"
 
       - name: Build, sign and notarise the menu bar app and its disk image
-        run: npm run app -- --test
+        run: |
+          sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test
+          cp macos/build/Daily-Focus.dmg "$RUNNER_TEMP/release/"
 
-      # Trusted publishing came in npm 11.5.1.
-      - name: Update npm
-        run: npm install --global npm@^11.5.1
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2> /dev/null || true
 
-      # A rerun after a later step failed finds this version already published.
+      - name: Hand the release to the publish job
+        uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # the tag and the GitHub release
+      id-token: write # npm's trusted publishing
+
+    # No checkout and no install: npm, gh and the files the build made.
+    steps:
+      - name: Fetch the release
+        uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      # Trusted publishing needs npm 11.5.1 or newer, which the newest Node 24
+      # carries; a runner's cached Node 24 might be older.
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      # A tarball is published as it is, with no scripts run. A rerun after the
+      # GitHub release failed finds this version already published.
       - name: Publish to npm
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          CHANNEL: ${{ steps.version.outputs.channel }}
+          VERSION: ${{ needs.build.outputs.version }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
         run: |
           if [ "$(npm view "daily-focus@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
             echo "daily-focus@$VERSION is already on npm"
           else
-            npm publish --tag "$CHANNEL"
+            npm publish "release/daily-focus-$VERSION.tgz" --tag "$CHANNEL" --ignore-scripts
           fi
 
       - name: Make the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          CHANNEL: ${{ steps.version.outputs.channel }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
         run: |
           tag="v$VERSION"
-          dmg=macos/build/Daily-Focus.dmg
-          node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          dmg=release/Daily-Focus.dmg
           if gh release view "$tag" > /dev/null 2>&1; then
-            gh release edit "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+            gh release edit "$tag" --notes-file release/notes.md
             gh release upload "$tag" "$dmg" --clobber
           elif [ "$CHANNEL" = dev ]; then
-            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md" --prerelease
+            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --prerelease
           else
-            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md" --latest
+            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --latest
           fi
-
-      - name: Remove the keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2> /dev/null || true
