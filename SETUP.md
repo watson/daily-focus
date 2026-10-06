@@ -320,7 +320,8 @@ that runs it, and the calendar helper, so there is nothing else to install, and 
 calendar permission is asked for once, by an app you recognise. It needs a Mac with
 Apple silicon and macOS 13.5 or newer.
 
-Open `Daily Focus.dmg` and drag the app to Applications, then open it from there.
+Download `Daily-Focus.dmg` from the [latest release](https://github.com/watson/daily-focus/releases/latest),
+open it and drag the app to Applications, then open it from there.
 It has no window and no Dock icon: look for it in the menu bar.
 
 To build it yourself from a checkout:

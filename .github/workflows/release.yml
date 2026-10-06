@@ -1,0 +1,168 @@
+name: Release
+
+# Every push to main is a development build: a GitHub prerelease holding the
+# notarised disk image and the release notes, and the same version on npm under
+# the `dev` tag. A stable release is cut from main by hand, with Run workflow,
+# and goes to npm's `latest`. Versions and notes come from the Conventional
+# Commits since the last release: see scripts/release.ts.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, such as 1.0.0. Leave empty to work it out from the commits.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# One release at a time, none cut short. A push that lands while one runs waits,
+# and a newer push replaces it in the queue: its build carries the same commits.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # the tag and the GitHub release
+      id-token: write # npm's trusted publishing, which needs no token
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          # Every commit and tag: the version counts the commits since the last release.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Work out the version
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            version=$(node scripts/release.ts version --dev)
+            echo "channel=dev" >> "$GITHUB_OUTPUT"
+          else
+            version=$(node scripts/release.ts version --set "$REQUESTED")
+            echo "channel=latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version"
+
+      # Into the package, and from there into the app, which takes its version
+      # from the package it carries. Never committed: main only moves by pull request.
+      - name: Stamp the version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      # dmgbuild, which lays out the disk image, needs Python 3.10 or newer.
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Cache the Node.js the app carries
+        uses: actions/cache@v6
+        with:
+          path: macos/build/node-v*
+          key: app-node-${{ hashFiles('macos/node-version') }}
+
+      # A keychain of the run's own, first in the search list and the default, so
+      # that macos/build.sh finds the certificate and the notary profile without
+      # being told where. CONTRIBUTING.md says how to make the secrets.
+      - name: Put the signing certificate and the notary key in a keychain
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          missing=""
+          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+            [ -n "$(printenv "$name")" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::A release is signed and notarised, and these repository secrets are missing:$missing. CONTRIBUTING.md says how to make them."
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password=$(openssl rand -hex 24)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$keychain"
+          printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool store-credentials daily-focus-release --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$keychain"
+          rm "$RUNNER_TEMP/notary.p8"
+          echo "DAILY_FOCUS_NOTARY_PROFILE=daily-focus-release" >> "$GITHUB_ENV"
+
+      - name: Build, sign and notarise the menu bar app and its disk image
+        run: npm run app -- --test
+
+      # Trusted publishing came in npm 11.5.1.
+      - name: Update npm
+        run: npm install --global npm@^11.5.1
+
+      # A rerun after a later step failed finds this version already published.
+      - name: Publish to npm
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+        run: |
+          if [ "$(npm view "daily-focus@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "daily-focus@$VERSION is already on npm"
+          else
+            npm publish --tag "$CHANNEL"
+          fi
+
+      - name: Make the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+        run: |
+          tag="v$VERSION"
+          dmg="$RUNNER_TEMP/Daily-Focus.dmg"
+          cp "macos/build/Daily Focus.dmg" "$dmg"
+          node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release edit "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+            gh release upload "$tag" "$dmg" --clobber
+          elif [ "$CHANNEL" = dev ]; then
+            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md" --prerelease
+          else
+            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md" --latest
+          fi
+
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2> /dev/null || true

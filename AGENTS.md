@@ -98,6 +98,11 @@ directory: anything it writes goes in the store. Keep tests independent of
 live accounts and calendar permission prompts. The client is built from `client/`
 into `public/app.js`, which is not tracked: edit the source, never the bundle.
 
+A pull request's title must be a Conventional Commit (`feat(board): …`, `fix: …`),
+checked by CI: squash-merged, it becomes main's commit, and `scripts/release.ts`
+works out versions and release notes from those. Never set the version in
+`package.json`; the Release workflow stamps it. See CONTRIBUTING.md, Releases.
+
 `npm run audit` checks the brief in the selected store, not the code.
 `test/docs-contract.test.ts` checks prompt/schema, configuration, and board-label
 consistency. New settings must appear in `src/config.ts`, `src/settings.ts` (the

@@ -59,6 +59,12 @@ rm -rf "$app" "$zip"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$here/Info.plist" "$app/Contents/Info.plist"
 
+# The app's version is the package's, which the Release workflow stamps into
+# package.json from the commits (scripts/release.ts); a checkout's is a placeholder.
+version=$(plutil -extract version raw -o - "${server:-$repo}/package.json")
+plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
+
 # Apple silicon only, as is everything in the app: Intel Macs stopped at macOS 26,
 # and carrying Node for both would double the download for them.
 swiftc -O -target arm64-apple-macos13.5 -o "$app/Contents/MacOS/Daily Focus" "$here"/DailyFocus/*.swift
