@@ -33,7 +33,9 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
-    timeout-minutes: 45
+    # Mostly Apple's notary service: two submissions, each allowed an hour by
+    # macos/build.sh, which fails with the submission's id rather than be cut off.
+    timeout-minutes: 150
     outputs:
       version: ${{ steps.version.outputs.version }}
       channel: ${{ steps.version.outputs.channel }}
