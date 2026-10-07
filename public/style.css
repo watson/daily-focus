@@ -2088,6 +2088,23 @@ body[data-flyout='open'] .layout__side {
   text-decoration-color: var(--accent);
 }
 
+/*
+ * A ticket's status and park, laid out as on its card: the status at the left,
+ * the park at the right, so each menu opens into the panel rather than out over
+ * the list. Under the close button too, so the park lines up with it. A child
+ * combinator, because the park menu's own Set button is a `.button` in here.
+ */
+.flyout__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.flyout__actions > .button {
+  margin-left: auto;
+}
+
 .flyout__body {
   flex: 1;
   min-height: 0;

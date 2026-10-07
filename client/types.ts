@@ -60,11 +60,12 @@ export interface UiState {
   selectedId: Signal<string | null>;
   /** Rows with an action in flight, shown as pending until the server answers. */
   pending: Signal<ReadonlySet<string>>;
-  /** Which row has its snooze or park menu open. */
+  /** Which row has its snooze or park menu open: on its card, or under `PANEL_PREFIX` in the panel. */
   menuFor: Signal<string | null>;
   /**
-   * Which ticket has its status menu open. Separate from `menuFor`, so the park
-   * menu and the status menu can never be open on the same row at once.
+   * Which ticket has its status menu open, keyed as `menuFor` is. Separate from
+   * it, so the park menu and the status menu can never be open on the same row
+   * at once.
    */
   statusFor: Signal<string | null>;
   /**
