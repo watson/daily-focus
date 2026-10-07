@@ -15,8 +15,8 @@
 #
 # Signing uses DAILY_FOCUS_SIGN_IDENTITY when set, else the first Developer ID
 # Application identity in the keychain, else the first Apple Development one, else
-# an ad-hoc signature. Notarisation happens only when DAILY_FOCUS_NOTARY_PROFILE
-# names a `xcrun notarytool store-credentials` profile.
+# an ad-hoc signature. Notarisation, of the disk image, happens only when
+# DAILY_FOCUS_NOTARY_PROFILE names a `xcrun notarytool store-credentials` profile.
 #
 # Plain swiftc rather than an Xcode project: the app is a handful of files, and a
 # project file is a second description of them that drifts.
@@ -185,8 +185,12 @@ if [ "$test" = yes ]; then
   "$app/Contents/MacOS/Daily Focus" --self-test
 fi
 
-# Notarisation: the app first, so the ticket can be stapled into the app itself and
-# it opens offline from wherever it is copied; then the disk image it ships in.
+# Notarisation: of the disk image only. Apple checks everything in it, and its
+# ticket lists the app, the app's executable, Node.js and the calendar helper, so
+# one submission covers the lot. Each submission is a wait in Apple's queue, from
+# seconds to most of an hour. The ticket is stapled to the disk image, which then
+# opens offline. The app isn't stapled, so Gatekeeper looks its ticket up online
+# when it is first opened, and a copy first opened offline is refused.
 notarise() {
   # notarytool can exit 0 for a submission Apple rejected, so the verdict is read
   # from what it prints. Apple usually answers within minutes but can hold a
@@ -210,10 +214,6 @@ if [ -n "${DAILY_FOCUS_NOTARY_PROFILE:-}" ]; then
       exit 1
       ;;
   esac
-  ditto -c -k --keepParent "$app" "$zip"
-  notarise "$zip"
-  xcrun stapler staple "$app"
-  rm -f "$zip"
 else
   echo "notarisation skipped: DAILY_FOCUS_NOTARY_PROFILE is not set. It needs a Developer ID Application"
   echo "certificate and credentials saved with \`xcrun notarytool store-credentials\`. Without it, the app"
@@ -253,4 +253,8 @@ if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>
   echo "and $dmg"
 else
   echo "no disk image: making one needs Python 3.10 or newer, for dmgbuild" >&2
+  if [ "$notarising" = yes ]; then
+    echo "and it is the disk image that is notarised, so nothing was" >&2
+    exit 1
+  fi
 fi

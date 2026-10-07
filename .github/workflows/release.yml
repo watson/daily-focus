@@ -1,9 +1,11 @@
 name: Release
 
 # Every push to main is a development build: a GitHub prerelease holding the
-# notarised disk image and the release notes, and the same version on npm under
-# the `dev` tag. A stable release is cut from main by hand, with Run workflow,
-# and goes to npm's `latest`. Versions and notes come from the Conventional
+# disk image and the release notes, and the same version on npm under the `dev`
+# tag. A stable release is cut from main by hand, with Run workflow, and goes to
+# npm's `latest`. Only a stable release's disk image is notarised: that is a wait
+# on Apple's queue, anything from seconds to most of an hour, and a development
+# build is signed but ready in minutes. Versions and notes come from the Conventional
 # Commits since the last release: see scripts/release.ts.
 #
 # Two jobs, so that what can publish never runs a dependency. `build` installs
@@ -33,9 +35,9 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
-    # Mostly Apple's notary service: two submissions, each allowed an hour by
-    # macos/build.sh, which fails with the submission's id rather than be cut off.
-    timeout-minutes: 150
+    # Mostly Apple's notary service, for a stable release: macos/build.sh allows
+    # its one submission an hour, then fails with its id rather than be cut off.
+    timeout-minutes: 90
     outputs:
       version: ${{ steps.version.outputs.version }}
       channel: ${{ steps.version.outputs.channel }}
@@ -110,21 +112,26 @@ jobs:
 
       # A keychain of the run's own, first in the search list and the default, so
       # that macos/build.sh finds the certificate and the notary profile without
-      # being told where. CONTRIBUTING.md says how to make the secrets.
-      - name: Put the signing certificate and the notary key in a keychain
+      # being told where. The notary profile only for a stable release, since
+      # build.sh notarises when it is named. CONTRIBUTING.md says how to make the
+      # secrets.
+      - name: Put the signing certificate, and for a stable release the notary key, in a keychain
         env:
+          CHANNEL: ${{ steps.version.outputs.channel }}
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
+          required="DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD"
+          [ "$CHANNEL" = dev ] || required="$required NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER_ID"
           missing=""
-          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+          for name in $required; do
             [ -n "$(printenv "$name")" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "::error::A release is signed and notarised, and these repository secrets are missing:$missing. CONTRIBUTING.md says how to make them."
+            echo "::error::These repository secrets are missing:$missing. CONTRIBUTING.md says how to make them."
             exit 1
           fi
           keychain="$RUNNER_TEMP/release.keychain-db"
@@ -138,13 +145,17 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$keychain"
+          if [ "$CHANNEL" = dev ]; then
+            echo "a development build: signed, not notarised"
+            exit 0
+          fi
           printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
           xcrun notarytool store-credentials daily-focus-release --key "$RUNNER_TEMP/notary.p8" \
             --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$keychain"
           rm "$RUNNER_TEMP/notary.p8"
           echo "DAILY_FOCUS_NOTARY_PROFILE=daily-focus-release" >> "$GITHUB_ENV"
 
-      - name: Build, sign and notarise the menu bar app and its disk image
+      - name: Build and sign the menu bar app and its disk image, notarised for a stable release
         run: |
           sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test
           cp macos/build/Daily-Focus.dmg "$RUNNER_TEMP/release/"

@@ -163,7 +163,11 @@ export function renderNotes(options: { version: string; previous: string | null;
   if (!sections.length) sections.push('No user-facing changes.');
 
   const install = `Download **Daily-Focus.dmg** below for the menu bar app (Apple silicon, macOS 13.5 or newer), or run \`npx daily-focus@${version}\`.`;
-  return [`## ${heading} (${date})`, ...sections, '---', install].join('\n\n') + '\n';
+  // Only a stable release is notarised; see .github/workflows/release.yml.
+  const unnotarised =
+    'This development build is signed but not notarised, so macOS refuses to open it at first: open it once, then allow it under System Settings → Privacy & Security → Open Anyway.';
+  const footer = version.includes('-') ? [install, unnotarised] : [install];
+  return [`## ${heading} (${date})`, ...sections, '---', ...footer].join('\n\n') + '\n';
 }
 
 /** Git in the working directory's repository, which the workflows start in. */
