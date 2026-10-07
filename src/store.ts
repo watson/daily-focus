@@ -20,6 +20,7 @@ import {
   calendarDaysBetween,
   isSameLocalDay,
   localDateKey,
+  localTimeZone,
   parseISO,
   startOfLocalDay,
   workingMsBetween,
@@ -306,6 +307,7 @@ export class Store {
       // things the agent got wrong that you would not otherwise see.
       warnings: [...warnings, ...contractIssues],
       now: now.toISOString(),
+      timeZone: localTimeZone(),
     };
   }
 }

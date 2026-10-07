@@ -1,9 +1,16 @@
 /**
- * Date helpers. Everything user-facing is in the server's local timezone, which is
- * the same machine the user reads the dashboard on.
+ * Date helpers. Every day here is a day in the server's local timezone: a snooze
+ * arrives, a due date passes and a brief belongs to a day on the server's
+ * calendar. The browser need not share it, reaching the dashboard from a laptop
+ * abroad, so the client is sent `localTimeZone()` and counts days in it too.
  */
 
 const MS_PER_DAY = 86_400_000;
+
+/** The IANA zone this process counts days in, e.g. "Europe/Copenhagen". */
+export function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
 
 /** YYYY-MM-DD in local time. Not toISOString(), which would shift across midnight in UTC-negative zones. */
 export function localDateKey(d: Date): string {

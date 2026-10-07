@@ -4,7 +4,7 @@ import { batch } from '@preact/signals';
 
 import type { BoardRow, InProgressTicket, ResolvedItem, TicketRow } from '../src/types.ts';
 import { afterRender, undoLast } from './actions.ts';
-import { localDateKey } from './format.ts';
+import { addDays, dayKey } from './format.ts';
 import { setDetailFor, state, ui } from './state.ts';
 import type { Handlers } from './types.ts';
 
@@ -55,10 +55,9 @@ function selectedItem(): Selectable | null {
   return list.find((entry) => entry.id === id) ?? null;
 }
 
+/** Tomorrow on the server's calendar, the one the snooze is judged on. */
 function tomorrow(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return localDateKey(d);
+  return addDays(dayKey(new Date()), 1);
 }
 
 export function installKeyboard(handlers: Handlers): void {
