@@ -1,6 +1,7 @@
 /** One brief item, and the pieces of a row the boards share with it. */
 
-import { h, type JSX } from 'preact';
+import { h, type ComponentChildren, type JSX } from 'preact';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 
 import type { DashboardState, ResolvedItem } from '../src/types.ts';
 import { el } from './el.ts';
@@ -310,6 +311,7 @@ function renderActions(item: ResolvedItem, state: DashboardState, ui: UiState, h
           {
             type: 'button',
             class: 'button',
+            'aria-haspopup': 'menu',
             'aria-expanded': String(ui.menuFor.value === item.id),
             onClick: () => handlers.toggleMenu(item.id),
           },
@@ -358,9 +360,9 @@ export function renderSnoozeMenu(
   // The date field is left to the browser; the button beside it reads it when pressed.
   let dateInput: HTMLInputElement | null = null;
 
-  return el(
-    'div',
-    { class: 'menu', role: 'menu' },
+  return h(
+    Menu,
+    { class: 'menu' },
     presets.map(([label, until, dated]) =>
       el(
         'button',
@@ -410,6 +412,35 @@ export function renderSnoozeMenu(
       ),
     ),
   );
+}
+
+/**
+ * The frame every row menu opens in: this one, and the ticket board's status menu.
+ *
+ * A popover, shown as it mounts, so the browser draws it in the top layer rather
+ * than inside the card. Inside the card it was part of the ticket board's
+ * multicol, and an absolutely positioned box there is fragmented like any other:
+ * the menu was split across both columns, and the board grew to balance them,
+ * pushing whatever came after it down. The stylesheet places it against the
+ * button that opened it.
+ *
+ * Manual rather than auto, so opening and closing stay where they were — the
+ * button, Escape, a click on a card — and light dismiss is not a second record
+ * of which menu is open.
+ *
+ * Shown after every render, not only the first: a popover taken out of the
+ * document is closed, and Preact moves a kept element by inserting it again, so a
+ * list reordered under an open menu would otherwise close it while its row still
+ * says it is open.
+ */
+export function Menu({ class: className, children }: { class: string; children?: ComponentChildren }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    // The test DOM has no popovers; there the menu simply renders in place.
+    if (node?.showPopover && !node.matches(':popover-open')) node.showPopover();
+  });
+  return el('div', { class: className, role: 'menu', popover: 'manual', ref }, children);
 }
 
 function addDays(from: Date, days: number): string {

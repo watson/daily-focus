@@ -351,6 +351,7 @@ function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.
           type: 'button',
           class: 'button',
           title: 'Park this until a date',
+          'aria-haspopup': 'menu',
           'aria-expanded': String(ui.menuFor.value === row.id),
           onClick: () => handlers.toggleMenu(row.id),
         },
