@@ -152,7 +152,7 @@ free of side effects, since only `POST` is checked for its content type.
 | `POST /api/text/focus`, `POST /api/text/sources` | `{text, version}`. Saves only if the file is still at `version`; otherwise `409` with what is there now |
 | `POST /api/focus/objective` | `{objective, blocker}`. Sets the two frontmatter fields and keeps the rest of `focus.md`; returns fresh state |
 | `POST /api/calendars/list` | The calendars Calendar.app has, for the settings page to choose from. A `POST` because it launches the helper, which may ask for access |
-| `GET /api/status` | The few facts the menu bar app shows: brief age, open items, the morning agent's last run, setup and restart |
+| `GET /api/status` | The few facts the menu bar app shows: brief age, open items, the morning agent's last run, setup and restart, the version, and whether a restart would stop the agent or the assistant |
 | `GET /api/health` | Server health check |
 
 ## Update the screenshot
@@ -214,11 +214,37 @@ the server stops with the app however the app goes. To develop it against a
 checkout, run the built binary with `DAILY_FOCUS_APP_SERVER_ENTRY=$PWD/src/cli.ts`,
 a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`.
 
+The dashboard updates without the app (`macos/DailyFocus/Updater.swift`). Built
+with a server, `macos/build.sh` also signs the same package as a bundle of its own,
+`Daily Focus Dashboard.bundle`, zipped as `Daily-Focus-Dashboard.zip`, and checks
+that the app it just built would run it (`--check-dashboard`). The app asks npm for
+the newest version on its track (`latest` or `dev`) and downloads that release's
+zip from GitHub. It keeps downloads in `~/Library/Application Support/Daily
+Focus/Dashboards/` and runs the newest one only while its signature names the
+app's own team and `dk.tson.daily-focus.dashboard`, with nothing in it changed. It
+checks that again before every start. A download that stops three times before it
+listens is given up on, and the app goes back to an older copy.
+
+What a dashboard may ask of the app is `appInterface`, in `package.json` under
+`daily-focus` and in `Updates.swift`. Raise both when the dashboard starts needing
+something new from the app: a flag, the calendar helper, a permission in
+`Info.plist` or the entitlements. `engines.node` is compared with the Node.js the app
+carries, so keep it in the form `>=X.Y`. `test/app-interface.test.ts` checks both.
+Set `DAILY_FOCUS_APP_UPDATES` to a URL to look up and download releases from
+there instead, as `<url>/daily-focus/<tag>` and
+`<url>/v<version>/Daily-Focus-Dashboard.zip`, to try an update against a local
+server. A build without a Developer ID or Apple Development signature can't check
+a download, so it only runs the dashboard it carries.
+
 ## Releases
 
 `.github/workflows/release.yml` makes every release, from main, and main only
 moves by pull request. Each one is a tag, a GitHub release holding the release
-notes and `Daily-Focus.dmg`, signed, and the same version on npm:
+notes, `Daily-Focus.dmg` and `Daily-Focus-Dashboard.zip`, both signed, and the
+same version on npm. The package it publishes carries `daily-focus.appSource`, the
+last commit to change the app (`macos/` and `tools/dfcal/`), stamped at build time
+and never committed. The app offers a newer release's disk image only when that
+differs from its own, since otherwise only the dashboard changed:
 
 - Every push to main is a development build, such as `0.2.0-dev.3`: a GitHub
   prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest. Its

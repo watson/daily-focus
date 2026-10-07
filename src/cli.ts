@@ -16,13 +16,13 @@
  */
 
 import { execFile, spawn } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 
-import { IN_NPX_CACHE, ROOT, USER_CALENDAR_APP } from './install.ts';
+import { IN_NPX_CACHE, packageVersion, ROOT, USER_CALENDAR_APP } from './install.ts';
 
 const run = promisify(execFile);
 
@@ -49,14 +49,6 @@ Options
   -h, --help        print this
 
 Everything else is set up in the dashboard itself.`;
-
-function version(): string {
-  try {
-    return (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version?: string }).version ?? 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
 
 /** Open `url` in the default browser, quietly: failing to is never worth stopping for. */
 function openInBrowser(url: string): void {
@@ -174,7 +166,7 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   if (values.version) {
-    console.log(version());
+    console.log(packageVersion());
     return;
   }
 

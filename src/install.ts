@@ -7,8 +7,9 @@
  * Which one this is shows in the extension of the running file.
  */
 
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** True in the npm package, false in a checkout. */
@@ -43,15 +44,33 @@ export function ranDirectly(url: string): boolean {
   return file.endsWith('.ts') && process.argv[1] !== undefined && resolve(process.argv[1]) === file;
 }
 
+/** This copy's version, from its `package.json`: a placeholder in a checkout. */
+export function packageVersion(root: string = ROOT): string {
+  try {
+    return (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version?: string }).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /**
- * The calendar helper the Mac app carries, when this copy of the dashboard is the
- * one inside the app (`Daily Focus.app/Contents/Resources/server`). Found here by
- * the dashboard itself rather than handed over by the app, so that a helper set
- * in Settings still wins, and the setting stays one the page can change.
+ * The calendar helper the Mac app carries, when the app runs this dashboard. Found
+ * here by the dashboard itself rather than handed over by the app, so that a helper
+ * set in Settings still wins, and the setting stays one the page can change.
+ *
+ * The app's own Node sits beside the helper in `Daily Focus.app/Contents/Helpers`,
+ * wherever the dashboard it runs came from: the copy inside the app, or an update
+ * the app downloaded to Application Support. Failing that, a copy inside the app
+ * finds it from its own place, `Contents/Resources/server`.
  */
-export const APP_CALENDAR_APP = ROOT.includes(`.app${sep}Contents${sep}Resources${sep}`)
-  ? resolve(ROOT, '..', '..', 'Helpers', 'Daily Focus Calendar.app')
-  : null;
+export function appCalendarApp(execPath: string, root: string): string | null {
+  const contents = `.app${sep}Contents${sep}`;
+  if (dirname(execPath).endsWith(`${contents}Helpers`)) return resolve(dirname(execPath), 'Daily Focus Calendar.app');
+  if (root.includes(`${contents}Resources${sep}`)) return resolve(root, '..', '..', 'Helpers', 'Daily Focus Calendar.app');
+  return null;
+}
+
+export const APP_CALENDAR_APP = appCalendarApp(process.execPath, ROOT);
 
 /**
  * Where `daily-focus build-calendar` puts the calendar helper: outside the

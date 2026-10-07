@@ -38,6 +38,9 @@
   "engines": {
     "node": ">=22.18"
   },
+  "daily-focus": {
+    "appInterface": 1
+  },
   "scripts": {
     "start": "node src/server.ts",
     "prestart": "node scripts/build.ts",

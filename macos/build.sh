@@ -7,7 +7,10 @@
 # --server DIR  copies a built server package (dist/cli.js, public/, prompts/,
 #               schema/, package.json) into the app. Without it the app has no
 #               dashboard of its own, and runs the one DAILY_FOCUS_APP_SERVER_ENTRY
-#               names, which is how it is developed against a checkout.
+#               names, which is how it is developed against a checkout. With it,
+#               the same package is also signed as a bundle of its own and zipped,
+#               Daily-Focus-Dashboard.zip, the update a release offers apps that
+#               already have one (see macos/DailyFocus/Updater.swift).
 # --test        runs the app's self-test after building.
 #
 # The app carries its own Node.js, at the version in macos/node-version, downloaded
@@ -64,6 +67,13 @@ cp "$here/Info.plist" "$app/Contents/Info.plist"
 version=$(plutil -extract version raw -o - "${server:-$repo}/package.json")
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
+# The last commit to change the app, which the Release workflow stamps into the
+# package, so the app can tell a newer release whose app changed from one whose
+# dashboard did. A checkout's package has none, and its app is never told of one.
+app_source=$(plutil -extract daily-focus.appSource raw -o - "${server:-$repo}/package.json" 2>/dev/null || true)
+if [ -n "$app_source" ]; then
+  plutil -replace DFAppSource -string "$app_source" "$app/Contents/Info.plist"
+fi
 
 # Apple silicon only, as is everything in the app: Intel Macs stopped at macOS 26,
 # and carrying Node for both would double the download for them.
@@ -107,9 +117,19 @@ cp "$node_cache/$name/bin/node" "$app/Contents/Helpers/node"
 cp "$node_cache/$name/LICENSE" "$app/Contents/Resources/Node.js LICENSE"
 echo "bundled Node.js $node_version"
 
+dashboard="$build/Daily Focus Dashboard.bundle"
+dashboard_zip="$build/Daily-Focus-Dashboard.zip"
+rm -rf "$dashboard" "$dashboard_zip"
 if [ -n "$server" ]; then
   ditto "$server" "$app/Contents/Resources/server"
   echo "copied the server from $server"
+  # The dashboard on its own, laid out as it is in the app, for an app that
+  # downloads it as an update.
+  mkdir -p "$dashboard/Contents/Resources"
+  cp "$here/Dashboard.plist" "$dashboard/Contents/Info.plist"
+  plutil -replace CFBundleShortVersionString -string "$version" "$dashboard/Contents/Info.plist"
+  plutil -replace CFBundleVersion -string "$version" "$dashboard/Contents/Info.plist"
+  ditto "$server" "$dashboard/Contents/Resources/server"
 else
   echo "no --server: the app runs whatever DAILY_FOCUS_APP_SERVER_ENTRY names"
 fi
@@ -181,6 +201,35 @@ sign "$app" "$here/DailyFocus.entitlements"
 codesign --verify --deep --strict "$app"
 echo "signature verified"
 
+# The dashboard bundle holds no code macOS runs, only the files the app's Node
+# does, so it takes no hardened runtime and no entitlements. Its signature seals
+# every file in it, which is what the app checks before running a download: the
+# same team as the app's own, and nothing added, removed or changed.
+if [ -d "$dashboard" ]; then
+  if [ "$identity" = "-" ]; then
+    codesign --force --sign - "$dashboard"
+  elif ! codesign --force --timestamp --sign "$identity" "$dashboard" 2>"$build/codesign.log"; then
+    case "$identity_name" in
+      "Apple Development:"*)
+        rm -f "$build/codesign.log"
+        codesign --force --sign "$identity" "$dashboard"
+        ;;
+      *)
+        cat "$build/codesign.log" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  rm -f "$build/codesign.log"
+  codesign --verify --strict "$dashboard"
+  if [ "$identity" = "-" ]; then
+    echo "the dashboard bundle is signed ad hoc, which no app accepts as an update"
+  else
+    "$app/Contents/MacOS/Daily Focus" --check-dashboard "$dashboard"
+  fi
+  ditto -c -k --keepParent "$dashboard" "$dashboard_zip"
+fi
+
 if [ "$test" = yes ]; then
   "$app/Contents/MacOS/Daily Focus" --self-test
 fi
@@ -223,6 +272,7 @@ fi
 ditto -c -k --keepParent "$app" "$zip"
 echo "built $app"
 echo "and $zip"
+if [ -f "$dashboard_zip" ]; then echo "and $dashboard_zip"; fi
 
 # The disk image people download: the app beside a link to Applications, laid out
 # by dmgbuild (see macos/dmg-settings.py). dmgbuild is a Python package, installed

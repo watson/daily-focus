@@ -244,7 +244,15 @@ final class Dashboard {
     private let log = LogFile(url: logURL)
     private var path: String?
     private var node: String?
+    /// The Node.js the dashboard runs on, once one has been found.
+    private(set) var nodeVersion: String?
     private var process: Process?
+    /// The copy of the dashboard the server was started from.
+    private(set) var copy: DashboardCopy?
+    /// Starts in a row of a downloaded copy that stopped before it said where it listens.
+    private var failedStarts = 0
+    /// Called with a downloaded version given up on, after it failed to start.
+    var onRefused: ((String) -> Void)?
     /// The write end of the server's standard input. Held, never written: when the
     /// app goes, however it goes, the kernel closes it, and a server started with
     /// `--exit-with-stdin` stops instead of running on without the app.
@@ -308,6 +316,7 @@ final class Dashboard {
         attempt = 0
         path = nil
         node = nil
+        nodeVersion = nil
         state = .restarting
         if let child = process, child.isRunning {
             restartRequested = true
@@ -357,24 +366,35 @@ final class Dashboard {
         }
     }
 
+    /// Finds the PATH and Node, unless the last start already did, then the copy of
+    /// the dashboard to run, which is looked for afresh each time: an update may have
+    /// arrived, or the one that ran may have been given up on.
     private func prepareThenSpawn() {
-        if let node, path != nil {
-            spawn(node: node)
-            return
-        }
         let environment = self.environment
+        let known = path != nil ? node.flatMap { node in nodeVersion.map { (node, $0) } } : nil
+        let refused = refusedDashboards()
         DispatchQueue.global().async { [weak self] in
-            let hydrated = hydratedPath(environment: environment)
-            let check = chooseNode(bundled: bundledNode(), path: hydrated.path)
+            let hydrated = known == nil ? hydratedPath(environment: environment) : nil
+            let check = known.map { NodeCheck.found(path: $0.0, version: $0.1) }
+                ?? chooseNode(bundled: bundledNode(), path: hydrated?.path ?? "")
+            var found: String?
+            if case .found(_, let version) = check { found = version }
+            let choice = found.map {
+                chooseDashboard(environment: environment, resources: Bundle.main.resourceURL, refused: refused, nodeVersion: $0)
+            }
             DispatchQueue.main.async {
                 guard let self, self.state != .stopping, self.state != .stopped else { return }
-                self.log.note("PATH from \(hydrated.source): \(hydrated.path)")
-                self.path = hydrated.path
+                if let hydrated {
+                    self.log.note("PATH from \(hydrated.source): \(hydrated.path)")
+                    self.path = hydrated.path
+                }
+                for note in choice?.notes ?? [] { self.log.note(note) }
                 switch check {
                 case .found(let node, let version):
-                    self.log.note("Node.js \(version) at \(node)")
+                    if known == nil { self.log.note("Node.js \(version) at \(node)") }
                     self.node = node
-                    self.spawn(node: node)
+                    self.nodeVersion = version
+                    if let choice { self.spawn(node: node, copy: choice.copy) }
                 case .tooOld(let node, let version):
                     self.log.note("Node.js \(version.isEmpty ? "of unknown version" : version) at \(node) is too old; the dashboard needs 22.18 or newer")
                     self.state = .needsNode
@@ -386,8 +406,8 @@ final class Dashboard {
         }
     }
 
-    private func spawn(node: String) {
-        let entry = serverEntry(environment: environment, resources: Bundle.main.resourceURL)
+    private func spawn(node: String, copy: DashboardCopy) {
+        let entry = copy.entry
         guard FileManager.default.fileExists(atPath: entry) else {
             // Nothing changes this short of a rebuild, so it isn't retried.
             log.note("there is no dashboard at \(entry): build the app with --server, or set DAILY_FOCUS_APP_SERVER_ENTRY")
@@ -425,7 +445,9 @@ final class Dashboard {
             DispatchQueue.main.async { self?.exited(child, code: code, signalled: signalled) }
         }
 
-        log.note("starting \(node) \(entry) --no-open --exit-with-stdin")
+        if copy.version != self.copy?.version || copy.bundle != self.copy?.bundle { failedStarts = 0 }
+        let which = copy.bundle != nil ? "downloaded dashboard \(copy.version ?? "")" : copy.version.map { "dashboard \($0), inside the app" } ?? "a development checkout"
+        log.note("starting \(which): \(node) \(entry) --no-open --exit-with-stdin")
         do {
             try child.run()
         } catch {
@@ -438,6 +460,7 @@ final class Dashboard {
             return
         }
         process = child
+        self.copy = copy
         self.lifeline = lifeline
         startedAt = Date()
         output = Data()
@@ -454,7 +477,10 @@ final class Dashboard {
         while let newline = output.firstIndex(of: 0x0A) {
             let line = String(decoding: output[output.startIndex..<newline], as: UTF8.self)
             output.removeSubrange(output.startIndex...newline)
-            if let url = dashboardURL(fromLine: line) { state = .running(url) }
+            if let url = dashboardURL(fromLine: line) {
+                failedStarts = 0
+                state = .running(url)
+            }
         }
         // A line that never ends is not the one being looked for.
         if output.count > 65_536 { output.removeAll() }
@@ -462,6 +488,7 @@ final class Dashboard {
 
     private func exited(_ child: Process, code: Int32, signalled: Bool) {
         guard child === process else { return }
+        let neverListened = state == .starting
         process = nil
         lifeline = nil
         forgetChild()
@@ -479,6 +506,21 @@ final class Dashboard {
             restartRequested = false
             probeThenSpawn()
             return
+        }
+        // A downloaded dashboard that can't get as far as listening, three times
+        // running, is given up on, and the next start goes back to an older copy.
+        if neverListened, let copy, copy.bundle != nil, let version = copy.version {
+            failedStarts += 1
+            if failedStarts >= 3 {
+                failedStarts = 0
+                setRefused(version, true)
+                log.note("dashboard \(version) stopped 3 times before it started listening; going back to an older copy")
+                onRefused?(version)
+                // The older copy is a fresh start, not a fourth try of this one.
+                attempt = 0
+                scheduleStart(showing: .restarting)
+                return
+            }
         }
         // Exit 0 is how the server answers SIGTERM, so a clean exit the app didn't
         // ask for was asked for by someone else, and the app is here to keep it up.

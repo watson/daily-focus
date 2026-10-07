@@ -1,8 +1,8 @@
 name: Release
 
 # Every push to main is a development build: a GitHub prerelease holding the
-# disk image and the release notes, and the same version on npm under the `dev`
-# tag. A stable release is cut from main by hand, with Run workflow, and goes to
+# disk image, the dashboard on its own and the release notes, and the same
+# version on npm under the `dev` tag. A stable release is cut from main by hand, with Run workflow, and goes to
 # npm's `latest`. Only a stable release's disk image is notarised: that is a wait
 # on Apple's queue, anything from seconds to most of an hour, and a development
 # build is signed but ready in minutes. Versions and notes come from the Conventional
@@ -81,10 +81,15 @@ jobs:
 
       # Into the package, and from there into the app, which takes its version
       # from the package it carries. Never committed: main only moves by pull request.
+      # With it, the last commit to change the app itself: an app that finds a
+      # newer release with another one offers its disk image, while a release that
+      # changed only the dashboard updates without one.
       - name: Stamp the version
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+        run: |
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm pkg set "daily-focus.appSource=$(git log -1 --format=%H -- macos tools/dfcal ':(exclude)macos/dmg-settings.py')"
 
       # The tarball npm gets, and the app is built around, unpacked as npm would,
       # the way `npm run app` does it. The last step to run npm packages, so none
@@ -155,10 +160,12 @@ jobs:
           rm "$RUNNER_TEMP/notary.p8"
           echo "DAILY_FOCUS_NOTARY_PROFILE=daily-focus-release" >> "$GITHUB_ENV"
 
+      # And the dashboard as a signed bundle of its own, which apps download to
+      # update it. It isn't notarised: macOS never runs it, the app's Node does.
       - name: Build and sign the menu bar app and its disk image, notarised for a stable release
         run: |
           sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test
-          cp macos/build/Daily-Focus.dmg "$RUNNER_TEMP/release/"
+          cp macos/build/Daily-Focus.dmg macos/build/Daily-Focus-Dashboard.zip "$RUNNER_TEMP/release/"
 
       - name: Remove the keychain
         if: always()
@@ -217,14 +224,14 @@ jobs:
           CHANNEL: ${{ needs.build.outputs.channel }}
         run: |
           tag="v$VERSION"
-          dmg=release/Daily-Focus.dmg
+          assets="release/Daily-Focus.dmg release/Daily-Focus-Dashboard.zip"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release edit "$tag" --notes-file release/notes.md
-            gh release upload "$tag" "$dmg" --clobber
+            gh release upload "$tag" $assets --clobber
           elif [ "$CHANNEL" = dev ]; then
-            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --prerelease
+            gh release create "$tag" $assets --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --prerelease
           else
-            gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --latest
+            gh release create "$tag" $assets --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --latest
           fi
 
       # Trusted publishing needs npm 11.5.1 or newer, which the newest Node 24

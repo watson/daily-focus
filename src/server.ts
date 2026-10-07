@@ -25,11 +25,12 @@ import { reconcileSession, startSession, stopSession } from './sessions.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
 import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
-import { command, PACKAGED, ranDirectly } from './install.ts';
+import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
 
 const PUBLIC_DIR = resolve(fileURLToPath(new URL('../public', import.meta.url)));
+const VERSION = packageVersion();
 
 const MIME: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -169,14 +170,20 @@ function configure(sources: EnvSources): { config: Config; warnings: string[] } 
   }
 }
 
-/** The few facts the menu bar app shows, without the whole state. */
-function statusOf(state: DashboardState, config: Config): Record<string, unknown> {
+/**
+ * The few facts the menu bar app shows, without the whole state. `busy` is whether
+ * the morning agent or the assistant is at work, which a restart would cut short:
+ * the app waits for it to clear before restarting into an update.
+ */
+function statusOf(state: DashboardState, config: Config, busy: boolean): Record<string, unknown> {
   const last = state.agentRun.last;
   return {
+    version: VERSION,
     dataDir: config.dataDir,
     profile: config.profile,
     setupNeeded: state.setup.needed,
     restartPending: state.restart !== null,
+    busy,
     brief: {
       generatedAt: state.brief.generatedAt,
       ageHours: state.brief.ageHours,
@@ -962,7 +969,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     }
 
     if (path === '/api/status' && req.method === 'GET') {
-      sendJSON(res, 200, statusOf(await buildState(), config));
+      sendJSON(res, 200, statusOf(await buildState(), config, agent.busy || assistant.busy));
       return;
     }
 

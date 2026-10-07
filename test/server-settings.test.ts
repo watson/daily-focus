@@ -162,6 +162,8 @@ test('the objective can be changed on its own, and the rest of the file is kept'
 
 test('the status the menu bar app reads is small and says what it needs', async () => {
   const status = await json(await fetch(`${url}/api/status`));
+  assert.equal(status.version, '0.0.0-development', "a checkout's placeholder version");
+  assert.equal(status.busy, false, 'neither the agent nor the assistant is at work');
   assert.equal(status.dataDir, dataDir);
   assert.equal(status.profile, 'work');
   assert.equal(status.setupNeeded, true);
