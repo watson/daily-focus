@@ -906,6 +906,12 @@ export interface DashboardState {
   /** Server time at render, so the client can place the "now" marker without clock skew. */
   now: string;
   /**
+   * The server's IANA time zone, which decides which day it is: when a snooze has
+   * arrived, what is overdue, which day the brief is for. The browser can be in
+   * another zone, so the client counts days in this one; see `setCalendarZone`.
+   */
+  timeZone: string;
+  /**
    * Fingerprint of the files in `public/`. The client reloads itself when this
    * changes, because the SSE stream carries state but never code.
    */

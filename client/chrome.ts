@@ -6,7 +6,7 @@ import type { DashboardState } from '../src/types.ts';
 import { nextRunPhraseFor } from './banners.ts';
 import { boardStatus } from './board.ts';
 import { el } from './el.ts';
-import { formatDay, formatTime } from './format.ts';
+import { dayKey, formatDay, formatTime } from './format.ts';
 import { availableViews } from './state.ts';
 import { ThemeToggle } from './theme.ts';
 import { ticketStatus } from './tickets.ts';
@@ -115,8 +115,8 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
 }
 
 function headerDate(state: DashboardState): string {
-  const now = new Date(state.now);
-  return formatDay(state.brief.date ?? state.now) || formatDay(now.toISOString());
+  const today = dayKey(new Date(state.now));
+  return formatDay(state.brief.date ?? today) || formatDay(today);
 }
 
 /** "updated 2 hours ago by Codex", and the way in to the morning agent's runs once there is one. */

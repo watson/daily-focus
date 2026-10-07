@@ -35,6 +35,18 @@ test('reports a missing brief instead of throwing', async () => {
   assert.equal(state.stats.open, 0);
 });
 
+/** The browser counts days in it, so they agree with the server's about when a snooze ends. */
+test('the state names the zone the server counts days in', async (t) => {
+  const store = await makeStore();
+  const previous = process.env.TZ;
+  t.after(() => {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  });
+  process.env.TZ = 'Asia/Tokyo';
+  assert.equal((await store.getState()).timeZone, 'Asia/Tokyo');
+});
+
 test('round-trips a brief through the store', async () => {
   const store = await makeStore();
   await writeFile(

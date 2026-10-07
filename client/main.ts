@@ -9,6 +9,7 @@ import { h, render } from 'preact';
 import { adoptState, followLocation, handlers, refresh, startLocalTick } from './actions.ts';
 import { subscribe } from './api.ts';
 import { App } from './app.ts';
+import { setCalendarZone } from './format.ts';
 import { installKeyboard } from './keyboard.ts';
 import { RUN_PREFIX, availableViews, detailRow, detailRun, setDetailFor, state, ui } from './state.ts';
 import { stampedTheme } from './theme.ts';
@@ -16,6 +17,11 @@ import { stampedTheme } from './theme.ts';
 // The stamp in index.html ran before first paint; the toggle's label starts
 // from what it decided.
 ui.theme.value = stampedTheme();
+
+// Days are counted on the server's calendar, not this browser's; see
+// `setCalendarZone`. An effect runs as the state lands, ahead of the render it
+// causes, so no row is drawn on the wrong calendar.
+effect(() => setCalendarZone(state.value?.timeZone));
 
 const root = document.getElementById('app');
 if (!root) throw new Error('index.html has no #app to render into');

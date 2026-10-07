@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 
 import type { DashboardState, ResolvedItem } from '../src/types.ts';
 import { el } from './el.ts';
-import { daysFromToday, formatShortDay, localDateKey, relativeDay } from './format.ts';
+import { addDays, addMonths, dayKey, daysFromToday, formatShortDay, relativeDay } from './format.ts';
 import { renderMarkdown } from './markdown.ts';
 import { clock, remainingSeconds } from './timer.ts';
 import type { Handlers, UiState } from './types.ts';
@@ -348,13 +348,15 @@ export function renderSnoozeMenu(
   handlers: Handlers,
   { indefinite = true, longRange = false }: { indefinite?: boolean; longRange?: boolean } = {},
 ): JSX.Element {
+  // Today on the server's calendar, which is where the snooze will be judged.
+  const today = dayKey(now);
   const presets: [string, string, boolean][] = [
-    ['Tomorrow', addDays(now, 1), false],
-    ['In 3 days', addDays(now, 3), false],
-    ['Next week', addDays(now, 7), false],
+    ['Tomorrow', addDays(today, 1), false],
+    ['In 3 days', addDays(today, 3), false],
+    ['Next week', addDays(today, 7), false],
   ];
   if (longRange) {
-    presets.push(['Next month', addMonths(now, 1), true], ['Next quarter', addMonths(now, 3), true]);
+    presets.push(['Next month', addMonths(today, 1), true], ['Next quarter', addMonths(today, 3), true]);
   }
 
   // The date field is left to the browser; the button beside it reads it when pressed.
@@ -441,24 +443,4 @@ export function Menu({ class: className, children }: { class: string; children?:
     if (node?.showPopover && !node.matches(':popover-open')) node.showPopover();
   });
   return el('div', { class: className, role: 'menu', popover: 'manual', ref }, children);
-}
-
-function addDays(from: Date, days: number): string {
-  return localDateKey(new Date(from.getFullYear(), from.getMonth(), from.getDate() + days));
-}
-
-/**
- * The same day some months ahead, clamped to the end of a short month.
- *
- * The clamp is the whole reason this isn't a one-liner: `new Date(y, m + 1, 31)`
- * for the 31st of January is the 3rd of March, because the day overflows February
- * and rolls on. A park set from the last day of a long month would quietly land
- * days into the month after the one it named.
- */
-function addMonths(from: Date, months: number): string {
-  const target = new Date(from.getFullYear(), from.getMonth() + months, 1);
-  // Day 0 of the following month is the last day of the target one.
-  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-  target.setDate(Math.min(from.getDate(), lastDay));
-  return localDateKey(target);
 }

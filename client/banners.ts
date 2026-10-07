@@ -4,7 +4,7 @@ import type { ComponentChildren, JSX } from 'preact';
 
 import type { AgentRun, AgentRunState, DashboardState } from '../src/types.ts';
 import { el, type Props } from './el.ts';
-import { daysFromToday, formatTime, formatWeekday, localDateKey, parseDate, relativeDay, relativeTime } from './format.ts';
+import { dayKey, daysFromToday, formatTime, formatWeekday, parseDate, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdown } from './markdown.ts';
 import type { Handlers, UiState } from './types.ts';
 
@@ -72,7 +72,7 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
     agent?.last &&
     agent.last.status !== 'done' &&
     agent.last.id !== ui.agentReportSeen.value &&
-    localDateKey(parseDate(agent.last.startedAt) ?? new Date(0)) === localDateKey(new Date(state.now))
+    dayKey(parseDate(agent.last.startedAt) ?? new Date(0)) === dayKey(new Date(state.now))
   ) {
     banners.push(agentRunBanner(agent.last, state, handlers));
   }
@@ -152,8 +152,8 @@ function agentRunBanner(run: AgentRun, state: DashboardState, handlers: Handlers
  */
 function isHeldOverDayOff(state: DashboardState): boolean {
   if (state.brief.generatedAt === null || state.schedule.runsToday) return false;
-  const today = localDateKey(new Date(state.now));
-  const briefDate = state.brief.date ?? localDateKey(parseDate(state.brief.generatedAt) ?? new Date(state.now));
+  const today = dayKey(new Date(state.now));
+  const briefDate = state.brief.date ?? dayKey(parseDate(state.brief.generatedAt) ?? new Date(state.now));
   return briefDate !== today;
 }
 

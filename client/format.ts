@@ -42,14 +42,96 @@ export function formatWeekday(value: DateLike): string {
   return d ? weekdayFmt.format(d) : '';
 }
 
-export function localDateKey(d: Date): string {
+/**
+ * The calendar days are counted on: the server's.
+ *
+ * The server decides when a snooze has arrived, what is overdue and which day the
+ * brief is for, all by its own zone, and the browser can be in another one,
+ * reaching the dashboard from abroad. A snooze worked out on the browser's
+ * calendar and judged on the server's comes straight back: "Tomorrow" in New York
+ * after six in the evening is already today in Copenhagen. So `dayKey` and the
+ * bare dates `daysFromToday` compares count in this zone. Times of day stay in the
+ * browser's, where the reader is. Unset, as in a test that doesn't care, it is
+ * the browser's own.
+ */
+let dayKeyFmt: Intl.DateTimeFormat | null = null;
+let calendarZone: string | undefined;
+
+/** Count days in `timeZone` from now on: the zone the server sends in its state. */
+export function setCalendarZone(timeZone: string | undefined): void {
+  if (timeZone === calendarZone) return;
+  calendarZone = timeZone;
+  try {
+    dayKeyFmt = timeZone
+      ? new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+      : null;
+  } catch {
+    // A zone this browser doesn't know: its own calendar is the nearest guess.
+    dayKeyFmt = null;
+  }
+}
+
+/** The day `d` falls on, on the server's calendar, as YYYY-MM-DD. */
+export function dayKey(d: Date): string {
+  if (dayKeyFmt) {
+    const parts = dayKeyFmt.formatToParts(d);
+    const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  }
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-/** Whole calendar days from today to `value`. Negative means the past. */
+/**
+ * Day arithmetic on YYYY-MM-DD keys, done in UTC, which has no daylight saving
+ * to step around. The keys name days on the server's calendar; UTC only counts.
+ */
+function splitKey(key: string): [number, number, number] {
+  const [y, m, d] = key.split('-').map(Number);
+  return [y!, m! - 1, d!];
+}
+
+function keyAt(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** The day `days` after the one `key` names. */
+export function addDays(key: string, days: number): string {
+  const [y, m, d] = splitKey(key);
+  return keyAt(Date.UTC(y, m, d + days));
+}
+
+/**
+ * The same day some months ahead, clamped to the end of a short month.
+ *
+ * The clamp is the whole reason this isn't a one-liner: `Date.UTC(y, m + 1, 31)`
+ * for the 31st of January is the 3rd of March, because the day overflows February
+ * and rolls on. A park set from the last day of a long month would quietly land
+ * days into the month after the one it named.
+ */
+export function addMonths(key: string, months: number): string {
+  const [y, m, d] = splitKey(key);
+  // Day 0 of the following month is the last day of the target one.
+  const lastDay = new Date(Date.UTC(y, m + months + 1, 0)).getUTCDate();
+  return keyAt(Date.UTC(y, m + months, Math.min(d, lastDay)));
+}
+
+/**
+ * Whole calendar days from today to `value`. Negative means the past.
+ *
+ * A bare date (a due date, a snooze) names a day on the server's calendar, the
+ * one it is judged on, so it is counted from the server's today. A timestamp is
+ * shown with its time of day in the browser's zone, and its day is counted there
+ * too: a run at 01:00 where you are happened "today at 01:00", whatever the date
+ * is at home.
+ */
 export function daysFromToday(value: DateLike, now = new Date()): number | null {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = splitKey(value);
+    const [ty, tm, td] = splitKey(dayKey(now));
+    return Math.round((Date.UTC(y, m, d) - Date.UTC(ty, tm, td)) / 86_400_000);
+  }
   const target = parseDate(value);
   if (!target) return null;
   const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
