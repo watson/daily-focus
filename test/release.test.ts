@@ -86,6 +86,12 @@ test('release notes put breaking changes first and leave housekeeping out', () =
   assert.match(quiet, /No user-facing changes\./);
 });
 
+test('only a development build says it is not notarised, and how to open it anyway', () => {
+  const options = { previous: '0.1.0', date: '2026-10-07', repository: 'https://github.com/example/focus', commits: [] };
+  assert.match(renderNotes({ ...options, version: '0.1.1-dev.3' }), /not notarised[^\n]*Open Anyway/);
+  assert.doesNotMatch(renderNotes({ ...options, version: '0.1.1' }), /notarised/);
+});
+
 /** A repository with `messages` as its commits, each tagged when a tag follows it: `['fix: a', 'v0.1.0', 'feat: b']`. */
 async function repository(entries: string[]): Promise<(...args: string[]) => Promise<string>> {
   const dir = await mkdtemp(join(tmpdir(), 'daily-focus-release-'));

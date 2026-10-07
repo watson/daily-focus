@@ -205,7 +205,9 @@ which needs Python 3.10 or newer.
 Signing uses a Developer ID Application certificate when the keychain has one,
 otherwise Apple Development, which runs only on the Mac that built it. Set
 `DAILY_FOCUS_NOTARY_PROFILE` to a `notarytool store-credentials` profile to notarise
-and staple both the app and the disk image.
+the disk image and staple its ticket to it. Apple checks everything in the image,
+so the ticket covers the app too; the app isn't stapled, so Gatekeeper looks its
+ticket up online the first time it opens.
 
 The app starts the server with `--exit-with-stdin` and holds its standard input, so
 the server stops with the app however the app goes. To develop it against a
@@ -216,12 +218,17 @@ a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`.
 
 `.github/workflows/release.yml` makes every release, from main, and main only
 moves by pull request. Each one is a tag, a GitHub release holding the release
-notes and `Daily-Focus.dmg`, signed and notarised, and the same version on npm:
+notes and `Daily-Focus.dmg`, signed, and the same version on npm:
 
 - Every push to main is a development build, such as `0.2.0-dev.3`: a GitHub
-  prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest.
+  prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest. Its
+  disk image isn't notarised, which keeps the build to minutes, so macOS refuses
+  it until it is allowed under System Settings → Privacy & Security; its notes
+  say so.
 - A stable release is cut by hand: Actions → Release → Run workflow, on main. It
-  goes to npm's `latest` and is the GitHub release marked Latest. Leave the
+  goes to npm's `latest` and is the GitHub release marked Latest. Its disk image
+  is notarised, a wait on Apple's queue of anything from seconds to most of an
+  hour. Leave the
   version empty to work it out, or give one, such as `1.0.0`, after the last.
 
 `scripts/release.ts` works out the version from the commits since the last `vX.Y.Z`
@@ -247,7 +254,8 @@ installs, tests, packs and signs on macOS; `publish` has no checkout and no
 `build` handed it. The signing certificate likewise goes into the keychain only
 after the last npm package has run.
 
-Signing and notarising need five repository secrets:
+Signing needs the first two of these repository secrets, and notarising, for a
+stable release, the other three:
 
 | Secret | What it is |
 |---|---|
