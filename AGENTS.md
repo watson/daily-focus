@@ -43,7 +43,9 @@ is never overwritten. It never writes them on the user's behalf.
 Never compact or rewrite `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl` or
 `agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
 Integration caches use a sibling temporary file and rename; they store facts, not
-computed board classifications.
+computed board classifications. The demo (`src/demo.ts`) is the one exception to
+all of this: it writes every one of those files into its own throwaway store before
+the server starts, and refuses a store that already has a brief.
 
 `npm run seed` writes a sample brief. It refuses to replace an existing `items.json`
 unless given `--force`; never pass `--force` against a real store. Always give it a

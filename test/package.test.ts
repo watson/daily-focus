@@ -71,9 +71,22 @@ test('installed under node_modules, the demo starts and serves the sample brief'
       child.stderr.on('data', read);
       child.on('exit', (code) => fail(new Error(`exited ${code}:\n${output}`)));
     });
-    const state = (await (await fetch(`${url}/api/state`)).json()) as { items: unknown[]; setup: { needed: boolean } };
+    type State = {
+      items: unknown[];
+      setup: { needed: boolean };
+      board: { fetchedAt: string | null; rows: unknown[] };
+      tickets: { fetchedAt: string | null; rows: unknown[] };
+    };
+    let state = (await (await fetch(`${url}/api/state`)).json()) as State;
     assert.ok(state.items.length > 5);
     assert.equal(state.setup.needed, false);
+    // The boards fill in the background, from the bundled sample worlds.
+    for (let i = 0; i < 100 && (state.board.fetchedAt === null || state.tickets.fetchedAt === null); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      state = (await (await fetch(`${url}/api/state`)).json()) as State;
+    }
+    assert.ok(state.board.rows.length > 0, 'the pull request board is filled');
+    assert.ok(state.tickets.rows.length > 0, 'and so is the ticket board');
     assert.equal((await fetch(`${url}/app.js`)).status, 200, 'the page is shipped built');
     const health = (await (await fetch(`${url}/api/health`)).json()) as { dataDir: string };
     const prompt = await readFile(join(health.dataDir, 'prompt.md'), 'utf8');

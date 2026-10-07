@@ -3,7 +3,8 @@
  *
  *   npm run seed
  *
- * The brief itself is `src/sample.ts`, which the CLI's demo shows too.
+ * The brief itself is `src/sample.ts`, which the CLI's demo shows too, and it
+ * follows the store's profile: a personal store gets the personal brief.
  *
  * **It refuses to replace an existing `items.json`.** Against a live store that
  * would destroy a real brief, and since the agent recovers each item's `firstSeen`
@@ -26,8 +27,8 @@ import { command } from '../src/install.ts';
 import { sampleBrief } from '../src/sample.ts';
 import { Store } from '../src/store.ts';
 
-const brief = sampleBrief();
 const config = loadConfig();
+const brief = sampleBrief(new Date(), config.profile);
 const force = process.argv.slice(2).includes('--force');
 const store = new Store(config);
 await store.ensureDataDir();

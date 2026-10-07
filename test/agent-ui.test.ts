@@ -107,6 +107,18 @@ test('a run that cannot be continued says why instead of offering a field', () =
   assert.match(panel(run({ endedAt: '2026-09-24T05:42:00Z' })).textContent!, /in 1 h 12 min\./);
 });
 
+test('with the agent off, a run is still read back, and the panel blames the setting rather than the run', () => {
+  const current = run({ resumable: false });
+  const state = { now: NOW, agentRun: { enabled: false, cli: null, schedule: null, last: current, runs: [current] } } as unknown as DashboardState;
+  const node = mountOne(h(Flyout, { row: null, run: current, state, ui: uiWith({ detailFor: 'run:r1' }), handlers: HANDLERS }));
+
+  assert.match(node.textContent!, /Wrote 6 items\./, 'the report is there to read');
+  assert.equal(byClass(node, 'assistant__input').length, 0);
+  assert.match(node.textContent!, /switched off \(DAILY_FOCUS_AGENT\), so this run cannot be asked/);
+  assert.match(node.textContent!, /starts no runs now/);
+  assert.doesNotMatch(node.textContent!, /made by another CLI|DAILY_FOCUS_AGENT_AT is off/);
+});
+
 test('a run still going offers Stop, shows its latest message open and the earlier ones folded, and no questions yet', () => {
   const going = run({
     status: 'running',

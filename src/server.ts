@@ -9,10 +9,10 @@ import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.t
 import { envSources, layerEnv, readDotEnv, type EnvSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
-import { Board } from './board.ts';
+import { Board, type BoardDeps } from './board.ts';
 import { CalendarBoard } from './calendarboard.ts';
 import { runHelper } from './calendar.ts';
-import { TicketBoard } from './ticketboard.ts';
+import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
 import { watchDataDir } from './watch.ts';
@@ -207,6 +207,16 @@ export interface StartedServer {
   close(): Promise<void>;
 }
 
+/**
+ * What the two boards talk to, when it isn't gh and acli. The demo hands over
+ * its sample worlds here (see `demo.ts`); everything else leaves it unset and
+ * gets the real ones.
+ */
+export interface Integrations {
+  github?: BoardDeps;
+  jira?: TicketBoardDeps;
+}
+
 export interface ServerOptions {
   /**
    * Called when saved settings can take effect: straight after the save, or once
@@ -215,6 +225,7 @@ export interface ServerOptions {
    * it, the page says to restart the dashboard by hand.
    */
   onRestart?: () => void;
+  integrations?: Integrations;
 }
 
 /**
@@ -271,9 +282,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
 
   // The board polls only while a tab is open, so it's told the audience below,
   // and it broadcasts on its own whenever a fetch starts or lands.
-  const board = new Board(config, () => void broadcast());
+  const board = new Board(config, () => void broadcast(), options.integrations?.github);
   const calendar = new CalendarBoard(config, () => void broadcast());
-  const tickets = new TicketBoard(config, () => void broadcast());
+  const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
 
   // Runs a CLI on request and broadcasts as its answer streams in. It writes
   // nothing to the store but its own log: what the assistant says stays in the
@@ -1077,13 +1088,23 @@ export class PortInUseError extends Error {
   }
 }
 
+export interface RunOptions {
+  onStarted?: (url: string) => void;
+  /**
+   * The environment to configure from, in place of the real one layered over
+   * `.env`. The demo passes its own, so a developer's `.env` can't reach it.
+   */
+  env?: NodeJS.ProcessEnv;
+  integrations?: Integrations;
+}
+
 /**
  * Run the dashboard until the process is told to stop, restarting it in place
  * whenever saved settings ask for that. In place rather than by exiting, so it
  * works the same however it was started: a terminal, `npm run dev`'s watcher,
  * the LaunchAgent, or the menu bar app, none of which has to know about it.
  */
-export async function runServer(options: { onStarted?: (url: string) => void } = {}): Promise<void> {
+export async function runServer(options: RunOptions = {}): Promise<void> {
   // Before anything reads PATH: a dashboard started by launchd or an app has
   // none of the CLIs it runs on its PATH until this finds your shell's.
   await hydratePath();
@@ -1092,7 +1113,7 @@ export async function runServer(options: { onStarted?: (url: string) => void } =
   let stopping = false;
 
   async function start(): Promise<void> {
-    current = await startServer(undefined, { onRestart: () => void restart() });
+    current = await startServer(options.env, { onRestart: () => void restart(), integrations: options.integrations });
   }
 
   async function restart(): Promise<void> {

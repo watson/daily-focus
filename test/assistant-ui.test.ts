@@ -61,6 +61,32 @@ test('the assistant is in the panel only when it is on, and never on the row', (
   assert.equal(byClass(panel(item(), ENABLED), 'assistant__input').length, 1);
 });
 
+test('with the assistant off, what it said while on is still in the panel, read-only', () => {
+  const said: AssistantTurn = {
+    id: 't0',
+    itemId: 'email:thread:1',
+    agent: 'claude',
+    sessionId: 's',
+    request: QUICK_ACTIONS.find((a) => a.id === 'draft-reply')!.request,
+    action: 'draft-reply',
+    startedAt: NOW,
+    endedAt: NOW,
+    status: 'done',
+    reply: 'Drafted, not sent.',
+    error: null,
+  };
+  const off = { enabled: false, agent: null, quickActions: QUICK_ACTIONS, items: { 'email:thread:1': { running: false, sessionId: null, turns: [said] } } };
+  const node = panel(item(), off);
+
+  const turns = byClass(node, 'assistant__turn');
+  assert.equal(turns.length, 1, 'the conversation belongs to the row, not to the setting');
+  assert.equal(byClass(turns[0]!, 'assistant__request')[0]!.textContent, 'Draft a reply');
+  assert.match(turns[0]!.textContent!, /Drafted, not sent/);
+  assert.equal(byClass(node, 'assistant__input').length, 0, 'but there is nothing to ask');
+  assert.equal(byClass(node, 'assistant__quick').length, 0);
+  assert.match(node.textContent!, /switched off \(DAILY_FOCUS_ASSISTANT\)/);
+});
+
 test("the panel offers the quick actions for the row's source and the ones for every row", () => {
   const node = panel(item(), ENABLED);
   const chips = byClass(node, 'assistant__quick')[0]!;

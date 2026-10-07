@@ -90,7 +90,11 @@ function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: Dashboa
           : el('p', { class: 'flyout__empty' }, 'Nothing noted yet. A note goes to the morning agent as free text.'),
         h(NoteForm, { row, title: facts.title, ui, handlers, inputRef: noteInput }),
       ),
-      enabled ? renderAssistantSection(row, facts, state, entry, ui, handlers, askInput) : null,
+      enabled
+        ? renderAssistantSection(row, facts, state, entry, ui, handlers, askInput)
+        : entry.turns.length
+          ? renderAssistantHistory(state, entry)
+          : null,
     ),
   ];
 }
@@ -283,6 +287,29 @@ function renderAssistantSection(
           ),
         ),
     h(AssistantComposer, { row, title: facts.title, entry, ui, handlers, inputRef }),
+  );
+}
+
+/**
+ * What was asked of the assistant while it was on, once it is off.
+ *
+ * The conversation belongs to the row, not to the setting: switching the
+ * assistant off must not make a reply vanish from the panel that showed it.
+ * Read-only, since there is nothing to ask now, and it says so where the field
+ * would be rather than leaving a section that ends mid-sentence.
+ */
+function renderAssistantHistory(state: DashboardState, entry: AssistantItemState): JSX.Element {
+  const label = new Map((state.assistant?.quickActions ?? []).map((action) => [action.id, action]));
+  return el(
+    'section',
+    { class: 'flyout__section assistant', 'data-running': 'false' },
+    el('h3', { class: 'flyout__label' }, 'Assistant'),
+    el(
+      'div',
+      { class: 'assistant__turns' },
+      entry.turns.map((turn) => renderAssistantTurn(turn, label)),
+    ),
+    el('p', { class: 'flyout__empty' }, 'The assistant is switched off (DAILY_FOCUS_ASSISTANT), so nothing more can be asked here.'),
   );
 }
 
