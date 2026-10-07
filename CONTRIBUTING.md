@@ -224,7 +224,8 @@ notes and `Daily-Focus.dmg`, signed, and the same version on npm:
   prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest. Its
   disk image isn't notarised, which keeps the build to minutes, so macOS refuses
   it until it is allowed under System Settings → Privacy & Security; its notes
-  say so.
+  say so. A build that main moves past while it runs isn't published, since the
+  newer push's own build follows it.
 - A stable release is cut by hand: Actions → Release → Run workflow, on main. It
   goes to npm's `latest` and is the GitHub release marked Latest. Its disk image
   is notarised, a wait on Apple's queue of anything from seconds to most of an
@@ -265,6 +266,9 @@ stable release, the other three:
 | `NOTARY_KEY_ID` | That key's ID |
 | `NOTARY_ISSUER_ID` | The issuer ID shown above the team keys |
 
-A run that fails can be rerun: it finds a version already on npm, or a release
-already made, and finishes the rest. If only `publish` failed, Re-run failed jobs
-reuses what `build` made.
+A run that fails can be rerun: it finds a release already made, or a version
+already on npm, and finishes the rest. If only `publish` failed, Re-run failed
+jobs reuses what `build` made. The GitHub release comes first because its tag is
+the step GitHub may refuse: the workflow's token can't create a tag on a commit
+whose workflows differ from main's. A stable release can therefore fail there if
+a change to a workflow lands while it builds; run it again on the new main.
