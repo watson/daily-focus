@@ -16,7 +16,8 @@ import { h } from 'preact';
 // Imported ahead of the client, for the document it installs.
 import { buttonLabels, byClass, byTag, handlersWith, mount, mountOne, uiWith } from './dom.ts';
 import { Flyout } from '../client/flyout.ts';
-import { renderTicketBoard, renderTicketRow, ticketStatus, typeLegend } from '../client/tickets.ts';
+import { PANEL_PREFIX } from '../client/state.ts';
+import { renderTicketBoard, renderTicketRow, ticketStatus, typeLegend, type AnyTicketRow } from '../client/tickets.ts';
 import type { Handlers, TicketMode, UiValues } from '../client/types.ts';
 import { resolveInProgress, resolveTickets } from '../src/tickets.ts';
 import type { DashboardState, InProgressTicket, Ticket, TicketBoardState, TicketRow } from '../src/types.ts';
@@ -721,4 +722,106 @@ test('an opened drawer stays open when the board is rebuilt', () => {
 
   const reopened = byClass(boardOf({ rows: [parked] }, { openDrawers: new Set(['tickets:parked']) }), 'drawer')[0] as HTMLDetailsElement;
   assert.equal(reopened.open, true);
+});
+
+/* ---------- the panel ---------- */
+
+const PANEL_STATE = { now: NOW.toISOString(), tickets: { statuses: VOCAB } } as unknown as DashboardState;
+
+function panelOf(row: AnyTicketRow, ui: Partial<UiValues> = {}, handlers: Partial<Handlers> = {}): HTMLElement {
+  return mountOne(
+    h(Flyout, { row, run: null, state: PANEL_STATE, ui: uiWith({ detailFor: row.id, ...ui }), handlers: handlersWith(handlers) }),
+  );
+}
+
+const panelActions = (node: HTMLElement): HTMLElement => byClass(node, 'flyout__actions')[0]!;
+
+/** Whatever the card lets you do to a ticket, the panel open on it lets you do too. */
+test('the panel offers what the card does: the status, and Park or Unpark', () => {
+  const [open] = resolveTickets([ticket()], [], NOW, []);
+  const actions = panelActions(panelOf(open!));
+  assert.ok(actions, 'expected the controls in the panel');
+  assert.deepEqual(buttonLabels(actions), ['Committed', 'Park']);
+  assert.equal(byClass(actions, 'pill--status')[0]?.tagName, 'BUTTON');
+
+  const [parked] = resolveTickets(
+    [ticket()],
+    [{ id: 'jira:PROJ-8842', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }],
+    NOW,
+  );
+  assert.deepEqual(buttonLabels(panelActions(panelOf(parked!))), ['Committed', 'Unpark']);
+
+  // Nothing on a Working on row is complaining, so there is nothing to park.
+  assert.deepEqual(buttonLabels(panelActions(panelOf(inProgress()))), ['In Review']);
+});
+
+test('the status is said once in the panel, by the control that changes it', () => {
+  const [row] = resolveTickets([ticket()], [], NOW, []);
+  const node = panelOf(row!);
+  assert.doesNotMatch(byClass(node, 'flyout__where')[0]!.textContent!, /Committed/);
+  assert.equal(byClass(node, 'pill--status').length, 1);
+});
+
+test("the panel's controls open their menus under the panel's key", () => {
+  const [row] = resolveTickets([ticket()], [], NOW, []);
+  const opened: string[] = [];
+  const node = panelOf(row!, {}, {
+    toggleMenu: (id) => void opened.push(`menu ${id}`),
+    toggleStatus: (id) => void opened.push(`status ${id}`),
+  });
+  for (const button of byTag(panelActions(node), 'button')) button.click();
+  assert.deepEqual(opened, [`status ${PANEL_PREFIX}jira:PROJ-8842`, `menu ${PANEL_PREFIX}jira:PROJ-8842`]);
+});
+
+/**
+ * The card and the panel show the same buttons for the same row, and the
+ * stylesheet hangs the open menu from the one expanded button. So a menu opened
+ * from one must leave the other's button closed and its menu unrendered.
+ */
+test('a menu opened in the panel opens there and not on the card, and the other way round', () => {
+  const [row] = resolveTickets([ticket()], [], NOW, []);
+  for (const [values, menuClass] of [
+    [{ menuFor: `${PANEL_PREFIX}${row!.id}` }, 'menu'],
+    [{ statusFor: `${PANEL_PREFIX}${row!.id}` }, 'menu--status'],
+    [{ menuFor: row!.id }, 'menu'],
+    [{ statusFor: row!.id }, 'menu--status'],
+  ] as const) {
+    const ui = uiWith({ detailFor: row!.id, ...values });
+    const page = mount(
+      h(
+        'div',
+        null,
+        renderTicketRow(row!, PANEL_STATE, ui, HANDLERS),
+        h(Flyout, { row: row!, run: null, state: PANEL_STATE, ui, handlers: HANDLERS }),
+      ),
+    );
+    const inPanel = Object.values(values)[0]!.startsWith(PANEL_PREFIX);
+    const [card, panel] = [byClass(page, 'item--ticket')[0]!, byClass(page, 'flyout')[0]!];
+    assert.equal(byClass(inPanel ? panel : card, menuClass).length, 1, `${JSON.stringify(values)}: the menu where it was opened`);
+    assert.equal(byClass(inPanel ? card : panel, menuClass).length, 0, `${JSON.stringify(values)}: and not on the other`);
+    assert.equal(page.querySelectorAll("[aria-haspopup='menu'][aria-expanded='true']").length, 1, JSON.stringify(values));
+  }
+});
+
+/** The key is only where the menu is open; what it does is to the row. */
+test("the panel's menus act on the row itself", () => {
+  const [row] = resolveTickets([ticket()], [], NOW, []);
+  const sent: unknown[] = [];
+  const handlers = {
+    onAction: (id: string, action: string, extra?: unknown) => void sent.push([id, action, extra]),
+    moveTicket: (key: string, status: string, from: string | null) => void sent.push([key, status, from]),
+  };
+  const parking = panelOf(row!, { menuFor: `${PANEL_PREFIX}${row!.id}` }, handlers);
+  const menu = byClass(parking, 'menu')[0]!;
+  assert.equal(menu.getAttribute('popover'), 'manual');
+  assert.ok(!byTag(menu, 'button').some((b) => b.textContent === 'Until the agent decides'), 'the board still refuses an open-ended park');
+  byTag(menu, 'button').find((b) => b.textContent!.startsWith('Next quarter'))!.click();
+
+  const moving = panelOf(row!, { statusFor: `${PANEL_PREFIX}${row!.id}` }, handlers);
+  byTag(byClass(moving, 'menu--status')[0]!, 'button').find((b) => b.textContent === 'Done')!.click();
+
+  assert.deepEqual(sent, [
+    ['jira:PROJ-8842', 'snooze', { until: '2026-12-22' }],
+    ['PROJ-8842', 'Done', 'Committed'],
+  ]);
 });

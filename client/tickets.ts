@@ -11,6 +11,7 @@ import { Menu, cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from '
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
+import { PANEL_PREFIX } from './state.ts';
 import type { Handlers, TicketMode, UiState } from './types.ts';
 
 /** Either kind of row this board shows. A row in a court is a `TicketRow`; one in Working on carries no court. */
@@ -362,7 +363,27 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
       renderTicketMeta(row, state, handlers),
     ),
     renderTicketActions(row, ui, handlers),
-    ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false, longRange: true }) : null,
+    ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, PARK_MENU) : null,
+  );
+}
+
+/** What a ticket's park menu offers, on its card and in the panel alike. */
+const PARK_MENU = { indefinite: false, longRange: true };
+
+/**
+ * The card's controls again, in the panel beside the list: the status on the
+ * left and the park on the right, as on the card, so each menu opens toward the
+ * middle of the panel. The menus open under `PANEL_PREFIX`, which keeps the
+ * card's copies of these buttons closed while the panel's are open.
+ */
+export function renderTicketControls(row: AnyTicketRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
+  const menuKey = `${PANEL_PREFIX}${row.id}`;
+  return el(
+    'div',
+    { class: 'flyout__actions' },
+    statusControl(row, state, ui, handlers, menuKey),
+    flagged(row) ? parkButton(row, ui, handlers, menuKey) : null,
+    flagged(row) && ui.menuFor.value === menuKey ? renderSnoozeMenu(row, new Date(state.now), handlers, PARK_MENU) : null,
   );
 }
 
@@ -371,6 +392,13 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
  * heading starts, and the thing the user is about to go and change. Always shown,
  * even empty-handed, and alone in its own element because the stylesheet stands
  * it in a fixed gutter so every summary on the board starts at the same x.
+ */
+function renderTicketStatus(row: AnyTicketRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
+  return el('div', { class: 'item__meta item__meta--status' }, statusControl(row, state, ui, handlers, row.id));
+}
+
+/**
+ * The status as a pill, and the menu it opens when `menuKey` is the one open.
  *
  * Pressable only when the board has seen somewhere for this ticket to go. There
  * is deliberately no way to type a status name here: the offer is limited to
@@ -379,29 +407,30 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
  * limitation taken on purpose — a free-text field would invite naming statuses
  * that don't exist, and the answer to those is a refusal nobody needed to see.
  */
-function renderTicketStatus(row: AnyTicketRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
+function statusControl(
+  row: AnyTicketRow,
+  state: DashboardState,
+  ui: UiState,
+  handlers: Handlers,
+  menuKey: string,
+): JSX.Element[] {
   const offered = ticketStatusOptions(row, state);
-  if (offered.length === 0) {
-    return el('div', { class: 'item__meta item__meta--status' }, el('span', { class: 'pill pill--status' }, row.workflowStatus || '—'));
-  }
+  if (offered.length === 0) return [el('span', { class: 'pill pill--status' }, row.workflowStatus || '—')];
 
-  return el(
-    'div',
-    { class: 'item__meta item__meta--status' },
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'pill pill--status pill--button',
-        title: `Move ${row.key} to another status`,
-        'aria-haspopup': 'menu',
-        'aria-expanded': String(ui.statusFor.value === row.id),
-        onClick: () => handlers.toggleStatus(row.id),
-      },
-      row.workflowStatus || '—',
-    ),
-    ui.statusFor.value === row.id ? renderStatusMenu(row, offered, ui, handlers) : null,
+  const open = ui.statusFor.value === menuKey;
+  const button = el(
+    'button',
+    {
+      type: 'button',
+      class: 'pill pill--status pill--button',
+      title: `Move ${row.key} to another status`,
+      'aria-haspopup': 'menu',
+      'aria-expanded': String(open),
+      onClick: () => handlers.toggleStatus(menuKey),
+    },
+    row.workflowStatus || '—',
   );
+  return open ? [button, renderStatusMenu(row, offered, ui, handlers)] : [button];
 }
 
 /**
@@ -507,26 +536,24 @@ function outOfSyncFlag(row: InProgressTicket, state: DashboardState, handlers: H
  */
 function renderTicketActions(row: AnyTicketRow, ui: UiState, handlers: Handlers): JSX.Element | null {
   if (!flagged(row)) return null;
-  const buttons: JSX.Element[] = [];
+  return el('div', { class: 'item__actions' }, parkButton(row, ui, handlers, row.id));
+}
 
-  if (row.status === 'open') {
-    buttons.push(
-      el(
-        'button',
-        {
-          type: 'button',
-          class: 'button',
-          title: 'Park this until a date',
-          'aria-haspopup': 'menu',
-          'aria-expanded': String(ui.menuFor.value === row.id),
-          onClick: () => handlers.toggleMenu(row.id),
-        },
-        'Park',
-      ),
-    );
-  } else {
-    buttons.push(el('button', { type: 'button', class: 'button', onClick: () => handlers.unpark(row.id) }, 'Unpark'));
+/** Park, opening its menu under `menuKey`; or Unpark, on a row already parked. */
+function parkButton(row: TicketRow, ui: UiState, handlers: Handlers, menuKey: string): JSX.Element {
+  if (row.status !== 'open') {
+    return el('button', { type: 'button', class: 'button', onClick: () => handlers.unpark(row.id) }, 'Unpark');
   }
-
-  return buttons.length > 0 ? el('div', { class: 'item__actions' }, buttons) : null;
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'button',
+      title: 'Park this until a date',
+      'aria-haspopup': 'menu',
+      'aria-expanded': String(ui.menuFor.value === menuKey),
+      onClick: () => handlers.toggleMenu(menuKey),
+    },
+    'Park',
+  );
 }

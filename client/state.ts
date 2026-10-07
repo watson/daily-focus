@@ -31,6 +31,14 @@ export const VIEWS: readonly View[] = ['today', 'board', 'tickets', 'settings'];
  */
 export const RUN_PREFIX = 'run:';
 
+/**
+ * A menu opened from the panel is open on its row's id under this prefix. The
+ * row's card offers the same buttons, and the stylesheet hangs a menu from the
+ * one expanded button, so the card's copy must stay closed while the panel's is
+ * open — and the card's menu must not open beside it.
+ */
+export const PANEL_PREFIX = 'panel:';
+
 export const VIEW_KEY = 'daily-focus:view';
 export const UNATTENDED_SEEN_KEY = 'daily-focus:unattended-seen';
 export const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';

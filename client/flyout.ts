@@ -23,7 +23,7 @@ import { renderMarkdown, renderMarkdownBlocks } from './markdown.ts';
 import { usePanel } from './panel.ts';
 import { RunPanel } from './runs.ts';
 import { RUN_PREFIX, type DetailRow } from './state.ts';
-import { typeColor } from './tickets.ts';
+import { renderTicketControls, typeColor } from './tickets.ts';
 import type { Handlers, UiState } from './types.ts';
 
 export interface FlyoutProps {
@@ -65,7 +65,7 @@ function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: Dashboa
   const entry: AssistantItemState = state.assistant?.items?.[row.id] ?? { running: false, sessionId: null, turns: [] };
 
   return [
-    flyoutHeader(facts, handlers),
+    flyoutHeader(facts, rowControls(row, state, ui, handlers), handlers),
     el(
       'div',
       { class: 'flyout__body', ref: body, onScroll },
@@ -101,7 +101,6 @@ interface RowFacts {
   url: string | null;
   source: string;
   color: string;
-  status: string | null;
   people: readonly string[];
   detail: string | null;
 }
@@ -120,7 +119,6 @@ export function describeRow(row: DetailRow): RowFacts {
       url: row.url ?? null,
       source: 'jira',
       color: typeColor(row.issueType),
-      status: row.workflowStatus || null,
       people: [],
       detail: null,
     };
@@ -132,7 +130,6 @@ export function describeRow(row: DetailRow): RowFacts {
       url: row.url ?? null,
       source: 'github',
       color: sourceColor('github'),
-      status: null,
       people: [],
       detail: null,
     };
@@ -143,13 +140,21 @@ export function describeRow(row: DetailRow): RowFacts {
     url: row.url ?? null,
     source: row.source,
     color: sourceColor(row.source),
-    status: null,
     people: row.people ?? [],
     detail: row.detail ?? null,
   };
 }
 
-function flyoutHeader(facts: RowFacts, handlers: Handlers): JSX.Element {
+/**
+ * What the row's card lets you do to it, where the panel offers it too: a
+ * ticket's status and park. The status lives there rather than beside the
+ * source, since on a ticket it is the control that changes it.
+ */
+function rowControls(row: DetailRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element | null {
+  return 'key' in row && 'summary' in row ? renderTicketControls(row, state, ui, handlers) : null;
+}
+
+function flyoutHeader(facts: RowFacts, controls: JSX.Element | null, handlers: Handlers): JSX.Element {
   const title: ComponentChild[] = facts.ref ? [el('span', { class: 'item__ref' }, facts.ref), ' ', facts.title] : [facts.title];
   return el(
     'div',
@@ -159,7 +164,6 @@ function flyoutHeader(facts: RowFacts, handlers: Handlers): JSX.Element {
       { class: 'flyout__where' },
       el('span', { class: 'item__dot', style: `background:${facts.color}`, 'aria-hidden': 'true' }),
       el('span', { class: 'item__source' }, SOURCE_LABEL[facts.source] ?? 'Other'),
-      facts.status ? el('span', null, `· ${facts.status}`) : null,
       facts.people.length ? el('span', null, `· ${facts.people.join(', ')}`) : null,
     ),
     el(
@@ -178,6 +182,7 @@ function flyoutHeader(facts: RowFacts, handlers: Handlers): JSX.Element {
       { class: 'flyout__title' },
       facts.url ? el('a', { href: facts.url, target: '_blank', rel: 'noopener noreferrer' }, ...title) : title,
     ),
+    controls,
   );
 }
 
