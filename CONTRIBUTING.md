@@ -27,8 +27,11 @@ npm run dev
 
 Set the agent and the assistant off explicitly: a variable left unset falls through
 to your `.env`, and a dashboard with the agent on starts a real run the moment it is
-past the morning's hour. `npm run demo` is the quicker look, on its own throwaway
-store with everything off, and is what `npx daily-focus --demo` runs.
+past the morning's hour. `npm run demo` is the quicker look: its own throwaway store
+with a few weeks of sample data for every screen, both boards answered from the
+sample worlds in `src/demo.ts` rather than from gh and acli, the agent and the
+assistant off, and your `.env` ignored. `npm run demo -- --profile personal` shows
+the personal profile. It is what `npx daily-focus --demo` runs.
 
 Open [localhost:4321](http://127.0.0.1:4321). If your own dashboard runs as a
 service, it already has that port: export `DAILY_FOCUS_PORT=4322` as well and open
@@ -83,7 +86,7 @@ versions and release notes come from, so CI checks it.
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
 | `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
-| `src/sample.ts` | The sample brief behind `npm run seed` and the demo |
+| `src/sample.ts`, `src/demo.ts` | The sample brief for each profile behind `npm run seed`, and everything the demo puts around it: the store's files, the sample pull requests and tickets, and the environment it runs in |
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
 | `public/` | The page shell, the stylesheet, and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
@@ -157,10 +160,10 @@ free of side effects, since only `POST` is checked for its content type.
 
 ## Update the screenshot
 
-Use the temporary demo above with integrations disabled. Add an invented objective
-to the temporary store's `focus.md` if needed. Capture the Today tab from the running
-app, check that every visible name and detail is fictional, and save the image as
-`docs/images/daily-focus.png`. Keep the README caption clear that it is sample data.
+Use `npm run demo`, which already has an invented objective and both boards filled.
+Capture the Today tab from the running app, check that every visible name and detail
+is fictional, and save the image as `docs/images/daily-focus.png`. Keep the README
+caption clear that it is sample data.
 
 ## The npm package
 

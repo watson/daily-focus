@@ -4,6 +4,7 @@
  *
  *   npx daily-focus                  start the dashboard and open it
  *   npx daily-focus --demo           look around with sample data, in a throwaway store
+ *                                    (--profile personal for the other half of a life)
  *   daily-focus service [--remove]   keep it running in the background on macOS
  *   daily-focus init | audit | seed | build-calendar
  *
@@ -17,12 +18,13 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 
 import { IN_NPX_CACHE, packageVersion, ROOT, USER_CALENDAR_APP } from './install.ts';
+import type { RunOptions } from './server.ts';
 
 const run = promisify(execFile);
 
@@ -30,7 +32,8 @@ const HELP = `Daily Focus: a dashboard for deciding what to work on today.
 
 Usage
   daily-focus [options]            start the dashboard and open it in your browser
-  daily-focus --demo               look around with sample data, in a throwaway store
+  daily-focus --demo               look around with sample data, in a throwaway store;
+                                   add --profile personal to see the personal profile
   daily-focus service [--remove]   keep it running in the background (macOS)
   daily-focus init                 create the store with templates to edit by hand
   daily-focus audit [--against <items.json>]
@@ -42,7 +45,7 @@ Options
   --data <dir>      the store (default ~/.daily-focus)
   --port <port>     the port to listen on (default 4321)
   --host <host>     the address to listen on (default 127.0.0.1)
-  --profile <name>  work or personal, for a new store
+  --profile <name>  work or personal, for a new store or the demo
   --no-open         don't open the browser
   --exit-with-stdin stop when standard input closes, for an app running it as a child
   -v, --version     print the version
@@ -69,36 +72,33 @@ function shouldOpen(flag: boolean): boolean {
 }
 
 /**
- * The demo: the dashboard on a throwaway store holding the sample brief, with
- * nothing connected and nothing that runs an agent, so it can be looked at
- * before anything is set up. The store is deleted on the way out.
+ * The demo: the dashboard on a throwaway store holding a few weeks' worth of
+ * sample data for one profile, with the boards answered from sample worlds
+ * rather than gh and acli, and nothing that runs an agent, so every screen can
+ * be looked at before anything is set up. See `demo.ts`. The store is deleted
+ * on the way out.
  */
-async function demo(open: boolean): Promise<void> {
+async function demo(open: boolean, profile: string | undefined): Promise<void> {
+  const { demoEnv, demoIntegrations, demoProfile, writeDemoStore } = await import('./demo.ts');
+  // Checked before the store exists, so a typo costs nothing.
+  const chosen = demoProfile(profile);
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-demo-'));
   process.on('exit', () => rmSync(store, { recursive: true, force: true }));
-  Object.assign(process.env, {
-    DAILY_FOCUS_DATA: store,
-    // Any free port unless one was asked for, so the demo never collides with
-    // a dashboard already running on 4321.
-    DAILY_FOCUS_PORT: process.env.DAILY_FOCUS_PORT ?? '0',
-    DAILY_FOCUS_PROFILE: 'work',
-    DAILY_FOCUS_AGENT: 'off',
-    DAILY_FOCUS_ASSISTANT: 'off',
-    DAILY_FOCUS_GITHUB: 'off',
-    DAILY_FOCUS_JIRA: 'off',
-    DAILY_FOCUS_CALENDAR: 'off',
-  });
-  const { sampleBrief } = await import('./sample.ts');
-  await writeFile(join(store, 'items.json'), `${JSON.stringify(sampleBrief(), null, 2)}\n`);
-  await start(open, (url) => {
-    console.log(`\n  The demo is at ${url}, with sample data in a throwaway store.`);
-    console.log('  Nothing is connected and nothing runs. Stop it with Ctrl+C; the store goes with it.\n');
-  });
+  await writeDemoStore(store, chosen);
+  await start(
+    open,
+    (url) => {
+      console.log(`\n  The demo is at ${url}, with sample data in a throwaway store (the ${chosen} profile).`);
+      console.log('  Nothing is connected and nothing runs. Stop it with Ctrl+C; the store goes with it.\n');
+    },
+    { env: demoEnv(process.env, store, chosen), integrations: demoIntegrations(chosen) },
+  );
 }
 
-async function start(open: boolean, onStarted?: (url: string) => void): Promise<void> {
+async function start(open: boolean, onStarted?: (url: string) => void, options: Omit<RunOptions, 'onStarted'> = {}): Promise<void> {
   const { runServer } = await import('./server.ts');
   await runServer({
+    ...options,
     onStarted: (url) => {
       onStarted?.(url);
       if (shouldOpen(open)) openInBrowser(url);
@@ -202,7 +202,7 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case undefined:
     case 'start':
-      if (values.demo) return demo(open);
+      if (values.demo) return demo(open, values.profile);
       if (IN_NPX_CACHE) {
         console.log('  Running from npx. To keep it running in the background, install it:');
         console.log('  npm install -g daily-focus, then daily-focus service.\n');

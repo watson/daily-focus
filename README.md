@@ -21,7 +21,13 @@ npx daily-focus --demo
 ```
 
 That opens the dashboard on sample data in a throwaway store, so you can explore
-without connecting anything. Stop it with Ctrl+C, and the store goes with it.
+without connecting anything: a morning brief with an objective behind it, open pull
+requests and Jira tickets on their boards, the morning agent's reports, and a few
+conversations with the assistant, all invented. Nothing is connected and nothing
+runs; the boards are answered from the sample data, and moving a ticket's status
+moves it there. Add `--profile personal` to see the other profile, which briefs
+home, family and paperwork instead of work. Stop it with Ctrl+C, and the store goes
+with it.
 
 To use your own data:
 

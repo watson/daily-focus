@@ -37,6 +37,9 @@ export function RunPanel({ run, state, ui, handlers }: { run: AgentRun; state: D
   const runs = agent?.runs ?? [];
   const busy = runs.some((candidate) => candidate.status === 'running' || candidate.turns?.some((turn) => turn.status === 'running'));
   const answering = run.turns.some((turn) => turn.status === 'running');
+  // The log outlives the setting: runs made while the agent was on are still
+  // read once it is off, and the panel says so rather than blaming the run.
+  const enabled = agent?.enabled ?? true;
 
   return [
     runHeader(run, now, handlers),
@@ -45,7 +48,7 @@ export function RunPanel({ run, state, ui, handlers }: { run: AgentRun; state: D
       { class: 'flyout__body', ref: body, onScroll },
       runStatus(run, now, handlers),
       runReport(run, ui, handlers),
-      run.status === 'running' ? null : runConversation(run, busy, answering, ui, handlers, askInput),
+      run.status === 'running' ? null : runConversation(run, busy, answering, enabled, ui, handlers, askInput),
       runList(run, runs, now, agent, handlers),
     ),
   ];
@@ -202,6 +205,7 @@ function runConversation(
   run: AgentRun,
   busy: boolean,
   answering: boolean,
+  enabled: boolean,
   ui: UiState,
   handlers: Handlers,
   inputRef: RefObject<HTMLTextAreaElement>,
@@ -233,9 +237,11 @@ function runConversation(
     : el(
         'p',
         { class: 'flyout__empty' },
-        run.sessionId
-          ? 'This run was made by another CLI, so it cannot be asked anything now.'
-          : 'This run left no session behind, so there is nothing to ask.',
+        !enabled
+          ? 'The morning agent is switched off (DAILY_FOCUS_AGENT), so this run cannot be asked anything now.'
+          : run.sessionId
+            ? 'This run was made by another CLI, so it cannot be asked anything now.'
+            : 'This run left no session behind, so there is nothing to ask.',
       );
 
   return el(
@@ -310,13 +316,16 @@ function RunComposer({
 function runList(current: AgentRun, runs: readonly AgentRun[], now: Date, agent: AgentRunState | null, handlers: Handlers): JSX.Element {
   const others = runs.filter((run) => run.id !== current.id);
   const schedule = agent?.schedule;
-  const next = schedule
-    ? el(
-        'p',
-        { class: 'flyout__empty' },
-        `Runs on its own at ${schedule.at}${schedule.nextRunAt ? `; next ${describeWhen(schedule.nextRunAt, now)}` : ''}.`,
-      )
-    : el('p', { class: 'flyout__empty' }, 'Started by hand only; DAILY_FOCUS_AGENT_AT is off.');
+  const next =
+    agent && !agent.enabled
+      ? el('p', { class: 'flyout__empty' }, 'The morning agent is switched off (DAILY_FOCUS_AGENT), so the dashboard starts no runs now.')
+      : schedule
+        ? el(
+            'p',
+            { class: 'flyout__empty' },
+            `Runs on its own at ${schedule.at}${schedule.nextRunAt ? `; next ${describeWhen(schedule.nextRunAt, now)}` : ''}.`,
+          )
+        : el('p', { class: 'flyout__empty' }, 'Started by hand only; DAILY_FOCUS_AGENT_AT is off.');
   return el(
     'section',
     { class: 'flyout__section' },

@@ -58,6 +58,15 @@ test('refuses to overwrite an existing brief and names its path', async () => {
   assert.equal(await readFile(itemsFile, 'utf8'), '{"version":1,"items":[]}\n');
 });
 
+test("a personal store gets the personal brief, following the store's profile", async () => {
+  const dir = await tempStore();
+  await run(process.execPath, [script], { env: { ...process.env, DAILY_FOCUS_DATA: dir, DAILY_FOCUS_PROFILE: 'personal' } });
+
+  const brief = JSON.parse(await readFile(join(dir, 'items.json'), 'utf8')) as { items: { source: string }[] };
+  assert.ok(brief.items.some((item) => item.source === 'eboks'), 'letters, not tickets');
+  assert.ok(!brief.items.some((item) => item.source === 'jira' || item.source === 'workday'));
+});
+
 test('overwrites an existing brief with --force', async () => {
   const dir = await tempStore();
   const itemsFile = join(dir, 'items.json');

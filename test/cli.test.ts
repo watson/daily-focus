@@ -85,6 +85,59 @@ test('with --exit-with-stdin, the dashboard stops when whatever holds its input 
   }
 });
 
+test('the demo honours --profile, and fills its boards from sample data rather than gh and acli', async () => {
+  const child = spawn(process.execPath, [cli, '--demo', '--no-open', '--port', '0', '--profile', 'personal'], {
+    // A real environment that would leak into the demo if it could.
+    env: { ...process.env, DAILY_FOCUS_HOST: '127.0.0.1', DAILY_FOCUS_JIRA: 'on', DAILY_FOCUS_AGENT: 'codex' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    const url = await new Promise<string>((done, fail) => {
+      let output = '';
+      const timer = setTimeout(() => fail(new Error(`never listened:\n${output}`)), 15_000);
+      const read = (chunk: Buffer) => {
+        output += chunk.toString();
+        const match = /dashboard {2}(http:\/\/\S+)/.exec(output);
+        if (match) {
+          clearTimeout(timer);
+          done(match[1]!);
+        }
+      };
+      child.stdout.on('data', read);
+      child.stderr.on('data', read);
+    });
+    type State = {
+      setup: { profile: string };
+      tickets: { enabled: boolean };
+      board: { fetchedAt: string | null; rows: unknown[] };
+      items: { source: string }[];
+      agentRun: { enabled: boolean; runs: unknown[] };
+    };
+    let state = (await (await fetch(`${url}/api/state`)).json()) as State;
+    for (let i = 0; i < 100 && state.board.fetchedAt === null; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      state = (await (await fetch(`${url}/api/state`)).json()) as State;
+    }
+    assert.equal(state.setup.profile, 'personal');
+    assert.equal(state.tickets.enabled, false, 'the personal profile has no Jira, whatever the environment says');
+    assert.equal(state.agentRun.enabled, false, 'nothing runs in the demo');
+    assert.ok(state.agentRun.runs.length > 0, 'but the runs it would have made are there to read');
+    assert.ok(state.board.rows.length > 0, 'the pull request board is filled from sample data');
+    assert.ok(state.items.some((item) => item.source === 'eboks'), 'the personal brief');
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise((done) => child.once('exit', done));
+  }
+});
+
+test('the demo refuses a profile it does not have, before making a store', async () => {
+  await assert.rejects(run(process.execPath, [cli, '--demo', '--no-open', '--profile', 'home']), (err: { code?: number; stderr?: string }) => {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr ?? '', /^daily-focus: --profile must be one of work, personal/);
+    return true;
+  });
+});
+
 test('a flag that belongs to another command is refused, not dropped', async () => {
   for (const args of [['seed', '--remove'], ['service', '--force'], ['init', '--no-open'], ['audit', '--demo'], ['init', '--exit-with-stdin']]) {
     await assert.rejects(run(process.execPath, [cli, ...args]), (err: { code?: number; stderr?: string }) => {
