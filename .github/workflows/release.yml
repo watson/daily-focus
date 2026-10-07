@@ -182,36 +182,34 @@ jobs:
 
     # No checkout and no install: npm, gh and the files the build made.
     steps:
+      # A development build that main moved past while it was building is left
+      # unpublished: the newer push's run publishes its own. GitHub would also
+      # refuse this job's token the build's tag whenever a later push changed a
+      # workflow, since it may not create a ref whose workflows differ from main's.
+      - name: Check this is still main's newest commit
+        id: current
+        if: needs.build.outputs.channel == 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          head=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "::notice::main has moved on to ${head:0:7}, whose own run publishes it, so this build isn't published"
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch the release
+        if: steps.current.outputs.superseded != 'true'
         uses: actions/download-artifact@v8
         with:
           name: release
           path: release
 
-      # Trusted publishing needs npm 11.5.1 or newer, which the newest Node 24
-      # carries; a runner's cached Node 24 might be older.
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          check-latest: true
-
-      # A tarball is published as it is, with no scripts run. The leading ./ is
-      # what makes it a file: npm reads "release/x.tgz" as a GitHub repository,
-      # owner "release". A rerun after the GitHub release failed finds this
-      # version already published.
-      - name: Publish to npm
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-          CHANNEL: ${{ needs.build.outputs.channel }}
-        run: |
-          if [ "$(npm view "daily-focus@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
-            echo "daily-focus@$VERSION is already on npm"
-          else
-            npm publish "./release/daily-focus-$VERSION.tgz" --tag "$CHANNEL" --ignore-scripts
-          fi
-
+      # First, so that a tag GitHub refuses leaves nothing on npm without its
+      # notes. A rerun finds the release made and only refreshes it.
       - name: Make the GitHub release
+        if: steps.current.outputs.superseded != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -227,4 +225,28 @@ jobs:
             gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --prerelease
           else
             gh release create "$tag" "$dmg" --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --latest
+          fi
+
+      # Trusted publishing needs npm 11.5.1 or newer, which the newest Node 24
+      # carries; a runner's cached Node 24 might be older.
+      - name: Set up Node.js
+        if: steps.current.outputs.superseded != 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      # A tarball is published as it is, with no scripts run. The leading ./ is
+      # what makes it a file: npm reads "release/x.tgz" as a GitHub repository,
+      # owner "release". A rerun finds this version already published.
+      - name: Publish to npm
+        if: steps.current.outputs.superseded != 'true'
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
+        run: |
+          if [ "$(npm view "daily-focus@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "daily-focus@$VERSION is already on npm"
+          else
+            npm publish "./release/daily-focus-$VERSION.tgz" --tag "$CHANNEL" --ignore-scripts
           fi
