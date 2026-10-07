@@ -380,6 +380,30 @@ test('the menu is closed unless this row is the one that opened it', () => {
   assert.equal(byTag(byClass(node, 'item__meta--status')[0]!, 'button').length, 1);
 });
 
+/**
+ * The board is a multicol, which splits an absolutely positioned box across its
+ * columns and grows to balance them. A menu drawn inside the card hung half in
+ * the next column and pushed the next section down; in the top layer, anchored
+ * by the stylesheet to the one expanded menu button, it does neither.
+ */
+test('both menus are popovers, opened from the button that names them', () => {
+  const rows = resolveTickets([ticket()], [], NOW, []);
+  const id = rows[0]!.id;
+  const state = { now: NOW.toISOString(), tickets: { statuses: VOCAB } } as unknown as DashboardState;
+  for (const [ui, menuClass, opener] of [
+    [{ menuFor: id }, 'menu', 'item__actions'],
+    [{ statusFor: id }, 'menu--status', 'item__meta--status'],
+  ] as const) {
+    const node = mountOne(renderTicketRow(rows[0]!, state, uiWith(ui), HANDLERS));
+    assert.equal(byClass(node, menuClass)[0]?.getAttribute('popover'), 'manual', menuClass);
+    const button = byTag(byClass(node, opener)[0]!, 'button')[0]!;
+    assert.equal(button.getAttribute('aria-haspopup'), 'menu', opener);
+    assert.equal(button.getAttribute('aria-expanded'), 'true', opener);
+    // Exactly one, or the stylesheet's anchor name would mean two places.
+    assert.equal(node.querySelectorAll("[aria-haspopup='menu'][aria-expanded='true']").length, 1, menuClass);
+  }
+});
+
 /** They looked good as plain pills, and a permanent hint is ink spent every row. */
 test('the status control carries no persistent clickable marker', async () => {
   const css = await (await import('node:fs/promises')).readFile(new URL('../public/style.css', import.meta.url), 'utf8');

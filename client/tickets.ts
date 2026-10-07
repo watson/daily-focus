@@ -7,7 +7,7 @@ import { banner } from './banners.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatDay, formatTime } from './format.ts';
-import { cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from './items.ts';
+import { Menu, cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
@@ -394,6 +394,7 @@ function renderTicketStatus(row: AnyTicketRow, state: DashboardState, ui: UiStat
         type: 'button',
         class: 'pill pill--status pill--button',
         title: `Move ${row.key} to another status`,
+        'aria-haspopup': 'menu',
         'aria-expanded': String(ui.statusFor.value === row.id),
         onClick: () => handlers.toggleStatus(row.id),
       },
@@ -426,9 +427,9 @@ function ticketStatusOptions(row: AnyTicketRow, state: DashboardState): string[]
 
 function renderStatusMenu(row: AnyTicketRow, offered: readonly string[], ui: UiState, handlers: Handlers): JSX.Element {
   const busy = ui.pending.value.has(row.id);
-  return el(
-    'div',
-    { class: 'menu menu--status', role: 'menu' },
+  return h(
+    Menu,
+    { class: 'menu menu--status' },
     offered.map((status) =>
       el(
         'button',
@@ -516,6 +517,7 @@ function renderTicketActions(row: AnyTicketRow, ui: UiState, handlers: Handlers)
           type: 'button',
           class: 'button',
           title: 'Park this until a date',
+          'aria-haspopup': 'menu',
           'aria-expanded': String(ui.menuFor.value === row.id),
           onClick: () => handlers.toggleMenu(row.id),
         },

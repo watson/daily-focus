@@ -1152,14 +1152,29 @@ body[data-session-active='true'] #today .item:not([data-running='true']):focus-w
 
 /* snooze menu */
 
+/*
+ * A popover in the top layer (`Menu` in client/items.ts says why), hung from the
+ * button that opened it. Only one menu is ever open, so only one button is
+ * expanded and the one anchor name is never ambiguous. `inset` and `margin`
+ * undo the popover's own centring on the viewport.
+ */
+[aria-haspopup='menu'][aria-expanded='true'] {
+  anchor-name: --menu;
+}
+
 .menu {
-  position: absolute;
-  top: 34px;
-  right: 10px;
-  z-index: 5;
+  position: fixed;
+  position-anchor: --menu;
+  inset: auto;
+  top: anchor(bottom);
+  right: anchor(right);
+  margin: 4px 0;
+  /* Above the button instead, when the window has no room left below it. */
+  position-try-fallbacks: flip-block;
   /* Wide enough that the date field below still shows its own placeholder. */
   min-width: 204px;
   padding: 5px;
+  color: var(--ink-2);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1636,10 +1651,11 @@ body[data-view='settings'] .layout {
  * line up with the other tabs' however wide the display is. The 460px floor is
  * what drops it to one column on a narrow window rather than squeezing two.
  *
- * The abspos worry that picked the grid does not apply: `.item` is
- * `position: relative`, so `.item__actions` and the snooze `.menu` resolve
- * against the card and travel with it into its column. Only a child resolving
- * against the multicol container itself would land beside the wrong row.
+ * An absolutely positioned child is still fragmented by the columns, and counts
+ * toward balancing them. `.item__actions` stays inside its card, so it travels
+ * with the card into its column and nothing notices. Anything that hangs below a
+ * card must not be in here at all: the row menus once were, and were split
+ * across both columns and pushed the next section down. They are popovers now.
  */
 #tickets .list {
   display: block;
@@ -1836,14 +1852,13 @@ body[data-view='settings'] .layout {
 }
 
 /*
- * Anchored to the gutter rather than the card's right edge, unlike the park
- * menu: it belongs to the pill that opened it, and the two menus must not be
- * able to appear in the same place.
+ * Hung from the pill's left edge, where the park menu hangs from its button's
+ * right: the pill sits in the card's left gutter, so each menu opens toward the
+ * middle of its own card.
  */
 .menu--status {
-  top: 26px;
   right: auto;
-  left: 0;
+  left: anchor(left);
   min-width: 9rem;
 }
 
