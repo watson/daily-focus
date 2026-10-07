@@ -93,8 +93,12 @@ Run `npm run typecheck` and `npm test` for code changes. The npm package bundles
 every module into the CLI's files: a module that runs when executed directly must
 check with `ranDirectly` from `src/install.ts`, never by comparing its URL with
 `process.argv[1]`. Never commit `dist/`. The menu bar app runs the package from
-inside its signed bundle, so the server must never write into its own install
-directory: anything it writes goes in the store. Keep tests independent of
+inside its signed bundle, or from a signed copy it downloaded as an update, so the
+server must never write into its own install directory: anything it writes goes in
+the store. A write there would also break the copy's signature, and the app would
+refuse to run it. When the dashboard starts needing something new from the app (a
+flag, the calendar helper, a permission, a newer Node), raise `appInterface` in
+`package.json` and `macos/DailyFocus/Updates.swift` together. Keep tests independent of
 live accounts and calendar permission prompts. The client is built from `client/`
 into `public/app.js`, which is not tracked: edit the source, never the bundle.
 

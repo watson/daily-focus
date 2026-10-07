@@ -30,10 +30,14 @@ struct DashboardStatus: Decodable, Equatable {
         var last: Run?
     }
 
+    /// The dashboard's version, from its package.json.
+    var version: String?
     var dataDir: String?
     var profile: String?
     var setupNeeded: Bool?
     var restartPending: Bool?
+    /// Whether the morning agent or the assistant is at work, which a restart would stop.
+    var busy: Bool?
     var brief: Brief?
     var agent: Agent?
     var waitingOnYou: Int?
@@ -115,10 +119,20 @@ func statusLine(_ status: DashboardStatus, now: Date, calendar: Calendar = .curr
     return parts.joined(separator: " · ")
 }
 
+/// Whether a restart now would cut something short. A dashboard from before `busy`
+/// can only say whether the morning agent runs.
+func isBusy(_ status: DashboardStatus) -> Bool {
+    status.busy ?? status.agent?.running ?? false
+}
+
 /// Something worth a notification.
 enum Notice: Equatable {
     case briefReady(open: Int?)
     case agentFailed(error: String?)
+    case dashboardAvailable(version: String)
+    case appAvailable(version: String, needed: Bool)
+    /// A downloaded dashboard that failed to start, so the app went back to another.
+    case dashboardRefused(version: String)
 }
 
 /// What the app has already told the user about, kept across launches.
@@ -157,6 +171,14 @@ func noticeText(_ notice: Notice) -> (title: String, body: String) {
     case .agentFailed(let error):
         let reason = error?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return ("The morning agent failed", reason.isEmpty ? "Open Daily Focus to see what it said." : reason)
+    case .dashboardAvailable(let version):
+        return ("Dashboard \(version) is available", "Install it from the Daily Focus menu.")
+    case .appAvailable(let version, let needed):
+        return ("Daily Focus \(version) is available", needed
+            ? "The newest dashboard needs this version of the app. Download it from the Daily Focus menu."
+            : "A new version of the app itself. Download it from the Daily Focus menu.")
+    case .dashboardRefused(let version):
+        return ("Dashboard \(version) didn't start", "Daily Focus went back to the dashboard it had before. Show Log says why.")
     }
 }
 

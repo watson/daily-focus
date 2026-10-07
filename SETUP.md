@@ -324,6 +324,20 @@ Download `Daily-Focus.dmg` from the [latest release](https://github.com/watson/d
 open it and drag the app to Applications, then open it from there.
 It has no window and no Dock icon: look for it in the menu bar.
 
+The dashboard updates without a new disk image. **Updates** in the menu shows two
+versions, the app's and the dashboard's, and which releases to take: **Stable
+Releases**, or **Development Builds**, a build of every change as soon as it is
+merged. A few times a day the app asks npm for the newest release, and when it
+finds a newer dashboard, it posts a notification and the menu offers **Install
+Dashboard**. Installing downloads it from the GitHub release, a few hundred
+kilobytes, and runs it only if it is signed by the same developer as the app
+and nothing in it has changed. The dashboard restarts into it once the morning
+agent and the assistant aren't busy. If it doesn't start, the app goes back to the
+one it had and says so. The app itself changes less often; when a release brings a
+new one, or a dashboard that needs one, the menu links to its disk image instead.
+A dashboard that `daily-focus service` or a terminal runs is updated the way it was
+installed, not by the app.
+
 To build it yourself from a checkout:
 
 ```sh

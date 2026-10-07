@@ -231,6 +231,104 @@ func runSelfTest() -> Bool {
     check(!isDashboardHealth(Data(#"{"status":"ok"}"#.utf8)), "someone else's health")
     check(!isDashboardHealth(Data(#"{"ok":true}"#.utf8)), "ok, but not a dashboard: no store")
 
+    // Updates: versions in semver's order.
+    let ordered = ["0.0.0-development", "0.1.0", "0.1.1-dev.2", "0.1.1-dev.10", "0.1.1", "0.2.0-alpha", "0.2.0-dev.1", "0.2.0", "1.0.0"]
+    let versions = ordered.compactMap(Version.init)
+    equal(versions.count, ordered.count, "versions parse")
+    equal(versions.map(\.description), versions.sorted().map(\.description), "semver order")
+    check(Version("0.1.1-dev.9")! < Version("0.1.1-dev.10")!, "pre-release numbers compare as numbers")
+    check(Version("1.0.0-dev.1")! < Version("1.0.0-dev.a")!, "numbers before words")
+    check(Version("0.2.0+build.5")! == Version("0.2.0")!, "build metadata doesn't count")
+    for bad in ["", "1.2", "1.2.3.4", "v1.2.3", "1.2.x", "1.2.3-", "1.2.3-dev..1", "1.2.3-../x", "1.2.3-a/b", " 1.2.3", "１.2.3"] {
+        check(Version(bad) == nil, "not a version: \(bad.debugDescription)")
+    }
+    equal(Track.of(appVersion: "0.2.0"), .stable, "a stable app starts on stable releases")
+    equal(Track.of(appVersion: "0.2.1-dev.4"), .development, "a development build on development builds")
+    equal(Track.of(appVersion: "0.0.0-development"), .development, "a checkout's build too")
+    equal(Track.stable.distTag, "latest", "stable is npm's latest")
+    equal(Track.development.distTag, "dev", "development is npm's dev")
+    equal(manifestURL(.development, environment: [:]).absoluteString, "https://registry.npmjs.org/daily-focus/dev", "where releases are looked up")
+    equal(downloadURL("0.2.0", environment: [:]).absoluteString,
+          "https://github.com/watson/daily-focus/releases/download/v0.2.0/Daily-Focus-Dashboard.zip", "where a dashboard is fetched")
+    let local = ["DAILY_FOCUS_APP_UPDATES": "http://127.0.0.1:9000/feed"]
+    equal(manifestURL(.stable, environment: local).absoluteString, "http://127.0.0.1:9000/feed/daily-focus/latest", "a local feed")
+    equal(downloadURL("0.2.0", environment: local).absoluteString, "http://127.0.0.1:9000/feed/v0.2.0/Daily-Focus-Dashboard.zip", "and its downloads")
+
+    // What this app can run.
+    for (range, node, fits) in [
+        (">=22.18", "v24.21.0", true), (">=22.18", "v22.18.0", true), (">=22.18", "v22.17.1", false),
+        (">=26", "v24.21.0", false), (" >= 24.1 ", "v24.1.0", true), ("^22.18", "v24.21.0", false), ("", "v24.21.0", true),
+    ] {
+        equal(nodeSatisfies(range, version: node), fits, "Node \(node) for \(range.debugDescription)")
+    }
+    let current = Manifest(version: "0.3.0", engines: .init(node: ">=22.18"), app: .init(appInterface: appInterface, appSource: "aaa"))
+    var demanding = current
+    demanding.app?.appInterface = appInterface + 1
+    var newNode = current
+    newNode.engines?.node = ">=99"
+    equal(appShortfall(current, nodeVersion: "v24.21.0"), nil, "a dashboard this app runs")
+    equal(appShortfall(demanding, nodeVersion: "v24.21.0"), "it needs a newer version of the app", "one that needs more of the app")
+    check(appShortfall(newNode, nodeVersion: "v24.21.0") != nil, "one that needs a newer Node")
+    equal(appShortfall(Manifest(version: "0.3.0"), nodeVersion: nil), nil, "one that asks for nothing")
+
+    // Which downloaded dashboard runs.
+    func downloaded(_ manifest: Manifest) -> (copy: DashboardCopy, manifest: Manifest) {
+        (DashboardCopy(version: manifest.version, entry: "/d/\(manifest.version)/cli.js", bundle: "/d/\(manifest.version)"), manifest)
+    }
+    var older = current
+    older.version = "0.1.0"
+    var newest = current
+    newest.version = "0.4.0-dev.2"
+    var unrunnable = demanding
+    unrunnable.version = "0.5.0"
+    let found = [downloaded(older), downloaded(newest), downloaded(current), downloaded(unrunnable)]
+    equal(dashboardCandidates(bundled: "0.2.0", downloaded: found, refused: [], nodeVersion: "v24.21.0").map(\.version),
+          ["0.4.0-dev.2", "0.3.0"], "newest first, none older than the app's own, none the app can't run")
+    equal(dashboardCandidates(bundled: "0.2.0", downloaded: found, refused: ["0.4.0-dev.2"], nodeVersion: "v24.21.0").map(\.version),
+          ["0.3.0"], "not one that failed to start")
+    equal(dashboardCandidates(bundled: "0.4.0", downloaded: found, refused: [], nodeVersion: "v24.21.0").map(\.version),
+          [], "a newer app's own copy beats every download")
+    var misnamed = downloaded(current)
+    misnamed.copy.version = "0.9.0"
+    equal(dashboardCandidates(bundled: "0.2.0", downloaded: [misnamed], refused: [], nodeVersion: nil).map(\.version),
+          [], "a folder that says another version than its package")
+
+    // What is offered.
+    equal(offer(latest: current, running: "0.2.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
+          Offer(dashboard: "0.3.0"), "a newer dashboard")
+    equal(offer(latest: current, running: "0.3.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
+          Offer(), "nothing newer")
+    equal(offer(latest: older, running: "0.2.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
+          Offer(), "nothing older, after a change of track")
+    equal(offer(latest: current, running: nil, appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
+          Offer(), "no dashboard for a checkout, or for one another process runs")
+    equal(offer(latest: demanding, running: "0.2.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
+          Offer(app: "0.3.0", appNeeded: true), "a dashboard that needs a newer app")
+    equal(offer(latest: current, running: "0.2.0", appVersion: "0.2.0", appSource: "bbb", nodeVersion: "v24.21.0"),
+          Offer(dashboard: "0.3.0", app: "0.3.0"), "a release whose app changed")
+    equal(offer(latest: current, running: "0.3.0", appVersion: "0.3.0", appSource: "bbb", nodeVersion: "v24.21.0"),
+          Offer(), "not this app's own release, whatever it says")
+    equal(offer(latest: current, running: "0.2.0", appVersion: "0.0.0-development", appSource: nil, nodeVersion: "v24.21.0"),
+          Offer(dashboard: "0.3.0"), "a checkout's build of the app is never told of a newer one")
+
+    // What the package says, as npm serves it.
+    let served = #"{"name":"daily-focus","version":"0.3.0","engines":{"node":">=22.18"},"daily-focus":{"appInterface":1,"appSource":"aaa"},"dist":{}}"#
+    equal(try? JSONDecoder().decode(Manifest.self, from: Data(served.utf8)), current, "manifest decodes")
+    equal(try? JSONDecoder().decode(Manifest.self, from: Data(#"{"version":"0.1.0"}"#.utf8)), Manifest(version: "0.1.0"),
+          "a manifest from before the app's fields")
+
+    check(!isBusy(base), "an idle dashboard")
+    var agentBusy = base
+    agentBusy.agent?.running = true
+    check(isBusy(agentBusy), "a dashboard from before busy, running the agent")
+    var assistantBusy = base
+    assistantBusy.busy = true
+    check(isBusy(assistantBusy), "a dashboard that says it is busy")
+    let current2 = try? JSONDecoder().decode(DashboardStatus.self, from: Data(#"{"version":"0.3.0","busy":true}"#.utf8))
+    equal(current2?.version, "0.3.0", "status says its version")
+    equal(current2?.busy, true, "and whether it is busy")
+    equal(noticeText(.dashboardAvailable(version: "0.3.0")).title, "Dashboard 0.3.0 is available", "update notice")
+
     print(failures == 0 ? "self-test passed: \(checks) checks" : "self-test failed: \(failures) of \(checks) checks")
     return failures == 0
 }

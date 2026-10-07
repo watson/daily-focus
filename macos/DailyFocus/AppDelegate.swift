@@ -7,6 +7,10 @@ import UserNotifications
 
 private let notifiedBriefKey = "notifiedBriefAt"
 private let notifiedFailureKey = "notifiedFailedRunId"
+private let notifiedDashboardKey = "notifiedDashboardUpdate"
+private let notifiedAppKey = "notifiedAppUpdate"
+/// Notifications about updates, which a click answers with the menu, where the update is.
+private let updateNotices: Set<String> = ["dashboard-update", "app-update", "dashboard-refused"]
 
 /// Runs `body` from the main run loop rather than from a block on the main
 /// dispatch queue, for anything that waits in a run loop of its own: an alert, or
@@ -29,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     private let dashboard = Dashboard()
+    private lazy var updater = Updater(environment: dashboard.environment, log: LogFile(url: logURL))
     private var statusItem: NSStatusItem?
     private let menu = NSMenu()
     private let statusLineItem = NSMenuItem()
@@ -41,6 +46,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let restartItem = NSMenuItem(title: "Restart Dashboard", action: nil, keyEquivalent: "")
     private let logItem = NSMenuItem(title: "Show Log", action: nil, keyEquivalent: "")
     private let quitItem = NSMenuItem(title: "Quit Daily Focus", action: nil, keyEquivalent: "q")
+    private let updateItem = NSMenuItem()
+    private let appUpdateItem = NSMenuItem()
+    private let updatesItem = NSMenuItem(title: "Updates", action: nil, keyEquivalent: "")
+    private let appVersionItem = NSMenuItem()
+    private let dashboardVersionItem = NSMenuItem()
+    private let checkedItem = NSMenuItem()
+    private let checkItem = NSMenuItem(title: "Check for Updates", action: nil, keyEquivalent: "")
+    private let stableItem = NSMenuItem(title: "Stable Releases", action: nil, keyEquivalent: "")
+    private let developmentItem = NSMenuItem(title: "Development Builds", action: nil, keyEquivalent: "")
 
     private var reading: Reading = .nothing
     private var readingFrom: URL?
@@ -48,6 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private var polling = false
     private var pollAgain = false
     private var pollTimer: DispatchSourceTimer?
+    private var updateTimer: DispatchSourceTimer?
+    /// The downloaded dashboard the app restarted the dashboard to run, until it runs.
+    private var restartingInto: String?
     private var signalSources: [DispatchSourceSignal] = []
     private var activity: NSObjectProtocol?
 
@@ -69,11 +86,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         dashboard.onChange = { [weak self] in self?.dashboardChanged() }
+        dashboard.onRefused = { [weak self] version in self?.dashboardRefused(version) }
+        updater.onChange = { [weak self] in self?.updaterChanged() }
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 30, repeating: 30)
         timer.setEventHandler { [weak self] in self?.poll() }
         timer.resume()
         pollTimer = timer
+        // A release a day at most, usually fewer: four looks a day find it the same day.
+        let updates = DispatchSource.makeTimerSource(queue: .main)
+        updates.schedule(deadline: .now() + 15, repeating: 6 * 60 * 60)
+        updates.setEventHandler { [weak self] in self?.updater.check() }
+        updates.resume()
+        updateTimer = updates
 
         refreshMenu()
         dashboard.start()
@@ -81,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         pollTimer?.cancel()
+        updateTimer?.cancel()
         guard dashboard.hasChild else {
             dashboard.stop {}
             return .terminateNow
@@ -119,7 +145,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         attachedItem.toolTip = "Something other than this app, such as daily-focus service or a terminal, runs the dashboard "
             + "on this port. To have the app run it, stop that one, then quit and reopen Daily Focus."
 
+        buildUpdatesMenu()
+
         for (menuItem, action) in [
+            (updateItem, #selector(installDashboard)),
+            (appUpdateItem, #selector(downloadApp)),
             (openItem, #selector(openDashboard)),
             (settingsItem, #selector(openSettings)),
             (briefItem, #selector(writeBrief)),
@@ -133,10 +163,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             menuItem.action = action
         }
 
-        for menuItem in [statusLineItem, attachedItem, openItem, settingsItem, briefItem, nodeItem, NSMenuItem.separator(),
-                         loginItem, restartItem, logItem, NSMenuItem.separator(), quitItem] {
+        for menuItem in [statusLineItem, attachedItem, updateItem, appUpdateItem, openItem, settingsItem, briefItem, nodeItem,
+                         NSMenuItem.separator(), loginItem, updatesItem, restartItem, logItem, NSMenuItem.separator(), quitItem] {
             menu.addItem(menuItem)
         }
+    }
+
+    /// Both versions, since the dashboard updates without the app, and which releases to offer.
+    private func buildUpdatesMenu() {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for item in [appVersionItem, dashboardVersionItem, checkedItem] { item.isEnabled = false }
+        for (menuItem, action) in [
+            (checkItem, #selector(checkForUpdates)),
+            (stableItem, #selector(chooseTrack(_:))),
+            (developmentItem, #selector(chooseTrack(_:))),
+        ] {
+            menuItem.target = self
+            menuItem.action = action
+        }
+        stableItem.toolTip = "Releases cut by hand, every so often."
+        developmentItem.toolTip = "A build of every change, as soon as it is merged. Newer, and less tried."
+        for item in [appVersionItem, dashboardVersionItem, checkedItem, checkItem, NSMenuItem.separator(), stableItem, developmentItem] {
+            submenu.addItem(item)
+        }
+        updatesItem.submenu = submenu
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -156,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         case .attached, .preparing, .stopping, .stopped: restartItem.isEnabled = false
         default: restartItem.isEnabled = true
         }
+        refreshUpdates()
         switch SMAppService.mainApp.status {
         case .enabled: loginItem.state = .on
         case .requiresApproval: loginItem.state = .mixed
@@ -239,6 +291,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
     }
 
+    @objc private func installDashboard() {
+        guard let version = currentOffer()?.dashboard else { return }
+        updater.install(version) { [weak self] problem in
+            guard let self else { return }
+            if let problem {
+                self.alert("Daily Focus couldn't install the update", problem)
+                return
+            }
+            // A fresh look at whether anything is running before the restart.
+            self.poll()
+        }
+    }
+
+    /// The release page, which holds the disk image: the app doesn't replace itself.
+    @objc private func downloadApp() {
+        guard let version = currentOffer()?.app else { return }
+        NSWorkspace.shared.open(releasesURL.appendingPathComponent("tag").appendingPathComponent("v\(version)"))
+    }
+
+    @objc private func checkForUpdates() {
+        updater.check { [weak self] problem in
+            guard let self else { return }
+            if let problem {
+                self.alert("Daily Focus couldn't check for updates", problem)
+                return
+            }
+            let offer = self.currentOffer()
+            if let version = offer?.dashboard {
+                self.confirm("Dashboard \(version) is available",
+                             "Installing it restarts the dashboard, once the morning agent and the assistant aren't busy.",
+                             button: "Install") { self.installDashboard() }
+            } else if let version = offer?.app {
+                self.confirm("Daily Focus \(version) is available", noticeText(.appAvailable(version: version, needed: offer?.appNeeded ?? false)).body,
+                             button: "Download") { self.downloadApp() }
+            } else {
+                let newest = self.updater.latest?.version ?? "the one running"
+                self.alert("Daily Focus is up to date", "The newest on \(self.trackName(self.updater.track)) is \(newest).")
+            }
+        }
+    }
+
+    @objc private func chooseTrack(_ sender: NSMenuItem) {
+        updater.track = sender === developmentItem ? .development : .stable
+    }
+
     @objc private func downloadNode() {
         NSWorkspace.shared.open(URL(string: "https://nodejs.org")!)
     }
@@ -271,6 +368,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         NSApp.terminate(nil)
     }
 
+    /// An alert with a button that does something, and one that doesn't.
+    private func confirm(_ title: String, _ text: String, button: String, then action: @escaping () -> Void) {
+        fromRunLoop {
+            if #available(macOS 14.0, *) {
+                NSApp.activate()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = text
+            alert.addButton(withTitle: button)
+            alert.addButton(withTitle: "Not Now")
+            if alert.runModal() == .alertFirstButtonReturn { action() }
+        }
+    }
+
     private func alert(_ title: String, _ text: String) {
         fromRunLoop {
             // A menu bar app is never the active one, and an alert behind other windows goes unseen.
@@ -293,8 +407,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             reading = .nothing
             readingFrom = dashboard.url
         }
+        if case .running = dashboard.state, let copy = dashboard.copy {
+            updater.started(copy)
+            if let target = restartingInto {
+                restartingInto = nil
+                if copy.version != target {
+                    updater.gaveUp(on: target)
+                    alert("Dashboard \(target) didn't start",
+                          "Daily Focus is running dashboard \(copy.version ?? "") instead. Show Log says why.")
+                }
+            }
+        }
         refreshMenu()
         poll()
+        announceOffer()
     }
 
     private func poll() {
@@ -325,6 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             reading = result
             if case .status(let status) = result { tell(about: status) }
             refreshMenu()
+            applyUpdate()
         }
         if pollAgain {
             pollAgain = false
@@ -357,6 +484,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         switch notice {
         case .briefReady: identifier = "brief-ready"
         case .agentFailed: identifier = "agent-failed"
+        case .dashboardAvailable: identifier = "dashboard-update"
+        case .appAvailable: identifier = "app-update"
+        case .dashboardRefused: identifier = "dashboard-refused"
         }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
@@ -364,8 +494,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
+        let identifier = response.notification.request.identifier
         DispatchQueue.main.async {
-            self.openDashboard()
+            if updateNotices.contains(identifier) {
+                self.statusItem?.button?.performClick(nil)
+            } else {
+                self.openDashboard()
+            }
             completionHandler()
         }
     }
@@ -374,5 +509,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
                                             willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .list, .sound])
+    }
+
+    // MARK: Updates
+
+    /// What the newest release on the track holds for this app, once a check has found it.
+    private func currentOffer() -> Offer? {
+        guard let latest = updater.latest else { return nil }
+        // A dashboard run by another process is that process's to update.
+        let running = dashboard.isAttached ? nil : dashboard.copy?.version
+        return offer(latest: latest, running: running, appVersion: updater.appVersion,
+                     appSource: updater.appSource, nodeVersion: dashboard.nodeVersion)
+    }
+
+    private func trackName(_ track: Track) -> String {
+        track == .stable ? "stable releases" : "development builds"
+    }
+
+    private func refreshUpdates() {
+        let offer = currentOffer()
+        updateItem.isHidden = false
+        updateItem.isEnabled = false
+        switch updater.phase {
+        case .downloading(let version):
+            updateItem.title = "Downloading Dashboard \(version)…"
+        case .ready(let version):
+            var busyWith: String?
+            if case .status(let status) = reading, isBusy(status) {
+                busyWith = status.agent?.running == true ? "the morning agent" : "the assistant"
+            }
+            updateItem.title = busyWith.map { "Dashboard \(version) installs once \($0) is done" } ?? "Installing Dashboard \(version)…"
+        case .idle:
+            if let version = offer?.dashboard {
+                updateItem.title = "Install Dashboard \(version)"
+                updateItem.isEnabled = true
+            } else {
+                updateItem.isHidden = true
+            }
+        }
+        appUpdateItem.isHidden = offer?.app == nil
+        if let version = offer?.app {
+            appUpdateItem.title = "Download Daily Focus \(version)…"
+            appUpdateItem.toolTip = noticeText(.appAvailable(version: version, needed: offer?.appNeeded ?? false)).body
+        }
+
+        appVersionItem.title = "App \(updater.appVersion)"
+        dashboardVersionItem.title = dashboardVersionLine()
+        checkedItem.toolTip = nil
+        if updater.checking {
+            checkedItem.title = "Checking for updates…"
+        } else if let error = updater.checkError {
+            checkedItem.title = "Couldn't check for updates"
+            checkedItem.toolTip = error
+        } else if let latest = updater.latest, let at = updater.checkedAt {
+            checkedItem.title = "Newest is \(latest.version), checked \(ago(at, now: Date()))"
+        } else {
+            checkedItem.title = "Not checked yet"
+        }
+        checkItem.isEnabled = !updater.checking
+        stableItem.state = updater.track == .stable ? .on : .off
+        developmentItem.state = updater.track == .development ? .on : .off
+    }
+
+    private func dashboardVersionLine() -> String {
+        if dashboard.isAttached {
+            guard case .status(let status) = reading, let version = status.version else { return "Dashboard run by another process" }
+            return "Dashboard \(version), run by another process"
+        }
+        guard let copy = dashboard.copy else { return "Dashboard starting…" }
+        guard let version = copy.version else { return "Dashboard from a checkout" }
+        return version.isEmpty ? "Dashboard of unknown version" : "Dashboard \(version)"
+    }
+
+    private func updaterChanged() {
+        refreshMenu()
+        announceOffer()
+    }
+
+    /// A notification for each new version found, once.
+    private func announceOffer() {
+        guard let offer = currentOffer() else { return }
+        let defaults = UserDefaults.standard
+        if let version = offer.dashboard, updater.phase == .idle, defaults.string(forKey: notifiedDashboardKey) != version {
+            defaults.set(version, forKey: notifiedDashboardKey)
+            post(.dashboardAvailable(version: version))
+        }
+        if let version = offer.app, defaults.string(forKey: notifiedAppKey) != version {
+            defaults.set(version, forKey: notifiedAppKey)
+            post(.appAvailable(version: version, needed: offer.appNeeded))
+        }
+    }
+
+    /// Restarts the dashboard into a downloaded update, on a fresh answer that says
+    /// nothing in it is busy. Anything else that restarts it starts the update too.
+    private func applyUpdate() {
+        guard case .ready(let version) = updater.phase, restartingInto == nil, case .running = dashboard.state else { return }
+        if dashboard.copy?.version == version {
+            updater.started(dashboard.copy!)
+            return
+        }
+        if case .status(let status) = reading, isBusy(status) { return }
+        if case .nothing = reading { return }
+        restartingInto = version
+        dashboard.restart()
+    }
+
+    private func dashboardRefused(_ version: String) {
+        updater.gaveUp(on: version)
+        if restartingInto == version { restartingInto = nil }
+        post(.dashboardRefused(version: version))
     }
 }

@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { command, ranDirectly } from '../src/install.ts';
+import { appCalendarApp, command, ranDirectly } from '../src/install.ts';
 
 const run = promisify(execFile);
 const cli = resolve(import.meta.dirname, '../src/cli.ts');
@@ -93,4 +93,17 @@ test('a flag that belongs to another command is refused, not dropped', async () 
       return true;
     });
   }
+});
+
+test("the Mac app's calendar helper is found beside its Node, wherever the dashboard came from", () => {
+  const app = '/Applications/Daily Focus.app';
+  const helper = `${app}/Contents/Helpers/Daily Focus Calendar.app`;
+  const node = `${app}/Contents/Helpers/node`;
+  const update = '/Users/x/Library/Application Support/Daily Focus/Dashboards/0.2.0/Daily Focus Dashboard.bundle/Contents/Resources/server';
+  assert.equal(appCalendarApp(node, `${app}/Contents/Resources/server`), helper, 'the copy inside the app');
+  assert.equal(appCalendarApp(node, update), helper, 'an update the app downloaded');
+  assert.equal(appCalendarApp(node, '/Users/x/code/daily-focus'), helper, 'a checkout the app was pointed at');
+  assert.equal(appCalendarApp('/opt/homebrew/bin/node', `${app}/Contents/Resources/server`), helper, "the app's copy on another Node");
+  assert.equal(appCalendarApp('/opt/homebrew/bin/node', '/Users/x/code/daily-focus'), null, 'no app at all');
+  assert.equal(appCalendarApp('/opt/homebrew/bin/node', update), null, 'an update run by hand, outside the app');
 });
