@@ -30,7 +30,7 @@ test('engines.node is a range the app can read, and the Node it carries satisfie
   const range = /^>=\s*(\d+(?:\.\d+){0,2})$/.exec(pkg.engines.node.trim());
   assert.ok(range, `the app reads only ">=X.Y" ranges, and engines.node is "${pkg.engines.node}"`);
   const need = range[1]!.split('.').map(Number);
-  const carried = (await readFile(resolve(root, 'macos/node-version'), 'utf8')).trim().split('.').map(Number);
+  const carried = (await readFile(resolve(root, 'node-version'), 'utf8')).trim().split('.').map(Number);
   const places = Math.max(need.length, carried.length);
   const pad = (numbers: number[]) => [...numbers, ...Array<number>(places - numbers.length).fill(0)];
   const [have, want] = [pad(carried), pad(need)];

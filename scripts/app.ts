@@ -11,12 +11,10 @@
  */
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
 
-const run = promisify(execFile);
+import { packServer } from './pack.ts';
+
 const root = resolve(import.meta.dirname, '..');
 
 if (process.platform !== 'darwin') {
@@ -24,15 +22,9 @@ if (process.platform !== 'darwin') {
   process.exit(1);
 }
 
-const work = await mkdtemp(join(tmpdir(), 'daily-focus-app-'));
+const packed = await packServer();
 try {
-  // prepack builds the page and the bundle, as it does for a publish.
-  await run('npm', ['pack', '--pack-destination', work], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
-  const tarball = (await readdir(work)).find((name) => name.endsWith('.tgz'));
-  if (!tarball) throw new Error('npm pack wrote no tarball');
-  await run('tar', ['-xzf', join(work, tarball), '-C', work]);
-  // `package/` is the directory npm unpacks into, so it is the package as installed.
-  const build = execFile('/bin/sh', [join(root, 'macos', 'build.sh'), '--server', join(work, 'package'), ...process.argv.slice(2)], {
+  const build = execFile('/bin/sh', [join(root, 'macos', 'build.sh'), '--server', packed.dir, ...process.argv.slice(2)], {
     cwd: root,
   });
   build.stdout?.pipe(process.stdout);
@@ -40,5 +32,5 @@ try {
   const code = await new Promise<number | null>((done) => build.on('exit', done));
   process.exitCode = code ?? 1;
 } finally {
-  await rm(work, { recursive: true, force: true });
+  await packed.done();
 }

@@ -14,7 +14,8 @@ account. GitHub and Jira boards refresh throughout the day.
 
 ## Try it
 
-You'll need Node.js 22.18 or newer. Node 24 is recommended.
+You'll need Node.js 22.18 or newer; Node 24 is recommended. The Mac app and the
+Linux and Windows executables below carry their own.
 
 ```sh
 npx daily-focus --demo
@@ -50,6 +51,10 @@ shows the brief's age at a glance, and tells you when a new brief arrives. It ca
 everything it needs, Node.js included, and installs a newer dashboard from its menu
 without a new download of the app. See
 [SETUP.md](SETUP.md#keep-the-dashboard-running).
+
+On Linux and Windows, each release also has an executable with Node.js inside, so
+there is nothing to install first: unpack it and run `daily-focus`. See
+[SETUP.md](SETUP.md#without-nodejs-on-linux-or-windows).
 
 [SETUP.md](SETUP.md) covers each step, the integrations and every setting. The
 dashboard runs locally; nothing about your day leaves your machine except through

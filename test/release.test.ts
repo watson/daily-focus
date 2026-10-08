@@ -81,6 +81,7 @@ test('release notes put breaking changes first and leave housekeeping out', () =
   assert.match(notes, /\* the store moves to ~\/\.focus\. \(\[4444444\]\(https:\/\/github\.com\/example\/focus\/commit\/4{40}\)\)/);
   assert.match(notes, /\* \*\*board:\*\* show draft pull requests \(#5\)/);
   assert.doesNotMatch(notes, /esbuild/);
+  assert.match(notes, /Daily-Focus\.dmg[^\n]*daily-focus-linux-x64\.tar\.gz[^\n]*daily-focus-win-arm64\.zip[^\n]*npx daily-focus@0\.2\.0/, 'every download is offered');
 
   const quiet = renderNotes({ version: '0.2.1', previous: '0.2.0', date: '2026-10-07', repository: 'https://github.com/example/focus', commits: [commits[1]!] });
   assert.match(quiet, /No user-facing changes\./);
