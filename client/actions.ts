@@ -789,11 +789,14 @@ export const handlers: Handlers = {
   onAction: (id, action, extra) => void applyAction(id, action, extra),
   // A click on a card: the cursor goes to it, and the panel opens on it — or
   // closes, if it was already open on this one. The card is the one way in with
-  // a mouse; `n` and `a` are the ways in from the keyboard.
+  // a mouse; `n` and `a` are the ways in from the keyboard. A cursor the click
+  // brought leaves with the panel, however that is closed.
   onSelect: (id) =>
     batch(() => {
+      const opening = ui.detailFor.value !== id;
       ui.selectedId.value = id;
-      setDetailFor(ui, ui.detailFor.value === id ? null : id);
+      setDetailFor(ui, opening ? id : null);
+      if (opening) ui.clickedId.value = id;
       ui.focusField.value = null;
       closeMenus();
     }),
@@ -842,6 +845,7 @@ export const handlers: Handlers = {
   jumpToTicket: (id) => {
     setTicketMode('sync');
     ui.selectedId.value = id;
+    ui.clickedId.value = null;
     afterRender(() =>
       document.querySelector('#tickets .item[data-selected="true"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
     );

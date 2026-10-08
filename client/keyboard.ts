@@ -25,6 +25,8 @@ function moveSelection(delta: number): void {
   const current = ids.indexOf(ui.selectedId.value ?? '');
   const next = current === -1 ? (delta > 0 ? 0 : ids.length - 1) : current + delta;
   ui.selectedId.value = ids[Math.max(0, Math.min(ids.length - 1, next))] ?? null;
+  // The keyboard has the cursor now, and closing the panel leaves it be.
+  ui.clickedId.value = null;
   // Scoped to the showing view: the same id can be a row in both lists, and the
   // hidden one comes first in the document.
   afterRender(() =>
