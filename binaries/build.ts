@@ -173,7 +173,8 @@ async function build(server: string, targets: readonly Target[]): Promise<Map<Ta
     await rm(archive, { force: true });
     const names = [basename(binary), 'LICENSE', 'LICENSE-node'];
     if (windows) await run('zip', ['-q', '-j', '-X', archive, ...names.map((name) => join(stage, name))]);
-    else await run('tar', ['-czf', archive, '-C', stage, ...names], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
+    // Without the attributes a Mac puts on files, which GNU tar would warn about on every extract.
+    else await run('tar', ['--no-xattrs', '-czf', archive, '-C', stage, ...names], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
     console.log(`built ${archive}`);
     built.set(target, { binary, archive });
   }
