@@ -58,6 +58,12 @@ export interface Toast {
 export interface UiState {
   /** The row the keyboard cursor is on. */
   selectedId: Signal<string | null>;
+  /**
+   * The row a click on its card put the cursor on, opening the panel there.
+   * The cursor goes when the panel leaves that row: a mouse never asked for it,
+   * and left behind it is a stray border. One the keyboard put there stays.
+   */
+  clickedId: Signal<string | null>;
   /** Rows with an action in flight, shown as pending until the server answers. */
   pending: Signal<ReadonlySet<string>>;
   /** Which row has its snooze or park menu open: on its card, or under `PANEL_PREFIX` in the panel. */

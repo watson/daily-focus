@@ -57,6 +57,7 @@ export const state = signal<DashboardState | null>(null);
 export function createUi(initial: Partial<UiValues> = {}): UiState {
   return {
     selectedId: signal(initial.selectedId ?? null),
+    clickedId: signal(initial.clickedId ?? null),
     pending: signal(initial.pending ?? new Set<string>()),
     menuFor: signal(initial.menuFor ?? null),
     statusFor: signal(initial.statusFor ?? null),
@@ -114,13 +115,17 @@ export const ui: UiState = createUi(remembered());
  *
  * The drafts belong to the row they were typed for, so moving the panel to
  * another row is what drops them. A state push never does: the fields keep
- * their element, and the element keeps its text.
+ * their element, and the element keeps its text. The cursor a click brought
+ * with the panel goes with it too.
  */
 export function setDetailFor(target: UiState, id: string | null): void {
   batch(() => {
     if (target.detailFor.value !== id) {
       target.noteDraft.value = '';
       target.assistantDraft.value = '';
+      const clicked = target.clickedId.value;
+      if (clicked !== null && target.selectedId.value === clicked) target.selectedId.value = null;
+      target.clickedId.value = null;
     }
     target.detailFor.value = id;
   });

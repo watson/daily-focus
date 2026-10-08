@@ -17,7 +17,7 @@ import { h } from 'preact';
 import { buttonLabels, byClass, byTag, handlersWith, mountOne, settle, uiWith } from './dom.ts';
 import { Flyout } from '../client/flyout.ts';
 import { renderItem } from '../client/items.ts';
-import { state } from '../client/state.ts';
+import { setDetailFor, state } from '../client/state.ts';
 import type { DetailRow } from '../client/state.ts';
 import type { UiValues } from '../client/types.ts';
 import { resolveBoard } from '../src/prs.ts';
@@ -191,4 +191,27 @@ test('a row is marked as the one the panel is open on', () => {
   assert.equal(on.dataset.detail, 'true');
   const off = mountOne(renderItem(item(), STATE, uiWith({ detailFor: 'other' }), HANDLERS));
   assert.equal(off.dataset.detail, 'false');
+});
+
+test('the cursor a click brought leaves with the panel; one the keyboard put there stays', () => {
+  // Opened by a click on the card: closing takes the border off the row too.
+  const clicked = uiWith({ selectedId: 'email:thread:1', clickedId: 'email:thread:1', detailFor: 'email:thread:1' });
+  setDetailFor(clicked, null);
+  assert.equal(clicked.selectedId.value, null);
+  assert.equal(clicked.clickedId.value, null);
+
+  // Opened from the keyboard: the cursor is where the user left it.
+  const keyed = uiWith({ selectedId: 'email:thread:1', detailFor: 'email:thread:1' });
+  setDetailFor(keyed, null);
+  assert.equal(keyed.selectedId.value, 'email:thread:1');
+
+  // Clicked open, then the keyboard moved on: the cursor it moved is its own.
+  const moved = uiWith({ selectedId: 'email:thread:2', clickedId: 'email:thread:1', detailFor: 'email:thread:1' });
+  setDetailFor(moved, null);
+  assert.equal(moved.selectedId.value, 'email:thread:2');
+
+  // A state push on the same row closes nothing.
+  const same = uiWith({ selectedId: 'email:thread:1', clickedId: 'email:thread:1', detailFor: 'email:thread:1' });
+  setDetailFor(same, 'email:thread:1');
+  assert.equal(same.selectedId.value, 'email:thread:1');
 });
