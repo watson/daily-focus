@@ -1,17 +1,20 @@
 name: Release
 
 # Every push to main is a development build: a GitHub prerelease holding the
-# disk image, the dashboard on its own and the release notes, and the same
-# version on npm under the `dev` tag. A stable release is cut from main by hand, with Run workflow, and goes to
-# npm's `latest`. Only a stable release's disk image is notarised: that is a wait
-# on Apple's queue, anything from seconds to most of an hour, and a development
-# build is signed but ready in minutes. Versions and notes come from the Conventional
-# Commits since the last release: see scripts/release.ts.
+# disk image, the dashboard on its own, the Linux and Windows executables and the
+# release notes, and the same version on npm under the `dev` tag. A stable release
+# is cut from main by hand, with Run workflow, and goes to npm's `latest`. Only a
+# stable release's disk image is notarised: that is a wait on Apple's queue,
+# anything from seconds to most of an hour, and a development build is signed but
+# ready in minutes. Versions and notes come from the Conventional Commits since
+# the last release: see scripts/release.ts.
 #
-# Two jobs, so that what can publish never runs a dependency. `build` installs
-# packages, tests, packs and signs, and can't publish. `publish` can, through
-# npm's trusted publishing, which lets this workflow publish without 2FA, and it
-# runs nothing but npm and gh on what `build` handed it.
+# Three jobs, so that what can publish never runs a dependency. `build` installs
+# packages, tests, packs and signs, and can't publish. `binaries` makes the Linux
+# and Windows executables around the package `build` packed, and can't either.
+# `publish` can, through npm's trusted publishing, which lets this workflow
+# publish without 2FA, and it runs nothing but npm and gh on what the other two
+# handed it.
 on:
   push:
     branches: [main]
@@ -113,7 +116,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: macos/build/node-v*
-          key: app-node-${{ hashFiles('macos/node-version') }}
+          key: app-node-${{ hashFiles('node-version') }}
 
       # A keychain of the run's own, first in the search list and the default, so
       # that macos/build.sh finds the certificate and the notary profile without
@@ -179,15 +182,67 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  # The Linux and Windows executables, around the package `build` packed: the
+  # official Node.js for each, with the package and a loader injected, which asks
+  # nothing of the platform it is for, so one Linux runner makes all four (see
+  # binaries/build.ts). The one for this runner is run before any is handed on.
+  binaries:
     needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch the package the build job packed
+        uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+
+      - name: Unpack it as npm would
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/server"
+          tar -xzf "release/daily-focus-$VERSION.tgz" -C "$RUNNER_TEMP/server"
+
+      - name: Cache the Node.js the executables carry
+        uses: actions/cache@v6
+        with:
+          path: binaries/build/node-v*
+          key: binaries-node-${{ hashFiles('node-version') }}
+
+      - name: Build the executables and run the Linux one
+        run: node binaries/build.ts --server "$RUNNER_TEMP/server/package" --test
+
+      - name: Hand the executables to the publish job
+        uses: actions/upload-artifact@v7
+        with:
+          name: binaries
+          path: binaries/build/daily-focus-*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [build, binaries]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write # the tag and the GitHub release
       id-token: write # npm's trusted publishing
 
-    # No checkout and no install: npm, gh and the files the build made.
+    # No checkout and no install: npm, gh and the files the other jobs made.
     steps:
       # A development build that main moved past while it was building is left
       # unpublished: the newer push's run publishes its own. GitHub would also
@@ -213,6 +268,13 @@ jobs:
           name: release
           path: release
 
+      - name: Fetch the executables
+        if: steps.current.outputs.superseded != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: binaries
+          path: binaries
+
       # First, so that a tag GitHub refuses leaves nothing on npm without its
       # notes. A rerun finds the release made and only refreshes it.
       - name: Make the GitHub release
@@ -224,7 +286,9 @@ jobs:
           CHANNEL: ${{ needs.build.outputs.channel }}
         run: |
           tag="v$VERSION"
-          assets="release/Daily-Focus.dmg release/Daily-Focus-Dashboard.zip"
+          assets="release/Daily-Focus.dmg release/Daily-Focus-Dashboard.zip
+            binaries/daily-focus-linux-x64.tar.gz binaries/daily-focus-linux-arm64.tar.gz
+            binaries/daily-focus-win-x64.zip binaries/daily-focus-win-arm64.zip"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release edit "$tag" --notes-file release/notes.md
             gh release upload "$tag" $assets --clobber

@@ -92,6 +92,7 @@ versions and release notes come from, so CI checks it.
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
 | `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
+| `binaries/` | The Linux and Windows executables: the loader Node runs from inside one, and the build that makes them; `npm run binaries -- --test` builds them and runs this machine's |
 | `prompts/` | The briefing agent's instructions |
 | `apps-script/` | Optional Google Tasks export |
 
@@ -198,9 +199,10 @@ npm run app -- --test
 ```
 
 That packs the npm package and puts exactly what it ships inside the app. It adds
-the calendar helper, and Node.js at the version in `macos/node-version`: the official
+the calendar helper, and Node.js at the version in `node-version`: the official
 Apple silicon release, checked against nodejs.org's checksums and cached in
-`macos/build/`. The app is Apple silicon only, throughout. To move to a newer Node, change that file. It draws the icon and
+`macos/build/`. The app is Apple silicon only, throughout. To move to a newer Node,
+change that file; the Linux and Windows executables carry the same one. It draws the icon and
 the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
 app's self-test, and makes `Daily-Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
 which needs Python 3.10 or newer.
@@ -239,12 +241,41 @@ there instead, as `<url>/daily-focus/<tag>` and
 server. A build without a Developer ID or Apple Development signature can't check
 a download, so it only runs the dashboard it carries.
 
+## The Linux and Windows executables
+
+`binaries/` makes an executable for Linux and for Windows, on x64 and arm64, that
+runs the dashboard without a Node.js install: the official Node.js binary for that
+platform with the npm package and a loader, `binaries/main.ts`, injected as a
+[single executable application](https://nodejs.org/api/single-executable-applications.html).
+Node runs the loader; the loader unpacks the package into the user's data
+directory the first time that build runs, under its version and a hash of its
+contents, and starts the package's own `dist/cli.js` from there. So the executable
+runs exactly what `npx daily-focus` would, and the store's links to the prompt and
+schema have real files to point at. There is no tray app: the executable is the
+CLI, and `daily-focus service` stays macOS-only.
+
+```sh
+npm run binaries -- --test
+```
+
+That packs the package, as `npm run app` does, makes the blob with the pinned
+Node.js for this machine, since Node wants the blob made by the version that
+receives it, injects it into each platform's Node.js with postject, and archives
+each with its licences: `daily-focus-<target>.tar.gz` for Linux and `.zip` for
+Windows, in `binaries/build/`. The Node.js downloads are checked against
+nodejs.org's checksums and cached there too. `--test` runs this machine's
+executable, which on a Mac means building `darwin-arm64` as well, never released:
+`--version`, then the demo until it answers from the unpacked files. `--target`
+picks targets, and `--check FILE` runs only those checks on an executable built
+elsewhere, which is how CI runs the Windows one on a Windows runner. The
+executables carry no signature: Windows asks before running one, Linux doesn't.
+
 ## Releases
 
 `.github/workflows/release.yml` makes every release, from main, and main only
 moves by pull request. Each one is a tag, a GitHub release holding the release
-notes, `Daily-Focus.dmg` and `Daily-Focus-Dashboard.zip`, both signed, and the
-same version on npm. The package it publishes carries `daily-focus.appSource`, the
+notes, `Daily-Focus.dmg` and `Daily-Focus-Dashboard.zip`, both signed, the four
+Linux and Windows executables, and the same version on npm. The package it publishes carries `daily-focus.appSource`, the
 last commit to change the app (`macos/` and `tools/dfcal/`), stamped at build time
 and never committed. The app offers a newer release's disk image only when that
 differs from its own, since otherwise only the dashboard changed:
@@ -279,9 +310,10 @@ its trusted publisher, with **Allow npm publish** ticked so a build goes out
 without waiting for a 2FA approval, and **Allow npm dist-tag** left off: the tag
 is set as part of the publish. Since that lets the workflow publish unattended,
 the job that can is kept apart from everything that runs a dependency. `build`
-installs, tests, packs and signs on macOS; `publish` has no checkout and no
-`node_modules`, and only publishes the tarball and attaches the disk image
-`build` handed it. The signing certificate likewise goes into the keychain only
+installs, tests, packs and signs on macOS; `binaries` makes the Linux and Windows
+executables around the package `build` packed, on Linux; `publish` has no checkout
+and no `node_modules`, and only publishes the tarball and attaches what the other
+two handed it. The signing certificate likewise goes into the keychain only
 after the last npm package has run.
 
 Signing needs the first two of these repository secrets, and notarising, for a

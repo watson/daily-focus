@@ -2,9 +2,9 @@
 
 [Back to the README](README.md)
 
-Daily Focus needs Node.js 22.18 or newer; Node 24 is recommended. The Mac app is
-the exception: it carries its own. GitHub, Jira,
-and the live macOS calendar are optional. The morning brief is written by an agent
+Daily Focus needs Node.js 22.18 or newer; Node 24 is recommended. The Mac app and
+the Linux and Windows executables are the exception: they carry their own. GitHub,
+Jira, and the live macOS calendar are optional. The morning brief is written by an agent
 the dashboard runs for you through a coding-agent CLI.
 
 ## Start the dashboard
@@ -52,6 +52,34 @@ terminal open while you use the dashboard. `daily-focus --help` lists the rest.
 
 If you'd rather write the files by hand, `daily-focus init` creates the store with
 templates for both. It preserves existing files, so you can safely run it again.
+
+### Without Node.js, on Linux or Windows
+
+Each release also has an executable for Linux and for Windows that carries the
+Node.js it needs, so there is nothing to install first. Download the one for your
+machine from the [latest release](https://github.com/watson/daily-focus/releases/latest):
+
+| File | For |
+|---|---|
+| `daily-focus-linux-x64.tar.gz` | Linux on x86-64, with glibc 2.28 or newer: Debian 10, Ubuntu 20.04, RHEL 8 and later |
+| `daily-focus-linux-arm64.tar.gz` | Linux on 64-bit Arm, such as a Raspberry Pi 4 or 5 running a 64-bit system |
+| `daily-focus-win-x64.zip` | Windows 10 or newer on x86-64 |
+| `daily-focus-win-arm64.zip` | Windows 11 on Arm |
+
+Unpack it and run `daily-focus` from it. Everything on this page applies, with the
+same commands. The executable is the official Node.js with the dashboard inside it.
+The first time a release runs, it unpacks the dashboard into
+`~/.local/share/daily-focus/dashboards/` on Linux, or
+`%LOCALAPPDATA%\daily-focus\dashboards\` on Windows, which is what the store's
+`prompt.md` and schema link to; older releases stay there until you delete them.
+
+Windows asks before running a downloaded program it doesn't know: choose **More
+info**, then **Run anyway**. The store's links are symbolic links, which Windows
+lets an ordinary user make only with Developer Mode on (Settings → System → For
+developers); without it the dashboard says which links it couldn't make, and you
+can copy the files into the store by hand. The live calendar and idle detection
+are macOS-only, and so is `daily-focus service`: to keep the dashboard running
+elsewhere, see [Keep the dashboard running](#on-linux-or-windows).
 
 ## Set your objective and sources
 
@@ -384,6 +412,34 @@ named after the store if you use another one. To stop the service and uninstall 
 ```sh
 daily-focus service --remove
 ```
+
+### On Linux or Windows
+
+`daily-focus service` is macOS-only. On Linux, a systemd user service does the
+same: it starts the dashboard at login, and again if it stops. Put the executable
+somewhere on your `PATH`, such as `~/.local/bin`, and write
+`~/.config/systemd/user/daily-focus.service`:
+
+```ini
+[Unit]
+Description=Daily Focus
+
+[Service]
+ExecStart=%h/.local/bin/daily-focus --no-open
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+Then `systemctl --user enable --now daily-focus`; `journalctl --user -u
+daily-focus` shows its output. The dashboard asks your login shell for its `PATH`
+when it starts, so it finds `gh`, `acli` and your agent's CLI the way a terminal
+does. For a machine nobody logs in to, `loginctl enable-linger` keeps the service
+running without a session.
+
+On Windows, run `daily-focus` in a terminal and keep it open, or have Task
+Scheduler run `daily-focus.exe --no-open` when you log on.
 
 ## A personal instance
 
