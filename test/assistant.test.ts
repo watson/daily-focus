@@ -21,7 +21,7 @@ import {
   foldAssistantLog,
   QUICK_ACTIONS,
 } from '../src/assistant.ts';
-import { loadConfig, type Config } from '../src/config.ts';
+import { briefWritingTools, DEFAULT_AGENT_TOOLS, DEFAULT_ASSISTANT_TOOLS, loadConfig, type Config } from '../src/config.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -233,6 +233,21 @@ test('the Claude adapter reads what Claude Code prints', () => {
   const bare = claudeAdapter.args({ prompt: 'p', sessionId: 'abc', model: null, effort: null, tools: [], denyEdits: true });
   assert.ok(!bare.includes('--model') && !bare.includes('--effort') && !bare.includes('--allowedTools'));
   assert.ok(bare.includes('--resume') && bare[bare.indexOf('--resume') + 1] === 'abc');
+});
+
+test('Claude receives the first prompt separately from the default tool permissions', () => {
+  for (const denyEdits of [false, true]) {
+    const tools = denyEdits ? DEFAULT_ASSISTANT_TOOLS : [...briefWritingTools(), ...DEFAULT_AGENT_TOOLS];
+    const prompt = 'Reply with just: ok';
+    const args = claudeAdapter.args({ prompt, sessionId: null, model: null, effort: null, tools, denyEdits });
+    const allowedTools = args.indexOf('--allowedTools');
+    const separator = args.indexOf('--');
+
+    // Claude's variadic --allowedTools otherwise consumes the prompt as a tool name.
+    assert.ok(separator > allowedTools, 'the tool list must end before the prompt');
+    assert.deepEqual(args.slice(allowedTools + 1, separator), tools);
+    assert.deepEqual(args.slice(separator + 1), [prompt]);
+  }
 });
 
 test('the Codex adapter reads what Codex prints', () => {
