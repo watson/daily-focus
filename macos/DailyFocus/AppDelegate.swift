@@ -566,7 +566,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         } else {
             checkedItem.title = "Not checked yet"
         }
-        checkItem.isEnabled = !updater.checking
+        // Beside the newest version, the button offers what the top of the menu does: a
+        // check would only find the same update again. With nothing found, it checks.
+        if !updateItem.isHidden {
+            checkItem.title = updateItem.title
+            checkItem.action = #selector(installDashboard)
+            checkItem.isEnabled = updateItem.isEnabled
+            checkItem.toolTip = nil
+        } else if !appUpdateItem.isHidden {
+            checkItem.title = appUpdateItem.title
+            checkItem.action = #selector(downloadApp)
+            checkItem.isEnabled = true
+            checkItem.toolTip = appUpdateItem.toolTip
+        } else {
+            checkItem.title = "Check for Updates"
+            checkItem.action = #selector(checkForUpdates)
+            checkItem.isEnabled = !updater.checking
+            checkItem.toolTip = nil
+        }
         stableItem.state = updater.track == .stable ? .on : .off
         developmentItem.state = updater.track == .development ? .on : .off
     }
