@@ -34,6 +34,7 @@ struct DashboardStatus: Decodable, Equatable {
     var version: String?
     var dataDir: String?
     var profile: String?
+    var timeZone: String?
     var setupNeeded: Bool?
     var restartPending: Bool?
     /// Whether the morning agent or the assistant is at work, which a restart would stop.
@@ -41,6 +42,21 @@ struct DashboardStatus: Decodable, Equatable {
     var brief: Brief?
     var agent: Agent?
     var waitingOnYou: Int?
+}
+
+/// A choice is specific to these two zones. Keeping one must not nag on every
+/// poll, but a later move (or a different dashboard zone) is a new choice.
+struct TimeZoneChange: Equatable {
+    var dashboard: String
+    var system: String
+    var key: String { "\(dashboard)\n\(system)" }
+}
+
+func timeZoneChange(dashboard: String?, system: String, acknowledged: String?) -> TimeZoneChange? {
+    guard let dashboard, dashboard != system,
+          TimeZone(identifier: dashboard) != nil, TimeZone(identifier: system) != nil else { return nil }
+    let change = TimeZoneChange(dashboard: dashboard, system: system)
+    return change.key == acknowledged ? nil : change
 }
 
 /// An ISO 8601 time as the server writes it, with or without milliseconds.
@@ -100,6 +116,8 @@ func whenText(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> St
 
 /// The line at the top of the menu, for a dashboard that answered `/api/status`.
 func statusLine(_ status: DashboardStatus, now: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+    var calendar = calendar
+    if let zone = status.timeZone.flatMap({ TimeZone(identifier: $0) }) { calendar.timeZone = zone }
     if status.agent?.running == true { return "The morning agent is writing a brief…" }
     if status.restartPending == true { return "Restarting to apply new settings…" }
     if let run = failedRun(status) {

@@ -18,7 +18,7 @@ import { stampedTheme } from './theme.ts';
 // from what it decided.
 ui.theme.value = stampedTheme();
 
-// Days are counted on the server's calendar, not this browser's; see
+// Dates and clock times use the dashboard's saved zone; see
 // `setCalendarZone`. An effect runs as the state lands, ahead of the render it
 // causes, so no row is drawn on the wrong calendar.
 effect(() => setCalendarZone(state.value?.timeZone));

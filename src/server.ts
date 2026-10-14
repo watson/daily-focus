@@ -22,7 +22,7 @@ import { refusal } from './guard.ts';
 import { describeLink, linkStore, storeLinkWarning } from './links.ts';
 import { readIdleSeconds } from './presence.ts';
 import { reconcileSession, startSession, stopSession } from './sessions.ts';
-import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
+import { applySettingsChange, describeSettings, rememberTimeZone, saveSettings, type SettingsChange } from './settings.ts';
 import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
@@ -181,6 +181,7 @@ function statusOf(state: DashboardState, config: Config, busy: boolean): Record<
     version: VERSION,
     dataDir: config.dataDir,
     profile: config.profile,
+    timeZone: state.timeZone,
     setupNeeded: state.setup.needed,
     restartPending: state.restart !== null,
     busy,
@@ -242,6 +243,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   const readSources = (): EnvSources => envSources(processEnv, dotenv);
   const { config, warnings: configWarnings } = configure(readSources());
   for (const warning of configWarnings) console.warn(`[daily-focus] ${warning}`);
+  // Setting TZ refreshes Node's Date and Intl caches, including on an in-place
+  // settings restart. Children inherit it too, so the briefing agent has the same day.
+  process.env.TZ = config.timeZone;
 
   const store = new Store(config);
   await store.ensureDataDir();
@@ -1113,6 +1117,7 @@ export async function runServer(options: RunOptions = {}): Promise<void> {
   let stopping = false;
 
   async function start(): Promise<void> {
+    await rememberTimeZone(envSources(options.env ?? process.env, options.env ? {} : readDotEnv()));
     current = await startServer(options.env, { onRestart: () => void restart(), integrations: options.integrations });
   }
 

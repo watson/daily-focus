@@ -29,6 +29,7 @@ import { resolveItems } from '../src/store.ts';
 import type { Brief } from '../src/types.ts';
 
 const config = loadConfig();
+process.env.TZ = config.timeZone;
 const store = new Store(config);
 
 let failures = 0;

@@ -236,6 +236,8 @@ export interface AgentRunConfig {
  */
 export interface Config {
   profile: Profile;
+  /** The saved IANA zone used by the clock, calendar and page. */
+  timeZone: string;
   /** Directory holding items.json and actions.jsonl. */
   dataDir: string;
   itemsFile: string;
@@ -612,8 +614,16 @@ function envProfile(env: NodeJS.ProcessEnv): Profile {
 export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
   const dataDir = expandHome(envString('DAILY_FOCUS_DATA', DEFAULT_DATA_DIR, env));
   const profile = envProfile(env);
+  let timeZone = envString('DAILY_FOCUS_TIMEZONE', Intl.DateTimeFormat().resolvedOptions().timeZone, env);
+  try {
+    timeZone = new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone;
+    if (/^[+-]/.test(timeZone)) throw new Error('an offset is not an IANA zone');
+  } catch {
+    throw new Error('DAILY_FOCUS_TIMEZONE must be an IANA time zone, such as Europe/Copenhagen');
+  }
   return {
     profile,
+    timeZone,
     dataDir,
     itemsFile: resolve(dataDir, 'items.json'),
     actionsFile: resolve(dataDir, 'actions.jsonl'),

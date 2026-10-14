@@ -24,6 +24,10 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
       { class: 'page-header__titles' },
       el('h1', null, 'Daily Focus'),
       el('p', { class: 'page-header__date', id: 'header-date' }, state ? headerDate(state) : ''),
+      state?.timeZone
+        ? el('p', { class: 'page-header__zone', id: 'header-zone' },
+            `${state.timeZone}${state.agentRun?.schedule ? ` · Morning agent at ${state.agentRun.schedule.at}` : ''}`)
+        : null,
     ),
     el(
       'div',

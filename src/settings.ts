@@ -75,6 +75,14 @@ export const SETTINGS: readonly SettingDef[] = [
     choices: PROFILES.map((value) => ({ value, label: value === 'work' ? 'Work' : 'Personal life' })),
     fallback: always('Work'),
   },
+  {
+    key: 'DAILY_FOCUS_TIMEZONE',
+    group: 'instance',
+    label: 'Dashboard time zone',
+    help: 'Used for the morning run, calendar times and dates. The menu bar app asks whether to switch when your Mac changes time zones. Use an IANA name, such as Europe/Copenhagen.',
+    kind: 'text',
+    fallback: always('The time zone at the first start, saved for this dashboard'),
+  },
 
   {
     key: 'DAILY_FOCUS_AGENT',
@@ -509,4 +517,17 @@ export async function saveSettings(path: string, settings: Readonly<Record<strin
   const sorted: Record<string, string> = {};
   for (const key of Object.keys(settings).sort()) sorted[key] = settings[key]!;
   await writeJsonAtomic(path, sorted);
+}
+
+/** Keep the first zone across restarts, so travelling never switches it without a choice. */
+export async function rememberTimeZone(sources: EnvSources): Promise<void> {
+  if (sources.settingsError || present(layerEnv(sources), 'DAILY_FOCUS_TIMEZONE') !== null) return;
+  let config;
+  try {
+    config = loadConfig(layerEnv(sources));
+  } catch {
+    // A hand-edited file that needs fixing must not be rewritten at startup.
+    return;
+  }
+  await saveSettings(sources.settingsPath, { ...sources.settings, DAILY_FOCUS_TIMEZONE: config.timeZone });
 }

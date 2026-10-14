@@ -187,6 +187,19 @@ func runSelfTest() -> Bool {
     check(sparse != nil, "status with nulls decodes")
     equal(sparse?.agent?.last, nil, "no last run")
 
+    // Time-zone choices survive polls and relaunches, but a new pair asks again.
+    let zoneChange = TimeZoneChange(dashboard: "America/New_York", system: "Europe/Copenhagen")
+    equal(timeZoneChange(dashboard: zoneChange.dashboard, system: zoneChange.system, acknowledged: nil),
+          zoneChange, "a different Mac zone offers a switch")
+    equal(timeZoneChange(dashboard: zoneChange.dashboard, system: zoneChange.system, acknowledged: zoneChange.key),
+          nil, "keeping the zone is not asked again")
+    check(timeZoneChange(dashboard: zoneChange.dashboard, system: "Europe/London", acknowledged: zoneChange.key) != nil,
+          "moving again asks again")
+    equal(timeZoneChange(dashboard: zoneChange.system, system: zoneChange.system, acknowledged: zoneChange.key),
+          nil, "a switched dashboard needs no prompt")
+    equal(timeZoneChange(dashboard: nil, system: zoneChange.system, acknowledged: nil), nil, "an older dashboard has no zone")
+    equal(timeZoneChange(dashboard: "Not/A_Zone", system: zoneChange.system, acknowledged: nil), nil, "an unknown zone is not offered")
+
     equal(ago(now, now: now), "just now", "just now")
     equal(ago(now.addingTimeInterval(-60), now: now), "a minute ago", "a minute")
     equal(ago(now.addingTimeInterval(-3_599), now: now), "59 minutes ago", "minutes")

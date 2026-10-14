@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { startServer, type StartedServer } from '../src/server.ts';
+import { atTimeOn } from '../src/schedule.ts';
 
 let dataDir: string;
 let env: NodeJS.ProcessEnv;
@@ -193,5 +194,28 @@ test("the morning agent's clock waits for the first brief, which comes from the 
   } finally {
     await due.close();
     await rm(store, { recursive: true, force: true });
+  }
+});
+
+test('a saved zone refreshes both Date scheduling and the zone reported to the page and app', async () => {
+  const original = process.env.TZ;
+  try {
+    for (const [zone, expectedRun] of [
+      ['America/New_York', '2026-10-14T11:00:00.000Z'],
+      ['Europe/Copenhagen', '2026-10-14T05:00:00.000Z'],
+    ]) {
+      const before = restarts;
+      assert.equal((await post('/api/settings', { values: { DAILY_FOCUS_TIMEZONE: zone } })).status, 200);
+      await restarted(before + 1);
+      const state = await json(await fetch(`${url}/api/state`));
+      const status = await json(await fetch(`${url}/api/status`));
+      assert.equal(state.timeZone, zone);
+      assert.equal(status.timeZone, zone);
+      assert.equal(atTimeOn(new Date('2026-10-14T12:00:00Z'), { hour: 7, minute: 0 }).toISOString(), expectedRun);
+      assert.equal(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')).DAILY_FOCUS_TIMEZONE, zone);
+    }
+  } finally {
+    if (original === undefined) delete process.env.TZ;
+    else process.env.TZ = original;
   }
 });

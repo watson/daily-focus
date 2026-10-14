@@ -110,14 +110,14 @@ private let dashboardSession: URLSession = {
 
 /// Asks the dashboard something and hands back, on the main queue, the HTTP status
 /// (nil when nothing answered) and the body.
-func fetch(_ url: URL, method: String = "GET", timeout: TimeInterval = 10, then done: @escaping (Int?, Data?) -> Void) {
+func fetch(_ url: URL, method: String = "GET", body: Data? = nil, timeout: TimeInterval = 10, then done: @escaping (Int?, Data?) -> Void) {
     var request = URLRequest(url: url, timeoutInterval: timeout)
     request.httpMethod = method
     if method == "POST" {
         // The server refuses a POST that isn't JSON, because a form on another
         // site can't send one, and that is what keeps other pages from acting here.
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data("{}".utf8)
+        request.httpBody = body ?? Data("{}".utf8)
     }
     dashboardSession.dataTask(with: request) { data, response, _ in
         let code = (response as? HTTPURLResponse)?.statusCode
