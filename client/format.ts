@@ -56,21 +56,22 @@ export function formatWeekday(value: DateLike): string {
 }
 
 /**
- * The calendar days are counted on: the server's.
+ * The calendar days are counted on: the dashboard's.
  *
  * The server decides when a snooze has arrived, what is overdue and which day the
- * brief is for, all by its own zone, and the browser can be in another one,
- * reaching the dashboard from abroad. A snooze worked out on the browser's
- * calendar and judged on the server's comes straight back: "Tomorrow" in New York
- * after six in the evening is already today in Copenhagen. So `dayKey` and the
- * bare dates `daysFromToday` compares count in this zone. Displayed times use it
- * too, so an agenda's now marker and the morning clock agree. Unset, as in a
- * test that doesn't care, it is the browser's own.
+ * brief is for, all in the dashboard's zone. That is normally this browser's,
+ * which reports it (`zone.ts`), but a second device can be somewhere else. A
+ * snooze worked out on its calendar and judged on the server's comes straight
+ * back: "Tomorrow" in New York after six in the evening is already today in
+ * Copenhagen. So `dayKey` and the bare dates `daysFromToday` compares count in
+ * this zone. Displayed times use it too, so an agenda's now marker and the
+ * morning clock agree. Unset, as in a test that doesn't care, it is the
+ * browser's own.
  */
 let dayKeyFmt: Intl.DateTimeFormat | null = null;
 let calendarZone: string | undefined;
 
-/** Count days in `timeZone` from now on: the zone the server sends in its state. */
+/** Count days in `timeZone` from now on: the dashboard's, sent in its state. */
 export function setCalendarZone(timeZone: string | undefined): void {
   if (timeZone === calendarZone) return;
   calendarZone = timeZone;

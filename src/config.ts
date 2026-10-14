@@ -236,8 +236,6 @@ export interface AgentRunConfig {
  */
 export interface Config {
   profile: Profile;
-  /** The saved IANA zone used by the clock, calendar and page. */
-  timeZone: string;
   /** Directory holding items.json and actions.jsonl. */
   dataDir: string;
   itemsFile: string;
@@ -310,6 +308,8 @@ export interface Config {
   jira: JiraConfig;
   /** Where tickets.json lives: the board's last good read, written by the server. */
   ticketsFile: string;
+  /** Where timezone.json lives: the zone the browser last reported; see `zone.ts`. */
+  timeZoneFile: string;
   /** The on-demand assistant. */
   assistant: AssistantConfig;
   /** Append-only record of every assistant turn, written by the server. */
@@ -614,16 +614,8 @@ function envProfile(env: NodeJS.ProcessEnv): Profile {
 export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
   const dataDir = expandHome(envString('DAILY_FOCUS_DATA', DEFAULT_DATA_DIR, env));
   const profile = envProfile(env);
-  let timeZone = envString('DAILY_FOCUS_TIMEZONE', Intl.DateTimeFormat().resolvedOptions().timeZone, env);
-  try {
-    timeZone = new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone;
-    if (/^[+-]/.test(timeZone)) throw new Error('an offset is not an IANA zone');
-  } catch {
-    throw new Error('DAILY_FOCUS_TIMEZONE must be an IANA time zone, such as Europe/Copenhagen');
-  }
   return {
     profile,
-    timeZone,
     dataDir,
     itemsFile: resolve(dataDir, 'items.json'),
     actionsFile: resolve(dataDir, 'actions.jsonl'),
@@ -640,6 +632,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
+    timeZoneFile: resolve(dataDir, 'timezone.json'),
     // The same 1 to 120 the session endpoint holds a start to.
     sessionMinutes: envBounded('DAILY_FOCUS_SESSION_MINUTES', 25, 1, 120, env),
     awayAfterMinutes: envBounded('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, 0, 24 * 60, env),

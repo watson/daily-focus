@@ -9,7 +9,6 @@ private let notifiedBriefKey = "notifiedBriefAt"
 private let notifiedFailureKey = "notifiedFailedRunId"
 private let notifiedDashboardKey = "notifiedDashboardUpdate"
 private let notifiedAppKey = "notifiedAppUpdate"
-private let timeZoneChoicesKey = "dashboardTimeZoneChoices"
 /// Notifications about updates, which a click answers with the menu, where the update is.
 private let updateNotices: Set<String> = ["dashboard-update", "app-update", "dashboard-refused"]
 
@@ -68,7 +67,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private var restartingInto: String?
     private var signalSources: [DispatchSourceSignal] = []
     private var activity: NSObjectProtocol?
-    private var timeZonePromptOpen = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Before launch finishes, so a notification clicked while the app wasn't
@@ -79,10 +77,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         quitOnSignals()
-        NotificationCenter.default.addObserver(self, selector: #selector(systemTimeZoneChanged(_:)),
-                                               name: .NSSystemTimeZoneDidChange, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(systemTimeZoneChanged(_:)),
-                                                         name: NSWorkspace.didWakeNotification, object: nil)
         // The dashboard keeps a clock, the morning agent's, and this app keeps the
         // dashboard; App Nap would stretch both while nobody looks at the menu.
         activity = ProcessInfo.processInfo.beginActivity(
@@ -458,77 +452,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             if case .status(let status) = result { tell(about: status) }
             refreshMenu()
             applyUpdate()
-            checkTimeZone()
         }
         if pollAgain {
             pollAgain = false
             poll()
-        }
-    }
-
-    // MARK: Time zone
-
-    @objc private func systemTimeZoneChanged(_ notification: Notification) {
-        // Foundation caches the system zone too. Check from a fresh status on
-        // change and wake; the regular poll also catches changes while the app was closed.
-        NSTimeZone.resetSystemTimeZone()
-        poll()
-    }
-
-    private func checkTimeZone() {
-        guard !timeZonePromptOpen, let url = dashboard.url,
-              case .status(let status) = reading, status.restartPending != true else { return }
-        NSTimeZone.resetSystemTimeZone()
-        let store = status.dataDir ?? url.absoluteString
-        let choices = UserDefaults.standard.dictionary(forKey: timeZoneChoicesKey) as? [String: String] ?? [:]
-        guard let change = timeZoneChange(dashboard: status.timeZone, system: NSTimeZone.system.identifier,
-                                        acknowledged: choices[store]) else { return }
-        timeZonePromptOpen = true
-        fromRunLoop { [weak self] in
-            guard let self else { return }
-            guard url == self.dashboard.url, case .status(let current) = self.reading,
-                  current.timeZone == change.dashboard, current.restartPending != true,
-                  NSTimeZone.local.identifier == change.system else {
-                self.timeZonePromptOpen = false
-                return
-            }
-            if #available(macOS 14.0, *) { NSApp.activate() }
-            else { NSApp.activate(ignoringOtherApps: true) }
-            let alert = NSAlert()
-            alert.messageText = "Your Mac's time zone changed"
-            alert.informativeText = "Your Mac uses \(change.system). Daily Focus uses \(change.dashboard) for its morning run, calendar times and dates.\n\nSwitch the dashboard to \(change.system)? The change waits for any running agent or assistant to finish. An overdue morning brief may then start."
-            alert.addButton(withTitle: "Switch Time Zone")
-            alert.addButton(withTitle: "Keep Current Time Zone")
-            if alert.runModal() == .alertFirstButtonReturn {
-                self.switchTimeZone(change, store: store, url: url)
-            } else {
-                self.acknowledgeTimeZone(change, store: store)
-                self.timeZonePromptOpen = false
-            }
-        }
-    }
-
-    private func acknowledgeTimeZone(_ change: TimeZoneChange, store: String) {
-        var choices = UserDefaults.standard.dictionary(forKey: timeZoneChoicesKey) as? [String: String] ?? [:]
-        choices[store] = change.key
-        UserDefaults.standard.set(choices, forKey: timeZoneChoicesKey)
-    }
-
-    private func switchTimeZone(_ change: TimeZoneChange, store: String, url: URL) {
-        guard let body = try? JSONSerialization.data(withJSONObject: ["values": ["DAILY_FOCUS_TIMEZONE": change.system]]) else {
-            timeZonePromptOpen = false
-            return
-        }
-        fetch(url.appendingPathComponent("api/settings"), method: "POST", body: body) { [weak self] code, data in
-            guard let self else { return }
-            self.timeZonePromptOpen = false
-            if code == 200 {
-                self.acknowledgeTimeZone(change, store: store)
-                self.poll()
-            } else {
-                let response = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-                self.alert("Daily Focus couldn't switch time zones", response?["error"] as? String ?? "The dashboard didn't accept the change. Try again in Settings.")
-            }
         }
     }
 

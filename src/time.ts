@@ -1,8 +1,8 @@
 /**
- * Date helpers. Every day here is a day in the server's local timezone: a snooze
- * arrives, a due date passes and a brief belongs to a day on the server's
- * calendar. The browser need not share it, reaching the dashboard from a laptop
- * abroad, so the client is sent `localTimeZone()` and counts days in it too.
+ * Date helpers. Every day here is a day in the process's local timezone, which
+ * `zone.ts` sets to the dashboard's: a snooze arrives, a due date passes and a
+ * brief belongs to a day on its calendar. A second browser need not share it,
+ * so the client is sent `localTimeZone()` and counts days in it too.
  */
 
 const MS_PER_DAY = 86_400_000;

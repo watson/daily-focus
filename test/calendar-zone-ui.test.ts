@@ -14,7 +14,6 @@ import { afterEach, test } from 'node:test';
 // Imported ahead of the client, for the document it installs.
 import { byClass, byTag, handlersWith, mountOne, uiWith } from './dom.ts';
 import { dayKey, daysFromToday, formatDay, formatTime, relativeDay, setCalendarZone } from '../client/format.ts';
-import { Header } from '../client/chrome.ts';
 import { renderItem } from '../client/items.ts';
 import type { DashboardState, ResolvedItem } from '../src/types.ts';
 
@@ -119,17 +118,6 @@ test('switching the dashboard zone changes displayed clock times, without shifti
   assert.equal(formatTime(runAt), expected('Europe/Copenhagen'));
   assert.equal(formatDay('2026-10-14'), day);
   assert.notEqual(expected('America/New_York'), expected('Europe/Copenhagen'));
-});
-
-test('the header names the zone that the morning clock and page use', () => {
-  setCalendarZone('America/New_York');
-  const state = {
-    ...stateAt(EVENING_IN_NEW_YORK, 'America/New_York'),
-    brief: { date: '2026-10-07', generatedAt: null },
-    agentRun: { schedule: { at: '07:00' }, enabled: false },
-  } as unknown as DashboardState;
-  const node = mountOne(Header({ state, ui: uiWith(), handlers: handlersWith() }));
-  assert.match(node.querySelector('#header-zone')?.textContent ?? '', /America\/New_York · Morning agent at 07:00/);
 });
 
 test("a zone the browser doesn't know falls back to its own calendar", () => {

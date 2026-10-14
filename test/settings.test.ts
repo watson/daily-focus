@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import type { EnvSources } from '../src/env.ts';
-import { applySettingsChange, describeSettings, rememberTimeZone, saveSettings, SETTINGS, SETTING_GROUPS } from '../src/settings.ts';
+import { applySettingsChange, describeSettings, saveSettings, SETTINGS, SETTING_GROUPS } from '../src/settings.ts';
 
 const dirs: string[] = [];
 
@@ -73,8 +73,6 @@ test('a value the dashboard would refuse to start with is refused before it is s
     ['DAILY_FOCUS_SESSION_MINUTES', 'lots'],
     ['DAILY_FOCUS_AGENT_DAYS', 'weekdays'],
     ['DAILY_FOCUS_PROFILE', 'holiday'],
-    ['DAILY_FOCUS_TIMEZONE', 'Not/A_Zone'],
-    ['DAILY_FOCUS_TIMEZONE', '+02:00'],
   ] as const) {
     const applied = applySettingsChange(sources({ settings: { DAILY_FOCUS_AGENT: 'codex' } }), { [key]: value });
     assert.ok('error' in applied, `${key}=${value} should be refused`);
@@ -118,25 +116,4 @@ test('saved settings are sorted, so the file reads the way the page does', async
   const path = join(dir, 'settings.json');
   await saveSettings(path, { DAILY_FOCUS_WORK_START: '8', DAILY_FOCUS_AGENT: 'claude' });
   assert.equal(await readFile(path, 'utf8'), '{\n  "DAILY_FOCUS_AGENT": "claude",\n  "DAILY_FOCUS_WORK_START": "8"\n}\n');
-});
-
-test('the first zone is remembered alongside existing settings, without replacing a choice or a broken file', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-timezone-'));
-  dirs.push(dir);
-  const base = { ...sources({ settings: { DAILY_FOCUS_WORK_START: '8' } }), settingsPath: join(dir, 'settings.json') };
-  await rememberTimeZone(base);
-  const saved = JSON.parse(await readFile(base.settingsPath, 'utf8'));
-  assert.equal(saved.DAILY_FOCUS_TIMEZONE, Intl.DateTimeFormat().resolvedOptions().timeZone);
-  assert.equal(saved.DAILY_FOCUS_WORK_START, '8');
-  const original = await readFile(base.settingsPath, 'utf8');
-  const cases: EnvSources[] = [
-    { ...base, settings: { DAILY_FOCUS_TIMEZONE: 'America/New_York' } },
-    { ...base, dotenv: { DAILY_FOCUS_TIMEZONE: 'Europe/Copenhagen' } },
-    { ...base, settingsError: 'broken JSON' },
-    { ...base, settings: { DAILY_FOCUS_AGENT: 'invalid' } },
-  ];
-  for (const next of cases) {
-    await rememberTimeZone(next);
-    assert.equal(await readFile(base.settingsPath, 'utf8'), original);
-  }
 });
