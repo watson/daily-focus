@@ -317,7 +317,8 @@ export const claudeAdapter: Adapter = {
     if (model) args.push('--model', model);
     if (effort) args.push('--effort', effort);
     if (sessionId) args.push('--resume', sessionId);
-    args.push(prompt);
+    // End the variadic permission options before the positional prompt.
+    args.push('--', prompt);
     return args;
   },
   parse(line) {
