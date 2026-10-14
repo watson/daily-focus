@@ -307,9 +307,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     },
   });
 
-  // A Codex older than the one the dashboard's limits on it were checked against
-  // may ignore them. Asked once, without holding up the start; the page shows
-  // the warning when the answer lands.
+  // A Codex older than the oldest the dashboard's limits on it work with ignores
+  // some of them. Asked once, without holding up the start; the page shows the
+  // warning when the answer lands.
   let codexWarnings: string[] = [];
   const codexBins = new Set<string>();
   if (config.agent.cli === 'codex') codexBins.add(config.agent.binPath);

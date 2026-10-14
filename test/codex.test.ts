@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  CODEX_CHECKED,
+  CODEX_CONNECTOR_POLICY,
+  CODEX_MINIMUM,
   codexVersionWarning,
   COMPUTER_USE_PLUGINS,
   computerUseOff,
@@ -86,11 +87,21 @@ test('versions compare by number, and anything unreadable is not called old', ()
   assert.ok(!olderThan('codex-cli dev', '0.162.1'));
 });
 
-test('an older Codex gets a warning naming both versions; a current or missing one gets none', async () => {
+test('an older Codex gets a warning saying what goes wrong at its version; a current or missing one gets none', async () => {
   const says = (text: string): ExecFile => async () => text;
-  const warning = await codexVersionWarning('codex', says('codex-cli 0.150.0\n'));
-  assert.ok(warning?.includes('Codex 0.150.0') && warning.includes(CODEX_CHECKED));
-  assert.equal(await codexVersionWarning('codex', says(`codex-cli ${CODEX_CHECKED}\n`)), null);
+
+  // Before 0.144.0 the "writes" mode is unknown, and Codex drops the whole apps table over it.
+  const tooOldForConnectors = await codexVersionWarning('codex', says('codex-cli 0.143.0\n'));
+  assert.ok(tooOldForConnectors?.includes('Codex 0.143.0') && tooOldForConnectors.includes(CODEX_MINIMUM));
+  assert.match(tooOldForConnectors!, /ignores the dashboard's refusal of connector writes/);
+
+  // 0.144.0 to 0.148.x refuse connector writes but can't stop a plugin's server.
+  const tooOldForComputerUse = await codexVersionWarning('codex', says(`codex-cli ${CODEX_CONNECTOR_POLICY}\n`));
+  assert.match(tooOldForComputerUse!, /can't switch computer use off/);
+  assert.match((await codexVersionWarning('codex', says('codex-cli 0.148.0\n')))!, /can't switch computer use off/);
+
+  assert.equal(await codexVersionWarning('codex', says(`codex-cli ${CODEX_MINIMUM}\n`)), null);
+  assert.equal(await codexVersionWarning('codex', says('codex-cli 0.162.1\n')), null);
   assert.equal(await codexVersionWarning('codex', says('codex-cli 1.0.0\n')), null);
   const missing: ExecFile = async () => {
     throw Object.assign(new Error('spawn codex ENOENT'), { code: 'ENOENT' });

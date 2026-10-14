@@ -317,9 +317,10 @@ instructions. What the CLI itself enforces:
   commands follow your own Codex config: the sandbox keeps writes in the
   assistant's working directory, and a command that needs to leave it is decided
   by your Codex approval settings, as it would be in your own Codex. That keeps
-  `gh` working, and means it can write. The page warns when your Codex is older
-  than the one these settings were checked against, since an older one may ignore
-  them.
+  `gh` working, and means it can write. All of this needs Codex 0.149.0 or
+  newer, and the page warns when yours is older: before 0.144.0 Codex silently
+  ignores the refusal of connector writes, and before 0.149.0 it can't switch
+  computer use off, so the assistant won't answer while that setting is off.
 
 Its instructions live in `prompts/assistant.md`, linked into the store as
 `assistant.md` each time the dashboard starts. What it says stays in the chat in the panel: it

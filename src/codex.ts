@@ -137,10 +137,19 @@ export async function computerUseOff(bin: string, run: ExecFile = defaultExec): 
 }
 
 /**
- * The Codex these settings were last checked against. An older one may not know
- * them, and Codex ignores a setting it doesn't know rather than refusing it.
+ * The oldest Codex the limits here work with. Found by running the dashboard's
+ * own arguments through the releases on either side of each threshold:
+ *
+ *  - 0.144.0 is the first to know the "writes" approval mode. An older Codex
+ *    reads the whole `apps` table as one value and, over a single value it
+ *    doesn't know, drops all of it without a word: connector writes go through,
+ *    and the user's own app settings are dropped with it.
+ *  - 0.149.0 is the first where switching a plugin off stops the MCP server it
+ *    runs. Before it, `computerUseOff` can't confirm computer use is off, so the
+ *    assistant refuses to run while the setting is off.
  */
-export const CODEX_CHECKED = '0.162.1';
+export const CODEX_CONNECTOR_POLICY = '0.144.0';
+export const CODEX_MINIMUM = '0.149.0';
 
 function versionParts(text: string): number[] | null {
   const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
@@ -159,8 +168,8 @@ export function olderThan(version: string, than: string): boolean {
 }
 
 /**
- * A setup warning when this Codex is older than the one the dashboard's limits
- * were checked against, or null. A Codex that can't be run says nothing here:
+ * A setup warning when this Codex is older than `CODEX_MINIMUM`, saying what goes
+ * wrong at its version, or null. A Codex that can't be run says nothing here:
  * the run that needs it says so, with the setting that fixes it.
  */
 export async function codexVersionWarning(bin: string, run: ExecFile = defaultExec): Promise<string | null> {
@@ -171,10 +180,11 @@ export async function codexVersionWarning(bin: string, run: ExecFile = defaultEx
     return null;
   }
   const version = versionParts(output)?.join('.');
-  if (!version || !olderThan(version, CODEX_CHECKED)) return null;
-  return (
-    `Codex ${version} is older than ${CODEX_CHECKED}, the version the dashboard's limits on Codex were checked ` +
-    'against. An older Codex may ignore them, which would let the agent and the assistant write through your ' +
-    'connectors and, with computer use off, still use it. Update Codex with `codex update`.'
-  );
+  if (!version || !olderThan(version, CODEX_MINIMUM)) return null;
+  const consequence = olderThan(version, CODEX_CONNECTOR_POLICY)
+    ? `Before ${CODEX_CONNECTOR_POLICY} Codex ignores the dashboard's refusal of connector writes without saying so, ` +
+      'so the agent and the assistant can send, edit and delete through your connectors.'
+    : `Before ${CODEX_MINIMUM} Codex can't switch computer use off, so the assistant won't answer while ` +
+      'computer use is off in its settings.';
+  return `Codex ${version} is older than ${CODEX_MINIMUM}, the oldest the dashboard's limits on Codex work with. ${consequence} Update Codex.`;
 }
