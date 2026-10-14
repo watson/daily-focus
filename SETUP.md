@@ -122,7 +122,9 @@ The agent reaches your sources the way the CLI does:
   is marked read-only. A command that needs to leave the sandbox, such as `gh`
   switching accounts, is decided by your own Codex approval settings, as it would be
   in your Codex. With nobody set to approve, the agent reports that restriction; with
-  Codex's automatic reviewer, the reviewer decides.
+  Codex's automatic reviewer, the reviewer decides. The dashboard won't start a run
+  on a Codex older than 0.144.0, which would ignore the refusal of connector writes;
+  update Codex if a run fails saying so.
 - **Claude Code** may write `items.json` and nothing else in the store, and reach
   its sources with only what `DAILY_FOCUS_AGENT_TOOLS` allows. The default covers
   GitHub, Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat
@@ -318,8 +320,9 @@ instructions. What the CLI itself enforces:
   assistant's working directory, and a command that needs to leave it is decided
   by your Codex approval settings, as it would be in your own Codex. That keeps
   `gh` working, and means it can write. All of this needs Codex 0.149.0 or
-  newer, and the page warns when yours is older: before 0.144.0 Codex silently
-  ignores the refusal of connector writes, and before 0.149.0 it can't switch
+  newer, and the page warns when yours is older. Before 0.144.0 Codex silently
+  ignores the refusal of connector writes, so the dashboard won't start the
+  assistant or the morning agent on it at all; before 0.149.0 it can't switch
   computer use off, so the assistant won't answer while that setting is off.
 
 Its instructions live in `prompts/assistant.md`, linked into the store as

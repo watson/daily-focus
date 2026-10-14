@@ -47,8 +47,10 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 
 import { ADAPTERS, type ParsedEvent } from './assistant.ts';
+import { CodexGate } from './codex.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
+import type { ExecFile } from './shellpath.ts';
 import type { AgentRun, AgentRunState, AgentTurn } from './types.ts';
 
 /**
@@ -239,12 +241,16 @@ export class AgentRunner {
   private readonly config: Config;
   private readonly hooks: AgentRunnerHooks;
   private readonly spawnFn: typeof spawn;
+  /** Refuses a Codex too old to hold to the connector rules; see `codex.ts`. */
+  private readonly codexGate: CodexGate;
 
-  constructor(config: Config, hooks: AgentRunnerHooks, spawnFn: typeof spawn = spawn) {
+  constructor(config: Config, hooks: AgentRunnerHooks, spawnFn: typeof spawn = spawn, execFn?: ExecFile) {
     this.config = config;
     this.hooks = hooks;
-    // Swapped in by tests, which run a script in place of the CLI.
+    // Swapped in by tests, which run a script in place of the CLI, and answer
+    // for `codex --version` themselves.
     this.spawnFn = spawnFn;
+    this.codexGate = new CodexGate(config.agent.binPath, execFn);
   }
 
   get enabled(): boolean {
@@ -450,6 +456,14 @@ export class AgentRunner {
     const cli = run.cli;
     const adapter = ADAPTERS[cli];
     await mkdir(this.config.dataDir, { recursive: true });
+
+    // Recorded like a CLI that can't be found: the run is in the log, failed, so
+    // the clock doesn't try again every half minute.
+    const refusal = cli === 'codex' ? await this.codexGate.refusal() : null;
+    if (refusal) {
+      await this.finish(run, turn, { ok: false, error: refusal });
+      return;
+    }
 
     let child: ChildProcess;
     try {

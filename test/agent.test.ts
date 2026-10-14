@@ -16,6 +16,7 @@ import { after, test } from 'node:test';
 
 import { AgentRunner, agentPrompt, displayPath, foldAgentLog, followUpPrompt } from '../src/agent.ts';
 import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
+import type { ExecFile } from '../src/shellpath.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 
 const dirs: string[] = [];
@@ -34,6 +35,8 @@ async function makeConfig(lines: string[], env: Record<string, string> = {}, bod
   dirs.push(bin);
   const script = [
     '#!/bin/sh',
+    // Asked before every run; answered the way Codex does, and not recorded as a run.
+    `[ "$1" = "--version" ] && { echo 'codex-cli 0.162.1'; exit 0; }`,
     `printf '%s\\n' "$@" > "${join(dataDir, '.argv')}"`,
     `pwd > "${join(dataDir, '.cwd')}"`,
     body,
@@ -102,6 +105,21 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
   assert.deepEqual(again.view().last!.messages, run.messages);
 });
 
+
+test('a Codex older than 0.144.0 is refused: the run is logged as failed and the CLI never starts', async () => {
+  const config = await makeConfig([THREAD, SAID('Wrote it.'), DONE]);
+  const old: ExecFile = async () => 'codex-cli 0.143.0\n';
+  const runner = new AgentRunner(config, { onChange: () => {} }, undefined, old);
+  await runner.run();
+  await settle(runner);
+
+  const run = runner.view().last!;
+  assert.equal(run.status, 'failed');
+  assert.match(run.error!, /Codex 0\.143\.0 is older than 0\.144\.0/);
+  await assert.rejects(readFile(join(config.dataDir, '.argv'), 'utf8'), 'the CLI never ran');
+  const log = (await readFile(config.agentLogFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(log.map((r) => r.event), ['started', 'failed'], "logged, so the clock doesn't try again");
+});
 test('a follow-up resumes the run in its session, in the store, with nothing to write', async () => {
   const config = await makeConfig(
     ['{"type":"system","subtype":"init","session_id":"s-1"}', '{"type":"result","subtype":"success","is_error":false,"result":"Done."}'],

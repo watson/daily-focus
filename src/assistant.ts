@@ -38,7 +38,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 
-import { CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS } from './codex.ts';
+import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS } from './codex.ts';
 import type { AssistantAgent, Config } from './config.ts';
 import type { ExecFile } from './shellpath.ts';
 import type {
@@ -449,6 +449,8 @@ export class Assistant {
   private readonly hooks: AssistantHooks;
   private readonly spawnFn: typeof spawn;
   private readonly execFn: ExecFile | undefined;
+  /** Refuses a Codex too old to hold to the connector rules; see `codex.ts`. */
+  private readonly codexGate: CodexGate;
   /** What switches computer use off, once Codex has said; see `computerUseConfig`. */
   private codexOff: Promise<string[]> | null = null;
 
@@ -459,6 +461,7 @@ export class Assistant {
     // for `codex mcp list` themselves.
     this.spawnFn = spawnFn;
     this.execFn = execFn;
+    this.codexGate = new CodexGate(config.assistant.binPath, execFn);
   }
 
   get enabled(): boolean {
@@ -577,6 +580,11 @@ export class Assistant {
       : composePrompt(await this.instructions(), context, resolved.request, this.config.profile);
 
     await mkdir(this.config.assistantDir, { recursive: true });
+    const refusal = agent === 'codex' ? await this.codexGate.refusal() : null;
+    if (refusal) {
+      await this.finish(turn, { ok: false, error: refusal });
+      return turn;
+    }
     let codexConfig: string[];
     try {
       codexConfig = await this.computerUseConfig();

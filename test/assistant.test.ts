@@ -205,9 +205,13 @@ const CODEX_LINES = [
   '{"type":"turn.completed","usage":{}}',
 ];
 
-/** A `codex mcp list --json` listing these servers, less any switched off by a `-c` override. */
+/**
+ * A Codex that says it is 0.162.1 and lists these servers, less any switched off
+ * by a `-c` override. Every `mcp list` is recorded in `calls`.
+ */
 function listing(servers: { name: string; enabled: boolean }[], calls: string[][] = []): ExecFile {
   return async (_file, args) => {
+    if (args[0] === '--version') return 'codex-cli 0.162.1\n';
     calls.push([...args]);
     const off = args.filter((arg) => arg.startsWith('mcp_servers.')).map((arg) => arg.split('.')[1]);
     return JSON.stringify(servers.map((server) => (off.includes(server.name) ? { ...server, enabled: false } : server)));
@@ -252,7 +256,8 @@ test('under Codex with computer use turned on, Codex is not asked and nothing is
 test("under Codex, a turn whose computer use can't be confirmed off fails and starts nothing", async () => {
   const config = await makeConfig(CODEX_LINES, { DAILY_FOCUS_ASSISTANT: 'codex' });
   let refusals = 0;
-  const refuses: ExecFile = async () => {
+  const refuses: ExecFile = async (_file, args) => {
+    if (args[0] === '--version') return 'codex-cli 0.162.1\n';
     refusals += 1;
     throw new Error('Error: invalid transport');
   };
@@ -268,6 +273,26 @@ test("under Codex, a turn whose computer use can't be confirmed off fails and st
   await assistant.ask({ itemId: 'gh:1', text: 'again' }, {});
   await settle(assistant, 'gh:1');
   assert.equal(refusals, 2);
+});
+
+test('under Codex older than 0.144.0, a turn is refused and nothing is started', async () => {
+  const config = await makeConfig(CODEX_LINES, { DAILY_FOCUS_ASSISTANT: 'codex', DAILY_FOCUS_ASSISTANT_COMPUTER_USE: 'on' });
+  let version = 'codex-cli 0.143.0\n';
+  const old: ExecFile = async (_file, args) => (args[0] === '--version' ? version : '[]');
+  const assistant = new Assistant(config, { onChange: () => {} }, undefined, old);
+
+  await assistant.ask({ itemId: 'gh:1', text: 'hi' }, {});
+  await settle(assistant, 'gh:1');
+  const turn = assistant.view().items['gh:1']!.turns[0]!;
+  assert.equal(turn.status, 'failed');
+  assert.match(turn.error!, /Codex 0\.143\.0 is older than 0\.144\.0/);
+  await assert.rejects(readFile(join(config.dataDir, 'argv'), 'utf8'), 'the CLI never ran');
+
+  // Updated without a restart: the next turn asks again, and runs.
+  version = 'codex-cli 0.144.0\n';
+  await assistant.ask({ itemId: 'gh:1', text: 'again' }, {});
+  await settle(assistant, 'gh:1');
+  assert.equal(assistant.view().items['gh:1']!.turns.at(-1)!.status, 'done');
 });
 
 /* ---------- the pieces ---------- */

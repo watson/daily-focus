@@ -142,8 +142,9 @@ export async function computerUseOff(bin: string, run: ExecFile = defaultExec): 
  *
  *  - 0.144.0 is the first to know the "writes" approval mode. An older Codex
  *    reads the whole `apps` table as one value and, over a single value it
- *    doesn't know, drops all of it without a word: connector writes go through,
- *    and the user's own app settings are dropped with it.
+ *    doesn't know, drops all of it without a word: connector writes would go
+ *    through, and the user's own app settings are dropped with it. So no run is
+ *    started on one; see `refusalFor`.
  *  - 0.149.0 is the first where switching a plugin off stops the MCP server it
  *    runs. Before it, `computerUseOff` can't confirm computer use is off, so the
  *    assistant refuses to run while the setting is off.
@@ -167,23 +168,69 @@ export function olderThan(version: string, than: string): boolean {
   return false;
 }
 
+/** The version `codex --version` reports, or null when it can't be run or read. */
+export async function codexVersion(bin: string, run: ExecFile = defaultExec): Promise<string | null> {
+  try {
+    return versionParts(await run(bin, ['--version'], { timeout: LIST_TIMEOUT_MS }))?.join('.') ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Why the dashboard won't start a run on this Codex, or null when it will.
+ *
+ * Only below `CODEX_CONNECTOR_POLICY`, where Codex would drop the refusal of
+ * connector writes without a word: a run there could send, edit and delete
+ * through the user's connectors, so none is started. Up to `CODEX_MINIMUM` the
+ * one thing that can't be held, computer use, refuses its own turns (see
+ * `computerUseOff`), so everything else still runs. A version that can't be read
+ * isn't refused here: a missing CLI fails when it is started, with the setting
+ * that fixes it.
+ */
+export function refusalFor(version: string | null): string | null {
+  if (!version || !olderThan(version, CODEX_CONNECTOR_POLICY)) return null;
+  return (
+    `Codex ${version} is older than ${CODEX_CONNECTOR_POLICY}, which ignores the dashboard's refusal of connector ` +
+    "writes without saying so, so the dashboard won't run it. Update Codex"
+  );
+}
+
+/**
+ * The version check one runner makes before each Codex run. Once Codex has been
+ * read and passed it isn't asked again; until then it is asked every time, so
+ * updating Codex needs no restart of the dashboard to count.
+ */
+export class CodexGate {
+  readonly #bin: string;
+  readonly #run: ExecFile;
+  #cleared = false;
+
+  constructor(bin: string, run: ExecFile = defaultExec) {
+    this.#bin = bin;
+    this.#run = run;
+  }
+
+  async refusal(): Promise<string | null> {
+    if (this.#cleared) return null;
+    const version = await codexVersion(this.#bin, this.#run);
+    const refusal = refusalFor(version);
+    if (version && !refusal) this.#cleared = true;
+    return refusal;
+  }
+}
+
 /**
  * A setup warning when this Codex is older than `CODEX_MINIMUM`, saying what goes
  * wrong at its version, or null. A Codex that can't be run says nothing here:
  * the run that needs it says so, with the setting that fixes it.
  */
 export async function codexVersionWarning(bin: string, run: ExecFile = defaultExec): Promise<string | null> {
-  let output: string;
-  try {
-    output = await run(bin, ['--version'], { timeout: LIST_TIMEOUT_MS });
-  } catch {
-    return null;
-  }
-  const version = versionParts(output)?.join('.');
+  const version = await codexVersion(bin, run);
   if (!version || !olderThan(version, CODEX_MINIMUM)) return null;
   const consequence = olderThan(version, CODEX_CONNECTOR_POLICY)
     ? `Before ${CODEX_CONNECTOR_POLICY} Codex ignores the dashboard's refusal of connector writes without saying so, ` +
-      'so the agent and the assistant can send, edit and delete through your connectors.'
+      "so the dashboard won't start the agent or the assistant on it."
     : `Before ${CODEX_MINIMUM} Codex can't switch computer use off, so the assistant won't answer while ` +
       'computer use is off in its settings.';
   return `Codex ${version} is older than ${CODEX_MINIMUM}, the oldest the dashboard's limits on Codex work with. ${consequence} Update Codex.`;
