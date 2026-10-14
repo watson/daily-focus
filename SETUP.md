@@ -98,7 +98,7 @@ under **Morning agent** in the settings. In `.env` or the environment that is:
 DAILY_FOCUS_AGENT=codex
 ```
 
-Each scheduled morning at 07:00 local time the dashboard starts the agent through
+Each scheduled morning at 07:00 your time the dashboard starts the agent through
 that CLI, headless, in the store, and the brief appears when it finishes. Set
 `DAILY_FOCUS_AGENT_AT` to another time, such as `06:30`. The dashboard has to be
 running at the time; if it wasn't, it runs the agent as soon as it is started that
@@ -109,6 +109,15 @@ otherwise; see [Match your working week](#match-your-working-week).
 `DAILY_FOCUS_AGENT_AT=off` means the dashboard never starts a run on its own; the
 refresh icon still does. A new store's first brief always comes from the setup
 steps' button, so the clock never runs the agent before you've told it where to look.
+
+"Your time" is the time zone of the browser you last looked at the dashboard
+in. The page tells the dashboard when it loads, reconnects or comes back into view,
+and when the browser's own zone changes, so a dashboard on a Mac at home follows
+you abroad as soon as you open it there. The dashboard also follows the Mac it runs
+on when that Mac changes time zones, which covers the morning after a flight before
+you have opened it. Whichever changed last wins, and the dashboard remembers it
+across restarts. Every date and time on the page is shown in that zone; a browser
+somewhere else says so under the page title.
 
 Whichever way it starts, every run lands in the same place: the report it gives when
 it finishes, and a chat where you can ask it why it did what it did. See

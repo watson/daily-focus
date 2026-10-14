@@ -232,7 +232,10 @@ export async function runHelper(appPath: string, selfAddresses: readonly string[
   const out = join(tmpdir(), `daily-focus-calendar-${process.pid}-${Date.now()}.json`);
   try {
     try {
-      await run('/usr/bin/open', ['-n', '-a', appPath, '--args', out, selfAddresses.join(',')], {
+      // `open` starts the helper with the login session's environment, not ours,
+      // so it is handed the dashboard's zone to read the dashboard's day.
+      const zone = process.env.TZ ? ['--env', `TZ=${process.env.TZ}`] : [];
+      await run('/usr/bin/open', ['-n', '-a', appPath, ...zone, '--args', out, selfAddresses.join(',')], {
         timeout: HELPER_TIMEOUT_MS,
       });
     } catch (err) {

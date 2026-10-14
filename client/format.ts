@@ -1,14 +1,31 @@
 /** Formatting helpers shared by the renderers. No DOM, no fetching. */
 
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
-const dayFmt = new Intl.DateTimeFormat(undefined, {
+const DAY_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: 'long',
   day: 'numeric',
   month: 'long',
-});
-const shortDayFmt = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' });
-const shortDayYearFmt = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
+};
+
+function formatters(timeZone?: string) {
+  return {
+    time: new Intl.DateTimeFormat(undefined, { timeZone, hour: '2-digit', minute: '2-digit' }),
+    day: new Intl.DateTimeFormat(undefined, { timeZone, ...DAY_FORMAT }),
+    shortDay: new Intl.DateTimeFormat(undefined, { timeZone, day: 'numeric', month: 'short' }),
+    shortDayYear: new Intl.DateTimeFormat(undefined, { timeZone, day: 'numeric', month: 'short', year: 'numeric' }),
+    weekday: new Intl.DateTimeFormat(undefined, { timeZone, weekday: 'long' }),
+  };
+}
+
+let clockFormats = formatters();
+// A bare date names a calendar day, not a midnight instant in the browser's zone.
+const dateFormats = formatters('UTC');
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function formatted(value: DateLike, kind: keyof typeof clockFormats): string {
+  const bare = typeof value === 'string' && DATE_ONLY.test(value);
+  const d = bare ? new Date(`${value}T00:00:00Z`) : parseDate(value);
+  return d && !Number.isNaN(d.getTime()) ? (bare ? dateFormats : clockFormats)[kind].format(d) : '';
+}
 
 export type DateLike = string | null | undefined;
 
@@ -22,52 +39,51 @@ export function parseDate(value: DateLike): Date | null {
 }
 
 export function formatTime(value: DateLike): string {
-  const d = parseDate(value);
-  return d ? timeFmt.format(d) : '';
+  return formatted(value, 'time');
 }
 
 export function formatDay(value: DateLike): string {
-  const d = parseDate(value);
-  return d ? dayFmt.format(d) : '';
+  return formatted(value, 'day');
 }
 
 export function formatShortDay(value: DateLike): string {
-  const d = parseDate(value);
-  return d ? shortDayFmt.format(d) : '';
+  return formatted(value, 'shortDay');
 }
 
 /** "Friday". */
 export function formatWeekday(value: DateLike): string {
-  const d = parseDate(value);
-  return d ? weekdayFmt.format(d) : '';
+  return formatted(value, 'weekday');
 }
 
 /**
- * The calendar days are counted on: the server's.
+ * The calendar days are counted on: the dashboard's.
  *
  * The server decides when a snooze has arrived, what is overdue and which day the
- * brief is for, all by its own zone, and the browser can be in another one,
- * reaching the dashboard from abroad. A snooze worked out on the browser's
- * calendar and judged on the server's comes straight back: "Tomorrow" in New York
- * after six in the evening is already today in Copenhagen. So `dayKey` and the
- * bare dates `daysFromToday` compares count in this zone. Times of day stay in the
- * browser's, where the reader is. Unset, as in a test that doesn't care, it is
- * the browser's own.
+ * brief is for, all in the dashboard's zone. That is normally this browser's,
+ * which reports it (`zone.ts`), but a second device can be somewhere else. A
+ * snooze worked out on its calendar and judged on the server's comes straight
+ * back: "Tomorrow" in New York after six in the evening is already today in
+ * Copenhagen. So `dayKey` and the bare dates `daysFromToday` compares count in
+ * this zone. Displayed times use it too, so an agenda's now marker and the
+ * morning clock agree. Unset, as in a test that doesn't care, it is the
+ * browser's own.
  */
 let dayKeyFmt: Intl.DateTimeFormat | null = null;
 let calendarZone: string | undefined;
 
-/** Count days in `timeZone` from now on: the zone the server sends in its state. */
+/** Count days in `timeZone` from now on: the dashboard's, sent in its state. */
 export function setCalendarZone(timeZone: string | undefined): void {
   if (timeZone === calendarZone) return;
   calendarZone = timeZone;
   try {
+    clockFormats = formatters(timeZone);
     dayKeyFmt = timeZone
       ? new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
       : null;
   } catch {
     // A zone this browser doesn't know: its own calendar is the nearest guess.
     dayKeyFmt = null;
+    clockFormats = formatters();
   }
 }
 
@@ -121,10 +137,8 @@ export function addMonths(key: string, months: number): string {
  * Whole calendar days from today to `value`. Negative means the past.
  *
  * A bare date (a due date, a snooze) names a day on the server's calendar, the
- * one it is judged on, so it is counted from the server's today. A timestamp is
- * shown with its time of day in the browser's zone, and its day is counted there
- * too: a run at 01:00 where you are happened "today at 01:00", whatever the date
- * is at home.
+ * one it is judged on. A timestamp uses that same zone, beside the clock time
+ * shown for it, even when the browser is elsewhere.
  */
 export function daysFromToday(value: DateLike, now = new Date()): number | null {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -134,8 +148,8 @@ export function daysFromToday(value: DateLike, now = new Date()): number | null 
   }
   const target = parseDate(value);
   if (!target) return null;
-  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const b = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+  const a = Date.UTC(...splitKey(dayKey(now)));
+  const b = Date.UTC(...splitKey(dayKey(target)));
   return Math.round((b - a) / 86_400_000);
 }
 
@@ -180,7 +194,7 @@ export function relativeTime(value: DateLike, now = new Date()): string {
   // Past a month the date itself reads better than "247 days ago", and once it's
   // in another year the year has to be on it: "Jan 14" is ambiguous on a PR that
   // has been open since the one before last.
-  return d.getFullYear() === now.getFullYear() ? formatShortDay(value) : shortDayYearFmt.format(d);
+  return dayKey(d).slice(0, 4) === dayKey(now).slice(0, 4) ? formatShortDay(value) : formatted(value, 'shortDayYear');
 }
 
 /** The first non-empty line, without the Markdown that would read as noise in one. */

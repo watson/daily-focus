@@ -10,6 +10,7 @@ import { dayKey, formatDay, formatTime } from './format.ts';
 import { availableViews } from './state.ts';
 import { ThemeToggle } from './theme.ts';
 import { ticketStatus } from './tickets.ts';
+import { browserZone, sameZone } from './zone.ts';
 import type { Handlers, UiState, View } from './types.ts';
 
 /* ---------- header ---------- */
@@ -24,6 +25,7 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
       { class: 'page-header__titles' },
       el('h1', null, 'Daily Focus'),
       el('p', { class: 'page-header__date', id: 'header-date' }, state ? headerDate(state) : ''),
+      state ? zoneLine(state) : null,
     ),
     el(
       'div',
@@ -117,6 +119,16 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
 function headerDate(state: DashboardState): string {
   const today = dayKey(new Date(state.now));
   return formatDay(state.brief.date ?? today) || formatDay(today);
+}
+
+/**
+ * The zone the page's times are in, said only when it isn't this browser's: a
+ * second device somewhere else, or a report the dashboard didn't take.
+ */
+function zoneLine(state: DashboardState): JSX.Element | null {
+  if (sameZone(browserZone(), state.timeZone)) return null;
+  const at = state.agentRun?.schedule ? ` · Morning agent at ${state.agentRun.schedule.at}` : '';
+  return el('p', { class: 'page-header__zone', id: 'header-zone' }, `Times in ${state.timeZone}${at}`);
 }
 
 /** "updated 2 hours ago by Codex", and the way in to the morning agent's runs once there is one. */

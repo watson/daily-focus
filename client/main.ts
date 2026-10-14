@@ -7,20 +7,21 @@ import { effect } from '@preact/signals';
 import { h, render } from 'preact';
 
 import { adoptState, followLocation, handlers, refresh, startLocalTick } from './actions.ts';
-import { subscribe } from './api.ts';
+import { postTimeZone, subscribe } from './api.ts';
 import { App } from './app.ts';
 import { setCalendarZone } from './format.ts';
 import { installKeyboard } from './keyboard.ts';
 import { RUN_PREFIX, availableViews, detailRow, detailRun, setDetailFor, state, ui } from './state.ts';
 import { stampedTheme } from './theme.ts';
+import { ZONE_CHECK_MS, browserZone, watchZone } from './zone.ts';
 
 // The stamp in index.html ran before first paint; the toggle's label starts
 // from what it decided.
 ui.theme.value = stampedTheme();
 
-// Days are counted on the server's calendar, not this browser's; see
-// `setCalendarZone`. An effect runs as the state lands, ahead of the render it
-// causes, so no row is drawn on the wrong calendar.
+// Dates and clock times use the dashboard's zone; see `setCalendarZone`. An
+// effect runs as the state lands, ahead of the render it causes, so no row is
+// drawn on the wrong calendar.
 effect(() => setCalendarZone(state.value?.timeZone));
 
 const root = document.getElementById('app');
@@ -87,17 +88,37 @@ installKeyboard(handlers);
 await refresh();
 startLocalTick();
 
+// Where you are decides the dashboard's zone; see `zone.ts`.
+const zone = watchZone({
+  browserZone,
+  dashboardZone: () => state.value?.timeZone,
+  visible: () => document.visibilityState === 'visible',
+  send: async (timeZone) => adoptState(await postTimeZone(timeZone)),
+});
+zone.look();
+document.addEventListener('visibilitychange', () => zone.look());
+window.addEventListener('focus', () => zone.look());
+setInterval(() => zone.check(), ZONE_CHECK_MS);
+
 // Settings lives at `#settings`: a link there opens it, and Back and Forward move
 // in and out of it. See `setView` for how the history entries are kept.
 followLocation();
 window.addEventListener('popstate', followLocation);
 window.addEventListener('hashchange', followLocation);
 
+// A reconnect is a look too, once the state it brings has landed: the dashboard
+// may have restarted in another zone.
+let reconnected = false;
 subscribe(
   // A server push is authoritative, but must not yank a row out from under an
   // in-flight click; adoptState keeps anything pending at its optimistic status.
-  (next) => adoptState(next),
+  (next) => {
+    adoptState(next);
+    if (reconnected) zone.look();
+    reconnected = false;
+  },
   (err) => {
     ui.connectionError.value = err;
+    if (err === null) reconnected = true;
   },
 );

@@ -13,7 +13,7 @@ import { afterEach, test } from 'node:test';
 
 // Imported ahead of the client, for the document it installs.
 import { byClass, byTag, handlersWith, mountOne, uiWith } from './dom.ts';
-import { dayKey, daysFromToday, relativeDay, setCalendarZone } from '../client/format.ts';
+import { dayKey, daysFromToday, formatDay, formatTime, relativeDay, setCalendarZone } from '../client/format.ts';
 import { renderItem } from '../client/items.ts';
 import type { DashboardState, ResolvedItem } from '../src/types.ts';
 
@@ -98,18 +98,26 @@ test("a bare date is counted from the server's today", () => {
   assert.equal(relativeDay('2026-10-07', now), 'today');
 });
 
-/**
- * A timestamp is shown with its time of day in the browser's zone, so its day
- * word is counted there too, whatever the server's zone. Built with the local
- * constructor, so this holds in whatever zone the tests run in.
- */
-test("a timestamp's day stays on the browser's calendar, beside its time", () => {
-  const now = new Date(2026, 9, 7, 23, 0);
-  const earlier = new Date(2026, 9, 7, 0, 30).toISOString();
-  for (const timeZone of ['Pacific/Kiritimati', 'Pacific/Pago_Pago']) {
-    setCalendarZone(timeZone);
-    assert.equal(daysFromToday(earlier, now), 0, timeZone);
-  }
+test("a timestamp's day uses the dashboard's calendar, beside its clock time", () => {
+  const now = new Date(EVENING_IN_NEW_YORK);
+  const earlier = '2026-10-07T23:30:00Z';
+  setCalendarZone('Europe/Copenhagen');
+  assert.equal(daysFromToday(earlier, now), 0);
+  setCalendarZone('America/New_York');
+  assert.equal(daysFromToday(earlier, now), 0);
+  assert.equal(daysFromToday('2026-10-08T04:30:00Z', now), 1);
+});
+
+test('switching the dashboard zone changes displayed clock times, without shifting bare dates', () => {
+  const runAt = '2026-10-14T11:00:00Z';
+  const expected = (timeZone: string) => new Intl.DateTimeFormat(undefined, { timeZone, hour: '2-digit', minute: '2-digit' }).format(new Date(runAt));
+  setCalendarZone('America/New_York');
+  assert.equal(formatTime(runAt), expected('America/New_York'));
+  const day = formatDay('2026-10-14');
+  setCalendarZone('Europe/Copenhagen');
+  assert.equal(formatTime(runAt), expected('Europe/Copenhagen'));
+  assert.equal(formatDay('2026-10-14'), day);
+  assert.notEqual(expected('America/New_York'), expected('Europe/Copenhagen'));
 });
 
 test("a zone the browser doesn't know falls back to its own calendar", () => {

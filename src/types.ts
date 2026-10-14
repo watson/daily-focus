@@ -906,9 +906,9 @@ export interface DashboardState {
   /** Server time at render, so the client can place the "now" marker without clock skew. */
   now: string;
   /**
-   * The server's IANA time zone, which decides which day it is: when a snooze has
-   * arrived, what is overdue, which day the brief is for. The browser can be in
-   * another zone, so the client counts days in this one; see `setCalendarZone`.
+   * The dashboard's IANA time zone: the one a browser last reported, or the
+   * Mac's if it has moved since; see `src/zone.ts`. Scheduling, calendar dates
+   * and every displayed clock time use it, even in a browser somewhere else.
    */
   timeZone: string;
   /**

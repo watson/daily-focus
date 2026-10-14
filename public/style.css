@@ -161,6 +161,12 @@ a {
   gap: 8px;
 }
 
+.page-header__zone {
+  margin: 3px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
 .freshness {
   color: var(--ink-3);
   font-size: 13px;

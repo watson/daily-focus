@@ -28,6 +28,7 @@ import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
+import { TimeZoneKeeper, validZone } from './zone.ts';
 
 const PUBLIC_DIR = resolve(fileURLToPath(new URL('../public', import.meta.url)));
 const VERSION = packageVersion();
@@ -226,6 +227,8 @@ export interface ServerOptions {
    */
   onRestart?: () => void;
   integrations?: Integrations;
+  /** Reads the Mac's zone; a test passes its own so it can move it. */
+  readSystemZone?: () => Promise<string | null>;
 }
 
 /**
@@ -246,6 +249,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   const store = new Store(config);
   await store.ensureDataDir();
   const storeId = await store.fingerprint();
+
+  // Before anything counts a day: the zone a browser last reported, or the Mac's
+  // if it has moved since. See `zone.ts`.
+  const zone = new TimeZoneKeeper(config.timeZoneFile, options.readSystemZone);
+  await zone.start();
 
   // The prompt, the schema and the assistant's instructions, linked to this copy so
   // the agent follows whichever version is running, wherever it was installed from.
@@ -388,6 +396,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         basename(tempPathFor(config.pullsFile)),
         basename(config.ticketsFile),
         basename(tempPathFor(config.ticketsFile)),
+        basename(config.timeZoneFile),
+        basename(tempPathFor(config.timeZoneFile)),
         // Appended by this process, which broadcasts on its own.
         basename(config.assistantLogFile),
         basename(config.agentLogFile),
@@ -460,9 +470,30 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // a timer set for six-thirty doesn't fire at six-thirty on a machine that was
   // asleep, but a check each time it is awake does. A new store's first brief
   // comes from the setup steps' button instead; see `firstBriefPending`.
-  async function clockTick(): Promise<void> {
+  // One tick at a time: a browser moving the zone asks for one between the
+  // clock's, and two side by side could both find a run due.
+  let ticks: Promise<void> = Promise.resolve();
+  function clockTick(): Promise<void> {
+    ticks = ticks.then(tickOnce).catch((err: unknown) => {
+      console.error(`[daily-focus] the morning clock failed: ${(err as Error).message}`);
+    });
+    return ticks;
+  }
+  async function tickOnce(): Promise<void> {
+    // First, so a run due at seven is judged in the zone the Mac is in now.
+    if (await zone.checkSystem()) zoneMoved();
     if (restart === 'waiting' || (await firstBriefPending(config))) return;
     await agent.tick();
+  }
+
+  /**
+   * The dashboard's zone has changed. The agenda's day may have changed with it,
+   * so the calendar is read again.
+   */
+  function zoneMoved(): void {
+    console.log(`[daily-focus] time zone is now ${zone.current}`);
+    void calendar.refresh();
+    void broadcast();
   }
   void clockTick();
   const agentClock = setInterval(() => {
@@ -575,6 +606,29 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (path === '/api/tickets/refresh' && req.method === 'POST') {
       // Waits for the read, as the board's refresh does, so the reply carries it.
       await tickets.refresh();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/timezone' && req.method === 'POST') {
+      // The page says where it is when you look at it; see `client/zone.ts`.
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (err) {
+        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      const timeZone = validZone((body as Record<string, unknown> | null)?.timeZone);
+      if (!timeZone) {
+        sendJSON(res, 400, { error: '"timeZone" must be an IANA time zone, such as Europe/Copenhagen' });
+        return;
+      }
+      if (await zone.report(timeZone)) {
+        zoneMoved();
+        // The next run moves with the zone, and one may now be due.
+        await clockTick();
+      }
       sendState(res, await buildState());
       return;
     }

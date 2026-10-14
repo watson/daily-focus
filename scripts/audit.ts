@@ -27,8 +27,11 @@ import { workingMsBetween } from '../src/time.ts';
 import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, describeTime, nextRunDate, resolveSchedule, runsOn } from '../src/schedule.ts';
 import { resolveItems } from '../src/store.ts';
 import type { Brief } from '../src/types.ts';
+import { readSystemZone, startingZone } from '../src/zone.ts';
 
 const config = loadConfig();
+// The dashboard's days rather than this shell's, without writing its file.
+process.env.TZ = (await startingZone(config.timeZoneFile, await readSystemZone())).timeZone;
 const store = new Store(config);
 
 let failures = 0;

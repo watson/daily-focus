@@ -308,6 +308,8 @@ export interface Config {
   jira: JiraConfig;
   /** Where tickets.json lives: the board's last good read, written by the server. */
   ticketsFile: string;
+  /** Where timezone.json lives: the zone the browser last reported; see `zone.ts`. */
+  timeZoneFile: string;
   /** The on-demand assistant. */
   assistant: AssistantConfig;
   /** Append-only record of every assistant turn, written by the server. */
@@ -630,6 +632,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
+    timeZoneFile: resolve(dataDir, 'timezone.json'),
     // The same 1 to 120 the session endpoint holds a start to.
     sessionMinutes: envBounded('DAILY_FOCUS_SESSION_MINUTES', 25, 1, 120, env),
     awayAfterMinutes: envBounded('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, 0, 24 * 60, env),
