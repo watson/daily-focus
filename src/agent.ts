@@ -15,10 +15,14 @@
  *  - The agent is still the only writer of `items.json`. The dashboard starts
  *    the process and reads what it prints; it never writes the brief, and it
  *    never hands the agent anything the store doesn't already hold.
- *  - The run's working directory is the store. For Codex that is the whole
- *    write policy: its sandbox confines writes to it. Claude Code is held to
- *    `items.json` and its temporary sibling by its tool list. Neither can reach
- *    a source checkout, which is the boundary `prompts/README.md` insists on.
+ *  - The run's working directory is the store. For Codex that is the file
+ *    write policy: its sandbox confines writes to it, and `codex.ts` refuses
+ *    every connector write. Claude Code is held to `items.json` and its
+ *    temporary sibling by its tool list. Neither can reach a source checkout,
+ *    which is the boundary `prompts/README.md` insists on. A Codex command that
+ *    leaves the sandbox is decided by the user's own Codex approval settings,
+ *    as it would be in their Codex, so a brief that needs `gh` outside it still
+ *    gets it.
  *  - The brief lands the way every brief lands: the store watcher sees the
  *    rename, archives it and pushes it to every tab. Nothing here has to.
  *  - What the agent reports back — its prompt ends by asking for one — is kept
@@ -375,6 +379,8 @@ export class AgentRunner {
       effort: this.config.agent.effort,
       tools: [...briefWritingTools(), ...this.config.agent.tools],
       denyEdits: false,
+      drafts: false,
+      codexConfig: [],
     });
 
     await this.spawnInto(run, null, args, RUN_TIMEOUT_MS, 'gave up after an hour');
@@ -427,6 +433,8 @@ export class AgentRunner {
       // The sources, and not the brief: a chat is given nothing to write.
       tools: this.config.agent.tools,
       denyEdits: true,
+      drafts: false,
+      codexConfig: [],
     });
 
     await this.spawnInto(run, turn, args, TURN_TIMEOUT_MS, 'gave up after ten minutes');

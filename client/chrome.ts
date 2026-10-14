@@ -317,8 +317,8 @@ export function HelpDialog(_props: object): JSX.Element {
         "snooze and note apply: a pull request stays until it's merged or closed, and a " +
         'ticket whose status looks wrong is put right in Jira rather than here. Click a card ' +
         'to open its panel, where its notes and the assistant live; the panel stays on the ' +
-        'item it was opened for. The assistant is a CLI run on your machine; it reads and ' +
-        'drafts, never sends or posts. Click "updated … ago" in the header to open the ' +
+        'item it was opened for. The assistant is a CLI run on your machine, told to read ' +
+        'and draft, never to send or post. Click "updated … ago" in the header to open the ' +
         "morning agent's latest run: its report, earlier runs, and a place to ask it why " +
         'it did what it did.',
     ),

@@ -15,6 +15,7 @@ import { runHelper } from './calendar.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
+import { codexVersionWarning } from './codex.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
@@ -306,6 +307,19 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     },
   });
 
+  // A Codex older than the one the dashboard's limits on it were checked against
+  // may ignore them. Asked once, without holding up the start; the page shows
+  // the warning when the answer lands.
+  let codexWarnings: string[] = [];
+  const codexBins = new Set<string>();
+  if (config.agent.cli === 'codex') codexBins.add(config.agent.binPath);
+  if (config.assistant.agent === 'codex') codexBins.add(config.assistant.binPath);
+  void Promise.all([...codexBins].map((bin) => codexVersionWarning(bin))).then((found) => {
+    codexWarnings = [...new Set(found.filter((warning): warning is string => warning !== null))];
+    for (const warning of codexWarnings) console.warn(`[daily-focus] ${warning}`);
+    if (codexWarnings.length > 0) void broadcast();
+  });
+
   /** Ask for a restart to apply saved settings: now if nothing is running, otherwise once nothing is. */
   function requestRestart(): void {
     restart = options.onRestart ? 'waiting' : 'manual';
@@ -344,7 +358,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       tickets: tickets.view(actions, now),
       assistant: assistant.view(),
       agentRun: agent.view(now),
-      setupWarnings: [...configWarnings, ...(linkWarning ? [linkWarning] : [])],
+      setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
       restart,
       setup,
       assetVersion,

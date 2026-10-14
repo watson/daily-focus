@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AgentRunner, agentPrompt, displayPath, foldAgentLog, followUpPrompt } from '../src/agent.ts';
+import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 
 const dirs: string[] = [];
@@ -80,6 +81,9 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
   assert.equal(argv[0], 'exec');
   assert.ok(argv.includes('model="some-model"') && argv.includes('model_reasoning_effort="xhigh"'));
   assert.ok(argv.includes('sandbox_mode="workspace-write"'), 'writes are confined to the store');
+  assert.ok(CONNECTOR_POLICY.every((override) => argv.includes(override)), 'connectors are read, never written');
+  assert.ok(!GMAIL_DRAFTS.some((override) => argv.includes(override)), 'the agent drafts nothing');
+  assert.ok(!argv.some((arg) => arg.startsWith('plugins.') || arg.startsWith('mcp_servers.')), 'its plugins are left as they are');
   assert.ok(!argv.includes('resume'), 'every run is a fresh session');
   // The wrapper is the prompt's last argument, over several lines.
   const prompt = argv.slice(argv.indexOf('Run my morning brief for today.')).join('\n');

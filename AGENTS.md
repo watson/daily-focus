@@ -76,10 +76,14 @@ run it again with `--remove` afterwards.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
   `Host` before any route runs; keep every route behind it and every `GET` free of
   side effects, or any page open in the browser can act through the dashboard.
-- The assistant may read anything and create a Gmail draft; it must never send, post,
-  or edit. It runs in an empty directory with editing tools denied, so keep that a
-  property of the process: no checkout, no worktree, no repository path setting.
-  Work that needs one belongs in a coding session, not in this dashboard.
+- The assistant may read anything and create or revise a Gmail draft; it must never
+  send, post, or edit. It runs in an empty directory, so keep that a property of the
+  process: no checkout, no worktree, no repository path setting. Work that needs one
+  belongs in a coding session, not in this dashboard. Claude Code denies it the
+  editing tools; under Codex, `src/codex.ts` refuses every connector write but the
+  draft, for the agent too. Leave Codex's shell approvals, rules and sandbox escapes
+  to the user's own config: briefs reach GitHub and other local sources through them,
+  so tightening them needs a real brief run on each profile first.
 - `src/agent.ts` starts the briefing agent on the dashboard's clock, 07:00 unless
   `DAILY_FOCUS_AGENT_AT` says otherwise, once a day, and after a user click. Nothing
   else starts it, so the run log is the whole record of its runs; do not add a
