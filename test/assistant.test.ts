@@ -21,7 +21,9 @@ import {
   foldAssistantLog,
   QUICK_ACTIONS,
 } from '../src/assistant.ts';
+import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
 import { briefWritingTools, DEFAULT_AGENT_TOOLS, DEFAULT_ASSISTANT_TOOLS, loadConfig, type Config } from '../src/config.ts';
+import type { ExecFile } from '../src/shellpath.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -195,6 +197,104 @@ test('off means no turns and no log', async () => {
   assert.equal(assistant.view().enabled, false);
 });
 
+/* ---------- under Codex ---------- */
+
+const CODEX_LINES = [
+  '{"type":"thread.started","thread_id":"t-1"}',
+  '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Drafted."}}',
+  '{"type":"turn.completed","usage":{}}',
+];
+
+/**
+ * A Codex that says it is 0.162.1 and lists these servers, less any switched off
+ * by a `-c` override. Every `mcp list` is recorded in `calls`.
+ */
+function listing(servers: { name: string; enabled: boolean }[], calls: string[][] = []): ExecFile {
+  return async (_file, args) => {
+    if (args[0] === '--version') return 'codex-cli 0.162.1\n';
+    calls.push([...args]);
+    const off = args.filter((arg) => arg.startsWith('mcp_servers.')).map((arg) => arg.split('.')[1]);
+    return JSON.stringify(servers.map((server) => (off.includes(server.name) ? { ...server, enabled: false } : server)));
+  };
+}
+
+test('under Codex, connector writes are refused but drafts, and computer use is switched off by default', async () => {
+  const config = await makeConfig(CODEX_LINES, { DAILY_FOCUS_ASSISTANT: 'codex' });
+  assert.equal(config.assistant.computerUse, false, 'computer use is off unless turned on');
+  const calls: string[][] = [];
+  const assistant = new Assistant(config, { onChange: () => {} }, undefined, listing([{ name: 'node_repl', enabled: true }], calls));
+
+  await assistant.ask({ itemId: 'email:thread:1', action: 'draft-reply' }, {});
+  await settle(assistant, 'email:thread:1');
+  assert.equal(assistant.view().items['email:thread:1']!.turns[0]!.status, 'done');
+
+  const argv = (await readFile(join(config.dataDir, 'argv'), 'utf8')).split('\n');
+  for (const override of [...CONNECTOR_POLICY, ...GMAIL_DRAFTS]) assert.ok(argv.includes(override), `missing ${override}`);
+  assert.ok(argv.includes('plugins.unified-computer-use@openai-bundled.enabled=false'));
+  assert.ok(argv.includes('mcp_servers.node_repl.enabled=false'), 'a server from your own config goes too');
+
+  // Codex is asked once per process, not once per turn.
+  await assistant.ask({ itemId: 'email:thread:1', text: 'shorter' }, {});
+  await settle(assistant, 'email:thread:1');
+  assert.equal(calls.length, 2, 'two looks for the first turn, none for the next');
+  const resumed = (await readFile(join(config.dataDir, 'argv'), 'utf8')).split('\n');
+  assert.ok(resumed.includes('resume') && resumed.includes('mcp_servers.node_repl.enabled=false'), 'a resumed turn is held the same way');
+});
+
+test('under Codex with computer use turned on, Codex is not asked and nothing is switched off', async () => {
+  const config = await makeConfig(CODEX_LINES, { DAILY_FOCUS_ASSISTANT: 'codex', DAILY_FOCUS_ASSISTANT_COMPUTER_USE: 'on' });
+  const calls: string[][] = [];
+  const assistant = new Assistant(config, { onChange: () => {} }, undefined, listing([{ name: 'node_repl', enabled: true }], calls));
+  await assistant.ask({ itemId: 'gh:1', text: 'hi' }, {});
+  await settle(assistant, 'gh:1');
+  const argv = await readFile(join(config.dataDir, 'argv'), 'utf8');
+  assert.equal(calls.length, 0);
+  assert.ok(!argv.includes('plugins.') && !argv.includes('mcp_servers.'));
+  assert.ok(argv.includes(CONNECTOR_POLICY[0]!), 'connector writes are refused either way');
+});
+
+test("under Codex, a turn whose computer use can't be confirmed off fails and starts nothing", async () => {
+  const config = await makeConfig(CODEX_LINES, { DAILY_FOCUS_ASSISTANT: 'codex' });
+  let refusals = 0;
+  const refuses: ExecFile = async (_file, args) => {
+    if (args[0] === '--version') return 'codex-cli 0.162.1\n';
+    refusals += 1;
+    throw new Error('Error: invalid transport');
+  };
+  const assistant = new Assistant(config, { onChange: () => {} }, undefined, refuses);
+  await assistant.ask({ itemId: 'gh:1', text: 'hi' }, {});
+  await settle(assistant, 'gh:1');
+  const turn = assistant.view().items['gh:1']!.turns[0]!;
+  assert.equal(turn.status, 'failed');
+  assert.match(turn.error!, /computer use is off in the settings, and Codex could not confirm it: Error: invalid transport/);
+  await assert.rejects(readFile(join(config.dataDir, 'argv'), 'utf8'), 'the CLI never ran');
+
+  // Not remembered: the next turn asks again.
+  await assistant.ask({ itemId: 'gh:1', text: 'again' }, {});
+  await settle(assistant, 'gh:1');
+  assert.equal(refusals, 2);
+});
+
+test('under Codex older than 0.144.0, a turn is refused and nothing is started', async () => {
+  const config = await makeConfig(CODEX_LINES, { DAILY_FOCUS_ASSISTANT: 'codex', DAILY_FOCUS_ASSISTANT_COMPUTER_USE: 'on' });
+  let version = 'codex-cli 0.143.0\n';
+  const old: ExecFile = async (_file, args) => (args[0] === '--version' ? version : '[]');
+  const assistant = new Assistant(config, { onChange: () => {} }, undefined, old);
+
+  await assistant.ask({ itemId: 'gh:1', text: 'hi' }, {});
+  await settle(assistant, 'gh:1');
+  const turn = assistant.view().items['gh:1']!.turns[0]!;
+  assert.equal(turn.status, 'failed');
+  assert.match(turn.error!, /Codex 0\.143\.0 is older than 0\.144\.0/);
+  await assert.rejects(readFile(join(config.dataDir, 'argv'), 'utf8'), 'the CLI never ran');
+
+  // Updated without a restart: the next turn asks again, and runs.
+  version = 'codex-cli 0.144.0\n';
+  await assistant.ask({ itemId: 'gh:1', text: 'again' }, {});
+  await settle(assistant, 'gh:1');
+  assert.equal(assistant.view().items['gh:1']!.turns.at(-1)!.status, 'done');
+});
+
 /* ---------- the pieces ---------- */
 
 test('the log folds forgivingly', () => {
@@ -213,6 +313,9 @@ test('the log folds forgivingly', () => {
   assert.equal(turns.get('b')!.status, 'running');
 });
 
+/** The options every adapter test starts from. */
+const BASE = { prompt: 'p', sessionId: null, model: null, effort: null, tools: [], denyEdits: true, drafts: false, codexConfig: [] };
+
 test('the Claude adapter reads what Claude Code prints', () => {
   assert.deepEqual(claudeAdapter.parse(INIT), { sessionId: 'sess-1' });
   assert.deepEqual(claudeAdapter.parse(SAID('hello')), { text: 'hello' });
@@ -224,13 +327,14 @@ test('the Claude adapter reads what Claude Code prints', () => {
     { done: { ok: false, error: 'Rate limited' } },
   );
 
-  const args = claudeAdapter.args({ prompt: 'p', sessionId: null, model: 'opus', effort: 'high', tools: ['Bash(gh *)'], denyEdits: true });
+  const args = claudeAdapter.args({ ...BASE, model: 'opus', effort: 'high', tools: ['Bash(gh *)'], codexConfig: ['x=1'] });
   assert.ok(args.includes('--model') && args[args.indexOf('--model') + 1] === 'opus');
   assert.ok(args.includes('--effort') && args[args.indexOf('--effort') + 1] === 'high');
   assert.ok(args.includes('--allowedTools') && args[args.indexOf('--allowedTools') + 1] === 'Bash(gh *)');
   assert.equal(args.at(-1), 'p');
+  assert.ok(!args.includes('-c') && !args.includes('x=1'), "Codex's config is Codex's alone");
 
-  const bare = claudeAdapter.args({ prompt: 'p', sessionId: 'abc', model: null, effort: null, tools: [], denyEdits: true });
+  const bare = claudeAdapter.args({ ...BASE, sessionId: 'abc' });
   assert.ok(!bare.includes('--model') && !bare.includes('--effort') && !bare.includes('--allowedTools'));
   assert.ok(bare.includes('--resume') && bare[bare.indexOf('--resume') + 1] === 'abc');
 });
@@ -239,7 +343,7 @@ test('Claude receives the first prompt separately from the default tool permissi
   for (const denyEdits of [false, true]) {
     const tools = denyEdits ? DEFAULT_ASSISTANT_TOOLS : [...briefWritingTools(), ...DEFAULT_AGENT_TOOLS];
     const prompt = 'Reply with just: ok';
-    const args = claudeAdapter.args({ prompt, sessionId: null, model: null, effort: null, tools, denyEdits });
+    const args = claudeAdapter.args({ ...BASE, prompt, tools, denyEdits });
     const allowedTools = args.indexOf('--allowedTools');
     const separator = args.indexOf('--');
 
@@ -257,15 +361,23 @@ test('the Codex adapter reads what Codex prints', () => {
   assert.deepEqual(codexAdapter.parse('{"type":"turn.completed","usage":{}}'), { done: { ok: true } });
   assert.deepEqual(codexAdapter.parse('{"type":"turn.failed","error":{"message":"nope"}}'), { done: { ok: false, error: 'nope' } });
 
-  const first = codexAdapter.args({ prompt: 'p', sessionId: null, model: 'gpt-x', effort: 'low', tools: [], denyEdits: true });
+  const first = codexAdapter.args({ ...BASE, model: 'gpt-x', effort: 'low', drafts: true, codexConfig: ['plugins.x.enabled=false'] });
   assert.deepEqual(first.slice(0, 3), ['exec', '--json', '--skip-git-repo-check']);
   assert.ok(first.includes('-c') && first.includes('model="gpt-x"') && first.includes('model_reasoning_effort="low"'));
   assert.ok(first.includes('sandbox_mode="workspace-write"') && first.includes('sandbox_workspace_write.network_access=true'));
+  for (const override of [...CONNECTOR_POLICY, ...GMAIL_DRAFTS, 'plugins.x.enabled=false']) {
+    assert.equal(first[first.indexOf(override) - 1], '-c', `${override} is passed as config`);
+  }
+  // The shell is the user's own Codex config's: nothing here touches how it is approved.
+  assert.ok(!first.some((arg) => arg.startsWith('approval_policy') || arg === 'approvals_reviewer="user"'));
+  assert.ok(!first.includes('--ignore-rules') && !first.includes('--ignore-user-config'));
 
-  const again = codexAdapter.args({ prompt: 'p', sessionId: 't-1', model: null, effort: null, tools: [], denyEdits: true });
+  const again = codexAdapter.args({ ...BASE, sessionId: 't-1' });
   assert.deepEqual(again.slice(0, 2), ['exec', 'resume']);
   assert.deepEqual(again.slice(-2), ['t-1', 'p']);
   assert.ok(again.includes('sandbox_workspace_write.network_access=true'), 'the resumed turn is sandboxed the same way');
+  assert.ok(CONNECTOR_POLICY.every((override) => again.includes(override)), 'and held to reading connectors');
+  assert.ok(!GMAIL_DRAFTS.some((override) => again.includes(override)), 'drafts only when asked for');
 });
 
 test('the first prompt carries the instructions, the row and the request, in that order', () => {

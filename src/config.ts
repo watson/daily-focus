@@ -183,10 +183,15 @@ export interface AssistantConfig {
    * denied outright. The default covers the two CLIs the boards already lean on,
    * fetching a page, and the claude.ai Gmail connector, which is how a draft
    * reaches the thread.
-   * Codex has no equivalent; its sandbox, confined to the empty working
-   * directory, is the whole policy.
+   * Codex has no equivalent; see `codex.ts` for what it is held to instead.
    */
   tools: readonly string[];
+  /**
+   * `DAILY_FOCUS_ASSISTANT_COMPUTER_USE`: whether Codex may keep the plugins that
+   * act in the user's apps and browser. Off by default. Claude Code ignores it;
+   * its tool list decides.
+   */
+  computerUse: boolean;
 }
 
 /** A local time of day, as `DAILY_FOCUS_AGENT_AT` gives it. */
@@ -223,7 +228,8 @@ export interface AgentRunConfig {
    * assistant. Writing the brief is not on this list: `briefWritingTools` is
    * added by the runner for a run and withheld for a follow-up question, so a
    * chat about a finished brief cannot rewrite it. Codex ignores this; its
-   * sandbox, confined to the store, is the policy.
+   * sandbox, confined to the store, and the connector rules in `codex.ts` are
+   * the policy.
    */
   tools: readonly string[];
 }
@@ -492,13 +498,16 @@ function envAssistant(env: NodeJS.ProcessEnv): AssistantConfig {
     model: envString('DAILY_FOCUS_ASSISTANT_MODEL', '', env) || null,
     effort: envString('DAILY_FOCUS_ASSISTANT_EFFORT', '', env) || null,
     tools: tools.length > 0 ? tools : DEFAULT_ASSISTANT_TOOLS,
+    computerUse: envFlag('DAILY_FOCUS_ASSISTANT_COMPUTER_USE', false, env),
   };
 }
 
 /**
  * What the assistant may reach for when nobody is there to answer a prompt: the
- * GitHub and Atlassian CLIs, read and write alike since a comment is something
- * the user asked for in so many words, and the Gmail connector for drafts.
+ * GitHub and Atlassian CLIs, fetching a page, and the Gmail connector for drafts.
+ * Broader than the assistant needs: both CLIs can write, and the whole connector
+ * includes sending. Its prompt forbids both, and narrowing the list is left to
+ * the user; SETUP.md shows the Gmail tools a narrower list would name.
  */
 export const DEFAULT_ASSISTANT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli *)', 'WebFetch', 'mcp__claude_ai_Gmail'];
 

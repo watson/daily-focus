@@ -131,11 +131,13 @@ notes live too; the reply streams in there, and you can follow up in the same
 conversation. The panel stays on the item it was opened for while you move through
 the list.
 
-It reads and drafts, and that is all. An email reply is created as a Gmail draft on
-the thread, so it is waiting there when you open the mail; a reply to a reviewer is
-handed back as text for you to post. It never sends, posts, or edits a file, and it
-has no checkout: fixing conflicts or a build is work for a real coding session, and
-this is for the questions you would otherwise answer by opening six tabs.
+It is told to read and draft, and nothing more. An email reply is created as a Gmail
+draft on the thread, so it is waiting there when you open the mail; a reply to a
+reviewer is handed back as text for you to post. It is told never to send, post, or
+edit a file, and it has no checkout: fixing conflicts or a build is work for a real
+coding session, and this is for the questions you would otherwise answer by opening
+six tabs. How much of that the CLI itself enforces differs between Claude Code and
+Codex; see [What the assistant can do](SETUP.md#what-the-assistant-can-do).
 
 ## The morning agent
 

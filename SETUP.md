@@ -126,14 +126,23 @@ it finishes, and a chat where you can ask it why it did what it did. See
 The agent reaches your sources the way the CLI does:
 
 - **Codex** runs in its workspace-write sandbox with network access, confined to the
-  store. Connectors from the Codex app are found through its plugin catalogue. There
-  is nobody to approve a command outside the sandbox, so the agent reports that
-  restriction for any `gh` command that needs it, such as switching accounts.
+  store. Connectors from the Codex app are found through its plugin catalogue, and
+  every write through one is refused: a connector tool counts as a write unless it
+  is marked read-only. A command that needs to leave the sandbox, such as `gh`
+  switching accounts, is decided by your own Codex approval settings, as it would be
+  in your Codex. With nobody set to approve, the agent reports that restriction; with
+  Codex's automatic reviewer, the reviewer decides. The dashboard won't start a run
+  on a Codex older than 0.144.0, which would ignore the refusal of connector writes;
+  update Codex if a run fails saying so.
 - **Claude Code** may write `items.json` and nothing else in the store, and reach
   its sources with only what `DAILY_FOCUS_AGENT_TOOLS` allows. The default covers
   GitHub, Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat
   and document connectors to the list by name, or the brief will report them as
-  unreachable.
+  unreachable. The default allows every Gmail tool, sending included, and `gh` and
+  `acli` can write as well as read; the agent's instructions forbid changing
+  anything. To narrow Gmail to reading, name its tools instead of the connector, as
+  [What the assistant can do](#what-the-assistant-can-do) shows, without the two
+  draft tools.
 
 Set `DAILY_FOCUS_AGENT_MODEL` and `DAILY_FOCUS_AGENT_EFFORT` if the CLI's own
 defaults are not what you want for a brief; a brief is worth a high effort. If the
@@ -277,14 +286,53 @@ the CLI is configured with; `DAILY_FOCUS_ASSISTANT_MODEL` and
 `DAILY_FOCUS_ASSISTANT_EFFORT` override them. If the server can't find the CLI,
 set `DAILY_FOCUS_ASSISTANT_BIN` to its path.
 
-The assistant reads and drafts; it never sends, posts or edits anything, and it has
-no checkout to work in. That is deliberate. Fixing merge conflicts or a failing build
-belongs in a real coding session; this panel is for the questions you'd otherwise
-answer by opening six tabs. The Gmail draft is the one thing it creates, through the
-Gmail tool the CLI has: with Claude Code that is the claude.ai Gmail connector, which
-`DAILY_FOCUS_ASSISTANT_TOOLS` allows by default; with Codex it is the Gmail plugin
-from the Codex app, which the CLI finds through its plugin catalogue. Without either,
-the assistant hands you the text instead and says so.
+The assistant is told to read and draft, and never to send, post or edit anything,
+and it has no checkout to work in. That is deliberate. Fixing merge conflicts or a
+failing build belongs in a real coding session; this panel is for the questions you'd
+otherwise answer by opening six tabs. The Gmail draft is the one thing it creates,
+and revises when you ask, through the Gmail tool the CLI has: with Claude Code that
+is the claude.ai Gmail connector, which `DAILY_FOCUS_ASSISTANT_TOOLS` allows by
+default; with Codex it is the Gmail app linked to your ChatGPT account, which the CLI
+finds through its plugin catalogue. Without either, the assistant hands you the text
+instead and says so.
+
+### What the assistant can do
+
+The assistant runs the CLI you already use, with the access that CLI already has.
+The dashboard narrows some of that, and leaves the rest to the assistant's
+instructions. What the CLI itself enforces:
+
+- **Claude Code** may use only the tools in `DAILY_FOCUS_ASSISTANT_TOOLS`, and never
+  its file-editing tools, whatever the list says; anything else is refused rather
+  than asked about. Rules in your own Claude Code settings that allow a tool still
+  apply. The default list is broader than the assistant needs:
+  `mcp__claude_ai_Gmail` allows every tool on the Gmail connector, sending and
+  deleting included, and `gh` and `acli` can comment, merge and move tickets as well
+  as read. Only the instructions keep it from doing those. To hold it to reading
+  mail and drafting replies, name the Gmail tools instead of the connector:
+
+  ```dotenv
+  DAILY_FOCUS_ASSISTANT_TOOLS=Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail__search_threads,mcp__claude_ai_Gmail__get_thread,mcp__claude_ai_Gmail__get_message,mcp__claude_ai_Gmail__list_labels,mcp__claude_ai_Gmail__list_drafts,mcp__claude_ai_Gmail__get_draft,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__update_draft
+  ```
+
+  A tool left off the list is refused, so if the connector renames one, the
+  assistant reports that it can't reach your mail rather than working around it.
+- **Codex** refuses every write through a connector (Gmail, Calendar, Drive, GitHub
+  and the other apps your ChatGPT account links) except creating and revising a
+  Gmail draft. A connector tool counts as a write unless it is marked read-only. A
+  tool you have told Codex to always allow, or an app given approval settings of its
+  own in your Codex config, keeps them. Computer use, the plugins that act in your
+  apps and browser with your sign-ins, is off unless you turn on
+  `DAILY_FOCUS_ASSISTANT_COMPUTER_USE`; the dashboard checks with Codex that it is
+  off before each session, and refuses to start one it can't confirm. Shell
+  commands follow your own Codex config: the sandbox keeps writes in the
+  assistant's working directory, and a command that needs to leave it is decided
+  by your Codex approval settings, as it would be in your own Codex. That keeps
+  `gh` working, and means it can write. All of this needs Codex 0.149.0 or
+  newer, and the page warns when yours is older. Before 0.144.0 Codex silently
+  ignores the refusal of connector writes, so the dashboard won't start the
+  assistant or the morning agent on it at all; before 0.149.0 it can't switch
+  computer use off, so the assistant won't answer while that setting is off.
 
 Its instructions live in `prompts/assistant.md`, linked into the store as
 `assistant.md` each time the dashboard starts. What it says stays in the chat in the panel: it
@@ -493,13 +541,14 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_ASSISTANT_BIN` | *the CLI's name* | Path to the assistant's CLI, for when the server's PATH lacks it. `~` is expanded |
 | `DAILY_FOCUS_ASSISTANT_MODEL` | *the CLI's own* | Model passed to the CLI untouched: an alias like `opus`, or a full id. Unset passes no flag |
 | `DAILY_FOCUS_ASSISTANT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched: `low`, `medium`, `high`, `xhigh` or `max`. Unset passes no flag |
-| `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. Ignored by Codex |
+| `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. The default allows every Gmail tool, sending included; see [What the assistant can do](#what-the-assistant-can-do) to narrow it. Ignored by Codex |
+| `DAILY_FOCUS_ASSISTANT_COMPUTER_USE` | `off` | `on` lets the assistant use Codex's computer-use and browser plugins, which act in your apps and browser with your sign-ins. `off` switches them off for its runs. Ignored by Claude Code, which uses only the tools in its list |
 | `DAILY_FOCUS_AGENT` | `off` | `codex` or `claude` lets the dashboard run the morning agent through that CLI: each scheduled morning, and from the refresh icon beside the brief's age. `off` hides it |
 | `DAILY_FOCUS_AGENT_AT` | `07:00` | Local time, `HH:MM`, at which the dashboard starts the agent on each scheduled day, or as soon as it is running after that. `off` means it never starts one on its own; the refresh icon still does. Needs `DAILY_FOCUS_AGENT` |
 | `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the server's PATH lacks it. `~` is expanded |
 | `DAILY_FOCUS_AGENT_MODEL` | *the CLI's own* | Model passed to the CLI untouched. Unset passes no flag |
 | `DAILY_FOCUS_AGENT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched. Unset passes no flag |
-| `DAILY_FOCUS_AGENT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use to reach your sources, in its permission syntax, comma-separated. Writing `items.json`, and nothing else in the store, is allowed regardless. Ignored by Codex |
+| `DAILY_FOCUS_AGENT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use to reach your sources, in its permission syntax, comma-separated. Writing `items.json`, and nothing else in the store, is allowed regardless. The default allows every Gmail tool, sending included. Ignored by Codex |
 
 ## If something looks wrong
 

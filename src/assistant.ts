@@ -20,9 +20,17 @@
  *    compacted, like the other two logs in the store.
  *
  * The assistant is deliberately given nothing to edit. Its working directory is
- * an empty directory in the store and its file-editing tools are switched off, so
- * "it only reads and drafts" is a property of the process rather than a line in
- * the prompt. Fixing conflicts or CI is a job for a real coding session.
+ * an empty directory in the store, and fixing conflicts or CI is a job for a real
+ * coding session. How much of "it only reads and drafts" the process enforces
+ * depends on the CLI, and the rest is the prompt:
+ *
+ *  - Claude Code gets only the tools in its list, with the editing tools denied
+ *    whatever the list says. The default list includes the whole Gmail connector
+ *    and the `gh` and `acli` CLIs, all of which can write; narrowing it is left
+ *    to the user, and SETUP.md shows how.
+ *  - Codex refuses every connector write except a Gmail draft (see `codex.ts`),
+ *    and computer use unless the user turns it on. Its shell follows the user's
+ *    own Codex config, so `gh` keeps working, and so can write.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -30,7 +38,9 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 
+import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS } from './codex.ts';
 import type { AssistantAgent, Config } from './config.ts';
+import type { ExecFile } from './shellpath.ts';
 import type {
   AssistantItemState,
   AssistantQuickAction,
@@ -245,9 +255,20 @@ export interface SpawnOptions {
   /**
    * Deny the editing tools by name. True for the assistant, which is given
    * nothing to edit; false for the morning agent, which has to write its brief
-   * and is held to that one file by `tools` instead.
+   * and is held to that one file by `tools` instead. Claude Code only: Codex's
+   * sandbox confines its edits to the working directory.
    */
   denyEdits: boolean;
+  /**
+   * May create and revise Gmail drafts without asking. Codex only, where every
+   * other connector write is refused; Claude Code's tool list decides for it.
+   */
+  drafts: boolean;
+  /**
+   * More Codex config, in its `-c key=value` form: what `computerUseOff` found to
+   * switch off. Ignored by Claude Code.
+   */
+  codexConfig: readonly string[];
 }
 
 /**
@@ -328,22 +349,30 @@ export const claudeAdapter: Adapter = {
 };
 
 /**
- * Codex in exec mode, streaming JSON. Its sandbox is the whole permission
- * policy; there is no per-tool list to hand it. The workspace-write sandbox
- * rather than read-only, because read-only also cuts the network and takes
- * `gh` with it — and the workspace it may write to is the empty scratch
- * directory the assistant runs in, so nothing real becomes writable.
+ * Codex in exec mode, streaming JSON. There is no per-tool list to hand it, so
+ * the policy is the sandbox plus the connector rules in `codex.ts`. The
+ * workspace-write sandbox rather than read-only, because read-only also cuts the
+ * network and takes `gh` with it — and the workspace it may write to is the
+ * working directory the dashboard gives it. Commands that leave the sandbox, and
+ * the approval policy that decides them, are the user's own Codex config's.
  */
 export const codexAdapter: Adapter = {
-  args({ prompt, sessionId, model, effort }) {
+  args({ prompt, sessionId, model, effort, drafts, codexConfig }) {
     const args = ['exec'];
     if (sessionId) args.push('resume');
     args.push('--json', '--skip-git-repo-check');
     // Config overrides are parsed as TOML, so a string has to carry its quotes.
     // As overrides rather than `--sandbox`, which the resume form doesn't take.
-    args.push('-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true');
-    if (model) args.push('-c', `model=${JSON.stringify(model)}`);
-    if (effort) args.push('-c', `model_reasoning_effort=${JSON.stringify(effort)}`);
+    const config = [
+      'sandbox_mode="workspace-write"',
+      'sandbox_workspace_write.network_access=true',
+      ...CONNECTOR_POLICY,
+      ...(drafts ? GMAIL_DRAFTS : []),
+      ...codexConfig,
+    ];
+    if (model) config.push(`model=${JSON.stringify(model)}`);
+    if (effort) config.push(`model_reasoning_effort=${JSON.stringify(effort)}`);
+    args.push(...configArgs(config));
     if (sessionId) args.push(sessionId);
     args.push(prompt);
     return args;
@@ -419,12 +448,20 @@ export class Assistant {
   private readonly config: Config;
   private readonly hooks: AssistantHooks;
   private readonly spawnFn: typeof spawn;
+  private readonly execFn: ExecFile | undefined;
+  /** Refuses a Codex too old to hold to the connector rules; see `codex.ts`. */
+  private readonly codexGate: CodexGate;
+  /** What switches computer use off, once Codex has said; see `computerUseConfig`. */
+  private codexOff: Promise<string[]> | null = null;
 
-  constructor(config: Config, hooks: AssistantHooks, spawnFn: typeof spawn = spawn) {
+  constructor(config: Config, hooks: AssistantHooks, spawnFn: typeof spawn = spawn, execFn?: ExecFile) {
     this.config = config;
     this.hooks = hooks;
-    // Swapped in by tests, which run a script in place of the CLI.
+    // Swapped in by tests, which run a script in place of the CLI, and answer
+    // for `codex mcp list` themselves.
     this.spawnFn = spawnFn;
+    this.execFn = execFn;
+    this.codexGate = new CodexGate(config.assistant.binPath, execFn);
   }
 
   get enabled(): boolean {
@@ -543,6 +580,23 @@ export class Assistant {
       : composePrompt(await this.instructions(), context, resolved.request, this.config.profile);
 
     await mkdir(this.config.assistantDir, { recursive: true });
+    const refusal = agent === 'codex' ? await this.codexGate.refusal() : null;
+    if (refusal) {
+      await this.finish(turn, { ok: false, error: refusal });
+      return turn;
+    }
+    let codexConfig: string[];
+    try {
+      codexConfig = await this.computerUseConfig();
+    } catch (err) {
+      const error =
+        (err as NodeJS.ErrnoException).code === 'ENOENT'
+          ? this.spawnError(err)
+          : `computer use is off in the settings, and Codex could not confirm it: ${(err as Error).message}. ` +
+            'Update Codex, or turn computer use on for the assistant';
+      await this.finish(turn, { ok: false, error });
+      return turn;
+    }
     const adapter = ADAPTERS[agent];
     const args = adapter.args({
       prompt,
@@ -551,6 +605,8 @@ export class Assistant {
       effort: this.config.assistant.effort,
       tools: this.config.assistant.tools,
       denyEdits: true,
+      drafts: true,
+      codexConfig,
     });
 
     let child: ChildProcess;
@@ -644,6 +700,21 @@ export class Assistant {
       await this.append({ event: 'failed', turn: turn.id, sessionId: turn.sessionId, error: turn.error, reply, at });
     }
     this.hooks.onChange();
+  }
+
+  /**
+   * What switches computer use off, when the assistant runs Codex and the user
+   * hasn't turned it on. Asked of Codex once and kept for the life of the
+   * process; settings that change it restart the dashboard anyway. A failure
+   * isn't kept, so the next turn asks again.
+   */
+  private computerUseConfig(): Promise<string[]> {
+    if (this.config.assistant.agent !== 'codex' || this.config.assistant.computerUse) return Promise.resolve([]);
+    this.codexOff ??= computerUseOff(this.config.assistant.binPath, this.execFn).catch((err: unknown) => {
+      this.codexOff = null;
+      throw err;
+    });
+    return this.codexOff;
   }
 
   private spawnError(err: unknown): string {

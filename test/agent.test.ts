@@ -15,6 +15,8 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { AgentRunner, agentPrompt, displayPath, foldAgentLog, followUpPrompt } from '../src/agent.ts';
+import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
+import type { ExecFile } from '../src/shellpath.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 
 const dirs: string[] = [];
@@ -33,6 +35,8 @@ async function makeConfig(lines: string[], env: Record<string, string> = {}, bod
   dirs.push(bin);
   const script = [
     '#!/bin/sh',
+    // Asked before every run; answered the way Codex does, and not recorded as a run.
+    `[ "$1" = "--version" ] && { echo 'codex-cli 0.162.1'; exit 0; }`,
     `printf '%s\\n' "$@" > "${join(dataDir, '.argv')}"`,
     `pwd > "${join(dataDir, '.cwd')}"`,
     body,
@@ -80,6 +84,9 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
   assert.equal(argv[0], 'exec');
   assert.ok(argv.includes('model="some-model"') && argv.includes('model_reasoning_effort="xhigh"'));
   assert.ok(argv.includes('sandbox_mode="workspace-write"'), 'writes are confined to the store');
+  assert.ok(CONNECTOR_POLICY.every((override) => argv.includes(override)), 'connectors are read, never written');
+  assert.ok(!GMAIL_DRAFTS.some((override) => argv.includes(override)), 'the agent drafts nothing');
+  assert.ok(!argv.some((arg) => arg.startsWith('plugins.') || arg.startsWith('mcp_servers.')), 'its plugins are left as they are');
   assert.ok(!argv.includes('resume'), 'every run is a fresh session');
   // The wrapper is the prompt's last argument, over several lines.
   const prompt = argv.slice(argv.indexOf('Run my morning brief for today.')).join('\n');
@@ -98,6 +105,21 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
   assert.deepEqual(again.view().last!.messages, run.messages);
 });
 
+
+test('a Codex older than 0.144.0 is refused: the run is logged as failed and the CLI never starts', async () => {
+  const config = await makeConfig([THREAD, SAID('Wrote it.'), DONE]);
+  const old: ExecFile = async () => 'codex-cli 0.143.0\n';
+  const runner = new AgentRunner(config, { onChange: () => {} }, undefined, old);
+  await runner.run();
+  await settle(runner);
+
+  const run = runner.view().last!;
+  assert.equal(run.status, 'failed');
+  assert.match(run.error!, /Codex 0\.143\.0 is older than 0\.144\.0/);
+  await assert.rejects(readFile(join(config.dataDir, '.argv'), 'utf8'), 'the CLI never ran');
+  const log = (await readFile(config.agentLogFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(log.map((r) => r.event), ['started', 'failed'], "logged, so the clock doesn't try again");
+});
 test('a follow-up resumes the run in its session, in the store, with nothing to write', async () => {
   const config = await makeConfig(
     ['{"type":"system","subtype":"init","session_id":"s-1"}', '{"type":"result","subtype":"success","is_error":false,"result":"Done."}'],

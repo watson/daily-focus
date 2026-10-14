@@ -15,10 +15,14 @@
  *  - The agent is still the only writer of `items.json`. The dashboard starts
  *    the process and reads what it prints; it never writes the brief, and it
  *    never hands the agent anything the store doesn't already hold.
- *  - The run's working directory is the store. For Codex that is the whole
- *    write policy: its sandbox confines writes to it. Claude Code is held to
- *    `items.json` and its temporary sibling by its tool list. Neither can reach
- *    a source checkout, which is the boundary `prompts/README.md` insists on.
+ *  - The run's working directory is the store. For Codex that is the file
+ *    write policy: its sandbox confines writes to it, and `codex.ts` refuses
+ *    every connector write. Claude Code is held to `items.json` and its
+ *    temporary sibling by its tool list. Neither can reach a source checkout,
+ *    which is the boundary `prompts/README.md` insists on. A Codex command that
+ *    leaves the sandbox is decided by the user's own Codex approval settings,
+ *    as it would be in their Codex, so a brief that needs `gh` outside it still
+ *    gets it.
  *  - The brief lands the way every brief lands: the store watcher sees the
  *    rename, archives it and pushes it to every tab. Nothing here has to.
  *  - What the agent reports back — its prompt ends by asking for one — is kept
@@ -43,8 +47,10 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 
 import { ADAPTERS, type ParsedEvent } from './assistant.ts';
+import { CodexGate } from './codex.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
+import type { ExecFile } from './shellpath.ts';
 import type { AgentRun, AgentRunState, AgentTurn } from './types.ts';
 
 /**
@@ -235,12 +241,16 @@ export class AgentRunner {
   private readonly config: Config;
   private readonly hooks: AgentRunnerHooks;
   private readonly spawnFn: typeof spawn;
+  /** Refuses a Codex too old to hold to the connector rules; see `codex.ts`. */
+  private readonly codexGate: CodexGate;
 
-  constructor(config: Config, hooks: AgentRunnerHooks, spawnFn: typeof spawn = spawn) {
+  constructor(config: Config, hooks: AgentRunnerHooks, spawnFn: typeof spawn = spawn, execFn?: ExecFile) {
     this.config = config;
     this.hooks = hooks;
-    // Swapped in by tests, which run a script in place of the CLI.
+    // Swapped in by tests, which run a script in place of the CLI, and answer
+    // for `codex --version` themselves.
     this.spawnFn = spawnFn;
+    this.codexGate = new CodexGate(config.agent.binPath, execFn);
   }
 
   get enabled(): boolean {
@@ -375,6 +385,8 @@ export class AgentRunner {
       effort: this.config.agent.effort,
       tools: [...briefWritingTools(), ...this.config.agent.tools],
       denyEdits: false,
+      drafts: false,
+      codexConfig: [],
     });
 
     await this.spawnInto(run, null, args, RUN_TIMEOUT_MS, 'gave up after an hour');
@@ -427,6 +439,8 @@ export class AgentRunner {
       // The sources, and not the brief: a chat is given nothing to write.
       tools: this.config.agent.tools,
       denyEdits: true,
+      drafts: false,
+      codexConfig: [],
     });
 
     await this.spawnInto(run, turn, args, TURN_TIMEOUT_MS, 'gave up after ten minutes');
@@ -442,6 +456,14 @@ export class AgentRunner {
     const cli = run.cli;
     const adapter = ADAPTERS[cli];
     await mkdir(this.config.dataDir, { recursive: true });
+
+    // Recorded like a CLI that can't be found: the run is in the log, failed, so
+    // the clock doesn't try again every half minute.
+    const refusal = cli === 'codex' ? await this.codexGate.refusal() : null;
+    if (refusal) {
+      await this.finish(run, turn, { ok: false, error: refusal });
+      return;
+    }
 
     let child: ChildProcess;
     try {
