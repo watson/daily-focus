@@ -17,6 +17,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { needsJiraCount, reconcile, type LinkedRead } from './linked.ts';
 import type { Ticket, TicketStatusCategory } from './types.ts';
 
 const run = promisify(execFile);
@@ -570,10 +571,16 @@ export interface TicketFetch {
  * per-ticket, which is the opposite rule from the three above and safe for the
  * opposite reason — a panel that cannot be read withholds a verdict instead of
  * inventing one.
+ *
+ * **Last, GitHub's own answer**, when `linked` brings one: everything above is
+ * Jira's, and Jira can be days behind GitHub. It is started by the caller so it
+ * runs alongside the searches, and awaited here because it decides which other
+ * panels are worth reading. Null leaves the board exactly as Jira has it. See
+ * `linked.ts`.
  */
 export async function fetchTickets(
   acliPath: string,
-  opts: { projects: readonly string[]; site: string | null },
+  opts: { projects: readonly string[]; site: string | null; linked?: Promise<LinkedRead | null> },
 ): Promise<TicketFetch> {
   const [base, anyPr, openPr] = await Promise.all([
     search(acliPath, buildJql(opts.projects, null)),
@@ -620,21 +627,28 @@ export async function fetchTickets(
 
   // **Repair the open count from the development panel**, because JQL's `.open`
   // does not count a draft — see the note above `ANY_PR`. Only the settled
-  // candidates are worth asking about: every other ticket either already has an
-  // open pull request or has none at all, and neither reading can change.
+  // candidates are worth asking about for that: every other ticket either already
+  // has an open pull request or has none at all, and Jira won't say otherwise.
   //
   // Unlike the three searches above, one of these failing costs one row rather
   // than the round, and the difference is that the fallback here is honest. A
   // failed search would silently move tickets between courts; a failed panel
   // read only withholds the settled verdict, which drops the row rather than
   // making a claim about it.
-  const candidates = tickets.filter((ticket) => ticket.hasAnyPr && !ticket.hasOpenPr);
-  const panels = await mapLimit(candidates, DEV_CONCURRENCY, (ticket) =>
+  const readPanel = (ticket: Ticket): Promise<{ asked: boolean; dev: DevPullRequests | null }> =>
     fetchDevPullRequests(acliPath, ticket.key).then(
       (dev) => ({ asked: true, dev }),
       () => ({ asked: false, dev: null }),
-    ),
-  );
+    );
+  const candidates = tickets.filter((ticket) => ticket.hasAnyPr && !ticket.hasOpenPr);
+  // Started before GitHub is waited on, since nothing GitHub says changes which
+  // of these are read.
+  const reading = mapLimit(candidates, DEV_CONCURRENCY, readPanel);
+  const linked = (await opts.linked) ?? null;
+  const panels = await reading;
+  /** How many pull requests each panel that answered counted, for `reconcile`. */
+  const counts = new Map<string, number>();
+
   // Two ways to learn nothing, kept apart because they say different things to
   // whoever reads the banner: this machine could not get an answer, or it got one
   // that contradicts the search. Neither is claimed to be permanent — one real
@@ -644,6 +658,7 @@ export async function fetchTickets(
   const unaccounted: string[] = [];
   candidates.forEach((ticket, i) => {
     const { asked, dev } = panels[i]!;
+    if (dev) counts.set(ticket.key, dev.count);
     if (allPullRequestsClosed(dev)) {
       ticket.allPrsClosed = true;
     } else if (!asked) {
@@ -663,6 +678,25 @@ export async function fetchTickets(
       ticket.hasOpenPr = true;
     }
   });
+
+  // The tickets JQL says have a pull request open, for which GitHub has only
+  // closed ones: the case this board most often gets wrong, because a merge is
+  // what the connector is slowest to report. Whether GitHub may overrule Jira
+  // turns on how many pull requests Jira knows, which only the panel says.
+  const asked = new Set(candidates);
+  const behind = tickets.filter((ticket) => !asked.has(ticket) && needsJiraCount(ticket, linked));
+  const extra = await mapLimit(behind, DEV_CONCURRENCY, readPanel);
+  behind.forEach((ticket, i) => {
+    const dev = extra[i]!.dev;
+    if (dev) counts.set(ticket.key, dev.count);
+  });
+  const reconciled = tickets.map((ticket) => reconcile(ticket, linked, counts.get(ticket.key) ?? null));
+  // A ticket GitHub has since found an open pull request for is no longer held
+  // out of anything, so it is no longer worth a warning saying it is.
+  const undecided = new Set(reconciled.filter((ticket) => !ticket.hasOpenPr && !ticket.allPrsClosed).map((ticket) => ticket.key));
+  const unansweredNow = unanswered.filter((key) => undecided.has(key));
+  const unaccountedNow = unaccounted.filter((key) => undecided.has(key));
+
   // Keys the user can actually open. A warning is the one place this board talks
   // about a ticket without rendering a row for it, so the link has to come from
   // here — and it is the held-out rows in particular that someone will want to
@@ -676,14 +710,14 @@ export async function fetchTickets(
       .join(', ');
   const heldOut = (keys: readonly string[]): string =>
     `${keys.length === 1 ? 'it is' : 'they are'} held out of "no open pull requests left" rather than guessed at`;
-  if (unanswered.length > 0) {
+  if (unansweredNow.length > 0) {
     warnings.push(
-      `Could not read Jira's development panel for ${listed(unanswered)}, so ${heldOut(unanswered)}. The next read may well manage it.`,
+      `Could not read Jira's development panel for ${listed(unansweredNow)}, so ${heldOut(unansweredNow)}. The next read may well manage it.`,
     );
   }
-  if (unaccounted.length > 0) {
+  if (unaccountedNow.length > 0) {
     warnings.push(
-      `Jira's search says ${listed(unaccounted)} ${unaccounted.length === 1 ? 'has' : 'have'} pull requests, but its own development panel names none, so ${heldOut(unaccounted)}. Jira is disagreeing with itself; the row comes back when one of its caches catches up.`,
+      `Jira's search says ${listed(unaccountedNow)} ${unaccountedNow.length === 1 ? 'has' : 'have'} pull requests, but its own development panel names none, so ${heldOut(unaccountedNow)}. Jira is disagreeing with itself; the row comes back when one of its caches catches up.`,
     );
   }
   if (!opts.site) {
@@ -707,7 +741,7 @@ export async function fetchTickets(
   }
 
   return {
-    tickets,
+    tickets: reconciled,
     statuses: statusesByProject(base, ...finished.map((batch) => batch ?? [])),
     warnings,
   };

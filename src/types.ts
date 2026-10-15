@@ -578,10 +578,12 @@ export interface Ticket {
   /**
    * Whether Jira has ever linked a pull request to this ticket.
    *
-   * From Jira's own development panel rather than from a key in a branch or a
-   * title, because Jira is the side that actually knows: of one real board's 33
-   * open pull requests, one named its ticket in the title and eighteen in the
-   * branch, while Jira had the link for all of them.
+   * From Jira's own development panel first, because Jira is the side that knows
+   * every link: of one real board's 33 open pull requests, one named its ticket
+   * in the title and eighteen in the branch, while Jira had the link for all of
+   * them. But Jira hears about pull requests through a connector that can run
+   * days behind, so this and the two below are corrected from GitHub where
+   * GitHub has the newer answer; see `fromGitHub`.
    */
   hasAnyPr: boolean;
   /**
@@ -612,13 +614,40 @@ export interface Ticket {
    * failing to find work outstanding.
    */
   allPrsClosed: boolean;
+  /**
+   * The pull requests GitHub has that name this ticket, read from GitHub itself:
+   * every open one, and those closed in the last couple of months. Absent when
+   * GitHub was not asked or named none. See `linked.ts`.
+   */
+  pulls?: LinkedPull[];
+  /**
+   * Set when GitHub's answer replaced Jira's in the three readings above: a pull
+   * request merged that Jira still has open, or one opened that Jira has not
+   * heard of. `pulls` is the evidence, and the row shows it.
+   */
+  fromGitHub?: boolean;
+}
+
+/** A pull request's state as GitHub reports it, with a draft told apart from open. */
+export type LinkedPullState = 'open' | 'draft' | 'merged' | 'closed';
+
+/** A GitHub pull request that names a Jira ticket. Facts only, as on `PullRequest`. */
+export interface LinkedPull {
+  /** `owner/name`. */
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  state: LinkedPullState;
+  /** When it merged or was closed. Null while it is open. */
+  closedAt: string | null;
 }
 
 /**
  * What looks wrong about a ticket's status. One word each, because the row's
  * heading is the whole explanation.
  *
- * - `settled` every pull request Jira knows about is closed, and it isn't Done
+ * - `settled` every linked pull request is closed, and it isn't Done
  * - `started` the status says the work hasn't begun; an open pull request disagrees
  * - `idle`    the status claims work in flight with no code linked to it at all
  */

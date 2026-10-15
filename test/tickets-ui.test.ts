@@ -20,7 +20,7 @@ import { PANEL_PREFIX } from '../client/state.ts';
 import { renderTicketBoard, renderTicketRow, ticketStatus, typeLegend, type AnyTicketRow } from '../client/tickets.ts';
 import type { Handlers, TicketMode, UiValues } from '../client/types.ts';
 import { resolveInProgress, resolveTickets } from '../src/tickets.ts';
-import type { DashboardState, InProgressTicket, Ticket, TicketBoardState, TicketRow } from '../src/types.ts';
+import type { DashboardState, InProgressTicket, LinkedPull, Ticket, TicketBoardState, TicketRow } from '../src/types.ts';
 
 const NOW = new Date('2026-09-22T09:00:00Z');
 const STATE = { now: NOW.toISOString() } as unknown as DashboardState;
@@ -824,4 +824,60 @@ test("the panel's menus act on the row itself", () => {
     ['jira:PROJ-8842', 'snooze', { until: '2026-12-22' }],
     ['PROJ-8842', 'Done', 'Committed'],
   ]);
+});
+
+/* ---------- GitHub's evidence ---------- */
+
+function githubPull(number: number, overrides: Partial<LinkedPull> = {}): LinkedPull {
+  return {
+    repo: 'acme/webapp',
+    number,
+    title: `Pull request ${number}`,
+    url: `https://github.com/acme/webapp/pull/${number}`,
+    state: 'merged',
+    closedAt: '2026-09-22T06:00:00Z',
+    ...overrides,
+  };
+}
+
+/**
+ * A row GitHub put here rests on a claim Jira's own panel contradicts, and the
+ * user is about to move a status because of it, so the claim can be checked
+ * from the row in one click.
+ */
+test('a row GitHub decided names the pull requests it rests on, linked', () => {
+  const node = render({ pulls: [githubPull(3402)], fromGitHub: true });
+  const line = byClass(node, 'item__reason')[0];
+  assert.ok(line, 'expected the evidence line');
+  assert.equal(line.textContent, 'GitHub, ahead of Jira: acme/webapp#3402 merged 3 h ago');
+  assert.ok(line.className.includes('item__reason--waiting'), 'nothing has gone wrong but timing, and it looks it');
+  const link = byTag(line, 'a')[0] as HTMLAnchorElement;
+  assert.equal(link.href, 'https://github.com/acme/webapp/pull/3402');
+  assert.equal(link.title, 'Pull request 3402');
+});
+
+test('the evidence says open and draft as they are, and counts past three', () => {
+  const pulls = [
+    githubPull(1, { state: 'draft', closedAt: null }),
+    githubPull(2, { state: 'open', closedAt: null }),
+    githubPull(3, { state: 'closed' }),
+    githubPull(4),
+    githubPull(5),
+  ];
+  const node = render({ hasOpenPr: true, allPrsClosed: false, statusCategory: 'new', pulls, fromGitHub: true });
+  assert.equal(
+    byClass(node, 'item__reason')[0]?.textContent,
+    'GitHub, ahead of Jira: acme/webapp#1 draft · acme/webapp#2 open · acme/webapp#3 closed 3 h ago · and 2 more',
+  );
+});
+
+/** Where Jira and GitHub agree there is nothing new to say, and the row stays one line. */
+test('a row GitHub only agreed with shows no evidence', () => {
+  assert.deepEqual(byClass(render({ pulls: [githubPull(3402)] }), 'item__reason'), []);
+});
+
+test('a Working on row GitHub decided shows its evidence too', () => {
+  const row = inProgress({ pulls: [githubPull(9, { state: 'open', closedAt: null })], fromGitHub: true });
+  const node = mountOne(renderTicketRow(row, STATE, UI, HANDLERS));
+  assert.match(byClass(node, 'item__reason')[0]?.textContent ?? '', /acme\/webapp#9 open/);
 });

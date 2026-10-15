@@ -81,7 +81,7 @@ versions and release notes come from, so CI checks it.
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
 | `src/zone.ts`, `client/zone.ts` | The dashboard's time zone: the one the browser last reported, or the Mac's when it moves |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
-| `src/jira.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, ticket classification, and polling |
+| `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |

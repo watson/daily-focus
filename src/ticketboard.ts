@@ -14,7 +14,7 @@
 
 import { readFile } from 'node:fs/promises';
 
-import type { Config } from './config.ts';
+import type { Config, GitHubConfig } from './config.ts';
 import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
@@ -25,20 +25,38 @@ import {
   type JiraIdentity,
   type TicketFetch,
 } from './jira.ts';
+import { readLinkedPulls, type LinkedRead } from './linked.ts';
 import { countTickets, resolveInProgress, resolveTickets } from './tickets.ts';
-import type { Action, Ticket, TicketBoardState, TicketsFile } from './types.ts';
+import type { Action, LinkedPull, LinkedPullState, Ticket, TicketBoardState, TicketsFile } from './types.ts';
 
 /** Never re-read more often than this once reads start failing. */
 const MAX_BACKOFF_MS = 30 * 60_000;
 
+/**
+ * How long Jira's reading waits on GitHub's. A few pages measure seconds; past
+ * this, GitHub is having a bad day, and the board is better off as Jira has it
+ * than held up behind it.
+ */
+const GITHUB_DEADLINE_MS = 90_000;
+
 /** What the poller talks to, gathered so a test can supply its own. */
 export interface TicketBoardDeps {
   identity(acliPath: string): Promise<JiraIdentity>;
-  fetch(acliPath: string, opts: { projects: readonly string[]; site: string | null }): Promise<TicketFetch>;
+  fetch(
+    acliPath: string,
+    opts: { projects: readonly string[]; site: string | null; linked?: Promise<LinkedRead | null> },
+  ): Promise<TicketFetch>;
   transition(acliPath: string, key: string, status: string): Promise<void>;
+  /** GitHub's pull requests by the ticket keys they name. See `linked.ts`. */
+  linked(github: GitHubConfig, now: Date, signal?: AbortSignal): Promise<LinkedRead>;
 }
 
-const realDeps: TicketBoardDeps = { identity: acliIdentity, fetch: fetchTickets, transition: transitionTicket };
+const realDeps: TicketBoardDeps = {
+  identity: acliIdentity,
+  fetch: fetchTickets,
+  transition: transitionTicket,
+  linked: (github, now, signal) => readLinkedPulls(github, now, signal),
+};
 
 export class TicketBoard {
   readonly #config: Config;
@@ -58,6 +76,7 @@ export class TicketBoard {
   #audience = 0;
   #stopped = false;
   #lastReadAt = 0;
+  readonly #abort = new AbortController();
 
   constructor(config: Config, onChange: () => void, deps: TicketBoardDeps = realDeps) {
     this.#config = config;
@@ -76,10 +95,12 @@ export class TicketBoard {
     await this.refresh();
   }
 
+  /** Stop reading, and cancel a GitHub request in flight so nothing lands after close. */
   stop(): void {
     this.#stopped = true;
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
+    this.#abort.abort();
   }
 
   /** How many browsers are watching. Polling pauses at zero. */
@@ -221,8 +242,36 @@ export class TicketBoard {
     // needs a way to say so that a successful auth probe can't overrule.
     const site = configuredSite ?? identity.site;
 
+    // GitHub's answer, asked alongside Jira's because Jira hears about pull
+    // requests days late. Not with the pull request board switched off, which
+    // promises that nothing reaches for GitHub. Its failure is a warning and Jira's
+    // reading as it stands, never a failed read: losing it puts the board back
+    // where it was before GitHub was asked, rather than anywhere worse.
+    const githubWarnings: string[] = [];
+    const linked: Promise<LinkedRead | null> = this.#config.github.enabled
+      ? this.#deps
+          .linked(this.#config.github, new Date(), AbortSignal.any([this.#abort.signal, AbortSignal.timeout(GITHUB_DEADLINE_MS)]))
+          .then(
+            (read) => {
+              githubWarnings.push(...read.warnings);
+              return read;
+            },
+            (err: unknown) => {
+              githubWarnings.push(
+                `Could not ask GitHub about these tickets' pull requests (${(err as Error).message}), so they are as Jira has them, which can be days behind.`,
+              );
+              return null;
+            },
+          )
+      : Promise.resolve(null);
+
     try {
-      const { tickets, statuses, warnings } = await this.#deps.fetch(acliPath, { projects, site });
+      const fetched = await this.#deps.fetch(acliPath, { projects, site, linked });
+      // Settled by now when the real fetch ran, which waits for it; awaited anyway,
+      // so its warnings can never miss the read they belong to.
+      await linked;
+      const { tickets, statuses } = fetched;
+      const warnings = [...fetched.warnings, ...githubWarnings];
       this.#reason = null;
       this.#warnings = warnings;
       this.#streak = null;
@@ -279,7 +328,7 @@ export function normalizeStoredTicket(raw: unknown): Ticket | null {
   // is exactly one place that decides what an unknown category or a missing
   // status name becomes.
   const site = typeof url === 'string' ? /^https:\/\/([^/]+)\/browse\//.exec(url)?.[1] ?? null : null;
-  return toTicket(
+  const ticket = toTicket(
     {
       key,
       fields: {
@@ -296,6 +345,31 @@ export function normalizeStoredTicket(raw: unknown): Ticket | null {
     // files are exactly the ones whose settled court counted drafts as merges.
     raw.allPrsClosed === true,
   );
+  if (!ticket) return null;
+  // The three readings above are stored already reconciled, so GitHub's evidence
+  // comes back beside them rather than being applied again.
+  const pulls = storedPulls(raw.pulls);
+  if (pulls.length > 0) {
+    ticket.pulls = pulls;
+    if (raw.fromGitHub === true) ticket.fromGitHub = true;
+  }
+  return ticket;
+}
+
+const PULL_STATES: readonly LinkedPullState[] = ['open', 'draft', 'merged', 'closed'];
+
+/** Stored linked pull requests, one bad entry at a time rather than all or nothing. */
+function storedPulls(value: unknown): LinkedPull[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): LinkedPull[] => {
+    if (!isRecord(entry)) return [];
+    const { repo, number, title, url, state, closedAt } = entry;
+    if (typeof repo !== 'string' || typeof number !== 'number' || typeof title !== 'string') return [];
+    // Re-checked on the way in, as the pull request board's links are: it reaches an anchor.
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return [];
+    if (typeof state !== 'string' || !(PULL_STATES as readonly string[]).includes(state)) return [];
+    return [{ repo, number, title, url, state: state as LinkedPullState, closedAt: typeof closedAt === 'string' ? closedAt : null }];
+  });
 }
 
 /** Read the last read back. Anything unreadable is treated as no file, never as an error. */

@@ -36,11 +36,13 @@ knows how long it has been since the objective moved.
 - `tickets.json` — **you only ever read this.** The dashboard's own cache of the Jira
   tickets whose status doesn't match their pull requests, refreshed while the
   dashboard is in use. Facts only: each entry's `workflowStatus`, its
-  `statusCategory`, and whether Jira has any pull request for it (`hasAnyPr`) and any
-  still open (`hasOpenPr`). The dashboard shows this list on a tab of its own and the
-  user fixes the statuses there, **so do not copy it into the brief** — see the Jira
-  section of step 2. Use it if it helps, never write it, and never treat its absence
-  as meaning anything.
+  `statusCategory`, and whether it has any pull request (`hasAnyPr`) and any still
+  open (`hasOpenPr`). Those come from Jira, or from GitHub where Jira hasn't caught
+  up yet (`fromGitHub`, with the pull requests in `pulls`), so trust them over
+  Jira's own development panel. The dashboard shows this list on a tab of its own
+  and the user fixes the statuses there, **so do not copy it into the brief** — see
+  the Jira section of step 2. Use it if it helps, never write it, and never treat
+  its absence as meaning anything.
 
 Work through the five steps below in order. Do not start gathering before step 1 is
 done — what you find in step 1 changes what counts as worth raising.

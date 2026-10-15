@@ -203,7 +203,7 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_GITHUB',
     group: 'github',
     label: 'Pull request board',
-    help: 'Reads your open pull requests through the GitHub CLI. Sign in with gh auth login.',
+    help: 'Reads your open pull requests through the GitHub CLI. Sign in with gh auth login. The Jira ticket board uses it too, to catch merges Jira hasn\'t heard about yet.',
     kind: 'flag',
     fallback: always('On'),
   },

@@ -237,6 +237,11 @@ Clicking a status in the dashboard writes one transition to Jira. All other Jira
 access is read-only. See the [ticket board guide](README.md#the-jira-ticket-board)
 for workflow limits and undo behavior.
 
+The board also asks GitHub about your pull requests, because Jira can learn of
+them days late. It uses the pull request board's accounts and scope, and nothing
+else needs to be configured. With `DAILY_FOCUS_GITHUB=off`, the ticket board uses
+Jira alone.
+
 Set `DAILY_FOCUS_JIRA=off` to disable the board.
 
 ### Live calendar on macOS
@@ -519,7 +524,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_AGENT_DAYS` | `1-5` | Weekdays the dashboard runs the agent on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
 | `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
 | `DAILY_FOCUS_AWAY_AFTER` | `10`; `0` for personal | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
-| `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board; nothing is polled |
+| `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board, and the ticket board stops checking GitHub; nothing is polled |
 | `DAILY_FOCUS_GITHUB_ACCOUNTS` | *gh's active account* | Logins to poll as, comma-separated, each resolved with `gh auth token --user` |
 | `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |
 | `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS` | *none* | Check names that stand for a repository's whole merge policy, comma-separated and matched exactly. Their rows get the *Waiting on merge gate* bucket |

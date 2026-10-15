@@ -1710,11 +1710,16 @@ body[data-view='settings'] .layout {
   padding-right: 104px;
   font-size: 13.5px;
 }
-/* The exceptions, the notes and the note form all span both columns. */
+/* The exceptions, GitHub's evidence, the notes and the note form all span both columns. */
 #tickets .item__meta--extra,
+#tickets .item__reason,
 #tickets .item__notes,
 #tickets .note-form {
   grid-column: 1 / -1;
+}
+/* The grid's gap already spaces it from the line above. */
+#tickets .item__reason {
+  margin-top: 0;
 }
 
 /*

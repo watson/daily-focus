@@ -5,6 +5,8 @@ import { unreachable } from './failure.ts';
 import { laterISO } from './time.ts';
 import type {
   CheckState,
+  LinkedPull,
+  LinkedPullState,
   MergeStateStatus,
   MergeableState,
   PendingCheck,
@@ -1219,4 +1221,170 @@ export async function fetchPulls(
   }
 
   return { login, pulls, warnings, orgs, rateLimitRemaining };
+}
+
+/* ---------- pull requests by ticket ---------- */
+
+/**
+ * Pull requests per page, and pages per search, for the ticket board's reading.
+ *
+ * The board's own page size, for its reason: each pull request brings its body
+ * and its commit messages, and a page that grows too heavy times the gateway out.
+ * Twelve pages is three hundred pull requests a search, which is two months of a
+ * busy author's closed ones. A search that runs past it is reported incomplete
+ * rather than trusted, since a pull request it never reached could be the one
+ * still open.
+ */
+const TICKET_PAGE_SIZE = 25;
+const TICKET_MAX_PAGES = 12;
+
+/**
+ * Commit messages read per pull request. A key that only appears past the first
+ * hundred commits is missed, which costs that pull request its link and nothing
+ * more: Jira's reading stands for the ticket.
+ */
+const TICKET_COMMITS = 100;
+
+const TICKET_SEARCH_QUERY = `
+query($q: String!, $first: Int!, $after: String) {
+  search(query: $q, type: ISSUE, first: $first, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        url
+        state
+        isDraft
+        closedAt
+        mergedAt
+        headRefName
+        body
+        repository { nameWithOwner }
+        commits(first: ${TICKET_COMMITS}) { nodes { commit { message } } }
+      }
+    }
+  }
+}`;
+
+/**
+ * The two searches behind the ticket board's GitHub reading: every open pull
+ * request the account wrote, however old, and every one closed since
+ * `closedSince` (a `YYYY-MM-DD` date).
+ *
+ * Open ones carry no date limit because an old open pull request is exactly
+ * the one that must not go missing: without it, a newer merged one on the same
+ * ticket would read as the ticket's last. Closed ones need a limit or the search
+ * is an author's whole history, and only the recent ones matter, because Jira's
+ * lag is days rather than months.
+ */
+export function buildTicketSearchQueries(scope: readonly string[], closedSince: string): string[] {
+  return [
+    ['is:pr', 'author:@me', 'is:open', ...scope].join(' '),
+    ['is:pr', 'author:@me', 'is:closed', `closed:>=${closedSince}`, ...scope].join(' '),
+  ];
+}
+
+/** Loosely typed: one node of `TICKET_SEARCH_QUERY`. */
+export interface RawTicketPull {
+  number?: number;
+  title?: string;
+  url?: string;
+  state?: string;
+  isDraft?: boolean;
+  closedAt?: string | null;
+  mergedAt?: string | null;
+  headRefName?: string;
+  body?: string | null;
+  repository?: { nameWithOwner?: string };
+  commits?: { nodes?: ({ commit?: { message?: string } } | null)[] };
+}
+
+/** A pull request, and every piece of its text a ticket key could be found in. */
+export interface TicketPull {
+  pull: LinkedPull;
+  /** Title, branch, description and commit messages, in that order. */
+  text: string[];
+}
+
+export interface TicketPullsFetch {
+  pulls: TicketPull[];
+  /**
+   * Whether the searches read everything they matched. False when a search ran
+   * past its pages, a node could not be read, or single sign-on withheld some of
+   * the results: in each case a pull request may exist that this did not see.
+   */
+  complete: boolean;
+}
+
+function toLinkedState(state: string | undefined, isDraft: boolean | undefined): LinkedPullState | null {
+  if (state === 'MERGED') return 'merged';
+  if (state === 'CLOSED') return 'closed';
+  if (state === 'OPEN') return isDraft === true ? 'draft' : 'open';
+  return null;
+}
+
+/**
+ * One search node, or null for anything that is not recognisably a pull request
+ * in a known state. A state GitHub adds later is not guessed at: it could be one
+ * that means open.
+ */
+export function normalizeTicketPull(raw: RawTicketPull): TicketPull | null {
+  const repo = raw.repository?.nameWithOwner;
+  const url = safeUrl(raw.url);
+  const state = toLinkedState(raw.state, raw.isDraft);
+  if (typeof raw.number !== 'number' || typeof repo !== 'string' || typeof raw.title !== 'string' || !url || !state) {
+    return null;
+  }
+  const closedAt = state === 'merged' ? (raw.mergedAt ?? raw.closedAt ?? null) : state === 'closed' ? (raw.closedAt ?? null) : null;
+  const text = [raw.title, raw.headRefName ?? '', raw.body ?? ''];
+  for (const node of raw.commits?.nodes ?? []) {
+    const message = node?.commit?.message;
+    if (typeof message === 'string') text.push(message);
+  }
+  return { pull: { repo, number: raw.number, title: raw.title, url, state, closedAt }, text };
+}
+
+/**
+ * Every pull request one account wrote that is open or recently closed, with the
+ * text the GitHub-for-Jira connector reads ticket keys from.
+ *
+ * Throws when a search fails outright, as `fetchPulls` does: an empty answer is
+ * what this reading looks like when nothing needs correcting, so a failure must
+ * not be allowed to look like one.
+ */
+export async function fetchTicketPulls(
+  token: string,
+  scope: readonly string[],
+  closedSince: string,
+  signal?: AbortSignal,
+): Promise<TicketPullsFetch> {
+  const pulls: TicketPull[] = [];
+  let complete = true;
+  for (const q of buildTicketSearchQueries(scope, closedSince)) {
+    let after: string | null = null;
+    for (let page = 0; ; page++) {
+      const result: GraphQLResult<{
+        search?: { pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }; nodes?: (RawTicketPull | null)[] };
+      }> = await graphql(token, TICKET_SEARCH_QUERY, { q, first: TICKET_PAGE_SIZE, after }, signal);
+      const fatal = result.errors.filter((error) => !isSamlError(error));
+      if (result.data?.search === undefined && fatal.length > 0) {
+        throw new GitHubRequestError(`GitHub search failed: ${fatal.map((error) => error.message).join('; ')}`);
+      }
+      if (result.errors.length > 0) complete = false;
+      for (const node of result.data?.search?.nodes ?? []) {
+        const found = node ? normalizeTicketPull(node) : null;
+        if (found) pulls.push(found);
+        else complete = false;
+      }
+      const pageInfo = result.data?.search?.pageInfo;
+      if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+      if (page === TICKET_MAX_PAGES - 1) {
+        complete = false;
+        break;
+      }
+      after = pageInfo.endCursor;
+    }
+  }
+  return { pulls, complete };
 }
