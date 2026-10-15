@@ -11,7 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -23,12 +23,16 @@ import {
   acliIdentity,
   allPullRequestsClosed,
   buildJql,
+  fetchTickets,
   projectOf,
   readDevPullRequests,
   readTransitionReport,
   statusesByProject,
   toTicket,
 } from '../src/jira.ts';
+import type { LinkedRead } from '../src/linked.ts';
+import { judge } from '../src/tickets.ts';
+import type { LinkedPull } from '../src/types.ts';
 
 /* ---------- the JQL ---------- */
 
@@ -389,4 +393,157 @@ test('a refused session keeps one line for the page and the whole transcript for
   assert.ok(err instanceof AcliAuthError);
   assert.equal(err.message, 'acli has no Jira session (not logged in) — run `acli jira auth login`');
   assert.equal(err.detail, `$ ${acli} jira auth status\n✗ Error: not logged in\n  run acli jira auth login to sign in to acme.atlassian.net`);
+});
+
+/* ---------- the whole fetch, against a stand-in acli ---------- */
+
+/**
+ * An acli that answers from a JSON file: the three searches by which predicate
+ * the JQL carries, a development panel per key, and nothing finished. It logs
+ * every panel it is asked for, which is the part worth asserting — the panels
+ * are the one per-ticket cost the fetch decides on.
+ */
+async function standInAcli(
+  t: { after(fn: () => Promise<void>): void },
+  world: { base: unknown[]; any: string[]; open: string[]; panels: Record<string, string> },
+): Promise<{ acli: string; viewed(): Promise<string[]> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-acli-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const data = join(dir, 'world.json');
+  const log = join(dir, 'viewed.log');
+  await writeFile(data, JSON.stringify(world));
+  const acli = join(dir, 'acli');
+  await writeFile(
+    acli,
+    `#!${process.execPath}
+const { readFileSync, appendFileSync } = require('node:fs');
+const world = JSON.parse(readFileSync(${JSON.stringify(data)}, 'utf8'));
+const args = process.argv.slice(2);
+if (args[2] === 'view') {
+  appendFileSync(${JSON.stringify(log)}, args[3] + '\\n');
+  console.log(JSON.stringify({ key: args[3], fields: { customfield_10000: world.panels[args[3]] ?? null } }));
+} else {
+  const jql = args[args.indexOf('--jql') + 1];
+  const only = (keys) => world.base.filter((issue) => keys.includes(issue.key));
+  if (jql.startsWith('statusCategory = Done')) console.log('[]');
+  else if (jql.includes('.open > 0')) console.log(JSON.stringify(only(world.open)));
+  else if (jql.includes('.all > 0')) console.log(JSON.stringify(only(world.any)));
+  else console.log(JSON.stringify(world.base));
+}
+`,
+  );
+  await chmod(acli, 0o755);
+  return {
+    acli,
+    async viewed() {
+      const text = await readFile(log, 'utf8').catch(() => '');
+      return text.split('\n').filter(Boolean).sort();
+    },
+  };
+}
+
+function inProgress(key: string): unknown {
+  return issue({ key }, { status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } });
+}
+
+function merged(key: string, number: number): LinkedPull {
+  return {
+    repo: 'acme/webapp',
+    number,
+    title: `${key}: something`,
+    url: `https://github.com/acme/webapp/pull/${number}`,
+    state: 'merged',
+    closedAt: '2026-09-21T15:00:00Z',
+  };
+}
+
+/**
+ * The case the GitHub reading exists for, and the ones either side of it: Jira
+ * still has a merged pull request open; GitHub has one Jira has not heard of;
+ * Jira already agrees; and Jira knows more than GitHub can see.
+ */
+test("GitHub's reading corrects Jira where it is behind, and reads only the panels it needs", async (t) => {
+  const { acli, viewed } = await standInAcli(t, {
+    base: ['PROJ-1', 'PROJ-2', 'PROJ-3', 'PROJ-4', 'PROJ-5'].map(inProgress),
+    any: ['PROJ-1', 'PROJ-3', 'PROJ-4', 'PROJ-5'],
+    open: ['PROJ-1', 'PROJ-4', 'PROJ-5'],
+    panels: {
+      'PROJ-1': devField(overall('OPEN', 1)),
+      'PROJ-3': devField(overall('MERGED', 1)),
+      'PROJ-4': devField(overall('OPEN', 2)),
+    },
+  });
+  const open: LinkedPull = { ...merged('PROJ-2', 3410), state: 'open', closedAt: null };
+  const linked: LinkedRead = {
+    byKey: new Map([
+      ['PROJ-1', [merged('PROJ-1', 3401)]],
+      ['PROJ-2', [open]],
+      ['PROJ-3', [merged('PROJ-3', 3403)]],
+      ['PROJ-4', [merged('PROJ-4', 3404)]],
+    ]),
+    complete: true,
+    warnings: [],
+  };
+
+  const { tickets, warnings } = await fetchTickets(acli, { projects: [], site: 'acme.atlassian.net', linked: Promise.resolve(linked) });
+  const by = new Map(tickets.map((ticket) => [ticket.key, ticket]));
+
+  // Jira has it open; GitHub has it merged, and as many as Jira counts.
+  assert.equal(judge(by.get('PROJ-1')!), 'settled');
+  assert.equal(by.get('PROJ-1')!.fromGitHub, true);
+  assert.deepEqual(by.get('PROJ-1')!.pulls, [merged('PROJ-1', 3401)]);
+  // Jira has nothing; GitHub has one open, so it is not idle.
+  assert.equal(by.get('PROJ-2')!.hasOpenPr, true);
+  assert.equal(by.get('PROJ-2')!.fromGitHub, true);
+  assert.equal(judge(by.get('PROJ-2')!), null);
+  // Jira already agrees, so GitHub only brings the evidence.
+  assert.equal(judge(by.get('PROJ-3')!), 'settled');
+  assert.equal(by.get('PROJ-3')!.fromGitHub, undefined);
+  // Jira knows two and GitHub can see one, so the other might be open.
+  assert.equal(by.get('PROJ-4')!.hasOpenPr, true);
+  assert.equal(by.get('PROJ-4')!.fromGitHub, undefined);
+  // Nothing on GitHub: as Jira has it.
+  assert.equal(by.get('PROJ-5')!.hasOpenPr, true);
+  assert.equal(by.get('PROJ-5')!.pulls, undefined);
+
+  // The settled candidate as ever, and the two Jira-open tickets GitHub has only
+  // closed pull requests for. Not the one GitHub has open, nor the one it lacks.
+  assert.deepEqual(await viewed(), ['PROJ-1', 'PROJ-3', 'PROJ-4']);
+  assert.deepEqual(warnings, []);
+});
+
+test('without a GitHub reading the fetch is as Jira has it, and reads no extra panels', async (t) => {
+  const { acli, viewed } = await standInAcli(t, {
+    base: ['PROJ-1'].map(inProgress),
+    any: ['PROJ-1'],
+    open: ['PROJ-1'],
+    panels: { 'PROJ-1': devField(overall('OPEN', 1)) },
+  });
+  const { tickets } = await fetchTickets(acli, { projects: [], site: null, linked: Promise.resolve(null) });
+  assert.equal(tickets[0]?.hasOpenPr, true);
+  assert.equal(tickets[0]?.fromGitHub, undefined);
+  assert.deepEqual(await viewed(), []);
+});
+
+/**
+ * A ticket held out because Jira contradicted itself stops being held out once
+ * GitHub has an open pull request for it, and so stops being warned about.
+ */
+test('a ticket GitHub has an open pull request for is no longer warned about as held out', async (t) => {
+  const { acli } = await standInAcli(t, {
+    base: ['PROJ-1', 'PROJ-2'].map(inProgress),
+    any: ['PROJ-1', 'PROJ-2'],
+    open: [],
+    panels: { 'PROJ-1': devField(null), 'PROJ-2': devField(null) },
+  });
+  const linked: LinkedRead = {
+    byKey: new Map([['PROJ-1', [{ ...merged('PROJ-1', 3401), state: 'draft', closedAt: null }]]]),
+    complete: true,
+    warnings: [],
+  };
+  const { tickets, warnings } = await fetchTickets(acli, { projects: [], site: null, linked: Promise.resolve(linked) });
+  assert.equal(tickets.find((ticket) => ticket.key === 'PROJ-1')?.hasOpenPr, true);
+  assert.equal(warnings.length, 2, warnings.join('\n'));
+  assert.match(warnings[0]!, /PROJ-2 has pull requests, but its own development panel names none/);
+  assert.ok(!warnings[0]!.includes('PROJ-1'));
 });

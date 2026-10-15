@@ -111,6 +111,14 @@ Draft pull requests count as open. Closed pull requests don't prove that a ticke
 is finished, so the board leaves that decision to you. Park a reminder or leave a
 note when there's more work planned.
 
+Jira can take days to hear that a pull request merged, so the board also checks
+GitHub. It searches your open pull requests and the ones closed in the last 60
+days, and matches them to tickets by the key in the title, branch, description
+or commit messages. An open pull request on GitHub always counts. GitHub can
+also mark a ticket's pull requests as all closed, but only when it found at least
+as many as Jira has linked. A row that GitHub changed lists those pull requests
+under **GitHub, ahead of Jira**.
+
 Switch to **Working on** to see your in-progress tickets grouped by status,
 including ones that also need a status check. You can narrow this view in
 [SETUP.md](SETUP.md#jira).

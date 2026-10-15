@@ -18,9 +18,10 @@ import {
   type JiraIdentity,
   type TicketFetch,
 } from '../src/jira.ts';
+import type { LinkedRead } from '../src/linked.ts';
 import { TicketBoard, normalizeStoredTicket, readTicketsFile, type TicketBoardDeps } from '../src/ticketboard.ts';
 import { loadConfig, type Config } from '../src/config.ts';
-import type { Ticket } from '../src/types.ts';
+import type { LinkedPull, Ticket } from '../src/types.ts';
 
 const NOW = new Date('2026-09-22T09:00:00Z');
 
@@ -57,24 +58,35 @@ function ticket(key: string, overrides: Partial<Ticket> = {}): Ticket {
 
 const IDENTITY: JiraIdentity = { site: 'acme.atlassian.net', account: 'alice@example.com' };
 
+const NOTHING_LINKED: LinkedRead = { byKey: new Map(), complete: true, warnings: [] };
+
 function fakeDeps(opts: {
   identity?: () => Promise<JiraIdentity>;
   fetches?: (() => Promise<TicketFetch>)[];
   transition?: (key: string, status: string) => Promise<void>;
-}): TicketBoardDeps & { calls: string[] } {
+  linked?: () => Promise<LinkedRead>;
+}): TicketBoardDeps & { calls: string[]; handed: (LinkedRead | null)[] } {
   const calls: string[] = [];
+  /** What each fetch was handed as GitHub's reading, once it settled. */
+  const handed: (LinkedRead | null)[] = [];
   let round = 0;
   return {
     calls,
+    handed,
     async identity() {
       calls.push('identity');
       return opts.identity ? opts.identity() : IDENTITY;
     },
-    async fetch(_acli, { site }) {
+    async fetch(_acli, { site, linked }) {
       calls.push(`fetch:${site}`);
+      handed.push((await linked) ?? null);
       const fetcher = opts.fetches?.[Math.min(round++, (opts.fetches?.length ?? 1) - 1)];
       if (!fetcher) throw new Error('nothing to fetch');
       return fetcher();
+    },
+    async linked() {
+      calls.push('linked');
+      return opts.linked ? opts.linked() : NOTHING_LINKED;
     },
     async transition(_acli, key, status) {
       calls.push(`transition:${key}:${status}`);
@@ -385,7 +397,7 @@ test('a transition moves the ticket and then reads the board back', async () => 
   deps.calls.length = 0;
 
   await board.transition('PROJ-1', 'Done');
-  assert.deepEqual(deps.calls, ['transition:PROJ-1:Done', 'identity', 'fetch:acme.atlassian.net']);
+  assert.deepEqual(deps.calls, ['transition:PROJ-1:Done', 'identity', 'linked', 'fetch:acme.atlassian.net']);
   board.stop();
 });
 
@@ -437,4 +449,95 @@ test('a file written before the vocabulary existed reads as none', async () => {
     JSON.stringify({ version: 1, fetchedAt: NOW.toISOString(), tickets: [ticket('PROJ-1')] }),
   );
   assert.deepEqual((await readTicketsFile(cfg.ticketsFile))?.statuses, {});
+});
+
+/* ---------- GitHub's second opinion ---------- */
+
+function linkedPull(overrides: Partial<LinkedPull> = {}): LinkedPull {
+  return {
+    repo: 'acme/webapp',
+    number: 3402,
+    title: 'PROJ-1: drop the retry loop',
+    url: 'https://github.com/acme/webapp/pull/3402',
+    state: 'merged',
+    closedAt: '2026-09-21T15:00:00Z',
+    ...overrides,
+  };
+}
+
+test("GitHub's reading is asked for alongside Jira's and handed to the fetch", async () => {
+  const cfg = await config();
+  const read: LinkedRead = { byKey: new Map([['PROJ-1', [linkedPull()]]]), complete: true, warnings: [] };
+  const deps = fakeDeps({ fetches: [ok([ticket('PROJ-1')])], linked: async () => read });
+  const board = new TicketBoard(cfg, () => {}, deps);
+  await board.start();
+  assert.deepEqual(deps.calls, ['identity', 'linked', 'fetch:acme.atlassian.net']);
+  assert.equal(deps.handed[0], read);
+  board.stop();
+});
+
+/**
+ * The board worked without GitHub before, so losing it is a step back to that
+ * rather than a failed read: the rows are Jira's, and the banner says why.
+ */
+test('a GitHub failure is a warning, and the read is still a read', async () => {
+  const cfg = await config();
+  const deps = fakeDeps({
+    fetches: [ok([ticket('PROJ-1')], ['from Jira'])],
+    linked: () => Promise.reject(new Error('GitHub answered 502')),
+  });
+  const board = new TicketBoard(cfg, () => {}, deps);
+  await board.start();
+
+  const state = board.view([], NOW);
+  assert.equal(state.reason, null);
+  assert.equal(state.rows.length, 1);
+  assert.equal(deps.handed[0], null, 'the fetch is told there is no GitHub reading');
+  assert.equal(state.warnings[0], 'from Jira');
+  assert.match(state.warnings[1] ?? '', /Could not ask GitHub .*GitHub answered 502.*days behind/);
+  board.stop();
+});
+
+test("an incomplete GitHub reading's warnings reach the state", async () => {
+  const cfg = await config();
+  const read: LinkedRead = { byKey: new Map(), complete: false, warnings: ['GitHub did not list every pull request'] };
+  const board = new TicketBoard(cfg, () => {}, fakeDeps({ fetches: [ok([])], linked: async () => read }));
+  await board.start();
+  assert.deepEqual(board.view([], NOW).warnings, ['GitHub did not list every pull request']);
+  board.stop();
+});
+
+/** `DAILY_FOCUS_GITHUB=off` promises nothing reaches for GitHub, and this board is no exception. */
+test('with the pull request board off, GitHub is not asked', async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB: 'off' });
+  const deps = fakeDeps({ fetches: [ok([ticket('PROJ-1')])] });
+  const board = new TicketBoard(cfg, () => {}, deps);
+  await board.start();
+  assert.ok(!deps.calls.includes('linked'), deps.calls.join(','));
+  assert.equal(deps.handed[0], null);
+  assert.deepEqual(board.view([], NOW).warnings, []);
+  board.stop();
+});
+
+test("GitHub's evidence survives the file, and a bad entry costs only itself", async () => {
+  const cfg = await config();
+  const merged = linkedPull();
+  const reconciled = ticket('PROJ-1', { pulls: [merged], fromGitHub: true });
+  const board = new TicketBoard(cfg, () => {}, fakeDeps({ fetches: [ok([reconciled])] }));
+  await board.start();
+  board.stop();
+  assert.deepEqual((await readTicketsFile(cfg.ticketsFile))?.tickets, [reconciled]);
+
+  const stored = normalizeStoredTicket({
+    ...reconciled,
+    pulls: [merged, { ...merged, url: 'javascript:alert(1)' }, { ...merged, state: 'reopened' }, 'nonsense', { ...merged, closedAt: 7 }],
+  });
+  assert.deepEqual(stored?.pulls, [merged, { ...merged, closedAt: null }]);
+  assert.equal(stored?.fromGitHub, true);
+});
+
+test('a stored claim that GitHub decided, with no evidence left to show for it, is dropped', () => {
+  const stored = normalizeStoredTicket({ ...ticket('PROJ-1'), pulls: ['nonsense'], fromGitHub: true });
+  assert.equal(stored?.pulls, undefined);
+  assert.equal(stored?.fromGitHub, undefined);
 });

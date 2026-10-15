@@ -411,12 +411,26 @@ function ticket(key: string, summary: string, workflowStatus: string, issueType:
  * world is mutable, since moving a status is the one thing the dashboard does
  * to Jira, and the demo lets it be done.
  */
-export function demoTickets(): { tickets: Ticket[]; statuses: Record<string, string[]> } {
+export function demoTickets(now = new Date()): { tickets: Ticket[]; statuses: Record<string, string[]> } {
   return {
     tickets: [
       // Every pull request closed, and the ticket not Done.
       ticket('PROJ-8842', 'Add trace context to outgoing fetches', 'In Review', 'Task', 'closed'),
-      ticket('PLAT-311', 'Remove the legacy beacon endpoint', 'In Progress', 'Task', 'closed'),
+      // The same, known only from GitHub: Jira still has the pull request open.
+      {
+        ...ticket('PLAT-311', 'Remove the legacy beacon endpoint', 'In Progress', 'Task', 'closed'),
+        pulls: [
+          {
+            repo: 'acme/infra',
+            number: 514,
+            title: 'PLAT-311: drop the /v1/beacon route',
+            url: 'https://github.com/acme/infra/pull/514',
+            state: 'merged',
+            closedAt: hoursAgo(now, 5),
+          },
+        ],
+        fromGitHub: true,
+      },
       // A pull request open while the status says the work has not begun.
       ticket('PROJ-8871', 'Instrument long tasks on the main thread', 'To Do', 'Story', 'open'),
       ticket('PROJ-8877', 'Document the sampling knobs', 'To Do', 'Task', 'open'),
@@ -469,6 +483,10 @@ export function demoIntegrations(profile: Profile): DemoIntegrations {
       },
       async fetch() {
         return { tickets: world.tickets.map((entry) => ({ ...entry })), statuses: world.statuses, warnings: [] };
+      },
+      // The sample tickets already carry what GitHub would have added.
+      async linked() {
+        return { byKey: new Map(), complete: true, warnings: [] };
       },
       async transition(_acli, key, status) {
         const found = world.tickets.find((entry) => entry.key === key);

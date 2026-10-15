@@ -27,7 +27,10 @@ export const PROFILES: readonly Profile[] = ['work', 'personal'];
  * settings are grouped rather than spread through the rest of the config.
  */
 export interface GitHubConfig {
-  /** `DAILY_FOCUS_GITHUB=off` turns the board off entirely; nothing is polled. */
+  /**
+   * `DAILY_FOCUS_GITHUB=off` turns the board off entirely, and the ticket board
+   * stops asking GitHub too; nothing is polled.
+   */
   enabled: boolean;
   /**
    * Logins to poll as, each resolved to a token through `gh auth token --user`.

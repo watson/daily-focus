@@ -44,7 +44,7 @@ function inStatus(ticket: Ticket, statuses: readonly string[]): boolean {
  * open, the third needs none at all — so the order is for the reader rather than
  * for the result, and any future court has to earn its place in it.
  *
- *   1. every pull request Jira knows about is closed, and the ticket isn't Done
+ *   1. every linked pull request is closed, and the ticket isn't Done
  *   2. the status says the work hasn't begun, and a pull request is open
  *   3. the status claims work in flight with no code linked to it at all
  *

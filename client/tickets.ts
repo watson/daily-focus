@@ -1,12 +1,12 @@
 /** The Jira ticket board. */
 
-import { h, type JSX } from 'preact';
+import { h, type ComponentChild, type JSX } from 'preact';
 
-import type { DashboardState, InProgressTicket, TicketBoardState, TicketRow } from '../src/types.ts';
+import type { DashboardState, InProgressTicket, LinkedPull, TicketBoardState, TicketRow } from '../src/types.ts';
 import { banner } from './banners.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
-import { formatDay, formatTime } from './format.ts';
+import { formatDay, formatTime, relativeTime } from './format.ts';
 import { Menu, cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
@@ -35,7 +35,7 @@ const TICKET_COURT_ORDER = ['settled', 'started', 'idle'] as const;
 /** What to do about a row, under the heading that says what is wrong with it. */
 const TICKET_COURT_HINT = {
   settled:
-    'Every pull request Jira has for these is closed. Move them on, or say what is still to come — ' +
+    'Every pull request linked to these is closed. Move them on, or say what is still to come — ' +
     'a pull request nobody has written yet is invisible from here.',
   started: 'A pull request is open, so the work has begun. The status still says it has not.',
   idle: 'Nothing in Jira links any code to these. Fine for work that is not code; worth a look otherwise.',
@@ -361,6 +361,7 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
       renderTicketStatus(row, state, ui, handlers),
       el('p', { class: 'item__title' }, title),
       renderTicketMeta(row, state, handlers),
+      renderGitHubEvidence(row, now),
     ),
     renderTicketActions(row, ui, handlers),
     ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, PARK_MENU) : null,
@@ -490,6 +491,39 @@ function renderTicketMeta(row: AnyTicketRow, state: DashboardState, handlers: Ha
   }
   pills.push(...rowPills(row, state));
   return pills.length > 0 ? el('div', { class: 'item__meta item__meta--extra' }, pills) : null;
+}
+
+/** How many of GitHub's pull requests a row names before it counts the rest. */
+const EVIDENCE_SHOWN = 3;
+
+/**
+ * The pull requests behind a reading GitHub gave instead of Jira, linked.
+ *
+ * Only on those rows: anywhere else Jira and GitHub agree, and the row says
+ * nothing it didn't say before. On these the court, or the "open PR" pill, rests
+ * on a claim Jira's own panel contradicts, and the user is about to go and move a
+ * status because of it — so the claim comes with the means to check it, in the
+ * line the pull request board uses for why a row is where it is, and in its
+ * quieter tone, because nothing here has gone wrong but Jira's timing.
+ */
+function renderGitHubEvidence(row: AnyTicketRow, now: Date): JSX.Element | null {
+  const pulls = row.pulls ?? [];
+  if (!row.fromGitHub || pulls.length === 0) return null;
+  const parts: ComponentChild[] = ['GitHub, ahead of Jira: '];
+  pulls.slice(0, EVIDENCE_SHOWN).forEach((pull, i) => {
+    if (i > 0) parts.push(' · ');
+    parts.push(
+      el('a', { href: pull.url, target: '_blank', rel: 'noopener noreferrer', title: pull.title }, `${pull.repo}#${pull.number}`),
+      ` ${describePull(pull, now)}`,
+    );
+  });
+  if (pulls.length > EVIDENCE_SHOWN) parts.push(` · and ${pulls.length - EVIDENCE_SHOWN} more`);
+  return el('p', { class: 'item__reason item__reason--waiting' }, parts);
+}
+
+function describePull(pull: LinkedPull, now: Date): string {
+  if (pull.state === 'open' || pull.state === 'draft') return pull.state;
+  return pull.closedAt ? `${pull.state} ${relativeTime(pull.closedAt, now)}` : pull.state;
 }
 
 /**
