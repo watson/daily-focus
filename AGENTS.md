@@ -25,7 +25,9 @@ calls them "it" rather than either word.
   screenshots, and commit messages. A real brief is private data, even as a fixture.
   Personal configuration belongs in the store (`settings.json`) or gitignored `.env`.
 - The default store is `~/.daily-focus`. For development, set `DAILY_FOCUS_DATA` to a
-  temporary directory or gitignored `./data`. Do not put real briefs at the repo root.
+  temporary directory or gitignored `./data`, and `DAILY_FOCUS_PORT` to a free port.
+  Stop that server by its PID: the real dashboard and other worktrees' servers run on
+  the same machine. Do not put real briefs at the repo root.
 - `sources.md`, and the private half of `focus.md` after `<!-- agent-only -->`, reach
   the browser only through the endpoints that ask for them: the editors'
   (`/api/text/*`), and the setup screen's preview of the list it would write
@@ -39,7 +41,7 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
 | User, through the dashboard's editors, the setup screen, or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
@@ -112,8 +114,11 @@ run it again with `--remove` afterwards.
   (`takeBriefRequest`). The agent still writes `items.json` itself, from the
   store as its working directory, on the short wrapper in `agentPrompt`, which
   names `prompt.md` and nothing more. Do not hand it extra instructions, a
-  checkout, or a copy of the prompt. A follow-up question resumes the run's session
-  with nothing to write; it must never become a way to edit the brief.
+  checkout, or a copy of the prompt. A setting reaches it as a key in
+  `agentSettings`, which the runner writes to `agent-settings.json` before each
+  run with the values in force, `.env` included; explain each key in both
+  prompts. A follow-up question resumes the run's session with nothing to write;
+  it must never become a way to edit the brief.
 
 ## Checks
 

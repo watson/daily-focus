@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -105,6 +105,39 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
   assert.deepEqual(again.view().last!.messages, run.messages);
 });
 
+
+test('the settings the agent reads are in the store before it starts, the wrapper unchanged', async () => {
+  // The fake CLI keeps what it found, as the agent would read it.
+  const seen = `cp agent-settings.json .seen-settings`;
+  const plain = await makeConfig([THREAD, SAID('Done.'), DONE], {}, seen);
+  const runner = new AgentRunner(plain, { onChange: () => {} });
+  await runner.run();
+  await settle(runner);
+  assert.deepEqual(JSON.parse(await readFile(join(plain.dataDir, '.seen-settings'), 'utf8')), { searchTrash: false });
+
+  const trash = await makeConfig([THREAD, SAID('Done.'), DONE], { DAILY_FOCUS_AGENT_SEARCH_TRASH: 'on' }, seen);
+  const other = new AgentRunner(trash, { onChange: () => {} });
+  await other.run();
+  await settle(other);
+  assert.deepEqual(JSON.parse(await readFile(join(trash.dataDir, '.seen-settings'), 'utf8')), { searchTrash: true });
+  const argv = (await readFile(join(trash.dataDir, '.argv'), 'utf8')).trimEnd().split('\n');
+  assert.equal(argv.slice(argv.indexOf('Run my morning brief for today.')).join('\n'), agentPrompt(displayPath(trash.promptFile)));
+});
+
+test('a run whose settings cannot be written fails in the log, and the CLI never starts', async () => {
+  const config = await makeConfig([THREAD, SAID('Done.'), DONE]);
+  // A directory where the file goes: the rename onto it fails.
+  await mkdir(join(config.agentSettingsFile, 'in-the-way'), { recursive: true });
+  const runner = new AgentRunner(config, { onChange: () => {} });
+  await runner.run();
+
+  const run = runner.view().last!;
+  assert.equal(run.status, 'failed');
+  assert.match(run.error ?? '', /could not write .*agent-settings\.json/);
+  await assert.rejects(readFile(join(config.dataDir, '.argv'), 'utf8'), 'the CLI never ran');
+  const log = (await readFile(config.agentLogFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(log.map((r) => r.event), ['started', 'failed']);
+});
 
 test('a Codex older than 0.144.0 is refused: the run is logged as failed and the CLI never starts', async () => {
   const config = await makeConfig([THREAD, SAID('Wrote it.'), DONE]);

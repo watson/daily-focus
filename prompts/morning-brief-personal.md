@@ -24,6 +24,10 @@ not for you.
   gather and how to judge it; that file says *who* and *where*.
 - `items.schema.json` — **you only ever read this.** The machine-readable shape of
   `items.json`. Validate against it in step 5 if you can.
+- `agent-settings.json` — **you only ever read this.** The choices the user made on
+  the dashboard's settings page about how you gather, rewritten by the dashboard
+  before every run. Each key is explained where it applies below; a missing file or
+  key means that key's default.
 - `prs.json` — **you only ever read this.** The dashboard's own cache of the pull
   requests the user has open, refreshed while the dashboard is in use. Facts only —
   reviews, checks, who last acted — with no judgement attached; use it if it helps,
@@ -147,6 +151,12 @@ Search the personal email account `sources.md` names, account-wide — archived 
 and anything filters moved out of the inbox, included. Mail the user filed is not
 mail they finished with. **Do not limit the search to unread mail**: the things that
 rot are the ones the user opened, meant to deal with, and didn't.
+
+Mail the user deleted is mail they finished with, so leave Trash out unless
+`searchTrash` in `agent-settings.json` is `true` (default `false`). A search with no
+`in:` operator already covers archived mail and skips Trash and Spam; when the
+setting is off, don't widen it with `in:anywhere` or a trash option. When it is on,
+search Trash as well, and still never Spam.
 
 **On a first run, search the last 90 days.** The point of that run is to find what
 fell through the cracks: a reply the user owes, a bill, a form, a booking to confirm,

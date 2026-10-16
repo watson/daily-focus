@@ -241,6 +241,12 @@ export interface AgentRunConfig {
    * the policy.
    */
   tools: readonly string[];
+  /**
+   * Whether the agent searches the mail account's Trash as well. Off by default:
+   * deleted mail is mail the user finished with. The agent learns it from
+   * `agentSettingsFile`, never from the wrapper prompt.
+   */
+  searchTrash: boolean;
 }
 
 /**
@@ -338,6 +344,11 @@ export interface Config {
   agent: AgentRunConfig;
   /** Append-only record of every run the dashboard started, written by the server. */
   agentLogFile: string;
+  /**
+   * The settings the agent itself reads, written by the runner before each run so
+   * the store holds everything a run depends on. See `agentSettings` in `agent.ts`.
+   */
+  agentSettingsFile: string;
   /**
    * The setup screen's progress: each answer, and what the CLI proposed for each
    * question. Written by the dashboard alone, and kept after setup finishes as
@@ -574,6 +585,7 @@ function envAgent(env: NodeJS.ProcessEnv): AgentRunConfig {
     model: envString('DAILY_FOCUS_AGENT_MODEL', '', env) || null,
     effort: envString('DAILY_FOCUS_AGENT_EFFORT', '', env) || null,
     tools: tools.length > 0 ? tools : DEFAULT_AGENT_TOOLS,
+    searchTrash: envFlag('DAILY_FOCUS_AGENT_SEARCH_TRASH', false, env),
   };
 }
 
@@ -671,6 +683,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     assistantPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'assistant.md'),
     agent: envAgent(env),
     agentLogFile: resolve(dataDir, 'agent.jsonl'),
+    agentSettingsFile: resolve(dataDir, 'agent-settings.json'),
     onboardingFile: resolve(dataDir, 'onboarding.json'),
     onboardingDir: resolve(dataDir, 'onboarding'),
     onboardingPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'onboarding.md'),
