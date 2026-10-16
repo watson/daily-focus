@@ -57,17 +57,20 @@ The [assistant](#ask-the-assistant) isn't asked about: it comes on with the CLI
 that writes the brief, unless you've set it already.
 
 Once you've said what it briefs, the CLI looks into the others in the background,
-one short session each, so the slow ones are ready when you get to them. The
-sessions run on the newest flagship model at low effort (Opus for Claude Code,
+one short session each, so the slow ones are ready when you get to them. It reads
+`gh`, your mail and your calendars to tell work from personal, and says in a
+sentence why it ticked what it did. Reply under that sentence with what to change,
+such as "also the on-call rota", and it tries again, answering in the same place.
+Continue before it has finished and it asks first, then stops and keeps what the
+card holds.
+
+The sessions run on the newest flagship model at low effort (Opus for Claude Code,
 the first model in Codex's own list for Codex), which measured as fast as the
-lighter models and, unlike them, told your calendars from other people's: it reads `gh`, your mail and your calendars to tell work from personal, and
-says in a sentence why it ticked what it did. Continue before it has finished and it asks first, then
-stops and keeps what the card holds. Reply under that sentence with what
-to change, such as "also the on-call rota", and it tries again, answering in the
-same place. These sessions only read, in
-an empty directory. Claude Code is given read tools by name, and under Codex every
-connector write is refused, drafts included; `gh` and `acli` are held to reading by
-their instructions, as [the assistant's](#what-the-assistant-can-do) are.
+lighter models and, unlike them, told your calendars from other people's. They
+only read, in an empty directory. Claude Code is given read tools by name, and
+under Codex every connector write is refused, drafts included; `gh` and `acli` are
+held to reading by their instructions, as
+[the assistant's](#what-the-assistant-can-do) are.
 
 Nothing is saved until the last step, **Write my first brief**. It saves the
 settings, writes your source list from the answers (unless you already have one,
