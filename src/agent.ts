@@ -29,13 +29,18 @@
  *    rename, archives it and pushes it to every tab. Nothing here has to.
  *  - What the agent reports back — its prompt ends by asking for one — is kept
  *    in `agent.jsonl`, which this file alone writes and nothing compacts, with
- *    everything it said on the way there and every question asked of the run
- *    afterwards. "Why did you drop this",
+ *    everything it said and did on the way there and every question asked of
+ *    the run afterwards. "Why did you drop this",
  *    "go and find the document you couldn't read": each resumes the run's own
  *    session, so the agent answers from what it actually did rather than from a
  *    summary of it. A follow-up is given nothing to write. Under Claude Code the
  *    editing tools are denied and the brief-writing rules withheld; under Codex,
  *    whose sandbox has no per-file policy, the question is framed to say so.
+ *
+ *  - The prompt has the agent hand the reading of its sources to subagents,
+ *    which the panel shows under the step that started each. Claude Code says
+ *    what they do in its stream. Codex doesn't, so while a Codex run goes its
+ *    session files are read for them (`codexsessions.ts`).
  *
  * One process at a time, run or follow-up, and nothing else starts the agent:
  * the log here is the whole record of its runs, so the clock starts nothing on
@@ -48,13 +53,14 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 
-import { ADAPTERS, type ParsedEvent } from './assistant.ts';
+import { ADAPTERS, type ParsedEvent, type ParsedStep } from './assistant.ts';
 import { CodexGate } from './codex.ts';
+import { CodexSessions, codexHome } from './codexsessions.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
 import { writeJsonAtomic } from './fs.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
 import type { ExecFile } from './shellpath.ts';
-import type { AgentRun, AgentRunState, AgentTurn } from './types.ts';
+import type { AgentRun, AgentRunState, AgentStep, AgentTurn } from './types.ts';
 
 /**
  * A run that takes longer than this is killed. A brief at high effort across a
@@ -68,6 +74,16 @@ const TURN_TIMEOUT_MS = 10 * 60_000;
 
 /** How many runs the client is sent. The log keeps all of them. */
 const RUNS_SHOWN = 30;
+
+/**
+ * How many steps a run keeps. Today's runs make a hundred or so, subagents
+ * included; past this the oldest go, though never a handoff, which the steps
+ * after it hang from.
+ */
+const STEPS_KEPT = 500;
+
+/** How often a Codex run's session files are read for its subagents. */
+const SESSIONS_EVERY_MS = 2_000;
 
 /**
  * The prompt a run is started with: a short wrapper that names the prompt file
@@ -133,9 +149,9 @@ export function displayPath(path: string, home: string = homedir()): string {
 /** One line in agent.jsonl. */
 type LogRecord =
   | { event: 'started'; run: string; cli: CliName; trigger: AgentRun['trigger']; at: string }
-  | { event: 'finished'; run: string; sessionId: string | null; report: string; messages: string[]; at: string }
-  | { event: 'failed'; run: string; sessionId: string | null; error: string; report: string; messages: string[]; at: string }
-  | { event: 'aborted'; run: string; sessionId: string | null; reason: string; report: string; messages: string[]; at: string }
+  | { event: 'finished'; run: string; sessionId: string | null; report: string; messages: string[]; steps: AgentStep[]; at: string }
+  | { event: 'failed'; run: string; sessionId: string | null; error: string; report: string; messages: string[]; steps: AgentStep[]; at: string }
+  | { event: 'aborted'; run: string; sessionId: string | null; reason: string; report: string; messages: string[]; steps: AgentStep[]; at: string }
   | { event: 'asked'; run: string; turn: string; question: string; at: string }
   | { event: 'replied'; run: string; turn: string; reply: string; at: string }
   | { event: 'turn-failed'; run: string; turn: string; error: string; reply: string; at: string }
@@ -170,6 +186,7 @@ export function foldAgentLog(text: string): AgentRun[] {
         status: 'running',
         report: '',
         messages: [],
+        steps: [],
         error: null,
         turns: [],
         resumable: false,
@@ -218,6 +235,7 @@ export function foldAgentLog(text: string): AgentRun[] {
       : run.report
         ? [run.report]
         : [];
+    run.steps = readSteps((record as { steps?: unknown }).steps);
     run.endedAt = record.at;
     if (record.event === 'finished') {
       run.status = 'done';
@@ -232,6 +250,74 @@ export function foldAgentLog(text: string): AgentRun[] {
   return [...runs.values()].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
 
+/** A logged step list, keeping the steps that still read as steps. Lines from before steps were kept have none. */
+function readSteps(value: unknown): AgentStep[] {
+  if (!Array.isArray(value)) return [];
+  const steps: AgentStep[] = [];
+  for (const candidate of value as Partial<AgentStep>[]) {
+    if (typeof candidate !== 'object' || candidate === null || typeof candidate.text !== 'string') continue;
+    steps.push({
+      kind: candidate.kind === 'message' ? 'message' : 'tool',
+      text: candidate.text,
+      detail: typeof candidate.detail === 'string' ? candidate.detail : null,
+      state: candidate.state === 'failed' ? 'failed' : 'done',
+      by: typeof candidate.by === 'string' ? candidate.by : null,
+      ...(typeof candidate.subagent === 'string' ? { subagent: candidate.subagent } : {}),
+    });
+  }
+  return steps;
+}
+
+/* ---------- the steps ---------- */
+
+/**
+ * A run's steps as they come in, from the stream and, under Codex, the session
+ * files. A call's step is found again by the CLI's id for it, so the line that
+ * says how it went settles the step the first line started.
+ */
+class StepTrail {
+  private readonly calls = new Map<string, AgentStep>();
+  private readonly run: AgentRun;
+
+  constructor(run: AgentRun) {
+    this.run = run;
+  }
+
+  said(by: string | null, text: string): void {
+    this.add({ kind: 'message', text, detail: null, state: 'done', by });
+  }
+
+  call(by: string | null, parsed: ParsedStep): void {
+    const known = this.calls.get(parsed.id);
+    if (known) {
+      if (parsed.text) known.text = parsed.text;
+      if (parsed.detail) known.detail = parsed.detail;
+      // A handoff is done when its subagent is, not when the call that started
+      // it returns; a call that failed failed either way.
+      if (!known.subagent || parsed.final || parsed.state === 'failed') known.state = parsed.state;
+      return;
+    }
+    if (!parsed.text) return;
+    const step: AgentStep = { kind: 'tool', text: parsed.text, detail: parsed.detail ?? null, state: parsed.state, by };
+    if (parsed.handoff) step.subagent = parsed.id;
+    this.calls.set(parsed.id, step);
+    this.add(step);
+  }
+
+  /** A call nobody reported back on went the way the run did. */
+  settle(ok: boolean): void {
+    for (const step of this.run.steps) if (step.state === 'running') step.state = ok ? 'done' : 'failed';
+  }
+
+  private add(step: AgentStep): void {
+    const steps = this.run.steps;
+    steps.push(step);
+    if (steps.length <= STEPS_KEPT) return;
+    const oldest = steps.findIndex((candidate) => !candidate.subagent);
+    steps.splice(oldest === -1 ? 0 : oldest, 1);
+  }
+}
+
 /* ---------- the runner ---------- */
 
 /** What is going on, whether that is a run or a question asked of one. */
@@ -243,6 +329,14 @@ interface Running {
   timer: NodeJS.Timeout;
   /** Set by `stop`, so the exit handler can tell a kill from a crash. */
   abortReason: string | null;
+}
+
+/** A Codex run's session files, read every so often while it goes. */
+interface SessionReader {
+  sessions: CodexSessions;
+  timer: NodeJS.Timeout;
+  /** The read in progress, so two never overlap and the last can be waited for. */
+  reading: Promise<void> | null;
 }
 
 export interface AgentRunnerHooks {
@@ -260,14 +354,23 @@ export class AgentRunner {
   private readonly spawnFn: typeof spawn;
   /** Refuses a Codex too old to hold to the connector rules; see `codex.ts`. */
   private readonly codexGate: CodexGate;
+  /** Where Codex writes its session files, which say what a Codex run's subagents do. */
+  private readonly codexHome: string;
 
-  constructor(config: Config, hooks: AgentRunnerHooks, spawnFn: typeof spawn = spawn, execFn?: ExecFile) {
+  constructor(
+    config: Config,
+    hooks: AgentRunnerHooks,
+    spawnFn: typeof spawn = spawn,
+    execFn?: ExecFile,
+    home: string = codexHome(),
+  ) {
     this.config = config;
     this.hooks = hooks;
-    // Swapped in by tests, which run a script in place of the CLI, and answer
-    // for `codex --version` themselves.
+    // Swapped in by tests, which run a script in place of the CLI, answer for
+    // `codex --version` themselves, and keep Codex's files somewhere of their own.
     this.spawnFn = spawnFn;
     this.codexGate = new CodexGate(config.agent.binPath, execFn);
+    this.codexHome = home;
   }
 
   get enabled(): boolean {
@@ -295,7 +398,7 @@ export class AgentRunner {
         run.status = 'aborted';
         run.error = reason;
         run.endedAt = at;
-        await this.append({ event: 'aborted', run: run.id, sessionId: run.sessionId, reason, report: run.report, messages: run.messages, at });
+        await this.append({ event: 'aborted', run: run.id, sessionId: run.sessionId, reason, report: run.report, messages: run.messages, steps: run.steps, at });
       }
       for (const turn of run.turns) {
         if (turn.status !== 'running') continue;
@@ -318,7 +421,11 @@ export class AgentRunner {
   }
 
   view(now: Date = new Date()): AgentRunState {
-    const runs = this.runs.slice(-RUNS_SHOWN).reverse().map((run) => ({ ...run, resumable: this.resumable(run) }));
+    const runs = this.runs
+      .slice(-RUNS_SHOWN)
+      .reverse()
+      // The steps of the newest run only: see `AgentRun.steps`.
+      .map((run, index) => ({ ...run, steps: index === 0 ? run.steps : [], resumable: this.resumable(run) }));
     return {
       enabled: this.enabled,
       cli: this.config.agent.cli,
@@ -387,6 +494,7 @@ export class AgentRunner {
       status: 'running',
       report: '',
       messages: [],
+      steps: [],
       error: null,
       turns: [],
       resumable: false,
@@ -516,14 +624,22 @@ export class AgentRunner {
       stderr.push(chunk.toString('utf8'));
       if (stderr.length > 50) stderr.shift();
     });
+    // A follow-up is answered in words alone; only a run keeps its steps.
+    const trail = turn ? null : new StepTrail(run);
+    let reader: SessionReader | null = null;
     if (child.stdout) {
       const lines = createInterface({ input: child.stdout });
       lines.on('line', (line) => {
         const event = adapter.parse(line);
         if (!event) return;
         if (event.sessionId && !turn) run.sessionId = event.sessionId;
+        if (trail && cli === 'codex' && run.sessionId && !reader) reader = this.readSessions(run, trail);
+        const by = event.by ?? null;
         if (event.text) {
-          if (turn) {
+          if (by !== null) {
+            // A subagent's words are its own steps, never the agent's report or reply.
+            trail?.said(by, event.text);
+          } else if (turn) {
             turn.reply = turn.reply ? `${turn.reply}\n\n${event.text}` : event.text;
           } else {
             // Every message, in order: along the way the latest is what the
@@ -531,9 +647,11 @@ export class AgentRunner {
             // how it got there.
             run.messages.push(event.text);
             run.report = event.text;
+            trail?.said(null, event.text);
           }
-          this.hooks.onChange();
         }
+        for (const parsed of event.steps ?? []) trail?.call(by, parsed);
+        if (event.text || (trail && event.steps)) this.hooks.onChange();
         if (event.done) done = event.done;
       });
     }
@@ -542,15 +660,60 @@ export class AgentRunner {
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      this.running = null;
       const outcome: ParsedEvent['done'] = running.abortReason
         ? { ok: false, error: running.abortReason }
         : (done ?? {
             ok: false,
             error: `${cli} exited with code ${code}${stderr.length ? `: ${stderr.join('').trim().split('\n').slice(-3).join(' ')}` : ''}`,
           });
-      void this.finish(run, turn, outcome, running.abortReason !== null);
+      void (async () => {
+        // The session files' last lines, for how the subagents ended. Still
+        // busy until then, so nothing starts in between.
+        if (reader) await this.stopReading(reader, trail!);
+        this.running = null;
+        trail?.settle(outcome.ok);
+        await this.finish(run, turn, outcome, running.abortReason !== null);
+      })();
     });
+  }
+
+  /**
+   * Start reading a Codex run's session files for its subagents, now that the
+   * stream has named the run's thread.
+   */
+  private readSessions(run: AgentRun, trail: StepTrail): SessionReader {
+    const reader: SessionReader = {
+      sessions: new CodexSessions(run.sessionId!, new Date(run.startedAt), this.codexHome),
+      timer: setInterval(() => void this.readOnce(reader, trail), SESSIONS_EVERY_MS),
+      reading: null,
+    };
+    reader.timer.unref();
+    return reader;
+  }
+
+  private readOnce(reader: SessionReader, trail: StepTrail): Promise<void> {
+    reader.reading ??= (async () => {
+      try {
+        const news = await reader.sessions.read();
+        for (const entry of news) {
+          if ('message' in entry) trail.said(entry.by, entry.message);
+          else trail.call(entry.by, entry.step);
+        }
+        if (news.length) this.hooks.onChange();
+      } catch (err) {
+        // What can't be read is not shown; the run goes on regardless.
+        console.warn(`[daily-focus] could not read Codex's session files: ${(err as Error).message}`);
+      } finally {
+        reader.reading = null;
+      }
+    })();
+    return reader.reading;
+  }
+
+  private async stopReading(reader: SessionReader, trail: StepTrail): Promise<void> {
+    clearInterval(reader.timer);
+    await reader.reading;
+    await this.readOnce(reader, trail);
   }
 
   /**
@@ -607,17 +770,17 @@ export class AgentRunner {
     const report = outcome.reply ?? run.report;
     run.report = report;
     run.endedAt = at;
-    const messages = run.messages;
+    const { messages, steps } = run;
     if (outcome.ok) {
-      await this.append({ event: 'finished', run: run.id, sessionId: run.sessionId, report, messages, at });
+      await this.append({ event: 'finished', run: run.id, sessionId: run.sessionId, report, messages, steps, at });
       run.status = 'done';
     } else if (aborted) {
       run.error = outcome.error ?? 'stopped';
-      await this.append({ event: 'aborted', run: run.id, sessionId: run.sessionId, reason: run.error, report, messages, at });
+      await this.append({ event: 'aborted', run: run.id, sessionId: run.sessionId, reason: run.error, report, messages, steps, at });
       run.status = 'aborted';
     } else {
       run.error = outcome.error ?? 'failed';
-      await this.append({ event: 'failed', run: run.id, sessionId: run.sessionId, error: run.error, report, messages, at });
+      await this.append({ event: 'failed', run: run.id, sessionId: run.sessionId, error: run.error, report, messages, steps, at });
       run.status = 'failed';
     }
     this.hooks.onChange();

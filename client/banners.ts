@@ -118,10 +118,12 @@ function agentRunBanner(run: AgentRun, state: DashboardState, handlers: Handlers
     },
   };
   if (run.status === 'running') {
+    const helping = (run.steps ?? []).filter((step) => step.subagent && step.state === 'running').length;
     return bannerNode(
       'info',
       'i',
-      `The morning agent is writing a new brief, started ${relativeTime(run.startedAt, now)}.`,
+      `The morning agent is writing a new brief, started ${relativeTime(run.startedAt, now)}` +
+        (helping ? `, with ${helping} ${helping === 1 ? 'subagent' : 'subagents'} at work.` : '.'),
       [el('button', { type: 'button', class: 'button banner__action', onClick: () => handlers.stopAgent() }, 'Stop')],
       strip,
     );

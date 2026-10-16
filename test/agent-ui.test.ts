@@ -17,7 +17,7 @@ import { buttonLabels, byClass, byTag, mountOne, uiWith } from './dom.ts';
 import { Header } from '../client/chrome.ts';
 import { Flyout } from '../client/flyout.ts';
 import type { Handlers, UiValues } from '../client/types.ts';
-import type { AgentRun, DashboardState } from '../src/types.ts';
+import type { AgentRun, AgentStep, DashboardState } from '../src/types.ts';
 
 const NOW = '2026-09-24T12:00:00Z';
 
@@ -32,6 +32,7 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
     status: 'done',
     report: 'Wrote **6** items.\n\nCalendar was unreachable.',
     messages: ['Reading the prompt.', 'Querying the calendar.', 'Wrote **6** items.\n\nCalendar was unreachable.'],
+    steps: [],
     error: null,
     turns: [],
     resumable: true,
@@ -169,6 +170,75 @@ test('finished, the report stands alone and the way there folds away beneath it'
   const bare = panel(run({ messages: ['Wrote **6** items.\n\nCalendar was unreachable.'] }));
   assert.equal(byClass(bare, 'agent-run__message').length, 0);
   assert.doesNotMatch(bare.textContent!, /How it got there/);
+});
+
+/** A step, the agent's own unless `by` names a subagent. */
+const step = (text: string, fields: Partial<AgentStep> = {}): AgentStep => ({ kind: 'tool', text, detail: null, state: 'done', by: null, ...fields });
+
+/** The handoffs on the panel: what each summary says, and whether it is open. */
+const handoffs = (container: HTMLElement) =>
+  byClass(container, 'agent-run__handoff').map((item) => [
+    byTag(item, 'summary')[0]!.textContent,
+    (byTag(item, 'details')[0] as HTMLDetailsElement).open === true,
+  ]);
+
+const WORKING: AgentStep[] = [
+  step('Reading the prompt.', { kind: 'message' }),
+  step('Run a command', { detail: 'cat prompt.md' }),
+  step('Hand part of it to a subagent', { detail: 'inbox', subagent: 'a1' }),
+  step('Hand part of it to a subagent', { detail: 'calendar', subagent: 'a2', state: 'running' }),
+  step('Gmail: search threads', { by: 'a1', detail: '{"q":"newer_than:2d"}' }),
+  step('Three threads need you.', { kind: 'message', by: 'a1' }),
+  step('Calendar: list events', { by: 'a2', state: 'running' }),
+  step('Wait for its subagents', { state: 'running' }),
+];
+
+test('a run that keeps its steps shows them as it works, with each subagent under the step that handed it work', () => {
+  const going = run({ status: 'running', endedAt: null, report: 'Reading the prompt.', messages: ['Reading the prompt.'], steps: WORKING, resumable: false });
+  const container = panel(going);
+  assert.match(container.textContent!, /What it is doing/);
+  assert.equal(byClass(container, 'agent-run__message').length, 0, 'the steps take the place of the message folds');
+
+  // The agent's own steps, in order, with its words between the calls.
+  const top = byClass(container, 'agent-run__steps')[0]!;
+  const own = [...top.children].map((item) => item.textContent);
+  assert.equal(own.length, 5);
+  assert.equal(own[0], 'Reading the prompt.');
+  assert.match(own[1]!, /Run a command.*cat prompt\.md/);
+  assert.match(own[4]!, /Wait for its subagents/);
+
+  // A subagent at work is open on what it is doing; one that is done is folded, on what it did.
+  assert.deepEqual(handoffs(container), [
+    ['Subagent: inbox1 step', false],
+    ['Subagent: calendarCalendar: list events', true],
+  ]);
+  const inbox = byClass(container, 'agent-run__handoff')[0]!;
+  assert.match(inbox.textContent!, /Gmail: search threads.*Three threads need you\./);
+  assert.doesNotMatch(byClass(container, 'agent-run__handoff')[1]!.textContent!, /Gmail/);
+
+  // The reader's own folding wins, and is kept by the same map as the messages'.
+  const folded = panel(going, [going], null, { messageOpen: new Map([['r1:a1', true], ['r1:a2', false]]) });
+  assert.deepEqual(handoffs(folded).map(([, open]) => open), [true, false]);
+  (byTag(byClass(folded, 'agent-run__handoff')[0]!, 'details')[0] as HTMLDetailsElement).open = false;
+  assert.deepEqual(calls, ['toggleMessage r1:a1'], 'a toggle back to the default is forgotten');
+
+  const empty = panel(run({ ...going, steps: [step('Hand part of it to a subagent', { detail: 'inbox', subagent: 'a1', state: 'running' })] }));
+  assert.deepEqual(handoffs(empty), [['Subagent: inboxstarting', true]]);
+  assert.match(empty.textContent!, /Nothing yet\./);
+});
+
+test('finished, a run that kept its steps folds them under its report, less the report itself', () => {
+  const steps = [
+    ...WORKING.map((candidate) => ({ ...candidate, state: 'done' as const })),
+    step('Wrote **6** items.\n\nCalendar was unreachable.', { kind: 'message' }),
+  ];
+  const container = panel(run({ steps }));
+  assert.match(container.textContent!, /Its report/);
+  const fold = byTag(container, 'details').find((candidate) => /How it got there/.test(byTag(candidate, 'summary')[0]!.textContent!))!;
+  assert.equal(byTag(fold, 'summary')[0]!.textContent, 'How it got there, in 8 steps, with 2 subagents');
+  assert.equal((fold as HTMLDetailsElement).open, false);
+  assert.equal(fold.textContent!.match(/Calendar was unreachable/g), null, 'the report is not listed twice');
+  assert.deepEqual(handoffs(container).map(([, open]) => open), [false, false]);
 });
 
 test('the other runs are folded away, and each opens its own panel', () => {

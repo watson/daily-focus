@@ -33,7 +33,7 @@ import { judge } from './prs.ts';
 import { dateFromNow, sampleBrief, sampleGeneratedAt } from './sample.ts';
 import type { TicketBoardDeps } from './ticketboard.ts';
 import { localDateKey } from './time.ts';
-import type { Action, AssistantStep, BoardRow, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
+import type { Action, AgentStep, AssistantStep, BoardRow, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
 
 /** The GitHub login every sample pull request was fetched as. */
 const LOGIN = 'mara-l';
@@ -757,6 +757,8 @@ interface RunSeed {
   seconds: number;
   trigger: 'schedule' | 'hand';
   messages: string[];
+  /** What it did on the way, the messages among it. Only the newest run's are ever shown. */
+  steps?: AgentStep[];
   /** The last message is the report, unless the run failed. */
   error?: string;
   question?: { at: string; text: string; reply: string };
@@ -770,7 +772,7 @@ function runLines(seed: RunSeed): Record<string, unknown>[] {
     return lines;
   }
   const report = seed.messages.at(-1) ?? '';
-  lines.push({ event: 'finished', run: seed.id, sessionId: `sample-${seed.id}`, report, messages: seed.messages, at: endedAt });
+  lines.push({ event: 'finished', run: seed.id, sessionId: `sample-${seed.id}`, report, messages: seed.messages, steps: seed.steps ?? [], at: endedAt });
   if (seed.question) {
     const turn = `${seed.id}-q1`;
     const replied = new Date(new Date(seed.question.at).getTime() + 48_000).toISOString();
@@ -917,7 +919,79 @@ function demoAgentLog(profile: Profile, now: Date): Record<string, unknown>[] {
             },
           },
         ];
+  const newest = runs.find((run) => run.id === 'run-0')!;
+  newest.steps = demoRunSteps(profile, newest.messages);
   return runs.flatMap(runLines);
+}
+
+/**
+ * Today's run as its panel shows it: what it said, what it ran, and the
+ * sources it handed to subagents, each with what the subagent did.
+ */
+function demoRunSteps(profile: Profile, messages: readonly string[]): AgentStep[] {
+  const said = (text: string, by: string | null = null): AgentStep => ({ kind: 'message', text, detail: null, state: 'done', by });
+  const call = (text: string, detail: string | null, by: string | null = null): AgentStep => ({ kind: 'tool', text, detail, state: 'done', by });
+  const handoff = (name: string): AgentStep => ({ ...call('Hand part of it to a subagent', name), subagent: name });
+  const wait = call('Wait for its subagents', null);
+  const start = [
+    said(messages[0]!),
+    call('Run a command', 'cat prompt.md focus.md sources.md items.json'),
+    call('Run a command', 'tail -n 400 actions.jsonl'),
+  ];
+  const finish = [call('Run a command', 'mv items.json.tmp items.json'), said(messages.at(-1)!)];
+  if (profile === 'work') {
+    return [
+      ...start,
+      handoff('calendar'),
+      handoff('gmail'),
+      handoff('github'),
+      call('Google calendar list events', '{"calendar_id":"primary","time_min":"today 00:00"}', 'calendar'),
+      said('5 events. The 1:1 with Alice and the design review both sit at 11:00; the lunch & learn is marked free.', 'calendar'),
+      call('Gmail search emails', '{"query":"newer_than:3d -category:promotions"}', 'gmail'),
+      call('Gmail batch read email', '{"message_ids":["19a2f…","19a31…","19a33…","19a35…"]}', 'gmail'),
+      said('31 threads in the window. 4 ask something of you; Bob followed up on Q4 headcount yesterday.', 'gmail'),
+      call('Run a command', 'gh search prs --review-requested=@me --state=open --json url,title,updatedAt', 'github'),
+      call('Run a command', 'gh pr checks 3402 -R acme/webapp', 'github'),
+      said('A review request from Alice on acme/webapp#3421, and a red check on #3402. The rest is already on the board.', 'github'),
+      wait,
+      said(messages[1]!),
+      said(messages[2]!),
+      handoff('jira'),
+      handoff('slack'),
+      handoff('workday'),
+      call('Run a command', 'acli jira workitem search --jql "assignee = currentUser() AND statusCategory != Done"', 'jira'),
+      said('PROJ-8842 is still open, with both of its pull requests merged.', 'jira'),
+      call('Slack search messages', '{"query":"to:me after:yesterday"}', 'slack'),
+      said('One direct question, from Chris in #webapp-dev.', 'slack'),
+      call('Workday list inbox tasks', null, 'workday'),
+      said('The compliance training is due tonight. The Berlin expense report is still a draft.', 'workday'),
+      { ...wait },
+      said(messages[3]!),
+      ...finish,
+    ];
+  }
+  return [
+    ...start,
+    handoff('calendar'),
+    handoff('eboks'),
+    handoff('email'),
+    call('Google calendar list events', '{"calendar_id":"personal","time_min":"today 00:00"}', 'calendar'),
+    call('Google calendar list events', '{"calendar_id":"family","time_min":"today 00:00"}', 'calendar'),
+    said('6 events across Personal and Family. The insurance call at 16:30 overlaps the daycare pickup.', 'calendar'),
+    call('Run a command', 'eboks list --since 3d --json', 'eboks'),
+    call('Run a command', 'eboks text --json 4417911204', 'eboks'),
+    said('5 letters. The daycare invoice and the tax assessment ask for something; three are confirmations.', 'eboks'),
+    call('Gmail search emails', '{"query":"newer_than:3d -category:promotions"}', 'email'),
+    said('3 threads need you, the insulation quote among them, quiet for nine days.', 'email'),
+    wait,
+    said(messages[1]!),
+    handoff('messages'),
+    call('Run a command', 'messages recent --since 3d --json', 'messages'),
+    said('Jonas asked about Saturday on Tuesday, and Priya is still waiting for the photos.', 'messages'),
+    { ...wait },
+    said(messages[2]!),
+    ...finish,
+  ];
 }
 
 /** One assistant exchange, as the log's line pair: what was asked, what it did, and what came back. */

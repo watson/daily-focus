@@ -541,6 +541,64 @@ body[data-view='tickets'] #brief-refresh {
 .agent-run__message .assistant__reply {
   padding: 0 10px 8px;
 }
+/*
+ * A run's steps, the assistant's look: what it said in its own words between
+ * the calls, and each subagent as a fold under the step that handed it work.
+ */
+.agent-run__list > .agent-run__steps {
+  margin-top: 8px;
+}
+.agent-run__said {
+  margin: 6px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.agent-run__said:first-child {
+  margin-top: 0;
+}
+.agent-run__said > * {
+  margin: 0;
+}
+.agent-run__said > * + * {
+  margin-top: 5px;
+}
+.agent-run__said ul,
+.agent-run__said ol {
+  padding-left: 18px;
+}
+.agent-run__said pre {
+  white-space: pre-wrap;
+}
+.agent-run__handoff > details {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The spinner stays on the subagent's own line, not in the middle of its open steps. */
+.agent-run__steps > .agent-run__handoff[data-state='running']::before {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.agent-run__handoff summary {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-run__handoff summary:hover {
+  color: var(--ink-1);
+}
+.agent-run__handoff summary .assistant__step-text {
+  font-weight: 600;
+}
+.agent-run__handoff summary .assistant__step-detail {
+  margin-left: 6px;
+  font-size: 12px;
+}
+.agent-run__handoff .agent-run__steps {
+  margin-top: 4px;
+}
 .agent-run__runs {
   margin: 8px 0 0;
   padding: 0;

@@ -104,6 +104,33 @@ Otherwise, each source's window starts three days before the previous brief's
 
 ### Step 2 — Gather
 
+#### Hand the reading to subagents
+
+Read the sources in parallel rather than one after another: hand each source to a
+subagent of its own, or a few small ones to one subagent, so the slowest source sets
+the pace rather than the sum of them. Run up to three at a time, starting the next as
+one finishes. The reading is all you hand out. Step 1, the judging in step 3, the
+writing in step 4 and the checks in step 5 stay with you, because they need
+everything in one place.
+
+A subagent may not see this file, so give it what it needs in its task: its source's
+section of this step in full, with the value of any setting from `agent-settings.json`
+that the section names; the rules under "Across every source" below; the window from
+step 1; and the ids from the previous brief that came from its source and are still
+open, so it looks at each again. Name each after its source — `calendar`, `email`, `eboks` — since
+the dashboard shows the user which is which while you work.
+
+Ask for evidence, not decisions. For each thing that might be an item: its upstream id
+or key, its link, who and what it is about, its dates, and what the source shows about
+whether it is still open. Then what it could not read, why, and the link. Merging
+duplicates, ranking and wording are yours. When an answer is missing something its
+source should have had, ask again or read it yourself.
+
+A subagent only reads, and tell it so: it writes no file, `items.json` least of all,
+and changes nothing in any source.
+
+If you cannot start subagents, read the sources yourself, one after another.
+
 #### Across every source
 
 **Use a connector, API, MCP server or CLI as the evidence source.** `sources.md` says

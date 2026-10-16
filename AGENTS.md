@@ -119,6 +119,10 @@ run it again with `--remove` afterwards.
   run with the values in force, `.env` included; explain each key in both
   prompts. A follow-up question resumes the run's session with nothing to write;
   it must never become a way to edit the brief.
+- Under Codex, a run's subagents are read from Codex's own session files
+  (`src/codexsessions.ts`), because `codex exec --json` leaves them out. Only read
+  them: never write under `CODEX_HOME`, and a line or file that doesn't read is
+  skipped, never a failed run.
 
 ## Checks
 
