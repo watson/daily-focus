@@ -7,6 +7,7 @@ import type { Action, Brief, ObjectiveProgress } from './types.ts';
 import type { Config } from './config.ts';
 import { isWorkingDay, localDateKey, parseISO, workingDaysSince, type DayTest } from './time.ts';
 import { canonicalId } from './ids.ts';
+import { setsStatus } from './validate.ts';
 
 /**
  * A dated snapshot of every brief, kept so the dashboard can answer a question no
@@ -157,7 +158,7 @@ export function computeObjectiveProgress(
   /** Last action per id wins, exactly as the dashboard resolves status. */
   const lastAction = new Map<string, Action>();
   for (const action of actions) {
-    if (action.action === 'note') continue;
+    if (!setsStatus(action)) continue;
     lastAction.set(canonicalId(action.id), action);
   }
 

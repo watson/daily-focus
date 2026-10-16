@@ -90,8 +90,10 @@ The second tab shows your open pull requests in seven buckets:
 | Drafts | Pull requests you haven't marked ready for review. |
 
 Park a pull request until a date, leave a note, or click **Nudged** after asking
-for a review. Nudged records a note; it doesn't send a message. Completing a task
-about a pull request in the brief doesn't remove that pull request from the board.
+for a review. Nudged records that you asked; it doesn't send a message. The pull
+request moves to a Nudged section for a day, then goes back to Waiting on reviewers
+with "time to ask" if nobody has reviewed it. Completing a task about a pull
+request in the brief doesn't remove that pull request from the board.
 
 Cancelled checks appear as "cancelled, no verdict" rather than failures.
 When a check is rerun, the board uses its newest workflow run or attempt.

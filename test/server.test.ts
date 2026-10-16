@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -95,6 +95,17 @@ test('a snooze without a date is allowed', async () => {
   const res = await post({ id: 'gh:1', action: 'snooze' });
   assert.equal(res.status, 200);
   assert.equal((await json(res)).items[0].status, 'snoozed');
+});
+
+test('a nudge is recorded as itself, with nothing but its time, and leaves the status alone', async () => {
+  const res = await post({ id: 'gh:1', action: 'nudge', text: 'not kept' });
+  assert.equal(res.status, 200);
+  assert.equal((await json(res)).items[0].status, 'snoozed', 'still as the snooze before it left it');
+
+  const lines = (await readFile(join(dataDir, 'actions.jsonl'), 'utf8')).trim().split('\n');
+  const last = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(last).sort(), ['action', 'at', 'id']);
+  assert.equal(last.action, 'nudge');
 });
 
 test('static assets are served and traversal is refused', async () => {

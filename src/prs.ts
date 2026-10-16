@@ -47,6 +47,8 @@ interface Judgement {
   stale: boolean;
   nudge: boolean;
   since: string;
+  nudgedAt?: string;
+  nudgedUntil?: string;
 }
 
 /**
@@ -72,10 +74,11 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
 /**
  * Whose move it is, and why.
  *
- * `lastNoteAt` is the newest note the user left through the dashboard. A note is
- * treated as "I did something about this" for the nudge timer only: nudging on
- * Slack is invisible to GitHub, and this is how the board is told. It never moves
- * a PR between courts, since the court is about what GitHub can see.
+ * `nudgedAt` is the newest time the user pressed Nudged. Asking on Slack is
+ * invisible to GitHub, and this is how the board is told: it restarts the clock
+ * on "time to ask", for a row waiting on reviewers and nothing else. It never
+ * moves a PR between courts, since the court is about what GitHub can see. A note
+ * restarts nothing; it is free text, and the board doesn't read it.
  *
  * `gates` are the configured merge-gate check names, from `mergeGateChecks`.
  * Nothing is a gate by default — the list arrives from the user's private config,
@@ -94,7 +97,7 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *   7. ready, which needs GitHub to agree the merge would work
  *   8. otherwise, waiting on reviewers
  */
-export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null, gates: readonly string[] = []): Judgement {
+export function judge(pr: PullRequest, now: Date, nudgedAt: string | null, gates: readonly string[] = []): Judgement {
   const decision = deriveDecision(pr);
   // `?? null`: a pull read back from an older file may lack the key entirely.
   const you = pr.lastActivityByYou ?? null;
@@ -199,9 +202,17 @@ export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null, gat
   }
 
   // Waiting on reviewers, since the later of becoming ready and your last push.
-  const quietSince = laterISO(waitingSince, lastNoteAt) ?? waitingSince;
+  const quietSince = laterISO(waitingSince, nudgedAt) ?? waitingSince;
   const waited = now.getTime() - (ms(quietSince) ?? now.getTime());
-  return { court: 'reviewers', decision, reasons, stale: false, nudge: waited >= NUDGE_AFTER_MS, since: waitingSince };
+  const verdict: Judgement = { court: 'reviewers', decision, reasons, stale: false, nudge: waited >= NUDGE_AFTER_MS, since: waitingSince };
+  // Nudged while the nudge is what holds the prompt back. One from before your
+  // last push is about a wait that push started over, as any push does.
+  const nudged = ms(nudgedAt);
+  if (nudgedAt && nudged !== null && quietSince === nudgedAt && !verdict.nudge) {
+    verdict.nudgedAt = nudgedAt;
+    verdict.nudgedUntil = new Date(nudged + NUDGE_AFTER_MS).toISOString();
+  }
+  return verdict;
 }
 
 /**
@@ -210,10 +221,10 @@ export function judge(pr: PullRequest, now: Date, lastNoteAt: string | null, gat
  *
  * Only two things in the log are honoured. A snooze parks the row until its date,
  * which is how a draft is deliberately shelved; `foldActionLog` has already turned
- * an expired one back into open. Notes are shown, and the newest one resets the
- * nudge timer. Done and dismissed are ignored on purpose: the brief may raise "CI
- * failing on #3402" and the user may mark that done, but #3402 is still open, and
- * this board shows what is open.
+ * an expired one back into open. The newest nudge resets the nudge timer. Notes
+ * are carried along to be shown. Done and dismissed are ignored on purpose: the
+ * brief may raise "CI failing on #3402" and the user may mark that done, but #3402
+ * is still open, and this board shows what is open.
  *
  * `gates` is `github.mergeGateChecks` — private configuration rather than a fact
  * about the pull request, which is why the match happens here and never reaches
@@ -229,11 +240,9 @@ export function resolveBoard(
 
   const rows = pulls.map((pr): BoardRow => {
     const log = folded.get(canonicalId(pr.id));
-    const notes = log?.notes ?? [];
-    const lastNoteAt = notes.length > 0 ? notes[notes.length - 1]!.at : null;
-    const verdict = judge(pr, now, lastNoteAt, gates);
+    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates);
 
-    const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes };
+    const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes: log?.notes ?? [] };
     if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;
     return row;
   });

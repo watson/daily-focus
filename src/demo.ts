@@ -227,7 +227,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
       lastActivityByYou: daysAgo(now, 1),
       lastActivityByOthers: { at: hoursAgo(now, 2), login: 'chris', kind: 'review' },
     }),
-    // Waiting on reviewers: one long enough to ask, one fresh.
+    // Waiting on reviewers: one long enough to ask, one fresh, and one nudged this morning.
     pull({
       repo: 'acme/webapp',
       number: 3395,
@@ -244,6 +244,15 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
       createdAt: hoursAgo(now, 5),
       reviewDecision: 'REVIEW_REQUIRED',
       requestedReviewers: ['dana', 'eli'],
+      mergeStateStatus: 'BLOCKED',
+    }),
+    pull({
+      repo: 'acme/webapp',
+      number: 3405,
+      title: 'Sample session replays by route',
+      createdAt: daysAgo(now, 2),
+      reviewDecision: 'REVIEW_REQUIRED',
+      requestedReviewers: ['chris'],
       mergeStateStatus: 'BLOCKED',
     }),
     // Waiting on the merge gate: approved, and the repository's own policy check still pending.
@@ -691,7 +700,7 @@ function demoArchive(brief: Brief, profile: Profile, now: Date): Brief[] {
 
 /**
  * The action log: what has been handled today, what was snoozed, the notes
- * left for the agent, and the parks and notes on the boards' rows. Oldest first,
+ * left for the agent, and the parks, notes and nudges on the boards' rows. Oldest first,
  * as the dashboard appends it.
  */
 function demoActions(profile: Profile, now: Date): Action[] {
@@ -706,6 +715,7 @@ function demoActions(profile: Profile, now: Date): Action[] {
           { id: 'github:pr:acme/webapp#3360', action: 'note', text: 'Revisit after the v6 cut', at: daysAgo(now, 1) },
           { id: 'github:pr:acme/webapp#3360', action: 'snooze', until: until(30), at: daysAgo(now, 1) },
           { id: 'jira:PROJ-8865', action: 'note', text: 'Docs only — no pull request expected', at: daysAgo(now, 1) },
+          { id: 'github:pr:acme/webapp#3405', action: 'nudge', at: hoursAgo(now, 3) },
           { id: 'github:pr:acme/webapp#3430', action: 'done', at: minutesAgo(now, 140) },
           { id: 'email:thread:18f31c0d9e', action: 'note', text: 'Registration runs to the 28th; no rush', at: minutesAgo(now, 131) },
           { id: 'email:thread:18f31c0d9e', action: 'snooze', until: until(7), at: minutesAgo(now, 130) },

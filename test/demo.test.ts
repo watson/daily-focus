@@ -240,6 +240,7 @@ for (const profile of PROFILES) {
         assert.ok(counts.ready === 1 && counts.gate === 1 && counts.blocked === 1, 'every court has a row');
       }
       assert.ok(state.board.rows.some((row) => row.nudge), 'one has waited long enough to ask');
+      if (profile === 'work') assert.ok(state.board.rows.some((row) => row.nudgedAt), 'and one was nudged this morning');
       assert.ok(state.board.rows.some((row) => row.notes.length > 0));
 
       // The ticket board: work only, with every court and both Working on groups.

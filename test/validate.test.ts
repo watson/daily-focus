@@ -123,6 +123,12 @@ test('parses action lines and rejects junk', () => {
     at: '2026-09-10T08:00:00Z',
   });
 
+  assert.deepEqual(parseActionLine('{"id":"a","action":"nudge","at":"2026-09-10T08:00:00Z"}'), {
+    id: 'a',
+    action: 'nudge',
+    at: '2026-09-10T08:00:00Z',
+  });
+
   assert.equal(parseActionLine(''), null);
   assert.equal(parseActionLine('   '), null);
   assert.equal(parseActionLine('not json'), null);

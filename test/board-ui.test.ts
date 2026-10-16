@@ -10,10 +10,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 // Imported ahead of the client, for the document it installs.
-import { buttonLabels, byClass, byTag, handlersWith, mountOne, uiWith } from './dom.ts';
-import { renderPullRow } from '../client/board.ts';
+import { h } from 'preact';
+
+import { buttonLabels, byClass, byTag, handlersWith, mount, mountOne, uiWith } from './dom.ts';
+import { renderBoard, renderPullRow } from '../client/board.ts';
+import { formatTime } from '../client/format.ts';
 import { resolveBoard } from '../src/prs.ts';
-import type { BoardRow, DashboardState, PullRequest } from '../src/types.ts';
+import type { Action, BoardRow, BoardState, DashboardState, PullRequest } from '../src/types.ts';
 
 /* ---------- the fixtures ---------- */
 
@@ -57,8 +60,8 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
 }
 
 /** One rendered row, judged the way the server would judge it. */
-function render(overrides: Partial<PullRequest>): { row: BoardRow; node: HTMLElement } {
-  const [row] = resolveBoard([pr(overrides)], [], NOW, GATES);
+function render(overrides: Partial<PullRequest>, actions: Action[] = []): { row: BoardRow; node: HTMLElement } {
+  const [row] = resolveBoard([pr(overrides)], actions, NOW, GATES);
   assert.ok(row);
   return { row, node: mountOne(renderPullRow(row, STATE, UI, HANDLERS)) };
 }
@@ -172,6 +175,46 @@ test('only a row waiting on reviewers is offered the nudge', () => {
   assert.equal(row.court, 'reviewers');
   assert.deepEqual(buttonLabels(node), ['Nudged', 'Park']);
   assert.equal(byClass(node, 'item__reason').length, 0, 'waiting on a review needs no explaining');
+});
+
+/** Waiting on reviewers for three days, with nobody having said a word. */
+const UNREVIEWED: Partial<PullRequest> = {
+  reviewDecision: 'REVIEW_REQUIRED',
+  reviews: [],
+  lastActivityByOthers: null,
+  requestedReviewers: ['carol'],
+};
+
+test('a nudged row says when it was nudged and when it comes back, and offers no second nudge', () => {
+  const { row, node } = render(UNREVIEWED, [{ id: 'github:pr:acme/webapp#3421', action: 'nudge', at: hoursAgo(3) }]);
+  assert.equal(row.court, 'reviewers');
+  assert.equal(node.dataset.nudged, 'true');
+  const pills = byClass(node, 'pill').map((pill) => pill.textContent ?? '');
+  // A day after the nudge: tomorrow, at the clock time it was pressed.
+  assert.ok(pills.includes(`nudged 3 h ago, back tomorrow ${formatTime(hoursAgo(3))}`), pills.join(' | '));
+  assert.ok(!pills.includes('time to ask'));
+  assert.deepEqual(buttonLabels(node), ['Park']);
+});
+
+test('nudged rows sit in a section of their own, below the reviewers they wait on', () => {
+  const pulls = [
+    pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#1', number: 1 }),
+    pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#2', number: 2 }),
+    pr({ id: 'github:pr:acme/webapp#3', number: 3, isDraft: true }),
+  ];
+  const rows = resolveBoard(pulls, [{ id: 'github:pr:acme/webapp#2', action: 'nudge', at: hoursAgo(1) }], NOW, GATES);
+  const board = { enabled: true, reason: null, failures: [], fetchedAt: NOW.toISOString(), warnings: [], scope: [], rows } as unknown as BoardState;
+  const root = mount(h('div', null, renderBoard({ ...STATE, board }, uiWith(), handlersWith())));
+
+  const sections = byClass(root, 'section').map((section) => ({
+    title: byClass(section, 'section__title')[0]?.textContent,
+    ids: byTag(section, 'li').map((li) => li.dataset.id),
+  }));
+  assert.deepEqual(sections, [
+    { title: 'Waiting on reviewers', ids: ['github:pr:acme/webapp#1'] },
+    { title: 'Nudged', ids: ['github:pr:acme/webapp#2'] },
+    { title: 'Drafts', ids: ['github:pr:acme/webapp#3'] },
+  ]);
 });
 
 test('a ready row is plain: no reason, no nudge', () => {
