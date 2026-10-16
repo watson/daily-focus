@@ -182,6 +182,15 @@ test('a note after a completion does not cancel it', () => {
   assert.equal(progress.workingDaysSince, 0);
 });
 
+test('nor does a nudge', () => {
+  const progress = computeObjectiveProgress(
+    index({ a: true }),
+    [done('a', at(2026, 9, 10)), { id: 'a', action: 'nudge', at: at(2026, 9, 10) }],
+    NOW,
+  );
+  assert.equal(progress.workingDaysSince, 0);
+});
+
 test('dismissing an objective item is not progress', () => {
   const progress = computeObjectiveProgress(
     index({ a: true }),

@@ -53,8 +53,12 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
   const open = board.rows.filter((row) => row.status === 'open');
   for (const court of COURT_ORDER) {
     const rows = open.filter((row) => row.court === court);
-    if (rows.length === 0) continue;
-    parts.push(section(COURT_TITLE[court], rows, state, ui, handlers, null, renderPullRow));
+    // A nudged row waits on the same reviewers, but there is nothing to do about
+    // it until it asks again. It sits apart until then, and comes back on its own.
+    const nudged = court === 'reviewers' ? rows.filter((row) => row.nudgedAt) : [];
+    const waiting = rows.filter((row) => !row.nudgedAt);
+    if (waiting.length > 0) parts.push(section(COURT_TITLE[court], waiting, state, ui, handlers, null, renderPullRow));
+    if (nudged.length > 0) parts.push(section('Nudged', nudged, state, ui, handlers, null, renderPullRow));
   }
 
   if (open.length === 0 && !board.reason) {
@@ -130,6 +134,7 @@ export function PullRow({ item: row, state, ui, handlers }: RowProps<BoardRow>):
       'data-id': row.id,
       'data-status': row.status,
       'data-court': row.court,
+      'data-nudged': String(Boolean(row.nudgedAt)),
       'data-selected': String(selected),
       'data-pending': String(ui.pending.value.has(row.id)),
       'data-detail': String(ui.detailFor.value === row.id),
@@ -180,6 +185,9 @@ function renderPullMeta(row: BoardRow, state: DashboardState, now: Date): JSX.El
   if (row.mergeable === 'CONFLICTING') pill('pill pill--overdue', 'conflicts');
   if (row.autoMerge) pill('pill pill--good', 'auto-merge on');
   if (row.nudge) pill('pill pill--age', 'time to ask');
+  if (row.nudgedAt && row.nudgedUntil) {
+    pill('pill', `nudged ${relativeTime(row.nudgedAt, now)}, back ${relativeDay(row.nudgedUntil, now)} ${formatTime(row.nudgedUntil)}`);
+  }
   // How long the merge has been refused, which the section header leaves out.
   // A span rather than a point in time: "last touched" is about people, and the
   // thing holding these courts up is not a person.
@@ -333,9 +341,9 @@ function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.
   );
 
   if (row.status === 'open') {
-    // Nudging happens on Slack, where the board can't see it. This is how it's told:
-    // a note, so the agent reads it too, and the nudge timer starts over.
-    if (row.court === 'reviewers') {
+    // Nudging happens on Slack, where the board can't see it. This is how it's told,
+    // and the agent reads it too. A row already nudged has nothing to tell yet.
+    if (row.court === 'reviewers' && !row.nudgedAt) {
       buttons.push(
         el(
           'button',

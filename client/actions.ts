@@ -177,6 +177,7 @@ const PAST_TENSE: Record<ActionType, string> = {
   snooze: 'Snoozed',
   reopen: 'Restored',
   note: 'Note saved',
+  nudge: 'Nudged, back tomorrow',
 };
 
 /** Last completed action, for the `u` shortcut. */
@@ -205,8 +206,15 @@ export function undoLast(): void {
   if (lastAction && lastAction.action !== 'reopen') void unpark(lastAction.id);
 }
 
+/** A note or a nudge: something said about an item, which leaves its status alone. */
+type Remark = 'note' | 'nudge';
+
+function isRemark(action: ActionType): action is Remark {
+  return action === 'note' || action === 'nudge';
+}
+
 /** The state as it will read once the server agrees, which it almost always does. */
-function optimistic(current: DashboardState, id: string, action: Exclude<ActionType, 'note'>, extra: ActionExtra): DashboardState {
+function optimistic(current: DashboardState, id: string, action: Exclude<ActionType, Remark>, extra: ActionExtra): DashboardState {
   const status: ItemStatus =
     action === 'reopen' ? 'open' : action === 'dismiss' ? 'dismissed' : action === 'done' ? 'done' : 'snoozed';
   const statusAt = new Date().toISOString();
@@ -248,17 +256,18 @@ async function applyAction(id: string, action: ActionType, extra: ActionExtra = 
     if (row && action === 'snooze' && item && (item.status === 'done' || item.status === 'dismissed')) {
       parkedFrom.set(id, item.status === 'done' ? 'done' : 'dismiss');
     }
-    if (action !== 'note') state.value = optimistic(current, id, action, extra);
+    // A remark is left to the server, which alone knows what a nudge does to a row.
+    if (!isRemark(action)) state.value = optimistic(current, id, action, extra);
   });
 
   try {
     state.value = await api.postAction({ id, action, ...extra });
     removePending(id);
 
-    // A note is append-only and can't be taken back, and "undoing" it with a
-    // reopen would rewrite the status of whatever else shares the id. So notes
-    // get no Undo and don't become the target of `u`.
-    if (action === 'note') {
+    // A note or a nudge is append-only and can't be taken back, and "undoing" it
+    // with a reopen would rewrite the status of whatever else shares the id. So
+    // neither gets an Undo or becomes the target of `u`.
+    if (isRemark(action)) {
       showToast(PAST_TENSE[action]);
       return;
     }
@@ -856,9 +865,9 @@ export const handlers: Handlers = {
     ui.unattendedSeen.value = endedAt;
     remember(UNATTENDED_SEEN_KEY, endedAt);
   },
-  // A nudge on Slack is invisible to GitHub, so it's recorded as a note: the agent
-  // reads it as free text, and the board's nudge timer starts over from it.
-  nudge: (id) => void applyAction(id, 'note', { text: 'Nudged reviewers' }),
+  // A nudge on Slack is invisible to GitHub, so it's recorded: the board's nudge
+  // timer starts over from it, and the agent reads that the user asked.
+  nudge: (id) => void applyAction(id, 'nudge'),
   unpark: (id) => void unpark(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),

@@ -1,4 +1,4 @@
-import type { Brief, Item, ItemKind, Source } from './types.ts';
+import type { Action, ActionType, Brief, Item, ItemKind, Source } from './types.ts';
 
 /**
  * items.json is written by an LLM, so it will occasionally be wrong in small ways.
@@ -235,8 +235,16 @@ export function parseBrief(text: string): ParseResult {
   return { brief, error: null, warnings };
 }
 
+/** Every action the log can hold: what this reads back and what the server accepts. */
+export const ACTION_TYPES: readonly ActionType[] = ['done', 'snooze', 'dismiss', 'reopen', 'note', 'nudge'];
+
+/** Whether an action decides its item's status. A note and a nudge only say something about it. */
+export function setsStatus(action: Action): boolean {
+  return action.action !== 'note' && action.action !== 'nudge';
+}
+
 /** Parse one line of actions.jsonl. Returns null for anything unusable. */
-export function parseActionLine(line: string): import('./types.ts').Action | null {
+export function parseActionLine(line: string): Action | null {
   const trimmed = line.trim();
   if (trimmed === '') return null;
 
@@ -251,11 +259,11 @@ export function parseActionLine(line: string): import('./types.ts').Action | nul
   const id = optionalString(raw.id);
   const action = optionalString(raw.action);
   if (!id || !action) return null;
-  if (!['done', 'snooze', 'dismiss', 'reopen', 'note'].includes(action)) return null;
+  if (!(ACTION_TYPES as readonly string[]).includes(action)) return null;
 
-  const result: import('./types.ts').Action = {
+  const result: Action = {
     id,
-    action: action as import('./types.ts').ActionType,
+    action: action as ActionType,
     at: optionalString(raw.at) ?? new Date(0).toISOString(),
   };
   const until = optionalString(raw.until);

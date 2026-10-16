@@ -1629,6 +1629,7 @@ body[data-view='settings'] .layout {
 }
 
 .item--pull[data-status='snoozed'] .item__title,
+.item--pull[data-nudged='true'] .item__title,
 .item--ticket[data-status='snoozed'] .item__title {
   color: var(--ink-3);
 }

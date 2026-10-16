@@ -77,6 +77,16 @@ test('notes accumulate and do not change status', () => {
   );
 });
 
+test('a nudge is neither a note nor a status', () => {
+  const [resolved] = resolveItems(
+    [item('a')],
+    [action('a', 'done', { at: '2026-09-10T08:00:00Z' }), action('a', 'nudge', { at: '2026-09-10T08:01:00Z' })],
+    NOW,
+  );
+  assert.equal(resolved?.status, 'done');
+  assert.deepEqual(resolved?.notes, []);
+});
+
 test('actions only affect their own item', () => {
   const resolved = resolveItems([item('a'), item('b')], [action('a', 'done')], NOW);
   assert.equal(resolved[0]?.status, 'done');

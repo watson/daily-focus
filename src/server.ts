@@ -29,6 +29,7 @@ import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
+import { ACTION_TYPES } from './validate.ts';
 import { TimeZoneKeeper, validZone } from './zone.ts';
 
 const PUBLIC_DIR = resolve(fileURLToPath(new URL('../public', import.meta.url)));
@@ -51,13 +52,7 @@ const TEXT_FILES: Readonly<Record<string, { file: 'focusFile' | 'sourcesFile'; n
   '/api/text/sources': { file: 'sourcesFile', name: 'sources.md' },
 };
 
-const VALID_ACTIONS: ReadonlySet<string> = new Set<ActionType>([
-  'done',
-  'snooze',
-  'dismiss',
-  'reopen',
-  'note',
-]);
+const VALID_ACTIONS: ReadonlySet<string> = new Set<ActionType>(ACTION_TYPES);
 
 /** Body cap — actions are a few hundred bytes; anything larger is a mistake or an attack. */
 const MAX_BODY_BYTES = 64 * 1024;

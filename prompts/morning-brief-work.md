@@ -86,6 +86,7 @@ by `id` and take the **last** entry for each id:
 | `snooze` | Not today | Leave it out until `until` (a `YYYY-MM-DD`) has arrived. If `until` is absent, use your judgement about when it's worth resurfacing. |
 | `reopen` | They undid a previous action | Treat as though nothing had been recorded — it is live again. |
 | `note` | Free text for you; **does not** change status | Read it. It usually explains *why*, and often tells you something the sources can't. |
+| `nudge` | The user asked a pull request's reviewers for a review, somewhere you can't see (Slack, in person); **does not** change status | Treat the review as asked for at `at`. Don't suggest asking again until a day after it. |
 
 **This is the most important instruction in this prompt.** A `done` in the log
 outranks everything you can observe upstream. If the log says the user handled a Gmail

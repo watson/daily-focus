@@ -318,6 +318,8 @@ export interface FoldedActions {
   snoozedUntil?: string;
   statusAt?: string;
   notes: { text: string; at: string }[];
+  /** The newest nudge. It never touches the status: only the pull request board reads it. */
+  nudgedAt?: string;
 }
 
 /**
@@ -344,6 +346,9 @@ export function foldActionLog(actions: readonly Action[], now: Date): Map<string
     switch (action.action) {
       case 'note':
         if (action.text) entry.notes.push({ text: action.text, at: action.at });
+        break;
+      case 'nudge':
+        entry.nudgedAt = action.at;
         break;
       case 'done':
         entry.status = 'done';

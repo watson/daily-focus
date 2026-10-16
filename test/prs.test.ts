@@ -81,18 +81,39 @@ test('nobody has acted yet: waiting on reviewers, nudge after a day', () => {
   assert.equal(old.since, daysAgo(2));
 });
 
-test('a note resets the nudge timer without moving the PR', () => {
+test('a nudge resets the nudge timer without moving the PR', () => {
   const base = pr({ readyAt: daysAgo(3), lastActivityByYou: daysAgo(3) });
   const before = judge(base, NOW, null);
   assert.equal(before.nudge, true);
+  assert.equal(before.nudgedAt, undefined);
 
   const nudged = judge(base, NOW, hoursAgo(3));
   assert.equal(nudged.court, 'reviewers');
   assert.equal(nudged.nudge, false);
   assert.equal(nudged.since, daysAgo(3), 'the wait itself is unchanged');
+  assert.equal(nudged.nudgedAt, hoursAgo(3), 'shown apart, as nudged');
+  assert.equal(nudged.nudgedUntil, new Date(NOW.getTime() - 3 * 3_600_000 + NUDGE_AFTER_MS).toISOString());
 
   const longAgo = judge(base, NOW, new Date(NOW.getTime() - NUDGE_AFTER_MS).toISOString());
-  assert.equal(longAgo.nudge, true, 'a day after the note it asks again');
+  assert.equal(longAgo.nudge, true, 'a day after the nudge it asks again');
+  assert.equal(longAgo.nudgedAt, undefined, 'and is no longer shown as nudged');
+});
+
+test('a nudge before a fresh wait began is spent, and one is only for the reviewers court', () => {
+  // You nudged, then pushed: the push restarts the wait, as any push does.
+  const pushed = judge(pr({ readyAt: daysAgo(3), lastActivityByYou: hoursAgo(1) }), NOW, hoursAgo(5));
+  assert.equal(pushed.court, 'reviewers');
+  assert.equal(pushed.nudge, false);
+  assert.equal(pushed.nudgedAt, undefined);
+
+  // Somebody answered since: your move, whatever was said on Slack.
+  const answered = judge(
+    pr({ lastActivityByOthers: { at: hoursAgo(1), login: 'bob', kind: 'comment' } }),
+    NOW,
+    hoursAgo(5),
+  );
+  assert.equal(answered.court, 'you');
+  assert.equal(answered.nudgedAt, undefined);
 });
 
 test('someone acting after you puts it in your court', () => {
@@ -216,18 +237,21 @@ test('without branch protection the decision comes from the reviews themselves',
   assert.equal(deriveDecision(pr({ reviewDecision: 'REVIEW_REQUIRED', reviews: [{ login: 'bob', state: 'APPROVED', at: daysAgo(1) }] })), 'REVIEW_REQUIRED', 'GitHub\'s own answer wins when it gives one');
 });
 
-test('the board honours snooze and notes from the log, and ignores done and dismiss', () => {
+test('the board honours snooze, nudges and notes from the log, and ignores done and dismiss', () => {
   const pulls = [
     pr({ id: 'github:pr:acme/webapp#1', number: 1 }),
     pr({ id: 'github:pr:acme/webapp#2', number: 2 }),
     pr({ id: 'github:pr:acme/webapp#3', number: 3 }),
     pr({ id: 'github:pr:acme/webapp#4', number: 4, isDraft: true }),
+    pr({ id: 'github:pr:acme/webapp#5', number: 5 }),
   ];
   const actions: Action[] = [
     { id: 'github:pr:acme/webapp#1', action: 'done', at: hoursAgo(1) },
     { id: 'github:pr:acme/webapp#2', action: 'dismiss', at: hoursAgo(1) },
-    { id: 'GitHub:PR:acme/webapp#3', action: 'note', at: hoursAgo(1), text: 'Nudged reviewers' },
+    { id: 'GitHub:PR:acme/webapp#3', action: 'nudge', at: hoursAgo(1) },
     { id: 'github:pr:acme/webapp#4', action: 'snooze', at: hoursAgo(1), until: '2026-10-01' },
+    // A note is only text, even one worded like a nudge, as the button once wrote them.
+    { id: 'github:pr:acme/webapp#5', action: 'note', at: hoursAgo(1), text: 'Nudged reviewers' },
   ];
 
   const rows = resolveBoard(pulls, actions, NOW);
@@ -235,13 +259,17 @@ test('the board honours snooze and notes from the log, and ignores done and dism
 
   assert.equal(byNumber.get(1)?.status, 'open', 'done does not close an open PR');
   assert.equal(byNumber.get(2)?.status, 'open', 'dismiss does not either');
-  assert.equal(byNumber.get(3)?.notes[0]?.text, 'Nudged reviewers');
-  assert.equal(byNumber.get(3)?.nudge, false, 'the note reset the timer');
+  assert.equal(byNumber.get(3)?.nudge, false, 'the nudge reset the timer');
+  assert.equal(byNumber.get(3)?.nudgedAt, hoursAgo(1));
+  assert.deepEqual(byNumber.get(3)?.notes, [], 'a nudge is not a note');
+  assert.equal(byNumber.get(5)?.notes[0]?.text, 'Nudged reviewers');
+  assert.equal(byNumber.get(5)?.nudge, true, 'a note resets nothing');
+  assert.equal(byNumber.get(5)?.nudgedAt, undefined);
   assert.equal(byNumber.get(1)?.decision, null);
   assert.equal(byNumber.get(4)?.status, 'snoozed');
   assert.equal(byNumber.get(4)?.snoozedUntil, '2026-10-01');
 
-  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 3, gate: 0, blocked: 0, checks: 0, draft: 0, parked: 1 });
+  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 4, gate: 0, blocked: 0, checks: 0, draft: 0, parked: 1 });
 });
 
 test('an expired snooze reopens, and a dateless one parks indefinitely', () => {

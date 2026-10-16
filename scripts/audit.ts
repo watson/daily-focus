@@ -19,7 +19,7 @@ import { loadConfig } from '../src/config.ts';
 import { command } from '../src/install.ts';
 import { linkState } from '../src/links.ts';
 import { Store } from '../src/store.ts';
-import { parseBrief } from '../src/validate.ts';
+import { parseBrief, setsStatus } from '../src/validate.ts';
 import { runContractChecks } from '../src/checks.ts';
 import { readArchiveIndex } from '../src/archive.ts';
 import { fingerprintId } from '../src/ids.ts';
@@ -239,7 +239,7 @@ if (!previous) {
   const dropped = [...previousIds].filter((id) => !currentIds.has(id));
   const added = [...currentIds].filter((id) => !previousIds.has(id));
 
-  const actedOn = new Set(actions.filter((a) => a.action !== 'note').map((a) => a.id));
+  const actedOn = new Set(actions.filter(setsStatus).map((a) => a.id));
   const addedFingerprints = new Map(added.map((id) => [fingerprintId(id), id]));
 
   // Three reasons an id can disappear, and only one of them is a bug.

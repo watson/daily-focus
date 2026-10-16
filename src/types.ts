@@ -135,8 +135,16 @@ export interface Brief {
   items: Item[];
 }
 
-/** What the dashboard can record against an item. */
-export type ActionType = 'done' | 'snooze' | 'dismiss' | 'reopen' | 'note';
+/**
+ * What the dashboard can record against an item. `note` and `nudge` say something
+ * about it and leave its status alone; the rest decide the status.
+ *
+ * A `nudge` carries nothing but its time: the user asked a pull request's
+ * reviewers for a review somewhere GitHub can't see, such as Slack. It was a
+ * `note` reading "Nudged reviewers" until the board needed to tell one from a
+ * note the user typed; those older lines stay notes.
+ */
+export type ActionType = 'done' | 'snooze' | 'dismiss' | 'reopen' | 'note' | 'nudge';
 
 /** One appended line in actions.jsonl. */
 export interface Action {
@@ -503,6 +511,13 @@ export interface BoardRow extends PullRequest {
   stale: boolean;
   /** Waiting on reviewers for long enough that it's time to ask. */
   nudge: boolean;
+  /**
+   * When the user said they asked, while that nudge is what keeps `nudge` false.
+   * Set only in the reviewers court; the board shows these rows apart, as Nudged.
+   */
+  nudgedAt?: string;
+  /** When a nudged row is due to ask again: `nudgedAt` plus a day. Set with it. */
+  nudgedUntil?: string;
   /** When the current wait began. The sort key within a court. */
   since: string;
   /** Only snooze is honoured here: a done or dismissed PR is still open upstream. */
