@@ -8,7 +8,7 @@
 
 import { batch } from '@preact/signals';
 
-import type { ActionType, BoardRow, DashboardState, ItemStatus, TicketRow } from '../src/types.ts';
+import type { ActionType, BoardRow, DashboardState, ItemStatus, OnboardingAnswer, TicketRow } from '../src/types.ts';
 import * as api from './api.ts';
 import {
   AGENT_RUN_SEEN_KEY,
@@ -20,7 +20,7 @@ import {
   ui,
 } from './state.ts';
 import { applyTheme, nextTheme } from './theme.ts';
-import type { ActionExtra, FocusField, Handlers, SettingsPage, TextEditor, TextName, TicketMode, View } from './types.ts';
+import type { ActionExtra, FocusField, Handlers, SettingsPage, SetupDraft, TextEditor, TextName, TicketMode, View } from './types.ts';
 
 /* ---------- small things ---------- */
 
@@ -539,7 +539,7 @@ function restartToast(page: SettingsPage): void {
 /**
  * Follow a restart until the dashboard is back with the new settings. The live
  * feed reconnects on its own, but only after a few seconds; asking every half
- * second makes a setup step tick over as soon as its choice has taken effect.
+ * second lands the setup screen's finish on the first brief as soon as it starts.
  * Gives up after fifteen seconds, which only a restart waiting on the morning
  * agent takes, and the live feed carries on from there.
  */
@@ -568,8 +568,8 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-/** Save `values`, which is the draft for the page's Save, or a setup step's one choice. */
-async function sendSettings(values: Record<string, string | null>, fromDraft: boolean): Promise<void> {
+/** Save `values` from the settings page's draft. */
+async function sendSettings(values: Record<string, string | null>): Promise<void> {
   if (ui.settingsSaving.value) return;
   batch(() => {
     ui.settingsSaving.value = true;
@@ -581,17 +581,14 @@ async function sendSettings(values: Record<string, string | null>, fromDraft: bo
       ui.settings.value = page;
       // Only what was sent, and only where it hasn't been changed again since:
       // a field edited while the save was on its way keeps its new value.
-      if (fromDraft) {
-        const draft = new Map(ui.settingsDraft.value);
-        for (const [key, value] of Object.entries(values)) if (draft.get(key) === value) draft.delete(key);
-        ui.settingsDraft.value = draft;
-      }
+      const draft = new Map(ui.settingsDraft.value);
+      for (const [key, value] of Object.entries(values)) if (draft.get(key) === value) draft.delete(key);
+      ui.settingsDraft.value = draft;
     });
     restartToast(page);
     if (page.restart === 'waiting') void followRestart();
   } catch (err) {
-    if (fromDraft) ui.settingsError.value = (err as Error).message;
-    else showToast(`Could not save: ${(err as Error).message}`);
+    ui.settingsError.value = (err as Error).message;
   } finally {
     ui.settingsSaving.value = false;
   }
@@ -680,6 +677,70 @@ async function listCalendars(): Promise<void> {
     ui.calendars.value = (await api.postListCalendars()).calendars;
   } catch (err) {
     ui.calendars.value = (err as Error).message;
+  }
+}
+
+/* ---------- the setup screen ---------- */
+
+/** One request about a setup step at a time; its buttons wait for it. */
+async function setupRequest(step: string, send: () => Promise<DashboardState>): Promise<boolean> {
+  if (ui.setupBusy.value) return false;
+  batch(() => {
+    ui.setupBusy.value = step;
+    ui.setupError.value = null;
+  });
+  try {
+    adoptState(await send());
+    return true;
+  } catch (err) {
+    ui.setupError.value = { step, message: (err as Error).message };
+    return false;
+  } finally {
+    ui.setupBusy.value = null;
+  }
+}
+
+function forgetDraft(step: string): void {
+  if (!ui.setupDrafts.value.has(step)) return;
+  const next = new Map(ui.setupDrafts.value);
+  next.delete(step);
+  ui.setupDrafts.value = next;
+}
+
+async function answerSetup(step: string, answer: OnboardingAnswer): Promise<void> {
+  if (!(await setupRequest(step, () => api.postSetupAnswer(step, answer)))) return;
+  batch(() => {
+    forgetDraft(step);
+    if (ui.setupEditing.value === step) ui.setupEditing.value = null;
+    // The source list it would write has changed with the answer.
+    ui.setupSources.value = null;
+  });
+  // The next question takes the place of this one: bring it into view, and the
+  // keyboard to its heading, so a screen reader reads the question out.
+  afterRender(() => {
+    const heading = document.querySelector<HTMLElement>('.onboarding__card[data-current="true"] h2');
+    heading?.focus({ preventScroll: true });
+    heading?.closest('.onboarding__card')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+}
+
+async function reviseSetup(step: string, text: string, draft: SetupDraft['answer']): Promise<void> {
+  if (!(await setupRequest(step, () => api.postSetupRevise(step, text, draft)))) return;
+  batch(() => {
+    // What it comes back with starts from this draft, so the draft gives way to it.
+    forgetDraft(step);
+    const tell = new Map(ui.setupTell.value);
+    tell.delete(step);
+    ui.setupTell.value = tell;
+  });
+}
+
+async function loadSetupSources(): Promise<void> {
+  ui.setupSources.value = 'loading';
+  try {
+    ui.setupSources.value = await api.fetchSetupSources();
+  } catch (err) {
+    ui.setupSources.value = { error: (err as Error).message };
   }
 }
 
@@ -836,13 +897,36 @@ export const handlers: Handlers = {
       ui.settingsDraft.value = new Map();
       ui.settingsError.value = null;
     }),
-  saveSettings: (keys) =>
-    void sendSettings(Object.fromEntries([...ui.settingsDraft.value].filter(([key]) => !keys || keys.includes(key))), true),
-  chooseSettings: (values) => void sendSettings(values, false),
+  saveSettings: () => void sendSettings(Object.fromEntries(ui.settingsDraft.value)),
   loadText: (name) => void loadText(name),
   editText: (name, text) => patchText(name, { draft: text }),
   saveText: (name, overwrite) => void saveText(name, overwrite),
   reloadText: (name) => void loadText(name),
   saveObjective: (objective, blocker) => void saveObjective(objective, blocker),
   listCalendars: () => void listCalendars(),
+  answerSetup: (step, answer) => void answerSetup(step, answer),
+  editSetupDraft: (step, answer, version) => {
+    if (answer === null) return forgetDraft(step);
+    const next = new Map(ui.setupDrafts.value);
+    next.set(step, { version, answer });
+    ui.setupDrafts.value = next;
+  },
+  editSetupStep: (step) =>
+    batch(() => {
+      ui.setupEditing.value = step;
+      ui.setupError.value = null;
+    }),
+  editSetupTell: (step, text) => {
+    const next = new Map(ui.setupTell.value);
+    next.set(step, text);
+    ui.setupTell.value = next;
+  },
+  reviseSetup: (step, text, draft) => void reviseSetup(step, text, draft),
+  retrySetup: (step) => void setupRequest(step, () => api.postSetupRetry(step)),
+  detectSetup: () => void setupRequest('detect', () => api.postSetupDetect()),
+  finishSetup: () =>
+    void setupRequest('finish', () => api.postSetupFinish()).then((finished) => {
+      if (finished && state.value?.restart === 'waiting') void followRestart();
+    }),
+  loadSetupSources: () => void loadSetupSources(),
 };

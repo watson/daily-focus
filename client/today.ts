@@ -9,13 +9,13 @@ import { daysFromToday, formatDuration } from './format.ts';
 import { SOURCE_LABEL, SOURCE_ORDER, renderItem } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { drawer, section } from './section.ts';
-import { SetupCard } from './setup.ts';
+import { FirstBriefCard } from './setup.ts';
 import type { Handlers, UiState } from './types.ts';
 
 export function TodayView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
   // Before the first brief there is nothing to rank and nothing to count: the
-  // page is the way to the first brief instead.
-  if (state.setup?.needed) return [h(SetupCard, { state, ui, handlers })];
+  // page is the first brief on its way instead.
+  if (state.setup?.needed) return [h(FirstBriefCard, { state, handlers })];
   return [renderObjective(state, handlers), renderStats(state), renderHeadline(state), renderSections(state, ui, handlers)];
 }
 

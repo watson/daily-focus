@@ -1,11 +1,11 @@
 /**
  * What a new store still needs before a morning brief can work, for the setup
- * steps the Today tab shows until the first brief exists.
+ * screen and for Today until the first brief exists.
  *
  * Only facts the dashboard can check for itself: whether a file exists, whether
  * a program is installed, how many of the template's placeholders the source list
  * still holds. Whether a CLI is logged in, or a connector reachable, is something
- * only a run can find out, and the first run's report says so.
+ * only a run can find out: the setup screen's sessions are the first to try.
  */
 
 import { execFile } from 'node:child_process';
@@ -96,8 +96,8 @@ async function exists(path: string): Promise<boolean> {
 
 /**
  * Whether this store has never had a brief: no `items.json`, and nothing in the
- * archive. Until one exists the setup steps show, and the morning agent's clock
- * waits for the first brief to come from the button that ends them. Otherwise
+ * archive. Until one exists the setup screen shows until it is finished, and the
+ * morning agent's clock waits for the first brief to come from its last button. Otherwise
  * choosing a CLI after seven would start a run before the source list it needs.
  */
 export async function firstBriefPending(config: Config): Promise<boolean> {
@@ -105,10 +105,10 @@ export async function firstBriefPending(config: Config): Promise<boolean> {
 }
 
 /**
- * Everything the setup steps show that the rest of the state doesn't already say.
- * The objective, the agent and the boards are in the state anyway.
+ * What the setup screen and Today's first-brief card need that the rest of the
+ * state doesn't already say.
  */
-export async function setupState(config: Config, opts: { profileChosen: boolean }): Promise<SetupState> {
+export async function setupState(config: Config): Promise<SetupState> {
   let sources: string | null = null;
   try {
     sources = await readFile(config.sourcesFile, 'utf8');
@@ -122,7 +122,6 @@ export async function setupState(config: Config, opts: { profileChosen: boolean 
     // agent's clock asks the same question.
     needed: await firstBriefPending(config),
     profile: config.profile,
-    profileChosen: opts.profileChosen,
     sources: { exists: sources !== null, placeholders: sources === null ? 0 : placeholdersIn(sources) },
     clis: await findClis(config),
     calendar: {

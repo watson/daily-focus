@@ -108,7 +108,7 @@ function objectiveCard(state: DashboardState, ui: UiState, handlers: Handlers): 
  * a save from elsewhere refills it, while a state push that changes nothing leaves
  * whatever is being typed alone.
  */
-export function objectiveForm(objective: string, blocker: string, handlers: Handlers, label = 'Save objective'): JSX.Element {
+function objectiveForm(objective: string, blocker: string, handlers: Handlers): JSX.Element {
   return el(
     'form',
     {
@@ -138,7 +138,7 @@ export function objectiveForm(objective: string, blocker: string, handlers: Hand
       el('span', { class: 'field__label' }, 'Blocked on (optional)'),
       el('input', { class: 'field__input', name: 'blocker', defaultValue: blocker, placeholder: 'What is in the way today, if anything', autocomplete: 'off' }),
     ),
-    el('div', { class: 'objective-form__actions' }, el('button', { type: 'submit', class: 'button button--primary' }, label)),
+    el('div', { class: 'objective-form__actions' }, el('button', { type: 'submit', class: 'button button--primary' }, 'Save objective')),
   );
 }
 
@@ -241,8 +241,8 @@ function flagValue(raw: string): string {
   return ['off', 'false', '0', 'no'].includes(raw.trim().toLowerCase()) ? 'off' : 'on';
 }
 
-/** One setting's field, editing the draft. Setup shows a few of them too, from the same draft. */
-export function settingField(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers): JSX.Element {
+/** One setting's field, editing the draft. */
+function settingField(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers): JSX.Element {
   const id = `setting-${setting.key}`;
   const locked = setting.source === 'environment';
   const value = shownValue(setting, draft);

@@ -16,6 +16,7 @@ import {
   computerUseOff,
   olderThan,
   refusalFor,
+  codexLatestModel,
 } from '../src/codex.ts';
 import type { ExecFile } from '../src/shellpath.ts';
 
@@ -141,4 +142,23 @@ test('the gate asks until Codex passes, then stops asking', async () => {
   assert.equal(await silent.refusal(), null);
   assert.equal(await silent.refusal(), null);
   assert.equal(unreadable, 2, "a Codex that couldn't be read is asked again");
+});
+
+test("setup's Codex model is the flagship Codex lists first, and nothing when the catalog can't be read", async () => {
+  const catalog = JSON.stringify({
+    models: [
+      { slug: 'gpt-hidden', priority: 0, visibility: 'hide' },
+      { slug: 'gpt-light', priority: 4, visibility: 'list' },
+      { slug: 'gpt-flagship', priority: 1, visibility: 'list' },
+    ],
+  });
+  assert.equal(await codexLatestModel('codex', async () => catalog), 'gpt-flagship');
+  assert.equal(await codexLatestModel('codex', async () => 'not json'), null);
+  assert.equal(await codexLatestModel('codex', async () => JSON.stringify({ models: [] })), null);
+  assert.equal(
+    await codexLatestModel('codex', async () => {
+      throw new Error('no such command');
+    }),
+    null,
+  );
 });

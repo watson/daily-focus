@@ -137,7 +137,7 @@ function freshness(state: DashboardState, handlers: Handlers): JSX.Element {
   let stale: string;
   if (state.brief.generatedAt === null) {
     text = 'no brief yet';
-    // Expected while the setup steps are showing; a warning only once it isn't.
+    // Expected until the first brief; a warning only once one has existed.
     stale = String(!state.setup?.needed);
   } else {
     const hours = state.brief.ageHours ?? 0;

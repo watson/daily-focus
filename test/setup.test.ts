@@ -63,7 +63,7 @@ test('the setup state counts placeholders without carrying the text', async () =
   const dir = await temp();
   const config = loadConfig({ DAILY_FOCUS_DATA: dir });
   await writeFile(config.sourcesFile, sourcesTemplate('work'));
-  const setup = await setupState(config, { profileChosen: true });
+  const setup = await setupState(config);
   assert.equal(setup.needed, true);
   assert.equal(setup.profile, 'work');
   assert.equal(setup.sources.exists, true);
@@ -75,7 +75,7 @@ test('a brief that is there but broken is not a new store', async () => {
   const dir = await temp();
   const config = loadConfig({ DAILY_FOCUS_DATA: dir });
   await writeFile(config.itemsFile, '{ not json');
-  assert.equal((await setupState(config, { profileChosen: true })).needed, false, 'its banner reports it instead');
+  assert.equal((await setupState(config)).needed, false, 'its banner reports it instead');
 });
 
 test('a CLI path set for the agent is used whatever the file is called, and a wrong one falls back to PATH', async () => {
@@ -84,7 +84,7 @@ test('a CLI path set for the agent is used whatever the file is called, and a wr
   await writeFile(wrapper, '#!/bin/sh\n');
   await chmod(wrapper, 0o755);
   const named = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: wrapper });
-  assert.equal((await setupState(named, { profileChosen: true })).clis.claude, wrapper);
+  assert.equal((await setupState(named)).clis.claude, wrapper);
 
   const bin = join(dir, 'bin');
   await mkdir(bin);
@@ -94,7 +94,7 @@ test('a CLI path set for the agent is used whatever the file is called, and a wr
   process.env.PATH = bin;
   try {
     const wrong = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: join(dir, 'gone') });
-    assert.equal((await setupState(wrong, { profileChosen: true })).clis.claude, join(bin, 'claude'));
+    assert.equal((await setupState(wrong)).clis.claude, join(bin, 'claude'));
   } finally {
     process.env.PATH = path;
   }

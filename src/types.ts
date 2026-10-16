@@ -925,6 +925,11 @@ export interface DashboardState {
   restart: 'waiting' | 'manual' | null;
   /** What a new store still needs; see `src/setup.ts`. */
   setup: SetupState;
+  /**
+   * The setup screen, while a new store is being set up; null otherwise, which
+   * is every store that has finished it or ever had a brief. See `onboarding.ts`.
+   */
+  onboarding: OnboardingState | null;
   /** Server time at render, so the client can place the "now" marker without clock skew. */
   now: string;
   /**
@@ -954,9 +959,8 @@ export interface DashboardState {
 export interface SetupState {
   /** Nothing has ever written a brief to this store. */
   needed: boolean;
-  /** What this instance briefs, and whether that was chosen anywhere rather than defaulted to work. */
+  /** What this instance briefs. */
   profile: 'work' | 'personal';
-  profileChosen: boolean;
   /**
    * Whether `sources.md` exists, and how many of the template's placeholders it
    * still holds. Never its text: that goes only to the editor that asks for it.
@@ -970,3 +974,99 @@ export interface SetupState {
    */
   calendar: { supported: boolean; built: boolean; chosen: number; buildCommand: string };
 }
+
+/**
+ * The setup screen: every question it asks, in order, each with what it would
+ * write and how far the user has got. The questions are the dashboard's; what
+ * is already ticked is what the user is likely to want, which for some of them
+ * a CLI has looked into (`proposal`). See `src/questions.ts`.
+ */
+export interface OnboardingState {
+  /**
+   * Whether it has looked for the CLIs yet. The screen asks it to when it opens:
+   * nothing is run before someone is there to see it.
+   */
+  detected: boolean;
+  steps: OnboardingStep[];
+  /** The step the screen is on: the first neither answered nor put off. Null once only the finish is left. */
+  current: string | null;
+  /** Why the last finish was refused, in the words of what refused it. */
+  error: string | null;
+}
+
+export interface OnboardingStep {
+  id: string;
+  title: string;
+  /** What it is about in a few words, for the list of what is still to come. */
+  topic: string;
+  /** `later` is a step put off: it writes nothing, and its setting keeps its default. */
+  status: 'answered' | 'later' | 'open';
+  /** The answer in a sentence, for a step that has one: "Claude Code writes your brief." */
+  summary: string | null;
+  /** Set in the environment the dashboard was started with, which wins over setup; shown, never asked. */
+  locked: boolean;
+  card: OnboardingCard;
+  /** The CLI's look into this step, when it has one. */
+  proposal: OnboardingProposal | null;
+  answer: OnboardingAnswer | null;
+}
+
+/** One question as the screen draws it. */
+export interface OnboardingCard {
+  /**
+   * Bumped when what the card offers changes under the user: a proposal
+   * landing, or being revised. A draft made against an older version is kept,
+   * and the screen offers the new one rather than overwriting it.
+   */
+  version: number;
+  /** Why these are ticked, in a sentence or two. */
+  why: string | null;
+  choices: OnboardingChoice[];
+  fields: OnboardingField[];
+  /**
+   * Something to fix outside the dashboard, and how. `blocking` when the card
+   * can't be answered until it is; otherwise the answer stands without it.
+   */
+  problem: { message: string; command: string | null; blocking: boolean; links?: { label: string; url: string }[] } | null;
+  /** Whether the user can tell the CLI what to change: the step has a proposal behind it. */
+  revisable: boolean;
+}
+
+export interface OnboardingChoice {
+  id: string;
+  /** A heading for the choice, when a card has more than one. */
+  label: string | null;
+  multiple: boolean;
+  options: OnboardingOption[];
+  selected: string[];
+  /** Placeholder for a value of the user's own, when one may be added. */
+  custom: string | null;
+}
+
+export interface OnboardingOption {
+  value: string;
+  label: string;
+  detail: string | null;
+  /** Options sharing a group are drawn under its name: the account a calendar is on. */
+  group: string | null;
+}
+
+export interface OnboardingField {
+  id: string;
+  label: string;
+  value: string;
+  placeholder: string | null;
+  help: string | null;
+}
+
+export interface OnboardingProposal {
+  status: 'working' | 'ready' | 'failed';
+  /** What the CLI did on the way, as the assistant's panel shows it. */
+  steps: AssistantStep[];
+  error: string | null;
+}
+
+/** What the user chose on a card, or that they would rather decide later. */
+export type OnboardingAnswer =
+  | { later: true }
+  | { later?: false; choices: Record<string, string[]>; fields: Record<string, string> };

@@ -333,6 +333,13 @@ export interface SpawnOptions {
    * switch off. Ignored by Claude Code.
    */
   codexConfig: readonly string[];
+  /**
+   * The shape the final answer must take, for a turn whose answer the dashboard
+   * reads rather than shows: setup's proposals (see `onboarding.ts`). Claude Code
+   * takes the schema itself, Codex a file holding it; both then end on the JSON
+   * alone, as the reply. Unset for the assistant and the morning agent.
+   */
+  schema?: { json: string; file: string } | null;
 }
 
 /**
@@ -365,7 +372,7 @@ function parseLine(line: string): Record<string, unknown> | null {
  * allowlist entry can let them back in by accident.
  */
 export const claudeAdapter: Adapter = {
-  args({ prompt, sessionId, model, effort, tools, denyEdits }) {
+  args({ prompt, sessionId, model, effort, tools, denyEdits, schema }) {
     const args = [
       '-p',
       '--output-format',
@@ -380,6 +387,7 @@ export const claudeAdapter: Adapter = {
     if (tools.length > 0) args.push('--allowedTools', ...tools);
     if (model) args.push('--model', model);
     if (effort) args.push('--effort', effort);
+    if (schema) args.push('--json-schema', schema.json);
     if (sessionId) args.push('--resume', sessionId);
     // End the variadic permission options before the positional prompt.
     args.push('--', prompt);
@@ -429,10 +437,11 @@ export const claudeAdapter: Adapter = {
  * the approval policy that decides them, are the user's own Codex config's.
  */
 export const codexAdapter: Adapter = {
-  args({ prompt, sessionId, model, effort, drafts, codexConfig }) {
+  args({ prompt, sessionId, model, effort, drafts, codexConfig, schema }) {
     const args = ['exec'];
     if (sessionId) args.push('resume');
     args.push('--json', '--skip-git-repo-check');
+    if (schema) args.push('--output-schema', schema.file);
     // Config overrides are parsed as TOML, so a string has to carry its quotes.
     // As overrides rather than `--sandbox`, which the resume form doesn't take.
     const config = [
@@ -492,9 +501,9 @@ interface ClaudeBlock {
 
 /**
  * Claude Code's own housekeeping, which says nothing about the item: loading a
- * tool's schema, and keeping a to-do list.
+ * tool's schema, keeping a to-do list, and handing over a structured answer.
  */
-const CLAUDE_QUIET_TOOLS = new Set(['ToolSearch', 'TodoWrite']);
+const CLAUDE_QUIET_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'StructuredOutput']);
 
 /**
  * A step for a tool call or a tool's answer. Worded as an instruction, the way

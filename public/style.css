@@ -2249,13 +2249,14 @@ body[data-flyout='open'] .layout__side {
   text-transform: none;
 }
 
-/* ---------- setup, before the first brief ---------- */
+/* ---------- the first brief, after setup ---------- */
 
 /*
- * The page a new store opens on. Built from the objective's card, since it does
- * the same job in its place: the first thing read, before anything else exists.
+ * Today between the setup screen and the first brief. Built from the
+ * objective's card, since it does the same job in its place: the first thing
+ * read, before anything else exists.
  */
-.setup {
+.first-brief {
   padding: 18px 20px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2263,121 +2264,553 @@ body[data-flyout='open'] .layout__side {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-.setup__title {
+.first-brief__title {
   margin: 0 0 6px;
   font-size: 18px;
   letter-spacing: -0.01em;
 }
-.setup__lede {
-  margin: 0 0 16px;
+.first-brief__text {
+  margin: 0;
   color: var(--ink-2);
   font-size: 13.5px;
   line-height: 1.5;
 }
-.setup__steps {
-  display: grid;
-  gap: 4px;
+.first-brief__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ---------- the setup screen ---------- */
+
+/*
+ * The whole page while a new store is set up: one column, one question open at
+ * a time, on a thread whose dots are the questions. Answered ones fold into a
+ * sentence; the open one is the only card. The buttons here are larger than the
+ * dashboard's: this page is read once, slowly, and each one is a decision.
+ */
+/* The page's own margins are the dashboard's; this one runs edge to edge. */
+body[data-onboarding='true'] {
+  padding: 0;
+}
+.onboarding {
+  min-height: 100vh;
+  background: var(--page);
+}
+.onboarding__bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 24px;
+  background: var(--page);
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.onboarding__name {
+  color: var(--ink-1);
+  font-weight: 600;
+  font-size: 14px;
+}
+.onboarding__progress {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.onboarding__track {
+  flex: 1;
+  max-width: 220px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.onboarding__track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.onboarding__column {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 32px 24px 30vh;
+}
+.onboarding__lede {
+  margin: 0 0 24px;
+  padding-left: 30px;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.onboarding__thread {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 30px;
+  list-style: none;
+}
+/* The thread: one hairline the dots sit on. */
+.onboarding__thread::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: var(--hairline);
+}
+.onboarding__thread > li {
+  position: relative;
+}
+.onboarding__dot {
+  position: absolute;
+  left: -28px;
+  top: 10px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  box-shadow: 0 0 0 3px var(--page);
+}
+.onboarding__dot--open {
+  left: -30px;
+  top: 11px;
+  width: 13px;
+  height: 13px;
+  background: var(--accent);
+}
+.onboarding__dot--looking,
+.onboarding__dot--later {
+  left: -29px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  background: var(--page);
+  border: 1.5px solid var(--accent);
+}
+.onboarding__dot--later {
+  border-color: var(--hairline);
+  background: var(--hairline);
+}
+.onboarding__done {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.onboarding__done[data-status='later'] {
+  color: var(--ink-3);
+}
+.onboarding__done[data-status='later'] .onboarding__dot {
+  background: var(--page);
+  border: 1.5px solid var(--ink-3);
+  width: 6px;
+  height: 6px;
+}
+.onboarding__summary {
+  flex: 1;
+  min-width: 0;
+}
+.onboarding__change {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.onboarding__change:hover {
+  color: var(--accent);
+}
+.onboarding__change:disabled {
+  visibility: hidden;
+}
+.onboarding__locked {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.onboarding__card {
+  margin: 22px 0 28px;
+  scroll-margin: 90px 0 120px;
+}
+.onboarding__card h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.onboarding__card h2:focus {
+  outline: none;
+}
+.onboarding__why {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 18px;
+  color: var(--ink-2);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.onboarding__sparkle {
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent);
+}
+.onboarding__looking {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.onboarding__looking p,
+.onboarding__next p {
+  margin: 0 0 4px;
+}
+.onboarding__steps {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.setup__step {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 10px;
-  padding: 12px 0;
-  border-top: 1px solid var(--hairline);
-}
-.setup__mark {
-  font-size: 15px;
-  line-height: 1.3;
+  font-size: 13px;
   color: var(--ink-3);
-  text-align: center;
 }
-.setup__step[data-done='true'] .setup__mark {
+.onboarding__steps li {
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onboarding__steps li::before {
+  content: '✓';
+  display: inline-block;
+  width: 17px;
   color: var(--good-ink);
 }
-.setup__step[data-done='false'] .setup__mark {
-  color: var(--accent);
+.onboarding__steps li[data-state='failed']::before {
+  content: '!';
+  color: var(--serious);
 }
-.setup__step-title {
-  margin: 0 0 4px;
-  font-size: 14px;
-  font-weight: 600;
+.onboarding__steps li[data-state='running']::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-3);
+  border-top-color: transparent;
+  animation: onboarding-spin 0.9s linear infinite;
 }
-.setup__body p {
-  margin: 0 0 8px;
+@keyframes onboarding-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding__steps li[data-state='running']::before {
+    animation: none;
+  }
+  .onboarding__track i {
+    transition: none;
+  }
+}
+.onboarding__note {
+  margin: 0 0 14px;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 13.5px;
+}
+.onboarding__problem {
+  margin: 0 0 16px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--serious);
+  color: var(--ink-2);
+  font-size: 14px;
   line-height: 1.5;
 }
-.setup__step[data-done='true'] .setup__body p {
-  color: var(--ink-3);
+.onboarding__problem p {
+  margin: 0 0 8px;
 }
-.setup__choices {
+.onboarding__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.onboarding__links a {
+  color: var(--accent);
+}
+.onboarding__problem[data-blocking='false'] {
+  margin: 0;
+  border-left-color: var(--hairline);
+  font-size: 13.5px;
+}
+.onboarding__problem pre {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  overflow-x: auto;
+}
+.onboarding__form {
+  display: grid;
+  gap: 16px;
+}
+.onboarding__choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.onboarding__legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding__pills {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.setup__boards {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.onboarding__pill {
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
 }
-.setup__board {
+.onboarding__pill:hover {
+  border-color: var(--ink-3);
+}
+.onboarding__pill[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+.onboarding__list {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.onboarding__group + .onboarding__group,
+.onboarding__adder {
+  border-top: 1px solid var(--hairline);
+}
+.onboarding__group-name {
+  margin: 0;
+  padding: 12px 16px 4px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.onboarding__option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.onboarding__group > .onboarding__option:first-child {
+  padding-top: 12px;
+}
+.onboarding__group > .onboarding__option:last-child {
+  padding-bottom: 12px;
+}
+.onboarding__option:hover {
+  background: var(--surface-sunken);
+}
+.onboarding__option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.onboarding__box {
+  flex: none;
   display: grid;
-  grid-template-columns: 16px 104px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: baseline;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 5px;
+}
+.onboarding__box[data-kind='radio'] {
+  border-radius: 50%;
+}
+.onboarding__option input:checked + .onboarding__box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.onboarding__option input:checked + .onboarding__box[data-kind='check']::after {
+  content: '';
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: translateY(-1px) rotate(-45deg);
+}
+.onboarding__option input:checked + .onboarding__box[data-kind='radio']::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
+.onboarding__option input:focus-visible + .onboarding__box {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.onboarding__option-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+}
+.onboarding__option-text small,
+.onboarding__field small {
+  color: var(--ink-3);
   font-size: 13px;
 }
-.setup__board-name {
-  font-weight: 500;
+.onboarding__none {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--ink-3);
+  font-size: 14px;
 }
-.setup__board-text {
+.onboarding__adder {
+  padding: 4px 16px;
+}
+.onboarding__add-button {
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.onboarding__pills .onboarding__add-button {
+  padding: 6px 4px;
+}
+.onboarding__add {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+}
+.onboarding__add input,
+.onboarding__field input,
+.onboarding__tell input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 14px;
+}
+.onboarding__fields {
+  display: grid;
+  gap: 14px;
+}
+.onboarding__field {
+  display: grid;
+  gap: 4px;
+}
+.onboarding__field-label {
+  font-size: 13px;
+  font-weight: 500;
   color: var(--ink-2);
 }
-/*
- * The mark says how a board is doing; the words beside it say it again, so the
- * colour is never the only cue, and the words stay one colour for every state.
- */
-.setup__board-mark {
-  font-weight: 600;
-  text-align: center;
-  color: var(--ink-3);
-}
-.setup__board[data-health='ok'] .setup__board-mark {
-  color: var(--good-ink);
-}
-.setup__board[data-health='problem'] .setup__board-mark {
-  color: var(--serious);
-}
-.setup__board[data-health='todo'] .setup__board-mark {
-  color: var(--accent);
-}
-.setup__body .setup__note {
-  color: var(--ink-3);
-}
-.setup__body .setup__note--todo {
-  color: var(--serious);
-}
-.setup__editor {
-  margin-top: 12px;
-}
-/* The settings page's own fold and fields, inside a step. */
-.setup__body .setup__advanced p {
+.onboarding__error {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
+  color: var(--critical);
+  font-size: 13.5px;
 }
-.setup__advanced .field {
-  max-width: 480px;
-}
-.setup__advanced-actions {
+.onboarding__actions {
   display: flex;
-  justify-content: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.onboarding .button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.onboarding .onboarding__quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-2);
+}
+.onboarding .onboarding__quiet:hover {
+  color: var(--ink-1);
+}
+.onboarding__tell {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.onboarding .onboarding__tell .button {
+  padding: 6px 12px;
+  font-weight: 500;
+}
+.onboarding__ahead {
+  color: var(--ink-3);
+  font-size: 14px;
+}
+.onboarding__next {
+  position: relative;
+  margin-bottom: 14px;
+  color: var(--ink-2);
+}
+.onboarding__then {
+  position: relative;
+  margin: 0;
+}
+.onboarding__preview {
+  margin: 0 0 18px;
+}
+.onboarding__preview > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.onboarding__preview pre {
+  max-height: 360px;
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.onboarding__preview p {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
 }
 
 /* ---------- settings ---------- */
@@ -2427,19 +2860,16 @@ body[data-flyout='open'] .layout__side {
   color: var(--serious);
   font-size: 13px;
 }
-.settings-card__more,
-.setup__advanced {
+.settings-card__more {
   margin-top: 6px;
 }
-.settings-card__more > summary,
-.setup__advanced > summary {
+.settings-card__more > summary {
   cursor: pointer;
   color: var(--ink-2);
   font-size: 13px;
   padding: 4px 0;
 }
-.settings-card__more[open] > summary,
-.setup__advanced[open] > summary {
+.settings-card__more[open] > summary {
   margin-bottom: 10px;
 }
 

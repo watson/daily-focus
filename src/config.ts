@@ -338,6 +338,20 @@ export interface Config {
   agent: AgentRunConfig;
   /** Append-only record of every run the dashboard started, written by the server. */
   agentLogFile: string;
+  /**
+   * The setup screen's progress: each answer, and what the CLI proposed for each
+   * question. Written by the dashboard alone, and kept after setup finishes as
+   * the record that it did. See `onboarding.ts`.
+   */
+  onboardingFile: string;
+  /** Where setup's CLI sessions run: an empty directory, as the assistant's is, since they only read. */
+  onboardingDir: string;
+  /**
+   * What setup's CLI sessions are told, read from this copy of the package
+   * rather than linked into the store: they start from the setup screen, which
+   * this server draws, and nothing else ever reads it.
+   */
+  onboardingPromptSource: string;
 }
 
 function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
@@ -657,5 +671,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     assistantPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'assistant.md'),
     agent: envAgent(env),
     agentLogFile: resolve(dataDir, 'agent.jsonl'),
+    onboardingFile: resolve(dataDir, 'onboarding.json'),
+    onboardingDir: resolve(dataDir, 'onboarding'),
+    onboardingPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'onboarding.md'),
   };
 }

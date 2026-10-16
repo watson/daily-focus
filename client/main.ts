@@ -34,6 +34,9 @@ effect(() => {
   document.body.dataset.view = ui.view.value;
 });
 effect(() => {
+  document.body.dataset.onboarding = String(Boolean(state.value?.onboarding));
+});
+effect(() => {
   document.body.dataset.offline = String(ui.connectionError.value !== null);
 });
 effect(() => {
