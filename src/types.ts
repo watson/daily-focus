@@ -1030,10 +1030,12 @@ export interface OnboardingCard {
   problem: { message: string; command: string | null; blocking: boolean; links?: { label: string; url: string }[] } | null;
   /** Whether the user can tell the CLI what to change: the step has a proposal behind it. */
   revisable: boolean;
-  /** Whether "Decide later" is offered: only where leaving it is a real answer. */
-  deferrable: boolean;
+  /** The button that leaves the question unanswered, named for what it does; null where Continue already can. */
+  later: string | null;
   /** What the box for replying to the CLI invites, when the question wants more than corrections. */
   reply?: string;
+  /** What Continue says while every field is empty, where that is a way to answer: "Continue without one". */
+  empty?: string;
 }
 
 export interface OnboardingChoice {

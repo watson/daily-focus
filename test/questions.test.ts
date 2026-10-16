@@ -87,20 +87,21 @@ test('the chosen CLI brings the assistant with it, and a path off PATH is saved 
   );
 });
 
-test('Decide later is offered only where leaving it is a real answer', () => {
-  const offered = (id: string) => questionById(id)!.deferrable;
+test('a question can be left only where Continue cannot say "nothing", by a button named for what it does', () => {
+  const offered = (id: string) => questionById(id)!.later?.label ?? null;
   assert.deepEqual(
     ['cli', 'profile', 'schedule', 'identity', 'boards', 'calendars', 'objective'].map((id) => [id, offered(id)]),
     [
-      ['cli', true],
-      ['profile', false],
-      ['schedule', false],
-      ['identity', true],
-      ['boards', false],
-      ['calendars', false],
-      ['objective', true],
+      ['cli', 'Decide later'],
+      ['profile', null],
+      ['schedule', null],
+      ['identity', 'Leave this out'],
+      ['boards', null],
+      ['calendars', null],
+      ['objective', null],
     ],
   );
+  assert.equal(question('objective').card(ctx()).empty, 'Continue without one');
   assert.equal(questionById('assistant'), undefined, 'the assistant comes with the CLI, unasked');
 });
 

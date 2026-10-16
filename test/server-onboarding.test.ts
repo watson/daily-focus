@@ -77,10 +77,11 @@ test('an answer comes back as fresh state, and one to no question is refused', a
 test('the finish saves the answers, restarts, and the screen is gone', async () => {
   for (const step of (await state()).onboarding!.steps) {
     if (step.status !== 'open') continue;
-    // Work or personal, and the calendars, are answered; the rest can be put off.
+    // Work or personal, the calendars and the objective are answered; the rest can be left.
     const answers: Record<string, unknown> = {
       profile: { choices: { profile: ['personal'] }, fields: {} },
       calendars: { choices: { calendars: [] }, fields: {} },
+      objective: { choices: {}, fields: { objective: '', blocker: '' } },
     };
     const answer = answers[step.id] ?? { later: true };
     assert.equal((await post('/api/onboarding/answer', { step: step.id, answer })).status, 200, step.id);

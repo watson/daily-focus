@@ -91,7 +91,7 @@ function doneRow(step: OnboardingStep, handlers: Handlers, busy: boolean): JSX.E
     'div',
     { class: 'onboarding__done', 'data-status': step.status, 'data-step': step.id },
     el('span', { class: 'onboarding__dot', 'aria-hidden': 'true' }),
-    el('span', { class: 'onboarding__summary' }, step.status === 'later' ? `${step.topic[0]!.toUpperCase()}${step.topic.slice(1)}: decide later.` : step.summary),
+    el('span', { class: 'onboarding__summary' }, step.summary ?? `${step.topic[0]!.toUpperCase()}${step.topic.slice(1)}: decide later.`),
     step.locked
       ? el('span', { class: 'onboarding__locked', title: 'Set in the environment the dashboard was started with' }, 'Set by the environment')
       : el('button', { type: 'button', class: 'onboarding__change', disabled: busy, onClick: () => handlers.editSetupStep(step.id) }, 'Change'),
@@ -295,13 +295,17 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
             el(
               'button',
               { type: 'submit', class: 'button button--primary', disabled: held !== null, title: held ?? undefined },
-              ui.setupBusy.value === step.id ? 'Saving…' : 'Continue',
+              ui.setupBusy.value === step.id
+                ? 'Saving…'
+                : step.card.empty && step.card.fields.every((field) => !(draft.fields[field.id] ?? '').trim())
+                  ? step.card.empty
+                  : 'Continue',
             ),
-            step.card.deferrable
+            step.card.later
               ? el(
                   'button',
                   { type: 'button', class: 'button onboarding__quiet', disabled: busy, onClick: () => handlers.answerSetup(step.id, { later: true }) },
-                  'Decide later',
+                  step.card.later,
                 )
               : null,
             editing

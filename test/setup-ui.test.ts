@@ -57,7 +57,7 @@ function step(id: string, overrides: Partial<OnboardingStep> = {}): OnboardingSt
     status: 'open',
     summary: null,
     locked: false,
-    card: { version: 0, why: null, choices: [], fields: [], problem: null, revisable: false, deferrable: true },
+    card: { version: 0, why: null, choices: [], fields: [], problem: null, revisable: false, later: 'Decide later' },
     proposal: null,
     answer: null,
     ...overrides,
@@ -93,7 +93,7 @@ const CALENDARS = step('calendars', {
     fields: [],
     problem: null,
     revisable: true,
-    deferrable: false,
+    later: null,
   },
   proposal: { status: 'ready', conversation: [{ from: 'it', text: 'These are on your work account.' }], steps: [], error: null },
 });
@@ -145,8 +145,8 @@ test('answered questions fold into their sentence with a Change, and the open on
 test('Continue answers with what the card holds, and Decide later puts it off', async () => {
   const answers: [string, OnboardingAnswer][] = [];
   const handlers = handlersWith({ answerSetup: (id, answer) => void answers.push([id, answer]) });
-  const deferrable = { ...CALENDARS, card: { ...CALENDARS.card, deferrable: true } };
-  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([deferrable], 'calendars') }), ui: uiWith(), handlers }));
+  const leavable = { ...CALENDARS, card: { ...CALENDARS.card, later: 'Decide later' } };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([leavable], 'calendars') }), ui: uiWith(), handlers }));
   (page.querySelector('form.onboarding__form') as HTMLFormElement).requestSubmit();
   byTag(page, 'button').find((button) => button.textContent === 'Decide later')!.click();
   assert.deepEqual(answers, [
@@ -471,4 +471,25 @@ test('a suggestion under a field is offered, not filled in, and a click puts it 
   assert.equal(ui.setupDrafts.value.get('objective')!.answer.fields.objective, 'Get checkout retries merged');
   assert.equal(input().value, 'Get checkout retries merged');
   assert.equal(suggestion.getAttribute('aria-pressed'), 'true');
+});
+
+test('the button that leaves a question says what it does, and an empty objective says Continue without one', async () => {
+  const identity = step('identity', { card: { ...step('x').card, later: 'Leave this out', fields: [{ id: 'name', label: 'Your name', value: 'Robin Lark', placeholder: null, help: null }] } });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([identity], 'identity') }), ui: uiWith(), handlers: handlersWith() }));
+  assert.deepEqual(buttonLabels(page.querySelector('.onboarding__actions')!), ['Continue', 'Leave this out']);
+
+  const objective = step('objective', {
+    card: {
+      ...step('x').card,
+      later: null,
+      empty: 'Continue without one',
+      fields: [{ id: 'objective', label: 'Your objective', value: '', placeholder: null, help: null }],
+    },
+  });
+  const ui = uiWith();
+  const empty = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([objective], 'objective') }), ui, handlers: handlersWith() }));
+  assert.deepEqual(buttonLabels(empty.querySelector('.onboarding__actions')!), ['Continue without one']);
+  ui.setupDrafts.value = new Map([['objective', { version: 0, answer: { choices: {}, fields: { objective: 'Ship it' } } }]]);
+  await settle();
+  assert.deepEqual(buttonLabels(empty.querySelector('.onboarding__actions')!), ['Continue']);
 });

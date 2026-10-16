@@ -68,7 +68,7 @@ export interface SourcesSection {
 }
 
 /** A card as a question draws it; the version and whether it can be revised are the caller's. */
-export type DrawnCard = Omit<OnboardingCard, 'version' | 'revisable' | 'deferrable'>;
+export type DrawnCard = Omit<OnboardingCard, 'version' | 'revisable' | 'later'>;
 
 export interface Question {
   id: string;
@@ -84,10 +84,11 @@ export interface Question {
    */
   keys: readonly string[];
   /**
-   * Whether "Decide later" is offered: only where leaving it is a real answer.
-   * Work or personal can't be left, and a list can simply be left unticked.
+   * How the question can be left, when it can: the button, named for what it
+   * does, and the sentence the thread says afterwards. Null where Continue
+   * already says "nothing", with a list left unticked or a field left empty.
    */
-  deferrable: boolean;
+  later: { label: string; summary: string } | null;
   card(ctx: QuestionContext): DrawnCard;
   summary(answer: Chosen, ctx: QuestionContext): string;
   settings?(answer: Chosen, ctx: QuestionContext): Record<string, string | null>;
@@ -176,8 +177,7 @@ const cli: Question = {
   title: () => 'Which agent should write your brief?',
   topic: 'your coding agent',
   keys: ['DAILY_FOCUS_AGENT'],
-  // Later is a dashboard with its boards and no brief yet.
-  deferrable: true,
+  later: { label: 'Decide later', summary: 'No agent yet: the boards work, and there is no brief until you choose one.' },
   card(ctx) {
     if (!ctx.clis) return card({});
     const report = ctx.clis;
@@ -241,7 +241,7 @@ const profile: Question = {
   topic: 'what it covers',
   title: () => 'What should your brief cover?',
   keys: ['DAILY_FOCUS_PROFILE'],
-  deferrable: false,
+  later: null,
   card: (ctx) =>
     card({
       choices: [
@@ -269,7 +269,7 @@ const schedule: Question = {
   title: () => 'When should your brief be ready?',
   applies: (ctx) => ctx.cli !== null,
   keys: ['DAILY_FOCUS_AGENT_AT', 'DAILY_FOCUS_AGENT_DAYS'],
-  deferrable: false,
+  later: null,
   card(ctx) {
     const at = ctx.current.DAILY_FOCUS_AGENT_AT || '07:00';
     const days = ctx.current.DAILY_FOCUS_AGENT_DAYS || '1-5';
@@ -321,8 +321,8 @@ const identity: Question = {
   topic: 'who you are',
   title: () => 'Is this you?',
   keys: [],
-  // Later leaves who you are out of the source list, and the brief says what that cost.
-  deferrable: true,
+  // Clearing three fields and unticking the accounts is a chore; one button, named for what it does, isn't.
+  later: { label: 'Leave this out', summary: 'Who you are is left out, so the brief can’t tell your to-dos from other people’s.' },
   card(ctx) {
     const proposal = proposalOf(ctx, 'identity');
     const names = Array.isArray(proposal?.names) ? proposal.names.map(str).filter(Boolean) : [];
@@ -441,7 +441,7 @@ const boards: Question = {
   topic: 'the boards',
   title: () => 'What else should the dashboard show?',
   keys: ['DAILY_FOCUS_GITHUB', 'DAILY_FOCUS_JIRA'],
-  deferrable: false,
+  later: null,
   card(ctx) {
     const { github, jira } = ctx.boards;
     const selected = [
@@ -556,7 +556,7 @@ const calendars: Question = {
   topic: 'your calendars',
   title: (ctx) => (ctx.profile === 'personal' ? 'Which calendars belong in your brief?' : 'Which calendars belong in your work brief?'),
   keys: ['DAILY_FOCUS_CALENDARS'],
-  deferrable: false,
+  later: null,
   card(ctx) {
     const entries = calendarEntries(ctx);
     const proposal = proposalOf(ctx, 'calendars');
@@ -687,11 +687,13 @@ const objective: Question = {
   topic: 'your objective',
   title: () => 'What are you trying to get done right now?',
   keys: [],
-  deferrable: true,
+  // Left empty, Continue says so; see `empty` on its card.
+  later: null,
   card(ctx) {
     const proposal = proposalOf(ctx, 'objective');
     return card({
       reply: 'Tell it what you’re working on, however roughly',
+      empty: 'Continue without one',
       why:
         str(proposal?.why) ||
         'The brief ranks the day against it. A next move works better than a project name. Tell it what you’re working on, however roughly, and it will write it up.',

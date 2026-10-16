@@ -319,9 +319,9 @@ export class Onboarding {
         title: question.title(ctx),
         topic: question.topic,
         status: answer ? (chosen ? 'answered' : 'later') : 'open',
-        summary: chosen ? question.summary(chosen, ctx) : null,
+        summary: chosen ? question.summary(chosen, ctx) : answer ? (question.later?.summary ?? null) : null,
         locked,
-        card: { ...drawn, version: record?.version ?? 0, revisable: Boolean(question.agent && record), deferrable: question.deferrable },
+        card: { ...drawn, version: record?.version ?? 0, revisable: Boolean(question.agent && record), later: question.later?.label ?? null },
         proposal: looking
           ? {
               status: 'working',
@@ -371,7 +371,7 @@ export class Onboarding {
     const question = questionById(id);
     let answer = cleanAnswer(raw);
     if (!question || !answer) return `there is no question ${JSON.stringify(id)}, or that is not an answer to it`;
-    if (!given(answer) && !question.deferrable) return `"${question.topic}" needs an answer`;
+    if (!given(answer) && !question.later) return `"${question.topic}" needs an answer`;
     if (id === 'cli' && given(answer)) {
       const chosen = await this.chooseCli(given(answer)!);
       if (typeof chosen === 'string') return chosen;

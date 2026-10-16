@@ -36,9 +36,10 @@ With neither ready, it says what is wrong with each and the command that fixes i
 to one it couldn't find.
 
 Then it asks a few questions, one at a time, and each comes with the answer you
-most likely want already ticked: confirm it or change it. Where leaving one is a
-real answer, **Decide later** keeps the default. **Change** reopens an earlier
-answer.
+most likely want already ticked: confirm it or change it. A list can be left
+unticked and a field empty. Two questions can be left, by a button that says what
+that does: **Decide later** for the agent, and **Leave this out** for who you are.
+**Change** reopens an earlier answer.
 
 1. **Who writes the brief**, only when it couldn't pick for you.
 2. **What it briefs**: your work, or your personal life. See

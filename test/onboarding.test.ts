@@ -21,7 +21,7 @@ import type { CliFound, CliReport } from '../src/clis.ts';
 import type { EnvSources } from '../src/env.ts';
 import { Onboarding, type OnboardingDeps } from '../src/onboarding.ts';
 import { applySettingsChange } from '../src/settings.ts';
-import type { OnboardingState, SetupState } from '../src/types.ts';
+import type { OnboardingAnswer, OnboardingState, SetupState } from '../src/types.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -157,6 +157,30 @@ async function settled(h: Harness): Promise<OnboardingState> {
 
 const pick = (choices: Record<string, string[]>, fields: Record<string, string> = {}) => ({ choices, fields });
 
+/** What each question is answered with when a test only needs to get past it. */
+const PLAIN: Record<string, OnboardingAnswer> = {
+  cli: pick({ cli: ['claude'] }),
+  schedule: pick({ at: ['07:00'], days: ['1-5'] }),
+  identity: { later: true },
+  boards: pick({ boards: [] }),
+  calendars: pick({ calendars: [] }),
+  objective: pick({}, { objective: '', blocker: '' }),
+};
+
+/**
+ * Answer whatever the screen asks next until only the finish is left. Bounded,
+ * so an answer refused fails the test instead of asking the same question forever.
+ */
+async function answerTheRest(h: Harness): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    const next = (await view(h)).current;
+    if (!next) return;
+    const refused = await h.onboarding.answer(next, PLAIN[next] ?? { later: true });
+    assert.equal(refused, null, `${next} refused: ${refused}`);
+  }
+  throw new Error('the questions never ran out');
+}
+
 test('a new store opens looking for the CLIs, and runs nothing until the screen asks', async () => {
   const h = await harness();
   const state = await view(h);
@@ -209,15 +233,7 @@ test('with none ready, the card says why, and a path that runs is taken for the 
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   await settled(h);
   assert.equal((await h.calls()).length, 3, 'who you are, the calendars and the objective');
-  let next: string | null;
-  while ((next = (await view(h)).current)) {
-    const fixed: Record<string, ReturnType<typeof pick>> = {
-      schedule: pick({ at: ['07:00'], days: ['1-5'] }),
-      boards: pick({ boards: [] }),
-      calendars: pick({ calendars: [] }),
-    };
-    await h.onboarding.answer(next, fixed[next] ?? { later: true });
-  }
+  await answerTheRest(h);
   assert.ok(!('error' in (await h.onboarding.finish())));
   assert.equal(h.settings.DAILY_FOCUS_AGENT, 'claude');
   assert.equal(h.settings.DAILY_FOCUS_AGENT_BIN, fake);
@@ -359,15 +375,7 @@ test('a source list the user wrote is kept, and a setting from the environment i
   assert.equal(profile.summary, 'It briefs your personal life.');
 
   // Choosing the CLI brings the schedule in: follow the screen, not the list it started with.
-  const firsts: Record<string, ReturnType<typeof pick>> = {
-    cli: pick({ cli: ['claude'] }),
-    schedule: pick({ at: ['07:00'], days: ['1-5'] }),
-    boards: pick({ boards: [] }),
-    calendars: pick({ calendars: [] }),
-  };
-  while ((state = await view(h)).current) {
-    await h.onboarding.answer(state.current, firsts[state.current] ?? { later: true });
-  }
+  await answerTheRest(h);
   await settled(h);
   assert.equal((await h.onboarding.previewSources()).kept, true);
   assert.ok(!('error' in (await h.onboarding.finish())));
@@ -421,14 +429,18 @@ test('an agent the environment turns off is no agent: nothing to schedule, and n
   assert.equal((await h.calls()).length, 0);
 });
 
-test('Decide later is refused where it is not offered', async () => {
+test('a question is left only where it offers to be, and the thread says what leaving it means', async () => {
   const h = await harness();
   await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
   assert.match((await h.onboarding.answer('profile', { later: true })) ?? '', /needs an answer/);
-  assert.equal(await h.onboarding.answer('objective', { later: true }), null);
+  assert.match((await h.onboarding.answer('objective', { later: true })) ?? '', /needs an answer/, 'left empty, Continue says so');
+  assert.equal(await h.onboarding.answer('identity', { later: true }), null);
   const state = await view(h);
-  assert.equal(state.steps.find((step) => step.id === 'profile')!.card.deferrable, false);
-  assert.equal(state.steps.find((step) => step.id === 'objective')!.card.deferrable, true);
+  assert.equal(state.steps.find((step) => step.id === 'profile')!.card.later, null);
+  const identity = state.steps.find((step) => step.id === 'identity')!;
+  assert.equal(identity.card.later, 'Leave this out');
+  assert.equal(identity.status, 'later');
+  assert.match(identity.summary ?? '', /left out, so the brief can’t tell your to-dos/);
 });
 
 test('answering while it is still looking stops it, and keeps what the user answered', async () => {
