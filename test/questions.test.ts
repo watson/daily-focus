@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { CliFound, CliReport } from '../src/clis.ts';
-import { calendarEntries, composeSources, questionById, type Chosen, type QuestionContext } from '../src/questions.ts';
+import { calendarEntries, composeSources, machineName, questionById, type Chosen, type QuestionContext } from '../src/questions.ts';
 import { placeholdersIn } from '../src/setup.ts';
 
 const READY = (path: string, onPath = true): CliFound => ({ path, version: '1.0.0', onPath, ready: true, problem: null, fix: null });
@@ -17,6 +17,7 @@ const report = (claude: CliFound, codex: CliFound): CliReport => ({ claude, code
 
 function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
   return {
+    machine: 'Mac',
     profile: 'work',
     cli: 'claude',
     clis: report(READY('/usr/local/bin/claude'), MISSING('Codex')),
@@ -273,4 +274,17 @@ test('suggested objectives are offered under the field, never filled in, and a w
     ['objective', 'Get staging deploys working'],
     ['blocker', 'No access to the cluster'],
   ]);
+});
+
+test('the screen names the machine it runs on, and the calendars question asks for a list only where there is one', () => {
+  assert.deepEqual([machineName('darwin'), machineName('win32'), machineName('linux')], ['Mac', 'PC', 'computer']);
+  assert.match(question('schedule').card(ctx({ machine: 'PC' })).why!, /If the PC is asleep or the dashboard isn't running then/);
+  assert.match(question('cli').card(ctx({ machine: 'computer' })).why!, /ready on this computer/);
+
+  const withList = question('calendars').agent!;
+  assert.match(withList.brief(ctx()), /Below is every calendar Calendar\.app on this Mac has/);
+  const without = ctx({ calendars: null, calendar: { supported: false, built: false, buildCommand: '' } });
+  assert.doesNotMatch(withList.brief(without), /Below is every calendar/);
+  assert.match(withList.brief(without), /List the calendars their calendar connector reaches/);
+  assert.match(withList.facts!(without)!, /no list from Calendar\.app here/);
 });

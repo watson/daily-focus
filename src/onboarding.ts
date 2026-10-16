@@ -35,6 +35,7 @@ import { expandHome, layerEnv, type EnvSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
   composeSources,
+  machineName,
   QUESTIONS,
   questionById,
   type BoardHealth,
@@ -925,6 +926,7 @@ export class Onboarding {
       if (record.cli === cli && record.profile === profile && record.result !== null) proposals[id] = record.result;
     }
     return {
+      machine: machineName(),
       profile,
       cli: cli && CLI_NAMES.includes(cli) ? cli : null,
       clis,

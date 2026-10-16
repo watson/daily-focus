@@ -33,6 +33,8 @@ export interface BoardHealth {
 }
 
 export interface QuestionContext {
+  /** What to call the machine the dashboard runs on, for the screen's sentences: "Mac", "PC" or "computer". */
+  machine: string;
   /** The profile answered, or the one in effect when it hasn't been. */
   profile: Profile;
   /** The CLI answered, set, or found ready; null when there is none to run. */
@@ -201,7 +203,12 @@ const cli: Question = {
     const set = ctx.current.DAILY_FOCUS_AGENT as CliName | undefined;
     const others = CLI_PREFERENCE.filter((name) => !report[name].ready && report[name].path).map((name) => `${report[name].problem}.`);
     return card({
-      why: [ready.length > 1 ? 'Both are ready on this Mac, so it uses Codex unless you say otherwise.' : `${CLI_LABEL[ready[0]!]} is the one ready on this Mac.`, ...others].join(' '),
+      why: [
+        ready.length > 1
+          ? `Both are ready on this ${ctx.machine}, so it uses Codex unless you say otherwise.`
+          : `${CLI_LABEL[ready[0]!]} is the one ready on this ${ctx.machine}.`,
+        ...others,
+      ].join(' '),
       choices: [
         choice(
           'cli',
@@ -268,7 +275,7 @@ const schedule: Question = {
     const days = ctx.current.DAILY_FOCUS_AGENT_DAYS || '1-5';
     const times = [...new Set([...TIMES, ...(at === 'off' ? [] : [at])])].sort();
     return card({
-      why: 'It starts at that time and takes a few minutes. If the Mac is asleep then, it runs when it wakes.',
+      why: `It starts then and takes a few minutes. If the ${ctx.machine} is asleep or the dashboard isn't running then, it runs as soon as it is, that day.`,
       choices: [
         choice('at', [...times.map((time) => option(time, time)), option('off', 'Only when I ask')], [at], {
           label: 'Time',
@@ -604,8 +611,11 @@ const calendars: Question = {
   },
   agent: {
     brief: (ctx) =>
-      `Which calendars the user's ${ctx.profile} brief should read. Below is every calendar Calendar.app on this Mac ` +
-      'has, with the account it is on and how many events it has today. Include ' +
+      `Which calendars the user's ${ctx.profile} brief should read. ` +
+      (Array.isArray(ctx.calendars)
+        ? 'Below is every calendar Calendar.app on this Mac has, with the account it is on and how many events it has today. '
+        : 'List the calendars their calendar connector reaches. ') +
+      'Include ' +
       (ctx.profile === 'personal'
         ? 'their own personal and family calendars, '
         : 'their own work calendar, team calendars whose events block their time, ') +
@@ -613,11 +623,13 @@ const calendars: Question = {
       (ctx.profile === 'personal' ? 'work calendars, ' : 'personal and family calendars, ') +
       "birthdays, and shared calendars that are mostly other people's events. If you can reach their calendar " +
       'through a connector, look at the coming week for evidence, and give `briefName`, the name the connector ' +
-      'uses where it differs from Calendar.app’s. List every calendar from the list below, and any your ' +
-      'connector has that Calendar.app does not. `note` is a few words shown under the name, such as ' +
+      'uses where it differs from Calendar.app’s. ' +
+      (Array.isArray(ctx.calendars) ? 'List every calendar from the list below, and any your connector has that Calendar.app does not. ' : '') +
+      '`note` is a few words shown under the name, such as ' +
       '"Your primary calendar" or "12 of your meetings this week", or empty.',
     facts(ctx) {
-      if (!Array.isArray(ctx.calendars)) return 'Calendar.app could not be read here, so work from your calendar connector alone.';
+      if (typeof ctx.calendars === 'string') return `Calendar.app could not be read (${ctx.calendars}), so work from your calendar connector alone.`;
+      if (!Array.isArray(ctx.calendars)) return 'There is no list from Calendar.app here, so work from your calendar connector alone.';
       if (ctx.calendars.length === 0) return 'Calendar.app has no calendars.';
       return [
         'Calendar.app has these, as title (account): events today.',
@@ -757,4 +769,9 @@ export function composeSources(profile: Profile, sections: readonly SourcesSecti
       'your primary calendar and connected accounts, and says what it missed.',
   ];
   return [...intro, ...sections.flatMap((section) => ['', `## ${section.heading}`, '', section.body])].join('\n') + '\n';
+}
+
+/** What the screen calls the machine the dashboard runs on. */
+export function machineName(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'darwin' ? 'Mac' : platform === 'win32' ? 'PC' : 'computer';
 }
