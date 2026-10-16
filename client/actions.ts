@@ -712,6 +712,7 @@ async function answerSetup(step: string, answer: OnboardingAnswer): Promise<void
   batch(() => {
     forgetDraft(step);
     if (ui.setupEditing.value === step) ui.setupEditing.value = null;
+    if (ui.setupConfirm.value === step) ui.setupConfirm.value = null;
     // The source list it would write has changed with the answer.
     ui.setupSources.value = null;
   });
@@ -729,6 +730,7 @@ async function reviseSetup(step: string, text: string, draft: SetupDraft['answer
   batch(() => {
     // What it comes back with starts from this draft, so the draft gives way to it.
     forgetDraft(step);
+    if (ui.setupConfirm.value === step) ui.setupConfirm.value = null;
     const tell = new Map(ui.setupTell.value);
     tell.delete(step);
     ui.setupTell.value = tell;
@@ -916,6 +918,9 @@ export const handlers: Handlers = {
       ui.setupEditing.value = step;
       ui.setupError.value = null;
     }),
+  confirmSetup: (step) => {
+    ui.setupConfirm.value = step;
+  },
   editSetupTell: (step, text) => {
     const next = new Map(ui.setupTell.value);
     next.set(step, text);

@@ -207,7 +207,7 @@ test('with none ready, the card says why, and a path that runs is taken for the 
   // Its sessions run the path given, and the finish saves it for the agent.
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   await settled(h);
-  assert.equal((await h.calls()).length, 2);
+  assert.equal((await h.calls()).length, 3, 'who you are, the calendars and the objective');
   let next: string | null;
   while ((next = (await view(h)).current)) {
     const fixed: Record<string, ReturnType<typeof pick>> = {
@@ -242,7 +242,7 @@ test('once the CLI and the profile are answered, each question is looked into, a
   assert.deepEqual(calendars.card.choices[0]!.selected, ['live:robin@northwind.example:Robin Lark']);
 
   const calls = await h.calls();
-  assert.equal(calls.length, 2, 'one session per question');
+  assert.equal(calls.length, 3, 'one session per question');
   for (const argv of calls) {
     assert.ok(argv.includes('--json-schema'), 'the answer is held to a schema');
     assert.equal(argv[argv.indexOf('--model') + 1], 'opus', 'the newest flagship');
@@ -288,8 +288,8 @@ test('a new profile throws away what was proposed and answered for the old one',
   const state = await settled(h);
   assert.equal(state.steps.find((step) => step.id === 'identity')!.status, 'open', 'the work identity is asked again');
   const calls = await h.calls();
-  assert.equal(calls.length, 4, 'both questions asked again');
-  assert.equal(calls.filter((argv) => argv.join('\n').includes('- Profile: personal')).length, 2, 'for the personal profile');
+  assert.equal(calls.length, 6, 'every question asked again');
+  assert.equal(calls.filter((argv) => argv.join('\n').includes('- Profile: personal')).length, 3, 'for the personal profile');
 });
 
 test('an answer whose settings would be refused is refused, with the reason', async () => {
@@ -387,7 +387,7 @@ test('an answer that is not JSON fails the question, which falls back and can be
 
   assert.equal(await h.onboarding.retry('identity'), null);
   await settled(h);
-  assert.equal((await h.calls()).length, 3);
+  assert.equal((await h.calls()).length, 4, 'one more, for the question asked again');
 });
 
 test('nothing reaches outside the dashboard until the user answers something, even with the CLI and profile set', async () => {
@@ -406,7 +406,7 @@ test('nothing reaches outside the dashboard until the user answers something, ev
 
   await h.onboarding.answer('schedule', pick({ at: ['07:00'], days: ['1-5'] }));
   await settled(h);
-  assert.equal((await h.calls()).length, 2, 'the first answer starts both questions');
+  assert.equal((await h.calls()).length, 3, 'the first answer starts every question');
   assert.ok(identities > 0 && listings === 1);
 });
 
@@ -428,4 +428,25 @@ test('Decide later is refused where it is not offered', async () => {
   const state = await view(h);
   assert.equal(state.steps.find((step) => step.id === 'profile')!.card.deferrable, false);
   assert.equal(state.steps.find((step) => step.id === 'objective')!.card.deferrable, true);
+});
+
+test('answering while it is still looking stops it, and keeps what the user answered', async () => {
+  const h = await harness();
+  const slow = join(h.dataDir, 'slow-claude');
+  await writeFile(slow, '#!/bin/sh\nsleep 30\n', 'utf8');
+  await chmod(slow, 0o755);
+  h.report = { ...h.report, claude: { ...h.report.claude, path: slow } };
+  await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
+  await h.onboarding.answer('profile', pick({ profile: ['work'] }));
+  assert.equal((await view(h)).steps.find((step) => step.id === 'objective')!.proposal?.status, 'working');
+  assert.equal(await h.onboarding.answer('objective', pick({}, { objective: 'Ship the reliability fix', blocker: '' })), null);
+  for (let i = 0; i < 100; i++) {
+    if ((await view(h)).steps.find((step) => step.id === 'objective')!.proposal?.status !== 'working') break;
+    await new Promise((done) => setTimeout(done, 20));
+  }
+  const objective = (await view(h)).steps.find((step) => step.id === 'objective')!;
+  assert.equal(objective.proposal?.status, 'failed');
+  assert.match(objective.proposal?.error ?? '', /you continued before it finished/);
+  assert.equal(objective.summary, 'Your objective: Ship the reliability fix');
+  await h.onboarding.close();
 });

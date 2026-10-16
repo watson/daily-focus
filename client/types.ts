@@ -163,6 +163,8 @@ export interface UiState {
   setupDrafts: Signal<ReadonlyMap<string, SetupDraft>>;
   /** The answered setup step reopened with Change, while it is. */
   setupEditing: Signal<string | null>;
+  /** The setup step whose Continue was pressed while its CLI was still looking, which asks first. */
+  setupConfirm: Signal<string | null>;
   /** The setup step with a request on its way, which its buttons wait for. */
   setupBusy: Signal<string | null>;
   /** Why the server refused the last answer, until the next one. */
@@ -241,6 +243,8 @@ export interface Handlers {
   editSetupDraft(step: string, answer: SetupDraft['answer'] | null, version: number): void;
   /** Reopen an answered setup step, or close it again with null. */
   editSetupStep(step: string | null): void;
+  /** Ask whether to continue without what the CLI is still looking for, or stop asking with null. */
+  confirmSetup(step: string | null): void;
   /** What has been typed for the CLI looking into a step. */
   editSetupTell(step: string, text: string): void;
   /** Tell the CLI looking into a step what to change. */

@@ -91,7 +91,7 @@ export interface Question {
   settings?(answer: Chosen, ctx: QuestionContext): Record<string, string | null>;
   sources?(answer: Chosen, ctx: QuestionContext): SourcesSection[];
   /** For the objective: what goes in `focus.md`. */
-  objective?(answer: Chosen): string | null;
+  objective?(answer: Chosen): { objective: string; blocker: string | null } | null;
   /**
    * A CLI looks into this question as soon as the CLI and the profile are
    * known. `brief` is the question as the CLI is asked it, `facts` what the
@@ -652,19 +652,87 @@ const calendars: Question = {
   },
 };
 
+/** What a proposal suggested as objectives, each with what it was drawn from. */
+function suggestedObjectives(proposal: Record<string, unknown> | null): { text: string; detail: string | null }[] {
+  const raw = Array.isArray(proposal?.suggestions) ? (proposal.suggestions as unknown[]) : [];
+  return raw.flatMap((entry) => {
+    const suggestion = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
+    const text = str(suggestion.objective);
+    return text ? [{ text, detail: str(suggestion.evidence) || null }] : [];
+  });
+}
+
+/**
+ * The one thing the user is trying to get done, in their words. A session
+ * looks at what they have been doing and suggests a few, only from a strong
+ * signal, and none ticked: an objective made up for someone is worse than
+ * none. Its real job is the conversation: the user says what they are working
+ * on, as roughly as they like, and it writes that up as an objective and a
+ * blocker.
+ */
 const objective: Question = {
   id: 'objective',
   topic: 'your objective',
   title: () => 'What are you trying to get done right now?',
   keys: [],
   deferrable: true,
-  card: () =>
-    card({
-      why: 'The brief ranks the day against it. A next move works better than a project name.',
-      fields: [field('objective', 'Your objective', '', { placeholder: 'Get the staging deploy working again' })],
-    }),
-  summary: (answer) => (answer.fields.objective?.trim() ? `Your objective: ${answer.fields.objective.trim()}` : 'No objective for now.'),
-  objective: (answer) => answer.fields.objective?.trim() || null,
+  card(ctx) {
+    const proposal = proposalOf(ctx, 'objective');
+    return card({
+      reply: 'Tell it what you’re working on, however roughly',
+      why:
+        str(proposal?.why) ||
+        'The brief ranks the day against it. A next move works better than a project name. Tell it what you’re working on, however roughly, and it will write it up.',
+      fields: [
+        field('objective', 'Your objective', str(proposal?.objective), {
+          placeholder: 'Get the staging deploy working again',
+          suggestions: suggestedObjectives(proposal),
+        }),
+        field('blocker', 'What’s in the way, if anything', str(proposal?.blocker), { placeholder: 'Nobody can reproduce the failure' }),
+      ],
+    });
+  },
+  summary: (answer) => {
+    const text = answer.fields.objective?.trim();
+    const blocker = answer.fields.blocker?.trim();
+    if (!text) return 'No objective for now.';
+    return `Your objective: ${text}${blocker ? `. In the way: ${blocker}` : ''}`;
+  },
+  objective: (answer) =>
+    answer.fields.objective?.trim() ? { objective: answer.fields.objective.trim(), blocker: answer.fields.blocker?.trim() || null } : null,
+  agent: {
+    brief: (ctx) =>
+      `The user's current objective: the one thing they are trying to get done right now, which their ${ctx.profile} ` +
+      'brief ranks the day against. Look at what they have been doing lately: their own recent and open pull ' +
+      'requests, tickets assigned to them and in progress, and anything on the calendar that keeps coming back. ' +
+      'Suggest up to three objectives, each only where there is a strong signal, with the evidence in a few ' +
+      'words, such as "your 4 open pull requests on checkout". If nothing stands out, suggest none and say so. ' +
+      'Leave `objective` and `blocker` empty until the user tells you what they are working on. When they do, ' +
+      'write it up as one objective: a next move rather than a project name, in their own terms, under 12 words. ' +
+      'Put what is in the way, if they mention anything, in `blocker`, as briefly.',
+    schema: {
+      type: 'object',
+      properties: {
+        why: { type: 'string', description: 'One or two sentences: what you looked at, or how you wrote up what they said.' },
+        objective: { type: 'string' },
+        blocker: { type: 'string' },
+        suggestions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              objective: { type: 'string' },
+              evidence: { type: 'string', description: 'What it was drawn from, in a few words.' },
+            },
+            required: ['objective', 'evidence'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['why', 'objective', 'blocker', 'suggestions'],
+      additionalProperties: false,
+    },
+  },
 };
 
 export const QUESTIONS: readonly Question[] = [cli, profile, schedule, identity, boards, calendars, objective];

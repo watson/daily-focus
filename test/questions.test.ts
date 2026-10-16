@@ -236,7 +236,41 @@ test('the source list is only what was chosen, and never a placeholder', () => {
   assert.equal(placeholdersIn(text), 0);
 });
 
-test('the objective goes to focus.md, and an empty one is no objective', () => {
-  assert.equal(question('objective').objective!(chosen({}, { objective: ' Ship the reliability fix ' })), 'Ship the reliability fix');
-  assert.equal(question('objective').objective!(chosen({}, { objective: '' })), null);
+test('the objective goes to focus.md with its blocker, and an empty one is no objective', () => {
+  assert.deepEqual(question('objective').objective!(chosen({}, { objective: ' Ship the reliability fix ', blocker: ' Staging is down ' })), {
+    objective: 'Ship the reliability fix',
+    blocker: 'Staging is down',
+  });
+  assert.deepEqual(question('objective').objective!(chosen({}, { objective: 'Ship it', blocker: '' })), { objective: 'Ship it', blocker: null });
+  assert.equal(question('objective').objective!(chosen({}, { objective: '', blocker: 'Staging is down' })), null);
+  assert.equal(
+    question('objective').summary(chosen({}, { objective: 'Ship the reliability fix', blocker: 'Staging is down' }), ctx()),
+    'Your objective: Ship the reliability fix. In the way: Staging is down',
+  );
+});
+
+test('suggested objectives are offered under the field, never filled in, and a written-up one is', () => {
+  const suggested = question('objective').card(
+    ctx({
+      proposals: {
+        objective: {
+          why: 'Your open pull requests are all on checkout.',
+          objective: '',
+          blocker: '',
+          suggestions: [{ objective: 'Get checkout retries merged', evidence: 'your 4 open pull requests on checkout' }],
+        },
+      },
+    }),
+  );
+  const field = suggested.fields.find((f) => f.id === 'objective')!;
+  assert.equal(field.value, '');
+  assert.deepEqual(field.suggestions, [{ text: 'Get checkout retries merged', detail: 'your 4 open pull requests on checkout' }]);
+
+  const written = question('objective').card(
+    ctx({ proposals: { objective: { why: 'Written up from what you said.', objective: 'Get staging deploys working', blocker: 'No access to the cluster', suggestions: [] } } }),
+  );
+  assert.deepEqual(written.fields.map((f) => [f.id, f.value]), [
+    ['objective', 'Get staging deploys working'],
+    ['blocker', 'No access to the cluster'],
+  ]);
 });

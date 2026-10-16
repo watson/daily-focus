@@ -49,7 +49,9 @@ answer.
 5. **What else to show**: the pull request board and the Jira board, each with
    its status.
 6. **Which calendars** the brief reads, which the live agenda follows too.
-7. **Your objective**, which the agent ranks the day against.
+7. **Your objective**, which the agent ranks the day against, and what's in the
+   way. It suggests a few from what you've been doing, when something stands
+   out, and writes one up from whatever you tell it, however rough.
 
 The [assistant](#ask-the-assistant) isn't asked about: it comes on with the CLI
 that writes the brief, unless you've set it already.
@@ -59,7 +61,8 @@ one short session each, so the slow ones are ready when you get to them. The
 sessions run on the newest flagship model at low effort (Opus for Claude Code,
 the first model in Codex's own list for Codex), which measured as fast as the
 lighter models and, unlike them, told your calendars from other people's: it reads `gh`, your mail and your calendars to tell work from personal, and
-says in a sentence why it ticked what it did. Reply under that sentence with what
+says in a sentence why it ticked what it did. Continue before it has finished and it asks first, then
+stops and keeps what the card holds. Reply under that sentence with what
 to change, such as "also the on-call rota", and it tries again, answering in the
 same place. These sessions only read, in
 an empty directory. Claude Code is given read tools by name, and under Codex every

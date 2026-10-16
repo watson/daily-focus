@@ -155,6 +155,8 @@ interface Running {
   child: ChildProcess;
   timer: NodeJS.Timeout;
   abortReason: string | null;
+  /** Settles once the process has exited and what it left is written down. */
+  over: Promise<void>;
 }
 
 function blankFile(): OnboardingFile {
@@ -379,6 +381,9 @@ export class Onboarding {
     }
     file.answers[id] = answer;
     this.finishError = null;
+    // Answered while it was still looking, which the screen asked about first:
+    // what the user has is the answer, so the session has nothing left to do.
+    await this.stop(id, 'you continued before it finished');
     const after = await this.context();
     if (after.profile !== before.profile) {
       // Every proposal was made for the other profile, and so were the answers to them.
@@ -451,7 +456,7 @@ export class Onboarding {
     const sources = this.deps.readSources();
     const answers = this.effective(ctx, file.answers);
     const sections: SourcesSection[] = [];
-    let objective: string | null = null;
+    let objective: { objective: string; blocker: string | null } | null = null;
     for (const question of this.questions(ctx)) {
       const answer = answers[question.id];
       if (!answer && !this.locked(question, sources)) return this.refuse(`answer "${question.title(ctx)}", or decide it later`);
@@ -475,7 +480,7 @@ export class Onboarding {
     }
     if (objective) {
       const focus = await readEditable(this.config.focusFile);
-      const saved = await saveEditable(this.config.focusFile, setFocusFields(focus.text, { objective, blocker: null }, FOCUS_TEMPLATE), focus.version);
+      const saved = await saveEditable(this.config.focusFile, setFocusFields(focus.text, objective, FOCUS_TEMPLATE), focus.version);
       if (!saved.saved) return this.refuse('focus.md changed on disk while saving; finish again');
     }
 
@@ -522,9 +527,11 @@ export class Onboarding {
     return { text: sections.length ? composeSources(ctx.profile, sections, new Date().toISOString().slice(0, 10)) : null, kept: false };
   }
 
-  /** Stop every session, for shutdown. */
+  /** Stop every session, for shutdown, and wait until each has exited and been written down. */
   async close(): Promise<void> {
+    const over = [...this.running.values()].map((run) => run.over);
     for (const id of [...this.running.keys()]) await this.stop(id, RESTARTED);
+    await Promise.all(over);
   }
 
   /* ---------- the sessions ---------- */
@@ -644,7 +651,8 @@ export class Onboarding {
     }
     const timer = setTimeout(() => void this.stop(question.id, 'gave up after four minutes'), TURN_TIMEOUT_MS);
     timer.unref();
-    const run: Running = { child, timer, abortReason: null };
+    let ended!: () => void;
+    const run: Running = { child, timer, abortReason: null, over: new Promise((resolve) => (ended = resolve)) };
     this.running.set(question.id, run);
 
     let done: ParsedEvent['done'] | undefined;
@@ -696,7 +704,9 @@ export class Onboarding {
             ok: false,
             error: `${cli} exited with code ${code}${stderr.length ? `: ${stderr.join('').trim().split('\n').slice(-3).join(' ')}` : ''}`,
           });
-      void this.settle(question.id, record, outcome.ok ? { ok: true, reply: outcome.reply ?? said } : outcome);
+      void this.settle(question.id, record, outcome.ok ? { ok: true, reply: outcome.reply ?? said } : outcome)
+        .catch((err: unknown) => console.error(`[daily-focus] setup could not keep what it found: ${(err as Error).message}`))
+        .finally(ended);
     });
   }
 

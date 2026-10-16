@@ -1032,6 +1032,8 @@ export interface OnboardingCard {
   revisable: boolean;
   /** Whether "Decide later" is offered: only where leaving it is a real answer. */
   deferrable: boolean;
+  /** What the box for replying to the CLI invites, when the question wants more than corrections. */
+  reply?: string;
 }
 
 export interface OnboardingChoice {
@@ -1059,6 +1061,8 @@ export interface OnboardingField {
   value: string;
   placeholder: string | null;
   help: string | null;
+  /** Values offered for it, none of them filled in: a click puts one in the field. */
+  suggestions?: { text: string; detail: string | null }[];
 }
 
 export interface OnboardingProposal {

@@ -80,6 +80,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     calendars: signal(initial.calendars ?? null),
     setupDrafts: signal(initial.setupDrafts ?? new Map()),
     setupEditing: signal(initial.setupEditing ?? null),
+    setupConfirm: signal(initial.setupConfirm ?? null),
     setupBusy: signal(initial.setupBusy ?? null),
     setupError: signal(initial.setupError ?? null),
     setupTell: signal(initial.setupTell ?? new Map()),

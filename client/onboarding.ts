@@ -171,6 +171,8 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
   const conversation = proposal?.conversation ?? [];
   // Working on something the user just asked for: their words are on screen already.
   const revising = conversation.at(-1)?.from === 'you';
+  // Continue was pressed while it was still at work: ask first, until it is done.
+  const confirming = looking && ui.setupConfirm.value === step.id;
 
   return el(
     'section',
@@ -214,8 +216,8 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
           el('input', {
             type: 'text',
             value: tell,
-            'aria-label': 'Tell it what to change',
-            placeholder: 'Tell it what to change',
+            'aria-label': step.card.reply ?? 'Tell it what to change',
+            placeholder: step.card.reply ?? 'Tell it what to change',
             onInput: (event: Event) => handlers.editSetupTell(step.id, (event.currentTarget as HTMLInputElement).value),
           }),
           el('button', { type: 'submit', class: 'button', disabled: busy || tell.trim() === '' }, 'Send'),
@@ -244,7 +246,11 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
         class: 'onboarding__form',
         onSubmit: (event: Event) => {
           event.preventDefault();
-          if (!busy) handlers.answerSetup(step.id, draft);
+          if (busy) return;
+          // What it is still looking for would land in this card: check the
+          // user means to go on without it, which stops it.
+          if (looking && !confirming) return handlers.confirmSetup(step.id);
+          handlers.answerSetup(step.id, draft);
         },
       },
       // Fields first: a card with both asks for the few words before the list.
@@ -266,25 +272,33 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
       ),
       step.card.problem && !step.card.problem.blocking ? problem(step, busy, handlers) : null,
       error ? el('p', { class: 'onboarding__error', role: 'alert' }, error) : null,
-      el(
-        'div',
-        { class: 'onboarding__actions' },
-        el(
-          'button',
-          { type: 'submit', class: 'button button--primary', disabled: busy || (empty && (looking || step.card.problem?.blocking === true)) },
-          ui.setupBusy.value === step.id ? 'Saving…' : 'Continue',
-        ),
-        step.card.deferrable
-          ? el(
+      confirming
+        ? el(
+            'div',
+            { class: 'onboarding__actions onboarding__confirm', role: 'alert' },
+            el('p', null, revising ? 'It’s still working on your change.' : 'It’s still filling this in.', ' Continue with what’s here, and stop it?'),
+            el('button', { type: 'submit', class: 'button button--primary', disabled: busy }, 'Continue without it'),
+            el('button', { type: 'button', class: 'button onboarding__quiet', onClick: () => handlers.confirmSetup(null) }, 'Wait for it'),
+          )
+        : el(
+            'div',
+            { class: 'onboarding__actions' },
+            el(
               'button',
-              { type: 'button', class: 'button onboarding__quiet', disabled: busy, onClick: () => handlers.answerSetup(step.id, { later: true }) },
-              'Decide later',
-            )
-          : null,
-        editing
-          ? el('button', { type: 'button', class: 'button onboarding__quiet', onClick: () => handlers.editSetupStep(null) }, 'Cancel')
-          : null,
-      ),
+              { type: 'submit', class: 'button button--primary', disabled: busy || (empty && (looking || step.card.problem?.blocking === true)) },
+              ui.setupBusy.value === step.id ? 'Saving…' : 'Continue',
+            ),
+            step.card.deferrable
+              ? el(
+                  'button',
+                  { type: 'button', class: 'button onboarding__quiet', disabled: busy, onClick: () => handlers.answerSetup(step.id, { later: true }) },
+                  'Decide later',
+                )
+              : null,
+            editing
+              ? el('button', { type: 'button', class: 'button onboarding__quiet', onClick: () => handlers.editSetupStep(null) }, 'Cancel')
+              : null,
+          ),
     ),
   );
 }
@@ -435,16 +449,39 @@ function ChoiceView({ choice, picked, onPick }: { choice: OnboardingChoice; pick
 
 function fieldView(field: OnboardingField, value: string, onInput: (value: string) => void): JSX.Element {
   return el(
-    'label',
+    'div',
     { class: 'onboarding__field', key: field.id },
-    el('span', { class: 'onboarding__field-label' }, field.label),
-    el('input', {
-      type: 'text',
-      value,
-      placeholder: field.placeholder ?? undefined,
-      onInput: (event: Event) => onInput((event.currentTarget as HTMLInputElement).value),
-    }),
+    el(
+      'label',
+      null,
+      el('span', { class: 'onboarding__field-label' }, field.label),
+      el('input', {
+        type: 'text',
+        value,
+        placeholder: field.placeholder ?? undefined,
+        onInput: (event: Event) => onInput((event.currentTarget as HTMLInputElement).value),
+      }),
+    ),
     field.help ? el('small', null, field.help) : null,
+    // Offered, never filled in: a click puts one in the field, to edit or keep.
+    field.suggestions?.length
+      ? el(
+          'ul',
+          { class: 'onboarding__suggestions' },
+          field.suggestions.map((suggestion) =>
+            el(
+              'li',
+              { key: suggestion.text },
+              el(
+                'button',
+                { type: 'button', 'aria-pressed': String(value === suggestion.text), onClick: () => onInput(suggestion.text) },
+                el('span', null, suggestion.text),
+                suggestion.detail ? el('small', null, suggestion.detail) : null,
+              ),
+            ),
+          ),
+        )
+      : null,
   );
 }
 

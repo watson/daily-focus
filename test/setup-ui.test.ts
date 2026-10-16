@@ -402,3 +402,73 @@ test('reopening one answer leaves Change on the others', () => {
   assert.deepEqual(changes.map((button) => [button.closest('.onboarding__done')!.getAttribute('data-step'), button.disabled]), [['identity', false]]);
   assert.equal(byClass(page, 'onboarding__card').length, 2, 'the one reopened, and the one still open');
 });
+
+test('Continue while it is still filling the card in asks first, and only the second press answers', async () => {
+  const answers: string[] = [];
+  const ui = uiWith();
+  const handlers = handlersWith({
+    answerSetup: (id) => void answers.push(id),
+    confirmSetup: (id) => void (ui.setupConfirm.value = id),
+  });
+  const looking = {
+    ...CALENDARS,
+    proposal: {
+      status: 'working' as const,
+      conversation: [],
+      steps: [{ kind: 'tool' as const, text: 'Calendar: list calendars', detail: null, state: 'running' as const }],
+      error: null,
+    },
+  };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([looking], 'calendars') }), ui, handlers }));
+  const form = () => page.querySelector('form.onboarding__form') as HTMLFormElement;
+  form().requestSubmit();
+  await settle();
+  assert.deepEqual(answers, [], 'not yet');
+  assert.match(byClass(page, 'onboarding__confirm')[0]!.textContent!, /still filling this in\. Continue with what’s here, and stop it\?/);
+  assert.deepEqual(buttonLabels(byClass(page, 'onboarding__confirm')[0]!), ['Continue without it', 'Wait for it']);
+
+  byTag(page, 'button').find((b) => b.textContent === 'Wait for it')!.click();
+  await settle();
+  assert.equal(byClass(page, 'onboarding__confirm').length, 0);
+
+  form().requestSubmit();
+  await settle();
+  form().requestSubmit();
+  assert.deepEqual(answers, ['calendars']);
+});
+
+test('a suggestion under a field is offered, not filled in, and a click puts it in', async () => {
+  const ui = uiWith();
+  const handlers = handlersWith({
+    editSetupDraft: (id, answer, version) => {
+      ui.setupDrafts.value = new Map([[id, { version, answer: answer! }]]);
+    },
+  });
+  const objective = step('objective', {
+    title: 'What are you trying to get done right now?',
+    card: {
+      ...step('x').card,
+      fields: [
+        {
+          id: 'objective',
+          label: 'Your objective',
+          value: '',
+          placeholder: null,
+          help: null,
+          suggestions: [{ text: 'Get checkout retries merged', detail: 'your 4 open pull requests on checkout' }],
+        },
+        { id: 'blocker', label: 'What’s in the way, if anything', value: '', placeholder: null, help: null },
+      ],
+    },
+  });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([objective], 'objective') }), ui, handlers }));
+  const input = () => byTag(page, 'input')[0] as HTMLInputElement;
+  assert.equal(input().value, '');
+  const suggestion = page.querySelector('.onboarding__suggestions button') as HTMLButtonElement;
+  assert.equal(suggestion.textContent, 'Get checkout retries mergedyour 4 open pull requests on checkout');
+  suggestion.click();
+  await settle();
+  assert.equal(ui.setupDrafts.value.get('objective')!.answer.fields.objective, 'Get checkout retries merged');
+  assert.equal(input().value, 'Get checkout retries merged');
+  assert.equal(suggestion.getAttribute('aria-pressed'), 'true');
+});
