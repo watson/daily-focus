@@ -89,7 +89,8 @@ versions and release notes come from, so CI checks it.
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/autoask.ts` | Asking the assistant ahead, on its own, about pull requests waiting on you, and which question each row's state calls for |
-| `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
+| `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report, steps and follow-up chat |
+| `src/codexsessions.ts` | Reads a Codex run's subagents from Codex's own session files, since `codex exec --json` doesn't say what they do |
 | `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
 | `src/sample.ts`, `src/demo.ts` | The sample brief for each profile behind `npm run seed`, and everything the demo puts around it: the store's files, the sample pull requests and tickets, and the environment it runs in |
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |

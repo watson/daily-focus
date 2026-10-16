@@ -294,6 +294,11 @@ export interface ParsedEvent {
   text?: string;
   /** Tool calls the line starts or settles. When a line has text too, the text came first. */
   steps?: ParsedStep[];
+  /**
+   * Set when the line is a subagent's rather than the agent's own: the id of the
+   * call that handed it the work. What it says is then not the answer.
+   */
+  by?: string;
   /** The turn is over. `reply` replaces whatever was accumulated when given. */
   done?: { ok: boolean; reply?: string; error?: string };
 }
@@ -308,6 +313,14 @@ export interface ParsedStep {
   text?: string;
   detail?: string | null;
   state: AssistantStep['state'];
+  /** On a call that hands part of the work to a subagent, whose lines name this id in `by`. */
+  handoff?: true;
+  /**
+   * How a subagent's work ended. A handoff waits for this rather than for its
+   * call's result, since a subagent started in the background works on after
+   * the call has returned.
+   */
+  final?: true;
 }
 
 export interface SpawnOptions {
@@ -397,6 +410,11 @@ export const claudeAdapter: Adapter = {
     const event = parseLine(line);
     if (!event) return null;
     const type = event.type;
+    // How a subagent's work ended, foreground or background, keyed by the call that started it.
+    if (type === 'system' && event.subtype === 'task_notification' && typeof event.tool_use_id === 'string') {
+      const step: ParsedStep = { id: event.tool_use_id, state: event.status === 'completed' ? 'done' : 'failed', final: true };
+      return { steps: [step] };
+    }
     if (type === 'system' && typeof event.session_id === 'string') {
       return { sessionId: event.session_id };
     }
@@ -415,7 +433,9 @@ export const claudeAdapter: Adapter = {
       if (text) parsed.text = text;
       const steps = content.flatMap((block) => claudeStep(block) ?? []);
       if (steps.length) parsed.steps = steps;
-      return text || steps.length ? parsed : null;
+      if (!text && !steps.length) return null;
+      if (typeof event.parent_tool_use_id === 'string') parsed.by = event.parent_tool_use_id;
+      return parsed;
     }
     if (type === 'result') {
       const ok = event.is_error !== true && event.subtype === 'success';
@@ -505,6 +525,10 @@ interface ClaudeBlock {
  */
 const CLAUDE_QUIET_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'StructuredOutput']);
 
+/** The step that hands part of the work to a subagent, and the one that waits for them, whichever CLI. */
+export const HANDOFF = 'Hand part of it to a subagent';
+export const WAIT = 'Wait for its subagents';
+
 /**
  * A step for a tool call or a tool's answer. Worded as an instruction, the way
  * Claude Code's own command descriptions are ("View the pull request"), so a
@@ -534,7 +558,7 @@ function claudeStep(block: ClaudeBlock): ParsedStep | null {
       return step('List files', said('pattern'));
     case 'Task':
     case 'Agent':
-      return step('Hand part of it to a subagent', said('description'));
+      return { ...step(HANDOFF, said('description')), handoff: true };
   }
   const mcp = /^mcp__(.+?)__(.+)$/.exec(block.name);
   if (mcp) return step(connectorLabel(mcp[1]!, mcp[2]!), compactArgs(input));
@@ -578,6 +602,8 @@ function codexStep(item: CodexItem, completed: boolean): ParsedStep | null {
   if (item.type === 'mcp_tool_call' && typeof item.server === 'string' && typeof item.tool === 'string') {
     return { id: item.id, text: connectorLabel(item.server, item.tool), detail: compactArgs(item.arguments), state };
   }
+  // Of the subagents, the stream says only that it waits for them; `codexsessions.ts` reads the rest.
+  if (item.type === 'collab_tool_call' && item.tool === 'wait') return { id: item.id, text: WAIT, detail: null, state };
   if (item.type === 'web_search') {
     // Started, Codex doesn't know the query yet; completed says what it did.
     const action = item.action ?? {};
@@ -613,14 +639,14 @@ export function connectorLabel(server: string, tool: string): string {
 }
 
 /** A tool's arguments in a line: the JSON, unless there are none. */
-function compactArgs(input: unknown): string | null {
+export function compactArgs(input: unknown): string | null {
   if (input === null || input === undefined) return null;
   if (typeof input === 'object' && Object.keys(input).length === 0) return null;
   return shorten(typeof input === 'string' ? input : JSON.stringify(input));
 }
 
 /** The first line, and no more than `DETAIL_LENGTH` of it. */
-function shorten(value: string | null): string | null {
+export function shorten(value: string | null): string | null {
   if (!value) return null;
   const lines = value.trim().split('\n');
   const first = lines[0]!.trim();

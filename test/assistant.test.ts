@@ -524,6 +524,44 @@ test('the Codex adapter turns commands, connector calls and searches into steps'
   assert.equal(codexAdapter.parse(item('item.started', { id: 'f', type: 'file_change', changes: [] })), null);
 });
 
+test("the Claude adapter tells a subagent's lines from the agent's, and a handoff waits for word of how it ended", () => {
+  // The call that hands the work over, then the subagent's own lines, under the call's id.
+  assert.deepEqual(claudeAdapter.parse(CALLED('toolu_a', 'Agent', { description: 'Read the inbox', prompt: '…', subagent_type: 'general-purpose' })), {
+    steps: [{ id: 'toolu_a', text: 'Hand part of it to a subagent', detail: 'Read the inbox', state: 'running', handoff: true }],
+  });
+  const sub = (content: unknown[]) => JSON.stringify({ type: 'assistant', parent_tool_use_id: 'toolu_a', message: { content } });
+  assert.deepEqual(claudeAdapter.parse(sub([{ type: 'text', text: 'Three threads.' }])), { text: 'Three threads.', by: 'toolu_a' });
+  assert.deepEqual(claudeAdapter.parse(sub([{ type: 'tool_use', id: 'toolu_b', name: 'Read', input: { file_path: '/x' } }])), {
+    steps: [{ id: 'toolu_b', text: 'Read a file', detail: '/x', state: 'running' }],
+    by: 'toolu_a',
+  });
+  // The agent's own lines name nobody.
+  assert.equal(claudeAdapter.parse(SAID('hello'))!.by, undefined);
+
+  const notified = (status: string) =>
+    JSON.stringify({ type: 'system', subtype: 'task_notification', task_id: 't1', tool_use_id: 'toolu_a', status, session_id: 'sess-1' });
+  assert.deepEqual(claudeAdapter.parse(notified('completed')), { steps: [{ id: 'toolu_a', state: 'done', final: true }] });
+  assert.deepEqual(claudeAdapter.parse(notified('failed')), { steps: [{ id: 'toolu_a', state: 'failed', final: true }] });
+  // Its other system lines still only say whose session it is.
+  assert.deepEqual(claudeAdapter.parse('{"type":"system","subtype":"task_started","tool_use_id":"toolu_a","session_id":"sess-1"}'), {
+    sessionId: 'sess-1',
+  });
+});
+
+test('the Codex adapter shows its wait for its subagents, the one part of them it prints', () => {
+  const wait = (event: string, status: string) =>
+    JSON.stringify({
+      type: event,
+      item: { id: 'item_1', type: 'collab_tool_call', tool: 'wait', sender_thread_id: 'th', receiver_thread_ids: [], prompt: null, agents_states: {}, status },
+    });
+  assert.deepEqual(codexAdapter.parse(wait('item.started', 'in_progress'))!.steps, [
+    { id: 'item_1', text: 'Wait for its subagents', detail: null, state: 'running' },
+  ]);
+  assert.equal(codexAdapter.parse(wait('item.completed', 'completed'))!.steps![0]!.state, 'done');
+  const other = JSON.stringify({ type: 'item.completed', item: { id: 'item_2', type: 'collab_tool_call', tool: 'send_input', status: 'completed' } });
+  assert.equal(codexAdapter.parse(other), null);
+});
+
 test("a step names a connector's tool and the command that was asked for", () => {
   assert.equal(connectorLabel('claude_ai_Gmail', 'search_threads'), 'Gmail: search threads');
   assert.equal(connectorLabel('atlassian', 'getJiraIssue'), 'atlassian: getJiraIssue');

@@ -24,6 +24,11 @@ after(async () => {
   await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
+// A Codex run's subagents are read from Codex's session files; never the real ones.
+const CODEX_HOME = await mkdtemp(join(tmpdir(), 'daily-focus-codex-home-'));
+dirs.push(CODEX_HOME);
+process.env.CODEX_HOME = CODEX_HOME;
+
 /**
  * A store with a fake CLI that records its argv and working directory, runs
  * `body` as shell, then prints the given JSON lines.
@@ -370,6 +375,145 @@ test('off means no run and no log', async () => {
 
 test('a mistyped CLI name is refused at startup rather than read as off', () => {
   assert.throws(() => loadConfig({ DAILY_FOCUS_AGENT: 'codx' }), /DAILY_FOCUS_AGENT must be off or one of/);
+});
+
+/* ---------- subagents ---------- */
+
+test("under Claude Code, a subagent's work is kept under the call that handed it over, and is done when the subagent is", async () => {
+  const sub = (content: unknown[]) => JSON.stringify({ type: 'assistant', parent_tool_use_id: 'toolu_a', message: { content } });
+  const config = await makeConfig(
+    [
+      '{"type":"system","subtype":"init","session_id":"s-1"}',
+      JSON.stringify({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: { content: [{ type: 'tool_use', id: 'toolu_a', name: 'Agent', input: { description: 'Read the inbox', prompt: '…' } }] },
+      }),
+      '{"type":"system","subtype":"task_started","tool_use_id":"toolu_a","is_backgrounded":true,"session_id":"s-1"}',
+      sub([{ type: 'tool_use', id: 'toolu_b', name: 'Bash', input: { command: 'gh search prs --review-requested @me', description: 'Find review requests' } }]),
+      JSON.stringify({ type: 'user', parent_tool_use_id: 'toolu_a', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_b' }] } }),
+      sub([{ type: 'text', text: 'Two review requests.' }]),
+      // Started in the background, its call returns at once; the subagent works on.
+      JSON.stringify({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_a' }] } }),
+      '{"type":"system","subtype":"task_notification","tool_use_id":"toolu_a","status":"completed","session_id":"s-1"}',
+      '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"Wrote 5 items."}]}}',
+      '{"type":"result","subtype":"success","is_error":false,"result":"Wrote 5 items.","session_id":"s-1"}',
+    ],
+    { DAILY_FOCUS_AGENT: 'claude' },
+  );
+  const handoff: string[] = [];
+  const runner = new AgentRunner(config, {
+    onChange: () => {
+      const step = runner.view().last?.steps.find((candidate) => candidate.subagent);
+      if (step) handoff.push(step.state);
+    },
+  });
+  await runner.run();
+  await settle(runner);
+
+  // Running through the handoff, the subagent's call, its result, its words and
+  // the handoff's own return; done on word from the subagent, and after.
+  assert.deepEqual(handoff, ['running', 'running', 'running', 'running', 'running', 'done', 'done', 'done']);
+  const run = runner.view().last!;
+  assert.deepEqual(
+    run.steps.map((step) => [step.by, step.kind, step.text, step.state, step.subagent ?? null]),
+    [
+      [null, 'tool', 'Hand part of it to a subagent', 'done', 'toolu_a'],
+      ['toolu_a', 'tool', 'Find review requests', 'done', null],
+      ['toolu_a', 'message', 'Two review requests.', 'done', null],
+      [null, 'message', 'Wrote 5 items.', 'done', null],
+    ],
+  );
+  assert.deepEqual(run.messages, ['Wrote 5 items.'], "the subagent's words are not the agent's");
+  assert.equal(run.report, 'Wrote 5 items.');
+});
+
+test("under Codex, a run's subagents are read from Codex's session files, and kept in the log", async () => {
+  const root = '0000bbbb-0000-7000-8000-000000000001';
+  const child = '0000bbbb-0000-7000-8000-000000000002';
+  const now = new Date();
+  const day = join(
+    CODEX_HOME,
+    'sessions',
+    String(now.getFullYear()),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  );
+  await mkdir(day, { recursive: true });
+  const done = (item: Record<string, unknown>) => JSON.stringify({ type: 'event_msg', payload: { type: 'item_completed', item } });
+  await writeFile(
+    join(day, `rollout-2026-10-16T07-00-01-${root}.jsonl`),
+    [
+      done({ type: 'SubAgentActivity', id: 'a', kind: 'started', agent_thread_id: child, agent_path: '/root/github' }),
+      done({ type: 'SubAgentActivity', id: 'b', kind: 'completed', agent_thread_id: child, agent_path: '/root/github' }),
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(day, `rollout-2026-10-16T07-00-02-${child}.jsonl`),
+    [
+      done({ type: 'CommandExecution', id: 'exec-1', command: ['/bin/zsh', '-lc', 'gh pr list'], status: 'completed', exit_code: 0 }),
+      done({ type: 'AgentMessage', id: 'm', content: [{ type: 'Text', text: 'One pull request waits on you.' }] }),
+      '',
+    ].join('\n'),
+  );
+  const wait = (event: string, status: string) =>
+    JSON.stringify({ type: event, item: { id: 'item_1', type: 'collab_tool_call', tool: 'wait', receiver_thread_ids: [], status } });
+  const config = await makeConfig([
+    `{"type":"thread.started","thread_id":"${root}"}`,
+    SAID('Handing GitHub to a subagent.'),
+    wait('item.started', 'in_progress'),
+    wait('item.completed', 'completed'),
+    SAID('Wrote 4 items.'),
+    DONE,
+  ]);
+  const runner = new AgentRunner(config, { onChange: () => {} }, undefined, undefined, CODEX_HOME);
+  await runner.run();
+  await settle(runner);
+
+  const expected = [
+    [null, 'message', 'Handing GitHub to a subagent.', 'done', null],
+    [null, 'tool', 'Wait for its subagents', 'done', null],
+    [null, 'message', 'Wrote 4 items.', 'done', null],
+    [null, 'tool', 'Hand part of it to a subagent', 'done', child],
+    [child, 'tool', 'Run a command', 'done', null],
+    [child, 'message', 'One pull request waits on you.', 'done', null],
+  ];
+  const steps = (run: { steps: { by: string | null; kind: string; text: string; state: string; subagent?: string }[] }) =>
+    run.steps.map((step) => [step.by, step.kind, step.text, step.state, step.subagent ?? null]);
+  const run = runner.view().last!;
+  assert.deepEqual(steps(run), expected);
+  assert.equal(run.steps.find((step) => step.by === child && step.kind === 'tool')!.detail, 'gh pr list');
+  assert.deepEqual(run.messages, ['Handing GitHub to a subagent.', 'Wrote 4 items.']);
+
+  // Kept in the log, and read back from it; sent for the newest run only.
+  const log = (await readFile(config.agentLogFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(log[1].steps.length, expected.length);
+  const again = new AgentRunner(config, { onChange: () => {} }, undefined, undefined, CODEX_HOME);
+  await again.start();
+  assert.deepEqual(steps(again.view().last!), expected);
+  await again.run();
+  await settle(again);
+  assert.equal(again.view().runs[1]!.id, run.id);
+  assert.deepEqual(again.view().runs[1]!.steps, []);
+});
+
+test("a follow-up's answer is the agent's alone, never a subagent's words", async () => {
+  const config = await makeConfig(
+    [
+      '{"type":"system","subtype":"init","session_id":"s-1"}',
+      '{"type":"assistant","parent_tool_use_id":"toolu_a","message":{"content":[{"type":"text","text":"Looked in the archive."}]}}',
+      '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"It was handled on Monday."}]}}',
+      '{"type":"result","subtype":"error_during_execution","is_error":true}',
+    ],
+    { DAILY_FOCUS_AGENT: 'claude' },
+  );
+  const runner = new AgentRunner(config, { onChange: () => {} });
+  const run = await runner.run();
+  await settle(runner);
+  await runner.ask(run.id, 'Why did you drop it?');
+  await settle(runner);
+  assert.equal(runner.view().last!.turns[0]!.reply, 'It was handled on Monday.');
 });
 
 /* ---------- the pieces ---------- */

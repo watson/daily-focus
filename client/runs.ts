@@ -13,7 +13,7 @@
 import { h, type RefObject, type JSX } from 'preact';
 import { useRef } from 'preact/hooks';
 
-import type { AgentRun, AgentRunState, DashboardState } from '../src/types.ts';
+import type { AgentRun, AgentRunState, AgentStep, DashboardState } from '../src/types.ts';
 import { el } from './el.ts';
 import { durationBetween, firstLine, formatDay, formatShortDay, formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdownBlocks } from './markdown.ts';
@@ -98,6 +98,7 @@ function describeWhen(value: string, now: Date): string {
  * default, and survives the re-render every new message brings.
  */
 function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
+  if (run.steps?.length) return runWork(run, ui, handlers);
   const messages = run.messages ?? (run.report ? [run.report] : []);
   const running = run.status === 'running';
   // The report is the last message when the CLI has no final result of its own;
@@ -165,6 +166,125 @@ function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element 
         )
       : null,
   );
+}
+
+/**
+ * The report, and how the agent got there, for a run that kept its steps:
+ * everything it said and every call it made, in order, and each part of the
+ * work it handed to a subagent, with what the subagent did folded under it.
+ * Running, that is what it is doing, and a subagent at work is open. Finished,
+ * the report stands on its own and the way there folds away beneath it, less
+ * the report itself.
+ */
+function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
+  const running = run.status === 'running';
+  if (running) {
+    return el(
+      'section',
+      { class: 'flyout__section' },
+      el('h3', { class: 'flyout__label' }, 'What it is doing'),
+      runSteps(run, run.steps, null, ui, handlers),
+    );
+  }
+  const last = run.steps.findLast((step) => step.by === null && step.kind === 'message');
+  const steps = last && sameWords(last.text, run.report) ? run.steps.filter((step) => step !== last) : run.steps;
+  const handoffs = steps.filter((step) => step.subagent).length;
+  return el(
+    'section',
+    { class: 'flyout__section' },
+    el('h3', { class: 'flyout__label' }, run.status === 'done' ? 'Its report' : 'What it said last'),
+    run.report
+      ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(run.report))
+      : el('p', { class: 'flyout__empty' }, 'It said nothing.'),
+    steps.length
+      ? el(
+          'details',
+          { class: 'agent-run__list' },
+          el(
+            'summary',
+            null,
+            `How it got there, in ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}` +
+              (handoffs ? `, with ${handoffs} ${handoffs === 1 ? 'subagent' : 'subagents'}` : ''),
+          ),
+          runSteps(run, steps, null, ui, handlers),
+        )
+      : null,
+  );
+}
+
+/** How deep subagents of subagents are drawn. Codex lets a subagent start its own. */
+const NESTING = 4;
+
+/** The steps taken by one agent, `by`: the run's own when null, else a subagent's. */
+function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null, ui: UiState, handlers: Handlers, depth = 0): JSX.Element {
+  const own = steps.filter((step) => step.by === by);
+  return el(
+    'ol',
+    { class: 'assistant__steps agent-run__steps' },
+    own.length ? null : el('li', { class: 'assistant__step assistant__step--message' }, 'Nothing yet.'),
+    own.map((step, index) => {
+      if (step.kind === 'message') {
+        return el('li', { key: index, class: 'agent-run__said' }, renderMarkdownBlocks(step.text));
+      }
+      if (step.subagent && depth < NESTING) return runHandoff(run, steps, step, ui, handlers, depth, index);
+      return el(
+        'li',
+        { key: index, class: 'assistant__step', 'data-state': step.state },
+        el('span', { class: 'assistant__step-text' }, step.text),
+        step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
+      );
+    }),
+  );
+}
+
+/**
+ * A part of the work handed to a subagent: its name, and what it is doing now
+ * or how much it did, over a fold of its own steps. Open while it works, unless
+ * the reader closed it; the reader's choice survives each new step.
+ */
+function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep, ui: UiState, handlers: Handlers, depth: number, index: number): JSX.Element {
+  const id = step.subagent!;
+  const own = steps.filter((candidate) => candidate.by === id);
+  const latest = own.at(-1);
+  const calls = own.filter((candidate) => candidate.kind === 'tool').length;
+  const doing =
+    step.state === 'running'
+      ? latest
+        ? latest.kind === 'message'
+          ? firstLine(latest.text)
+          : latest.text
+        : 'starting'
+      : `${calls} ${calls === 1 ? 'step' : 'steps'}`;
+  const key = `${run.id}:${id}`;
+  const fallback = step.state === 'running';
+  const open = ui.messageOpen.value.has(key) ? ui.messageOpen.value.get(key) : fallback;
+  return el(
+    'li',
+    { key: index, class: 'assistant__step agent-run__handoff', 'data-state': step.state },
+    el(
+      'details',
+      {
+        open,
+        // As the message folds do: a toggle back to the default is forgotten.
+        onToggle: (event: Event) => {
+          const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+          handlers.toggleMessage(key, isOpen === fallback ? null : isOpen);
+        },
+      },
+      el(
+        'summary',
+        null,
+        el('span', { class: 'assistant__step-text' }, `Subagent: ${step.detail ?? 'unnamed'}`),
+        el('span', { class: 'assistant__step-detail' }, doing),
+      ),
+      runSteps(run, steps, id, ui, handlers, depth + 1),
+    ),
+  );
+}
+
+/** The same text but for spacing: how a CLI's final result compares with the message it repeats. */
+function sameWords(a: string, b: string): boolean {
+  return a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
 }
 
 /** The one line under the header that says how the run went, and Stop while it goes. */

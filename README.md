@@ -163,8 +163,13 @@ in `DAILY_FOCUS_AGENT_AT`, and from the refresh icon beside the brief's age when
 morning's brief is out of date by lunch. Each run keeps what you have marked done,
 snoozed or noted.
 
+The agent reads your sources in parallel, handing each to a subagent of its own.
+While it runs, its panel shows what it is doing: what it says, each command it runs
+and each thread or page it reads, and each subagent under the step that started it,
+open while it works.
+
 Every run is recorded. Click "updated … ago" to open the latest: its report says what
-it wrote and what it could not reach, its working commentary is folded away beneath,
+it wrote and what it could not reach, how it got there is folded away beneath,
 and you can ask it why it did what it did, or to look again, in the same session. Earlier runs are folded away below. See
 [SETUP.md](SETUP.md#connect-your-morning-agent).
 

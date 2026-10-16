@@ -99,6 +99,14 @@ test('a running agent replaces the guesses about when the brief comes, in one li
   assert.deepEqual(calls, ['open r1', 'stop']);
 });
 
+test('a running agent says how many subagents are at work, when it has any', () => {
+  const handoff = (state: string) => ({ kind: 'tool', text: 'Hand part of it to a subagent', detail: 'inbox', state, by: null, subagent: state });
+  const going = { ...RUN, status: 'running', report: '', messages: [] };
+  assert.doesNotMatch(renderWithRun({ ...going, steps: [] }).container.textContent!, /subagent/);
+  const { container } = renderWithRun({ ...going, steps: [handoff('running'), handoff('done'), { ...handoff('running'), subagent: 'x' }] });
+  assert.match(container.textContent!, /, with 2 subagents at work\./);
+});
+
 test('a finished run needs no banner at all', () => {
   const done = { ...RUN, status: 'done', trigger: 'schedule', endedAt: '2026-09-24T11:58:00Z', report: 'Wrote 6 items.' };
   const { container } = renderWithRun(done);

@@ -78,6 +78,13 @@ writes `agent-settings.json` with the values it is running with, whether they we
 saved on the settings page or set in `.env`, and both prompts say what each key means.
 The wrapper stays the same whatever the settings are.
 
+The prompt has the agent hand the reading of its sources to subagents, which share
+its working directory and what its CLI allows it, so the prompt also tells it to
+tell them that they only read. The judging and the writing stay with the agent. The
+run's panel shows each subagent under the step that started it: Claude Code reports
+them in its output, and for Codex the dashboard reads Codex's own session files
+(`src/codexsessions.ts`).
+
 Which days it runs is `DAILY_FOCUS_AGENT_DAYS` — cron-numbered, so `1-5` is Mon–Fri
 and `0-4` is the Sun–Thu week — and Mon–Fri when unset. The same schedule drives the
 staleness banner, which turns red once the brief is more than 24 *working* hours old,

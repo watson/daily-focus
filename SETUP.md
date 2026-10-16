@@ -414,10 +414,17 @@ in the archive. While it runs, a banner says so and offers Stop; click the banne
 to watch the run. When it finishes the banner goes, since the brief it wrote is the
 page. A run that fails stays as a warning until you dismiss it.
 
+The agent reads your sources in parallel, each handed to a subagent of its own, and
+the panel shows what it is doing as it goes: what it says, each command it runs and
+each thing it reads, and each subagent under the step that started it, open while
+it works. Claude Code reports its subagents itself. Codex doesn't, so for a Codex
+run the dashboard reads them from Codex's own session files, under `~/.codex/sessions`
+or `$CODEX_HOME`. It only ever reads them.
+
 Click "updated … ago" to open the latest run in the panel. It holds the agent's
 report — what it wrote, what it dropped as handled, and any source it could not
-reach — with everything it said on the way there folded away beneath, and a field
-to ask it about the run. The question goes to the agent in the
+reach — with everything it said and did on the way there folded away beneath, and a
+field to ask it about the run. The question goes to the agent in the
 same session, so it answers from what it actually did: why it dropped an item, what
 it could not find, whether it can find it now. A follow-up is given nothing to
 write; if something in the brief should change, it says what, and you run it again.

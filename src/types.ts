@@ -806,6 +806,14 @@ export interface AgentRun {
    * a brief can be read back after the fact. Markdown.
    */
   messages: string[];
+  /**
+   * What the run did, in order: everything the agent said, every call it made,
+   * and every part of the work it handed to a subagent, with the subagent's own
+   * steps after it. Sent for the newest run only, since a run makes a hundred
+   * and every tab is sent the state on each; the log keeps every run's. Empty
+   * on runs logged before steps were kept.
+   */
+  steps: AgentStep[];
   /** Why a run failed or was aborted, in the CLI's words where it had any. */
   error: string | null;
   /** Questions asked of this run afterwards, oldest first. */
@@ -816,6 +824,21 @@ export interface AgentRun {
    * nothing to Codex.
    */
   resumable: boolean;
+}
+
+/**
+ * One thing a run did, as the assistant's steps are, plus whose it was: the
+ * agent's, or a subagent's it handed part of the work to.
+ */
+export interface AgentStep extends AssistantStep {
+  /** The subagent that took the step, as its handoff's `subagent` names it. Null for the agent itself. */
+  by: string | null;
+  /**
+   * Set on a handoff, the step that gave a subagent its work: the id the
+   * subagent's own steps carry in `by`. The handoff is running for as long as
+   * the subagent is, which can be longer than the call that started it.
+   */
+  subagent?: string;
 }
 
 /** One question asked of a finished run, and the answer. */
