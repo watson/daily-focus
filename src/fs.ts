@@ -4,8 +4,8 @@ import { dirname } from 'node:path';
 /**
  * Write JSON so a reader never sees half of it: a sibling temp file, then a
  * rename, which is atomic within one directory. The same discipline the prompt
- * asks of the agent, kept in one place for the archive, the session file and the
- * pull request cache.
+ * asks of the agent, kept in one place for the archive and the integration
+ * caches.
  */
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });

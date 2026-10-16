@@ -40,9 +40,7 @@ export const RUN_PREFIX = 'run:';
 export const PANEL_PREFIX = 'panel:';
 
 export const VIEW_KEY = 'daily-focus:view';
-export const UNATTENDED_SEEN_KEY = 'daily-focus:unattended-seen';
 export const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';
-export const FOCUS_MODE_KEY = 'daily-focus:focus-mode';
 /**
  * Which row the panel is open on, by item id. Persisted per tab in
  * sessionStorage rather than localStorage: it should survive the self-reload a
@@ -67,15 +65,12 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     focusField: signal(initial.focusField ?? null),
     openDrawers: signal(initial.openDrawers ?? new Set<string>()),
     ticketMode: signal(initial.ticketMode ?? 'sync'),
-    unattendedSeen: signal(initial.unattendedSeen ?? null),
     agentReportSeen: signal(initial.agentReportSeen ?? null),
     messageOpen: signal(initial.messageOpen ?? new Map<string, boolean>()),
     view: signal(initial.view ?? 'today'),
-    focusMode: signal(initial.focusMode ?? false),
     theme: signal(initial.theme ?? 'system'),
     toast: signal(initial.toast ?? null),
     connectionError: signal(initial.connectionError ?? null),
-    clock: signal(initial.clock ?? Date.now()),
     settingsReturn: signal(initial.settingsReturn ?? 'today'),
     settings: signal(initial.settings ?? null),
     settingsDraft: signal(initial.settingsDraft ?? new Map<string, string | null>()),
@@ -97,9 +92,7 @@ function remembered(): Partial<UiValues> {
     return {
       // Settings is a page to visit, so a reload returns to the view underneath.
       view: isView(view) && view !== 'settings' ? view : 'today',
-      unattendedSeen: localStorage.getItem(UNATTENDED_SEEN_KEY),
       agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
-      focusMode: localStorage.getItem(FOCUS_MODE_KEY) === '1',
       detailFor: sessionStorage.getItem(DETAIL_KEY),
     };
   } catch {

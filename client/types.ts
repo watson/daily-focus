@@ -105,14 +105,12 @@ export interface UiState {
    */
   ticketMode: Signal<TicketMode>;
   /**
-   * Which self-closed session has been acknowledged, by its end time.
+   * Which failed run's notice has been put away, by run id.
    *
    * In localStorage rather than the store: whether a notice has been read is a
    * fact about this browser, and the store is a contract with the agent — not
    * somewhere to keep the dashboard's own bookkeeping.
    */
-  unattendedSeen: Signal<string | null>;
-  /** Which failed run's notice has been put away, by run id. Browser-local, for the same reason. */
   agentReportSeen: Signal<string | null>;
   /**
    * Which of a run's messages are unfolded in its panel, by `runId:index`, when
@@ -121,20 +119,12 @@ export interface UiState {
   messageOpen: Signal<ReadonlyMap<string, boolean>>;
   /** Which view the page is on. Persisted: a pinned tab should come back where it was. */
   view: Signal<View>;
-  /**
-   * Focus mode: the page collapsed to the objective, the top item and the
-   * agenda. Persisted, because the point is to still be in it after you come
-   * back from the thing that distracted you.
-   */
-  focusMode: Signal<boolean>;
   /** The colour scheme override, or `system` when there is none. */
   theme: Signal<ThemeMode>;
   /** The toast at the foot of the page, while one is showing. */
   toast: Signal<Toast | null>;
   /** Why the live connection is down, while it is. */
   connectionError: Signal<Error | null>;
-  /** The wall clock in milliseconds, ticked every second while a focus session runs. */
-  clock: Signal<number>;
   /**
    * The view Settings returns to: the one it was opened from. Kept so leaving it,
    * by its button, the gear, Escape or Back, lands where the user was, and so the
@@ -184,9 +174,6 @@ export interface Handlers {
   setTicketMode(mode: TicketMode): void;
   setView(view: View): void;
   jumpToTicket(id: string): void;
-  startSession(id: string): void;
-  stopSession(): void;
-  dismissUnattended(endedAt: string): void;
   nudge(id: string): void;
   unpark(id: string): void;
   refreshBoard(): void;
@@ -201,7 +188,6 @@ export interface Handlers {
   /** Null forgets the key: the fold is back at its default. */
   toggleMessage(key: string, open: boolean | null): void;
   toggleTheme(): void;
-  setFocusMode(on: boolean): void;
   openHelp(): void;
   hideToast(): void;
   /** Go to the settings page, scrolled to a section when one is named. */

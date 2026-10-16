@@ -13,16 +13,10 @@ import { SetupCard } from './setup.ts';
 import type { Handlers, UiState } from './types.ts';
 
 export function TodayView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
-  const focusBar = el(
-    'p',
-    { class: 'focus-bar', id: 'focus-bar', hidden: !ui.focusMode.value },
-    'Focus mode — everything but the top item is hidden. ',
-    el('button', { type: 'button', class: 'button', id: 'focus-exit', onClick: () => handlers.setFocusMode(false) }, 'Show everything'),
-  );
   // Before the first brief there is nothing to rank and nothing to count: the
   // page is the way to the first brief instead.
-  if (state.setup?.needed) return [focusBar, h(SetupCard, { state, ui, handlers })];
-  return [focusBar, renderObjective(state, handlers), renderStats(state), renderHeadline(state), renderSections(state, ui, handlers)];
+  if (state.setup?.needed) return [h(SetupCard, { state, ui, handlers })];
+  return [renderObjective(state, handlers), renderStats(state), renderHeadline(state), renderSections(state, ui, handlers)];
 }
 
 /* ---------- standing objective ---------- */

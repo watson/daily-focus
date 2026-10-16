@@ -18,7 +18,6 @@ import { Flyout } from './flyout.ts';
 import { SettingsView } from './settings.ts';
 import { detailRow, detailRun, state } from './state.ts';
 import { TicketsView } from './tickets.ts';
-import { Timer } from './timer.ts';
 import { TodayView } from './today.ts';
 import type { Handlers, UiState } from './types.ts';
 
@@ -32,7 +31,6 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
     el('a', { class: 'skip-link', href: '#main' }, 'Skip to content'),
     h(Header, { state: current, ui, handlers }),
     h(Tabs, { state: current, ui, handlers }),
-    current ? h(Timer, { state: current, ui, handlers }) : el('div', { class: 'timer', id: 'timer', hidden: true }),
     el('div', { id: 'banners', class: 'banners' }, current ? renderBanners(current, ui, handlers) : null),
     el(
       'main',

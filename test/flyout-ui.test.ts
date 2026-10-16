@@ -24,7 +24,7 @@ import { resolveBoard } from '../src/prs.ts';
 import type { DashboardState, PullRequest, ResolvedItem } from '../src/types.ts';
 
 const NOW = '2026-09-24T12:00:00Z';
-const STATE = { now: NOW, session: { active: null }, agenda: { conflictIds: [] } } as unknown as DashboardState;
+const STATE = { now: NOW, agenda: { conflictIds: [] } } as unknown as DashboardState;
 const HANDLERS = handlersWith();
 
 function item(overrides: Partial<ResolvedItem> = {}): ResolvedItem {

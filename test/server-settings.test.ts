@@ -41,7 +41,7 @@ before(async () => {
     DAILY_FOCUS_CALENDAR: 'off',
     DAILY_FOCUS_JIRA: 'off',
     // Locked: set for this launch, so the page can't change it.
-    DAILY_FOCUS_SESSION_MINUTES: '30',
+    DAILY_FOCUS_STALE_AFTER_HOURS: '30',
   };
   await start();
 });
@@ -66,8 +66,8 @@ test('the settings page sees every setting, where it came from, and what the def
   const settings = await json(await fetch(`${url}/api/settings`));
   const agent = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_AGENT');
   assert.deepEqual([agent.value, agent.source, agent.fallback], [null, 'default', 'Off']);
-  const minutes = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_SESSION_MINUTES');
-  assert.deepEqual([minutes.value, minutes.source], ['30', 'environment']);
+  const stale = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_STALE_AFTER_HOURS');
+  assert.deepEqual([stale.value, stale.source], ['30', 'environment']);
   assert.ok(!settings.settings.some((s: { key: string }) => s.key === 'DAILY_FOCUS_DATA'), 'the store path is not on the page');
   assert.equal(settings.restart, null);
 });
@@ -78,7 +78,7 @@ test('a bad value is refused and nothing is written', async () => {
   assert.match((await json(res)).error, /DAILY_FOCUS_ASSISTANT/);
   await assert.rejects(readFile(join(dataDir, 'settings.json')), { code: 'ENOENT' });
 
-  const locked = await post('/api/settings', { values: { DAILY_FOCUS_SESSION_MINUTES: '50' } });
+  const locked = await post('/api/settings', { values: { DAILY_FOCUS_STALE_AFTER_HOURS: '50' } });
   assert.equal(locked.status, 400);
   assert.match((await json(locked)).error, /environment/);
 });

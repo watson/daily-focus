@@ -37,7 +37,6 @@ alongside `items.schema.json`, so a run only ever names a path inside the store:
   settings.json       the dashboard writes: what you set on its settings page
   items.json          the agent writes it
   actions.jsonl       the dashboard appends
-  sessions.jsonl      the dashboard appends
   agent.jsonl         the dashboard appends: every run, its report, and the questions asked of it
   archive/            the dashboard writes
   prs.json            the dashboard writes: its last fetch of the user's open pull requests
@@ -93,8 +92,8 @@ works inside the store. Coding agents can read the implementation and tests, so
 | `~/.daily-focus/sources.md` | Which calendars, account and recurring documents are yours. Not in this repo, for the same reason: it's the half of the brief that names real things. |
 
 When code changes what the briefing agent must produce or understand, update the
-prompt too. The tests check field names, required fields, enum values, and session
-end reasons. Review changes to judgement rules directly.
+prompt too. The tests check field names, required fields and enum values. Review
+changes to judgement rules directly.
 
 ## Why the personal specifics live outside the repo
 

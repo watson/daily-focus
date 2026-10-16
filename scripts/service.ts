@@ -45,7 +45,7 @@ export function serviceLabel(dataDir: string, home: string = homedir()): string 
   return slug === 'daily-focus' ? 'local.daily-focus' : `local.daily-focus.${slug}`;
 }
 
-/** What launchd itself would give the job, kept so a sparse shell can't lose `ioreg` or `open`. */
+/** What launchd itself would give the job, kept so a sparse shell can't lose `open`. */
 const SYSTEM_PATH = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
 
 /**

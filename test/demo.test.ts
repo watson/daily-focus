@@ -39,15 +39,6 @@ async function tempStore(): Promise<string> {
   return dir;
 }
 
-/** Lines of a JSONL file, parsed; a blank last line is the newline the writer ends with. */
-async function jsonl(path: string): Promise<Record<string, unknown>[]> {
-  const text = await readFile(path, 'utf8');
-  return text
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-}
-
 /** The demo's dashboard, started as the CLI starts it, minus the browser. */
 async function demoServer(profile: Profile) {
   const store = await tempStore();
@@ -159,10 +150,6 @@ for (const profile of PROFILES) {
     assert.ok(actions.some((line) => parseActionLine(line)!.action === 'snooze'));
     assert.ok(actions.some((line) => parseActionLine(line)!.action === 'note'));
 
-    const sessions = await jsonl(join(store, 'sessions.jsonl'));
-    assert.ok(sessions.length >= 1);
-    for (const session of sessions) assert.ok(session.id && session.startedAt && session.endedAt && session.endedBy);
-
     const runs = foldAgentLog(await readFile(join(store, 'agent.jsonl'), 'utf8'));
     assert.ok(runs.length >= 3, 'earlier runs to fold away');
     assert.ok(runs.every((run) => run.status !== 'running'), 'nothing left running, or the restart would abort it');
@@ -216,8 +203,6 @@ for (const profile of PROFILES) {
       assert.ok(state.items.some((item) => item.status === 'snoozed'));
       assert.ok(state.items.some((item) => item.status === 'open' && item.notes.length > 0), 'a note on an open item');
       assert.ok(state.items.some((item) => item.status === 'open' && item.ageDays >= 5), 'something that has lingered');
-      assert.ok(state.session.completedToday >= 1, 'a focus session in the tally');
-      assert.equal(state.session.active, null);
 
       // The agenda: a clash, and free time only where the profile tracks it.
       assert.ok(state.agenda.events.length >= 5);

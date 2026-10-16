@@ -1,6 +1,6 @@
 /**
  * The briefing prompt must describe the schema because its reader works inside
- * the store. Check payload fields and session end reasons against their definitions.
+ * the store. Check payload fields against their definitions.
  *
  * AGENTS.md contains coding guardrails, so it need not repeat the payload reference.
  */
@@ -70,32 +70,6 @@ test('the prompt lists the source and kind values from the schema', () => {
       assert.ok(
         markdown.includes(`\`${value}\``),
         `${name} never lists the \`${value}\` value the schema allows.`,
-      );
-    }
-  }
-});
-
-/**
- * `sessions.jsonl` has no schema file, so the `SessionEnd` union in `src/types.ts` is
- * the source of truth for it. Worth checking even though it means scraping a type:
- * the `endedBy` trust table is the rule that went missing from the prompt, and the
- * consequence — citing a `limit` session as a long focused stretch — is a brief that
- * quietly flatters the user, which is the one thing the session log exists to prevent.
- */
-test('the prompt explains every way a session can end', async () => {
-  const types = await readFile(resolve(root, 'src/types.ts'), 'utf8');
-  const union = /export type SessionEnd = ([^;]+);/.exec(types);
-  assert.ok(union, 'SessionEnd is no longer declared where this test looks for it');
-
-  const values = [...union[1]!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
-  assert.ok(values.length >= 2, 'expected a union of string literals');
-
-  for (const [name, markdown] of Object.entries(docs)) {
-    assert.ok(markdown.includes('endedBy'), `${name} never mentions endedBy at all.`);
-    for (const value of values) {
-      assert.ok(
-        markdown.includes(`\`${value}\``),
-        `${name} never explains how far to trust an \`${value}\` session.`,
       );
     }
   }

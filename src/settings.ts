@@ -18,7 +18,7 @@ import { loadConfig, PROFILES, type Profile } from './config.ts';
 import { layerEnv, LAUNCH_SETTINGS, type EnvSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
 
-export type SettingGroup = 'instance' | 'agent' | 'assistant' | 'github' | 'jira' | 'calendar' | 'day' | 'sessions';
+export type SettingGroup = 'instance' | 'agent' | 'assistant' | 'github' | 'jira' | 'calendar' | 'day';
 
 export const SETTING_GROUPS: readonly { id: SettingGroup; title: string }[] = [
   { id: 'instance', title: 'This dashboard' },
@@ -28,7 +28,6 @@ export const SETTING_GROUPS: readonly { id: SettingGroup; title: string }[] = [
   { id: 'jira', title: 'Jira tickets' },
   { id: 'calendar', title: 'Calendar' },
   { id: 'day', title: 'Working day' },
-  { id: 'sessions', title: 'Focus sessions' },
 ];
 
 export interface SettingChoice {
@@ -70,7 +69,7 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_PROFILE',
     group: 'instance',
     label: 'What this dashboard briefs',
-    help: 'Work or home. Picks the morning prompt and the defaults below: the personal profile switches off Jira, free time and away detection.',
+    help: 'Work or home. Picks the morning prompt and the defaults below: the personal profile switches off Jira and free time.',
     kind: 'choice',
     choices: PROFILES.map((value) => ({ value, label: value === 'work' ? 'Work' : 'Personal life' })),
     fallback: always('Work'),
@@ -385,23 +384,6 @@ export const SETTINGS: readonly SettingDef[] = [
     help: 'Minutes a gap has to last to count as time for focused work.',
     kind: 'number',
     fallback: always('45 minutes'),
-  },
-
-  {
-    key: 'DAILY_FOCUS_SESSION_MINUTES',
-    group: 'sessions',
-    label: 'Session length',
-    help: 'Minutes a focus session is set for when you start one.',
-    kind: 'number',
-    fallback: always('25 minutes'),
-  },
-  {
-    key: 'DAILY_FOCUS_AWAY_AFTER',
-    group: 'sessions',
-    label: 'End a session when away for',
-    help: 'Minutes without touching the Mac before a session is closed where you left. 0 turns it off.',
-    kind: 'number',
-    fallback: (profile) => (profile === 'personal' ? '0, off' : '10 minutes'),
   },
 ];
 

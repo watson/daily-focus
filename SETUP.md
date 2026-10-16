@@ -148,8 +148,8 @@ Set `DAILY_FOCUS_AGENT_MODEL` and `DAILY_FOCUS_AGENT_EFFORT` if the CLI's own
 defaults are not what you want for a brief; a brief is worth a high effort. If the
 server can't find the CLI, set `DAILY_FOCUS_AGENT_BIN`.
 
-The agent writes `items.json`. The dashboard records your actions and focus sessions
-for the next run to read.
+The agent writes `items.json`. The dashboard records your actions for the next run
+to read.
 
 After the first run, read its report (click "updated … ago"): it says which sources
 it couldn't reach. To check the brief against the payload contract, run:
@@ -461,7 +461,7 @@ DAILY_FOCUS_PROFILE=personal
 The dashboard then links the personal prompt, `prompts/morning-brief-personal.md`,
 into the store as `prompt.md`, and the source list starts from a template with
 sections for those sources. The profile also switches off
-the Jira board and away detection, and gives the tab a green house icon instead of the blue briefcase. The pull request
+the Jira board, and gives the tab a green house icon instead of the blue briefcase. The pull request
 board stays on for side projects; point it at your personal account with
 `DAILY_FOCUS_GITHUB_ACCOUNTS`, or set `DAILY_FOCUS_GITHUB=off`.
 
@@ -522,8 +522,6 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_MIN_FREE_WINDOW` | `45` | Minutes before a gap counts as a focus window |
 | `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to expect a refresh. Shows an informational message for 45 minutes before warning that the agent may not have run. Counted only in hours a run was due, so days off never trip it |
 | `DAILY_FOCUS_AGENT_DAYS` | `1-5` | Weekdays the dashboard runs the agent on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
-| `DAILY_FOCUS_SESSION_MINUTES` | `25` | Default focus session length |
-| `DAILY_FOCUS_AWAY_AFTER` | `10`; `0` for personal | Minutes of an untouched machine before a session is closed at the last sign of life. `0` turns it off |
 | `DAILY_FOCUS_GITHUB` | `on` | `off` disables the pull request board, and the ticket board stops checking GitHub; nothing is polled |
 | `DAILY_FOCUS_GITHUB_ACCOUNTS` | *gh's active account* | Logins to poll as, comma-separated, each resolved with `gh auth token --user` |
 | `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |

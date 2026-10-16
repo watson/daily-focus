@@ -6,7 +6,7 @@
 import { effect } from '@preact/signals';
 import { h, render } from 'preact';
 
-import { adoptState, followLocation, handlers, refresh, startLocalTick } from './actions.ts';
+import { adoptState, followLocation, handlers, refresh } from './actions.ts';
 import { postTimeZone, subscribe } from './api.ts';
 import { App } from './app.ts';
 import { setCalendarZone } from './format.ts';
@@ -34,14 +34,7 @@ effect(() => {
   document.body.dataset.view = ui.view.value;
 });
 effect(() => {
-  document.body.dataset.focusMode = String(ui.focusMode.value);
-});
-effect(() => {
   document.body.dataset.offline = String(ui.connectionError.value !== null);
-});
-// Lets the stylesheet recede every row except the one being worked on.
-effect(() => {
-  document.body.dataset.sessionActive = String(state.value?.session.active != null);
 });
 effect(() => {
   const current = state.value;
@@ -86,7 +79,6 @@ installKeyboard(handlers);
 /* ---------- boot ---------- */
 
 await refresh();
-startLocalTick();
 
 // Where you are decides the dashboard's zone; see `zone.ts`.
 const zone = watchZone({

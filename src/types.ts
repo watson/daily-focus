@@ -260,77 +260,6 @@ export interface Agenda {
   dayEnd: string;
 }
 
-/** The running focus session as persisted on disk. */
-export interface StoredSession {
-  id: string;
-  title: string;
-  startedAt: string;
-  minutes: number;
-  advancesObjective: boolean;
-  /**
-   * The last moment this machine was known to be in use while the session ran.
-   *
-   * A checkpoint, not a measurement: something stamps it while there's evidence of
-   * a person, and the moment it stops advancing — because they walked away, because
-   * the lid shut, because the server wasn't running — it marks where the honest end
-   * of the session is. That's what makes the away-close retroactive: the recorded
-   * end is this timestamp, never the moment we noticed.
-   *
-   * Absent when nothing has ever been able to answer the question.
-   */
-  lastActiveAt?: string;
-}
-
-/**
- * Why a session stopped, which decides how much its `actualMinutes` can be trusted.
- *
- * - `user`  they pressed Stop. Exact.
- * - `away`  the machine went untouched, so it was closed back at the last sign of
- *           life. Honest to within a poll interval, and never inflated.
- * - `limit` it ran past the two-hour backstop with no way to tell whether anyone
- *           was there. A ceiling, not a measurement — read it as "at most this".
- */
-export type SessionEnd = 'user' | 'away' | 'limit';
-
-/**
- * A session the dashboard ended by itself, surfaced so the UI can own up to it.
- *
- * A timer that dies silently is worse than no timer, and silence is exactly what
- * made the record wrong before this existed: a forgotten session was quietly
- * truncated to two hours and filed as if it were fact.
- */
-export interface UnattendedClose {
-  id: string;
-  title: string;
-  /** When the session was recorded as ending — the last sign of life, not the discovery. */
-  endedAt: string;
-  actualMinutes: number;
-  reason: Exclude<SessionEnd, 'user'>;
-}
-
-/** The running session as the client sees it. */
-export interface ActiveSession extends StoredSession {
-  endsAt: string;
-  /** Negative once the planned time has passed — the timer keeps counting up. */
-  remainingSeconds: number;
-  overrun: boolean;
-  /** True when the session would run into the next meeting. */
-  collidesWithNextEvent: boolean;
-  nextEventAt: string | null;
-}
-
-/** Focus timer state: what's running, and what's been done today. */
-export interface SessionState {
-  active: ActiveSession | null;
-  completedToday: number;
-  minutesToday: number;
-  /**
-   * Today's most recent self-closed session, when it's the last thing that happened.
-   * The UI reports it on their return; null once they start something else.
-   */
-  unattendedClose: UnattendedClose | null;
-}
-
 /* ---------- the pull request board ---------- */
 
 /**
@@ -875,8 +804,6 @@ export interface DashboardState {
   focus: import('./focus.ts').PublicFocus | null;
   /** Only computed when focus.md sets an objective; null otherwise. */
   objectiveProgress: ObjectiveProgress | null;
-  /** Focus timer: the running session, plus today's tally. */
-  session: SessionState;
   /** Whether the agenda is live from the calendar, or the brief's own events. */
   agendaSource: AgendaSource;
   /**

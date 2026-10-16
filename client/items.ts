@@ -7,7 +7,6 @@ import type { DashboardState, ResolvedItem } from '../src/types.ts';
 import { el } from './el.ts';
 import { addDays, addMonths, dayKey, daysFromToday, formatShortDay, relativeDay } from './format.ts';
 import { renderMarkdown } from './markdown.ts';
-import { clock, remainingSeconds } from './timer.ts';
 import type { Handlers, UiState } from './types.ts';
 
 // The user's own lists, `tasks` and `reminders`, sit right after the obligations that
@@ -129,16 +128,9 @@ export function renderItem(item: ResolvedItem, state: DashboardState, ui: UiStat
   return h(ItemRow, { key: item.id, item, state, ui, handlers });
 }
 
-/**
- * A component rather than a plain function, so that the one row with a session
- * running can read the clock and be the only thing rerun by its tick.
- */
 export function ItemRow({ item, state, ui, handlers }: RowProps<ResolvedItem>): JSX.Element {
   const now = new Date(state.now);
   const selected = ui.selectedId.value === item.id;
-  const active = state.session?.active ?? null;
-  const running = active !== null && active.id === item.id;
-  const overrun = running && remainingSeconds(active, ui.clock.value) < 0;
 
   // Ahead of the title and inside the link, which is where the board tab puts the
   // same fact. Always, even when the title says it too: a column you can run an
@@ -163,8 +155,6 @@ export function ItemRow({ item, state, ui, handlers }: RowProps<ResolvedItem>): 
       'data-selected': String(selected),
       'data-priority': String(item.priority !== undefined && item.status === 'open'),
       'data-pending': String(ui.pending.value.has(item.id)),
-      'data-running': String(running),
-      'data-overrun': String(overrun),
       'data-detail': String(ui.detailFor.value === item.id),
       // A click on the card opens the panel on it: one way in, and the whole card is it.
       onClick: (event: MouseEvent) => {
@@ -184,33 +174,21 @@ export function ItemRow({ item, state, ui, handlers }: RowProps<ResolvedItem>): 
       'div',
       { class: 'item__body' },
       el('p', { class: 'item__title' }, title),
-      renderMeta(item, state, ui, now),
+      renderMeta(item, state, now),
       item.detail ? el('p', { class: 'item__detail' }, renderMarkdown(item.detail)) : null,
     ),
-    renderActions(item, state, ui, handlers),
+    renderActions(item, ui, handlers),
     ui.menuFor.value === item.id ? renderSnoozeMenu(item, now, handlers) : null,
   );
 }
 
-function renderMeta(item: ResolvedItem, state: DashboardState, ui: UiState, now: Date): JSX.Element {
+function renderMeta(item: ResolvedItem, state: DashboardState, now: Date): JSX.Element {
   const pills: JSX.Element[] = [];
   const said = new Set<string>();
   const pill = (cls: string, text: string): void => {
     pills.push(el('span', { class: cls }, text));
     said.add(text.trim().toLowerCase());
   };
-
-  const active = state.session?.active ?? null;
-  if (active && active.id === item.id) {
-    pills.push(
-      el(
-        'span',
-        { class: 'pill pill--running' },
-        el('span', { class: 'item__running-clock' }, clock(remainingSeconds(active, ui.clock.value))),
-        ' focusing',
-      ),
-    );
-  }
 
   if (item.priority !== undefined && item.status === 'open') {
     pill('pill pill--priority', `#${item.priority}`);
@@ -284,26 +262,12 @@ export function rowPills(row: { id: string; notes?: readonly unknown[] }, state:
   return rowPillTexts(row, state).map(([cls, text]) => el('span', { class: cls }, text));
 }
 
-function renderActions(item: ResolvedItem, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
+function renderActions(item: ResolvedItem, ui: UiState, handlers: Handlers): JSX.Element {
   const buttons: JSX.Element[] = [];
   const act = (id: string, action: 'done' | 'dismiss' | 'reopen') => () => handlers.onAction(id, action);
 
-  const running = state.session?.active?.id === item.id;
-
   if (item.status === 'open') {
     if (item.kind === 'task') {
-      buttons.push(
-        el(
-          'button',
-          {
-            type: 'button',
-            class: running ? 'button button--primary' : 'button',
-            title: running ? 'Stop the focus session' : 'Start a focus session on this',
-            onClick: () => (running ? handlers.stopSession() : handlers.startSession(item.id)),
-          },
-          running ? 'Stop' : 'Focus',
-        ),
-      );
       buttons.push(el('button', { type: 'button', class: 'button', onClick: act(item.id, 'done') }, 'Done'));
       buttons.push(
         el(

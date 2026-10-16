@@ -5,9 +5,9 @@ export interface WatchOptions {
   /**
    * Files whose changes aren't worth waking anything for.
    *
-   * The focus timer re-stamps its own state file every half minute while it runs,
-   * and without this that churn would re-archive the brief and push to every open
-   * tab twice a minute — work triggered by the watcher's own housekeeping.
+   * The boards rewrite their caches on every fetch, and without this that churn
+   * would re-archive the brief and push to every open tab — work triggered by the
+   * dashboard's own housekeeping.
    */
   ignore?: readonly string[];
 }

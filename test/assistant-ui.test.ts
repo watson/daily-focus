@@ -37,7 +37,7 @@ function item(overrides: Partial<ResolvedItem> = {}): ResolvedItem {
 }
 
 function state(assistant: unknown): DashboardState {
-  return { now: NOW, session: { active: null }, agenda: { conflictIds: [] }, assistant } as unknown as DashboardState;
+  return { now: NOW, agenda: { conflictIds: [] }, assistant } as unknown as DashboardState;
 }
 
 /** The panel, open on `row`. */
