@@ -78,12 +78,6 @@ export interface Question {
   /** Whether the question is asked at all, given the answers so far. */
   applies?(ctx: QuestionContext): boolean;
   /**
-   * The settings it writes. When every one of them is set in the environment
-   * the dashboard was started with, the step is shown as answered, since a
-   * save could not change it.
-   */
-  keys: readonly string[];
-  /**
    * How the question can be left, when it can: the button, named for what it
    * does, and the sentence the thread says afterwards. Null where Continue
    * already says "nothing", with a list left unticked or a field left empty.
@@ -176,7 +170,6 @@ const cli: Question = {
   id: 'cli',
   title: () => 'Which agent should write your brief?',
   topic: 'your coding agent',
-  keys: ['DAILY_FOCUS_AGENT'],
   later: { label: 'Decide later', summary: 'No agent yet: the boards work, and there is no brief until you choose one.' },
   card(ctx) {
     if (!ctx.clis) return card({});
@@ -240,7 +233,6 @@ const profile: Question = {
   id: 'profile',
   topic: 'what it covers',
   title: () => 'What should your brief cover?',
-  keys: ['DAILY_FOCUS_PROFILE'],
   later: null,
   card: (ctx) =>
     card({
@@ -268,7 +260,6 @@ const schedule: Question = {
   topic: 'when it runs',
   title: () => 'When should your brief be ready?',
   applies: (ctx) => ctx.cli !== null,
-  keys: ['DAILY_FOCUS_AGENT_AT', 'DAILY_FOCUS_AGENT_DAYS'],
   later: null,
   card(ctx) {
     const at = ctx.current.DAILY_FOCUS_AGENT_AT || '07:00';
@@ -320,7 +311,6 @@ const identity: Question = {
   id: 'identity',
   topic: 'who you are',
   title: () => 'Is this you?',
-  keys: [],
   // Clearing three fields and unticking the accounts is a chore; one button, named for what it does, isn't.
   later: { label: 'Leave this out', summary: 'Who you are is left out, so the brief can’t tell your to-dos from other people’s.' },
   card(ctx) {
@@ -440,7 +430,6 @@ const boards: Question = {
   id: 'boards',
   topic: 'the boards',
   title: () => 'What else should the dashboard show?',
-  keys: ['DAILY_FOCUS_GITHUB', 'DAILY_FOCUS_JIRA'],
   later: null,
   card(ctx) {
     const { github, jira } = ctx.boards;
@@ -555,7 +544,6 @@ const calendars: Question = {
   id: 'calendars',
   topic: 'your calendars',
   title: (ctx) => (ctx.profile === 'personal' ? 'Which calendars belong in your brief?' : 'Which calendars belong in your work brief?'),
-  keys: ['DAILY_FOCUS_CALENDARS'],
   later: null,
   card(ctx) {
     const entries = calendarEntries(ctx);
@@ -686,7 +674,6 @@ const objective: Question = {
   id: 'objective',
   topic: 'your objective',
   title: () => 'What are you trying to get done right now?',
-  keys: [],
   // Left empty, Continue says so; see `empty` on its card.
   later: null,
   card(ctx) {

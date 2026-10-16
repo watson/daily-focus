@@ -91,8 +91,8 @@ func serverEntry(environment: [String: String], resources: URL?) -> String {
 
 /// The server's environment: the app's own, with the PATH that finds Node and the
 /// CLIs. The calendar helper this app carries is not passed along: the dashboard
-/// finds it beside itself, below whatever is set in Settings, where a variable
-/// from here would override that and lock the setting.
+/// finds it beside itself, below whatever is set in Settings, and reads no setting
+/// but the store, port and host from its environment.
 func childEnvironment(_ base: [String: String], path: String) -> [String: String] {
     var environment = base
     environment["PATH"] = path

@@ -2493,10 +2493,6 @@ body[data-onboarding='true'] {
 .onboarding__change:disabled {
   visibility: hidden;
 }
-.onboarding__locked {
-  color: var(--ink-3);
-  font-size: 12px;
-}
 
 .onboarding__card {
   margin: 22px 0 28px;

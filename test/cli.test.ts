@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -50,19 +50,10 @@ test('only a source file counts as run directly, since every module of the packa
 
 test('with --exit-with-stdin, the dashboard stops when whatever holds its input goes', async () => {
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-lifeline-'));
-  // Everything a developer's .env could switch on, switched off for this launch.
-  const env = {
-    ...process.env,
-    DAILY_FOCUS_DATA: store,
-    DAILY_FOCUS_HOST: '127.0.0.1',
-    DAILY_FOCUS_PROFILE: 'work',
-    DAILY_FOCUS_AGENT: 'off',
-    DAILY_FOCUS_ASSISTANT: 'off',
-    DAILY_FOCUS_GITHUB: 'off',
-    DAILY_FOCUS_JIRA: 'off',
-    DAILY_FOCUS_CALENDAR: 'off',
-  };
-  const child = spawn(process.execPath, [cli, '--no-open', '--exit-with-stdin', '--port', '0'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  // Nothing that reaches outside, saved in the store as the settings page would.
+  await writeFile(join(store, 'settings.json'), JSON.stringify({ DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_CALENDAR: 'off' }));
+  const env = { ...process.env, DAILY_FOCUS_HOST: '127.0.0.1' };
+  const child = spawn(process.execPath, [cli, '--data', store, '--no-open', '--exit-with-stdin', '--port', '0'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
   try {
     await new Promise<void>((done, fail) => {
       let output = '';
@@ -87,7 +78,7 @@ test('with --exit-with-stdin, the dashboard stops when whatever holds its input 
 
 test('the demo honours --profile, and fills its boards from sample data rather than gh and acli', async () => {
   const child = spawn(process.execPath, [cli, '--demo', '--no-open', '--port', '0', '--profile', 'personal'], {
-    // A real environment that would leak into the demo if it could.
+    // Settings left exported in a shell, which nothing reads any more.
     env: { ...process.env, DAILY_FOCUS_HOST: '127.0.0.1', DAILY_FOCUS_JIRA: 'on', DAILY_FOCUS_AGENT: 'codex' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -139,13 +130,29 @@ test('the demo refuses a profile it does not have, before making a store', async
 });
 
 test('a flag that belongs to another command is refused, not dropped', async () => {
-  for (const args of [['seed', '--remove'], ['service', '--force'], ['init', '--no-open'], ['audit', '--demo'], ['init', '--exit-with-stdin']]) {
+  for (const args of [
+    ['seed', '--remove'],
+    ['service', '--force'],
+    ['init', '--no-open'],
+    ['audit', '--demo'],
+    ['init', '--exit-with-stdin'],
+    ['service', '--profile', 'personal'],
+    ['seed', '--profile', 'personal'],
+  ]) {
     await assert.rejects(run(process.execPath, [cli, ...args]), (err: { code?: number; stderr?: string }) => {
       assert.equal(err.code, 1, args.join(' '));
       assert.match(err.stderr ?? '', /doesn't apply to/);
       return true;
     });
   }
+});
+
+test("a dashboard's profile is not a flag: the setup screen and the settings choose it", async () => {
+  await assert.rejects(run(process.execPath, [cli, '--no-open', '--profile', 'personal']), (err: { code?: number; stderr?: string }) => {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr ?? '', /--profile is for --demo and init/);
+    return true;
+  });
 });
 
 test("the Mac app's calendar helper is found beside its Node, wherever the dashboard came from", () => {

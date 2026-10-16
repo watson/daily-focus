@@ -92,9 +92,7 @@ function doneRow(step: OnboardingStep, handlers: Handlers, busy: boolean): JSX.E
     { class: 'onboarding__done', 'data-status': step.status, 'data-step': step.id },
     el('span', { class: 'onboarding__dot', 'aria-hidden': 'true' }),
     el('span', { class: 'onboarding__summary' }, step.summary ?? `${step.topic[0]!.toUpperCase()}${step.topic.slice(1)}: decide later.`),
-    step.locked
-      ? el('span', { class: 'onboarding__locked', title: 'Set in the environment the dashboard was started with' }, 'Set by the environment')
-      : el('button', { type: 'button', class: 'onboarding__change', disabled: busy, onClick: () => handlers.editSetupStep(step.id) }, 'Change'),
+    el('button', { type: 'button', class: 'onboarding__change', disabled: busy, onClick: () => handlers.editSetupStep(step.id) }, 'Change'),
   );
 }
 

@@ -244,13 +244,9 @@ test('the dashboard asks ahead on its own once the board has read, each question
     'utf8',
   );
   await chmod(bin, 0o755);
-  const server = await startServer(
-    {
-      PATH: process.env.PATH,
-      HOME: process.env.HOME,
-      DAILY_FOCUS_DATA: store,
-      DAILY_FOCUS_PORT: '0',
-      DAILY_FOCUS_HOST: '127.0.0.1',
+  await writeFile(
+    join(store, 'settings.json'),
+    JSON.stringify({
       DAILY_FOCUS_PROFILE: 'work',
       DAILY_FOCUS_AGENT: 'off',
       DAILY_FOCUS_CALENDAR: 'off',
@@ -258,7 +254,10 @@ test('the dashboard asks ahead on its own once the board has read, each question
       DAILY_FOCUS_ASSISTANT: 'claude',
       DAILY_FOCUS_ASSISTANT_BIN: bin,
       DAILY_FOCUS_ASSISTANT_AUTO: 'on',
-    },
+    }),
+  );
+  const server = await startServer(
+    { PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_DATA: store, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' },
     { integrations: demoIntegrations('work') },
   );
   try {

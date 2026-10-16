@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig, parseScope } from '../src/config.ts';
-import { envSources, layerEnv, mergeEnv, readDotEnv, readSettingsFile } from '../src/env.ts';
+import { layerSettings, oldDotenvWarning, readSettingsFile, settingSources } from '../src/env.ts';
 
 const dirs: string[] = [];
 
@@ -13,56 +13,11 @@ after(async () => {
   await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-async function dotenv(contents: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-env-'));
-  dirs.push(dir);
-  const path = join(dir, '.env');
-  await writeFile(path, contents, 'utf8');
-  return path;
-}
-
-test('a missing .env reads as empty rather than failing', () => {
-  assert.deepEqual(readDotEnv('/definitely/not/here/.env'), {});
-});
-
-test('comments, blank lines and quotes are handled', async () => {
-  const path = await dotenv(
-    [
-      '# a comment',
-      '',
-      'DAILY_FOCUS_PORT=4322',
-      'DAILY_FOCUS_GITHUB_SCOPE="acme, acme-labs/webapp"',
-      "DAILY_FOCUS_GH='/opt/homebrew/bin/gh'",
-    ].join('\n'),
-  );
-  assert.deepEqual(readDotEnv(path), {
-    DAILY_FOCUS_PORT: '4322',
-    DAILY_FOCUS_GITHUB_SCOPE: 'acme, acme-labs/webapp',
-    DAILY_FOCUS_GH: '/opt/homebrew/bin/gh',
-  });
-});
-
-test('an empty value means the default, and a byte-order mark is ignored', async () => {
-  const path = await dotenv('\uFEFFDAILY_FOCUS_HOST=\nDAILY_FOCUS_DATA=\nDAILY_FOCUS_GH=~/bin/gh\n');
-  const config = loadConfig(mergeEnv(readDotEnv(path), {}));
+test('an empty value means the default', () => {
+  const config = loadConfig({ DAILY_FOCUS_HOST: '', DAILY_FOCUS_DATA: '', DAILY_FOCUS_GH: '~/bin/gh' });
   assert.equal(config.host, '127.0.0.1', 'an empty host must not become "listen everywhere"');
   assert.match(config.dataDir, /\.daily-focus$/, 'an empty store path must not become the working directory');
   assert.match(config.github.ghPath, /^\/.*\/bin\/gh$/, 'a tilde in the gh path is expanded');
-});
-
-test('the real environment wins over the file', () => {
-  const merged = mergeEnv(
-    { DAILY_FOCUS_PORT: '1111', DAILY_FOCUS_HOST: '0.0.0.0' },
-    { DAILY_FOCUS_PORT: '2222' },
-  );
-  assert.equal(merged.DAILY_FOCUS_PORT, '2222');
-  assert.equal(merged.DAILY_FOCUS_HOST, '0.0.0.0');
-});
-
-test('only project variables are taken from the file', () => {
-  const merged = mergeEnv({ PATH: '/tmp', DAILY_FOCUS_PORT: '1111' }, {});
-  assert.equal(merged.PATH, undefined);
-  assert.equal(merged.DAILY_FOCUS_PORT, '1111');
 });
 
 test('the board is on by default and off on request', () => {
@@ -162,23 +117,29 @@ async function store(settings: unknown): Promise<string> {
   return dir;
 }
 
-test("the store's settings sit between .env and the environment", async () => {
+test('only the store, port and host come from the environment; every other setting is the store\'s', async () => {
   const dir = await store({ DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_START: '8' });
-  const sources = envSources(
-    { DAILY_FOCUS_DATA: dir, DAILY_FOCUS_WORK_START: '10' },
-    { DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_WORK_END: '18' },
-  );
-  const env = layerEnv(sources);
-  assert.equal(env.DAILY_FOCUS_AGENT, 'claude', 'a saved setting beats .env');
-  assert.equal(env.DAILY_FOCUS_WORK_START, '10', 'the environment beats a saved setting');
-  assert.equal(env.DAILY_FOCUS_WORK_END, '18', '.env still fills in what nothing else sets');
+  const sources = settingSources({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_PORT: '4322', DAILY_FOCUS_WORK_START: '10', DAILY_FOCUS_JIRA: 'off' });
+  const values = layerSettings(sources);
+  assert.equal(values.DAILY_FOCUS_DATA, dir);
+  assert.equal(values.DAILY_FOCUS_PORT, '4322');
+  assert.equal(values.DAILY_FOCUS_AGENT, 'claude');
+  assert.equal(values.DAILY_FOCUS_WORK_START, '8', 'a variable left in the environment changes nothing saved');
+  assert.equal(values.DAILY_FOCUS_JIRA, undefined, 'nor anything unsaved');
   assert.equal(sources.settingsError, null);
 });
 
-test('the store is found from .env when the environment does not say', async () => {
-  const dir = await store({ DAILY_FOCUS_MIN_FREE_WINDOW: '50' });
-  const sources = envSources({}, { DAILY_FOCUS_DATA: dir });
-  assert.equal(layerEnv(sources).DAILY_FOCUS_MIN_FREE_WINDOW, '50');
+test('a blank launch variable means the default', async () => {
+  const sources = settingSources({ DAILY_FOCUS_DATA: '  ', DAILY_FOCUS_HOST: '' });
+  assert.deepEqual(sources.launch, {});
+  assert.match(sources.settingsPath, /\.daily-focus\/settings\.json$/);
+});
+
+test('a fixed setting wins over the saved one, and a blank saved one is the default', async () => {
+  const dir = await store({ DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_END: ' ' });
+  const values = layerSettings(settingSources({ DAILY_FOCUS_DATA: dir }, { DAILY_FOCUS_AGENT: 'off' }));
+  assert.equal(values.DAILY_FOCUS_AGENT, 'off');
+  assert.equal(values.DAILY_FOCUS_WORK_END, undefined);
 });
 
 test('a settings file cannot move the store or the server', async () => {
@@ -203,8 +164,18 @@ test('a number or true/false written by hand is read as its text, and anything e
   assert.match(read.error ?? '', /DAILY_FOCUS_CALENDARS/);
 });
 
-test('a blank value in the environment hides nothing saved below it', async () => {
-  const dir = await store({ DAILY_FOCUS_AGENT: 'claude' });
-  const env = layerEnv(envSources({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: '  ' }, {}));
-  assert.equal(env.DAILY_FOCUS_AGENT, 'claude', 'as the settings page reports it');
+test('a .env left in a checkout is named with what it held, since nothing reads it now', async () => {
+  assert.equal(oldDotenvWarning('/definitely/not/here/.env'), null);
+
+  const dir = await store(undefined);
+  const path = join(dir, '.env');
+  await writeFile(path, '# DAILY_FOCUS_AGENT=codex\nDAILY_FOCUS_HOST=\n', 'utf8');
+  assert.equal(oldDotenvWarning(path), null, 'a copy of the old example sets nothing');
+
+  await writeFile(path, '\uFEFFDAILY_FOCUS_GITHUB_SCOPE="acme, acme-labs"\nDAILY_FOCUS_PORT=4322\nPATH=/tmp\n', 'utf8');
+  const warning = oldDotenvWarning(path) ?? '';
+  assert.match(warning, /no longer read/);
+  assert.match(warning, /Set DAILY_FOCUS_GITHUB_SCOPE on the settings page/);
+  assert.match(warning, /Give --port when starting it, or set DAILY_FOCUS_PORT in the environment/);
+  assert.doesNotMatch(warning, /PATH/);
 });

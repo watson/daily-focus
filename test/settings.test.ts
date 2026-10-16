@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import type { EnvSources } from '../src/env.ts';
+import type { SettingSources } from '../src/env.ts';
 import { applySettingsChange, describeSettings, saveSettings, SETTINGS, SETTING_GROUPS } from '../src/settings.ts';
 
 const dirs: string[] = [];
@@ -13,11 +13,11 @@ after(async () => {
   await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-function sources(layers: Partial<Pick<EnvSources, 'dotenv' | 'settings' | 'process'>> = {}): EnvSources {
+function sources(layers: Partial<Pick<SettingSources, 'settings' | 'fixed'>> = {}): SettingSources {
   return {
-    dotenv: layers.dotenv ?? {},
+    launch: { DAILY_FOCUS_DATA: '/tmp/daily-focus-settings-test' },
     settings: layers.settings ?? {},
-    process: { DAILY_FOCUS_DATA: '/tmp/daily-focus-settings-test', ...layers.process },
+    fixed: layers.fixed ?? {},
     settingsPath: '/tmp/daily-focus-settings-test/settings.json',
     settingsError: null,
   };
@@ -39,14 +39,12 @@ test('every setting belongs to a group the page shows, once', () => {
 test('each value says where it came from', () => {
   const all = describeSettings(
     sources({
-      dotenv: { DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_WORK_END: '18' },
       settings: { DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_START: '8' },
-      process: { DAILY_FOCUS_WORK_START: '10' },
+      fixed: { DAILY_FOCUS_WORK_START: '10' },
     }),
   );
   assert.deepEqual([view(all, 'DAILY_FOCUS_AGENT').value, view(all, 'DAILY_FOCUS_AGENT').source], ['claude', 'settings']);
-  assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_START').value, view(all, 'DAILY_FOCUS_WORK_START').source], ['10', 'environment']);
-  assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_END').value, view(all, 'DAILY_FOCUS_WORK_END').source], ['18', 'dotenv']);
+  assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_START').value, view(all, 'DAILY_FOCUS_WORK_START').source], ['10', 'fixed']);
   assert.deepEqual([view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').value, view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').source], [null, 'default']);
 });
 
@@ -105,8 +103,8 @@ test('what the page cannot change is refused by name', () => {
     const applied = applySettingsChange(sources(), change);
     assert.ok('error' in applied && pattern.test(applied.error), JSON.stringify(change));
   }
-  const fromEnv = applySettingsChange(sources({ process: { DAILY_FOCUS_AGENT: 'codex' } }), { DAILY_FOCUS_AGENT: 'claude' });
-  assert.ok('error' in fromEnv && /set in the environment/.test(fromEnv.error));
+  const fixed = applySettingsChange(sources({ fixed: { DAILY_FOCUS_AGENT: 'off' } }), { DAILY_FOCUS_AGENT: 'claude' });
+  assert.ok('error' in fixed && /fixed/.test(fixed.error));
 });
 
 test('saved settings are sorted, so the file reads the way the page does', async () => {

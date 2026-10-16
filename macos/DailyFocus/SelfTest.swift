@@ -101,10 +101,10 @@ func runSelfTest() -> Bool {
         "bundled entry"
     )
 
-    let child = childEnvironment(["PATH": "/usr/bin", "HOME": "/Users/x", "DAILY_FOCUS_CALENDAR_APP": "/mine.app"], path: "/a:/b")
+    let child = childEnvironment(["PATH": "/usr/bin", "HOME": "/Users/x", "DAILY_FOCUS_DATA": "/mine"], path: "/a:/b")
     equal(child["PATH"], "/a:/b", "child PATH")
     equal(child["HOME"], "/Users/x", "child keeps the rest")
-    equal(child["DAILY_FOCUS_CALENDAR_APP"], "/mine.app", "a helper the user named is passed on as it is")
+    equal(child["DAILY_FOCUS_DATA"], "/mine", "a store the user named is passed on as it is")
     equal(childEnvironment([:], path: "")["DAILY_FOCUS_CALENDAR_APP"], nil, "the app's own helper is the dashboard's to find")
 
     // Where to look for a dashboard already running.

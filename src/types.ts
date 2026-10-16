@@ -1026,8 +1026,6 @@ export interface OnboardingStep {
   status: 'answered' | 'later' | 'open';
   /** The answer in a sentence, for a step that has one: "Claude Code writes your brief." */
   summary: string | null;
-  /** Set in the environment the dashboard was started with, which wins over setup; shown, never asked. */
-  locked: boolean;
   card: OnboardingCard;
   /** The CLI's look into this step, when it has one. */
   proposal: OnboardingProposal | null;

@@ -244,7 +244,7 @@ function flagValue(raw: string): string {
 /** One setting's field, editing the draft. */
 function settingField(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers): JSX.Element {
   const id = `setting-${setting.key}`;
-  const locked = setting.source === 'environment';
+  const locked = setting.source === 'fixed';
   const value = shownValue(setting, draft);
   const onChange = (event: Event) => {
     const next = (event.currentTarget as HTMLInputElement | HTMLSelectElement).value;
@@ -276,12 +276,8 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
     });
   }
 
-  const note =
-    setting.source === 'environment'
-      ? 'Set in the environment this dashboard was started with, which wins over this page.'
-      : setting.source === 'dotenv' && !draft.has(setting.key)
-        ? 'From the .env file. Saving a value here takes its place.'
-        : null;
+  // Only the demo fixes any setting, and only what would run something.
+  const note = locked ? 'Fixed in the demo, so that nothing in it runs.' : null;
 
   return el(
     'div',
@@ -312,7 +308,7 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
     );
   }
   const setting = settings.find((entry) => entry.key === 'DAILY_FOCUS_CALENDARS');
-  if (!setting || setting.source === 'environment') return null;
+  if (!setting || setting.source === 'fixed') return null;
   const chosen = shownValue(setting, ui.settingsDraft.value)
     .split(',')
     .map((name) => name.trim())

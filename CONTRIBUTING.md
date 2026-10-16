@@ -19,19 +19,20 @@ store so your changes don't affect a real brief:
 ```sh
 npm install
 export DAILY_FOCUS_DATA=$(mktemp -d)
-export DAILY_FOCUS_AGENT=off DAILY_FOCUS_ASSISTANT=off
-export DAILY_FOCUS_GITHUB=off DAILY_FOCUS_JIRA=off DAILY_FOCUS_CALENDAR=off
+echo '{"DAILY_FOCUS_GITHUB":"off","DAILY_FOCUS_JIRA":"off","DAILY_FOCUS_CALENDAR":"off"}' > "$DAILY_FOCUS_DATA/settings.json"
 npm run seed
 npm run dev
 ```
 
-Set the agent and the assistant off explicitly: a variable left unset falls through
-to your `.env`, and a dashboard with the agent on starts a real run the moment it is
-past the morning's hour. `npm run demo` is the quicker look: its own throwaway store
-with a few weeks of sample data for every screen, both boards answered from the
-sample worlds in `src/demo.ts` rather than from gh and acli, the agent and the
-assistant off, and your `.env` ignored. `npm run demo -- --profile personal` shows
-the personal profile. It is what `npx daily-focus --demo` runs.
+A new store has the agent and the assistant off, and the settings file turns off
+the boards and the live agenda, so nothing reaches your accounts. Turn anything on
+from the settings page; it saves into the temporary store. Settings aren't read from
+the environment, so nothing exported in your shell can switch one on behind the page.
+`npm run demo` is the quicker look: its own throwaway store with a few weeks of
+sample data for every screen, both boards answered from the sample worlds in
+`src/demo.ts` rather than from gh and acli, and the agent and the assistant held
+off. `npm run demo -- --profile personal` shows the personal profile. It is what
+`npx daily-focus --demo` runs.
 
 Open [localhost:4321](http://127.0.0.1:4321). If your own dashboard runs as a
 service, it already has that port: export `DAILY_FOCUS_PORT=4322` as well and open
@@ -69,7 +70,7 @@ versions and release notes come from, so CI checks it.
 |---|---|
 | `src/server.ts` | HTTP endpoints and live state updates over SSE |
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
-| `src/config.ts`, `src/env.ts` | Settings, layered: the environment over the store's `settings.json` over `.env` |
+| `src/config.ts`, `src/env.ts` | Settings: the store's `settings.json`, and where the store is and how the server listens from the environment |
 | `src/settings.ts` | The settings page: every setting's label, help and field, and checking a change before it is saved |
 | `src/setup.ts` | What a new store still needs: the CLIs installed, the calendar helper, whether a brief has ever existed |
 | `src/clis.ts` | Finding Codex and Claude Code: installed, new enough and logged in, and which setup uses without asking |
@@ -92,7 +93,7 @@ versions and release notes come from, so CI checks it.
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report, steps and follow-up chat |
 | `src/codexsessions.ts` | Reads a Codex run's subagents from Codex's own session files, since `codex exec --json` doesn't say what they do |
 | `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
-| `src/sample.ts`, `src/demo.ts` | The sample brief for each profile behind `npm run seed`, and everything the demo puts around it: the store's files, the sample pull requests and tickets, and the environment it runs in |
+| `src/sample.ts`, `src/demo.ts` | The sample brief for each profile behind `npm run seed`, and everything the demo puts around it: the store's files, the sample pull requests and tickets, and the settings it runs with |
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
 | `public/` | The page shell, the stylesheet, and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
@@ -123,7 +124,7 @@ When changing a contract, update the documents that describe it:
 - Agent instructions belong in the prompt for the profile they apply to, or both.
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
   symlink makes changes live on the next run.
-- Settings belong in `src/config.ts`, `src/settings.ts`, `.env.example`, and `SETUP.md`.
+- Settings belong in `src/config.ts`, `src/settings.ts`, and `SETUP.md`.
 - Board buckets belong in server types, the client renderer, and the README.
 
 `test/docs-contract.test.ts` checks these lists for drift. Keep private focus text
@@ -161,7 +162,7 @@ free of side effects, since only `POST` is checked for its content type.
 | `GET /api/onboarding/sources` | The source list the finish would write, or that it keeps the one there is |
 | `POST /api/agent/ask` | `{run, text}`. Asks a finished run a question in its own session; returns state with the answer coming. The reply streams in over SSE. `409` when it is off, busy, or the run can't be continued |
 | `POST /api/agent/stop` | Kills whatever the morning agent is doing: a run, or a question about one |
-| `GET /api/settings` | Every setting: its value, where it came from (environment, settings, `.env` or default), its default, and the page's label and help |
+| `GET /api/settings` | Every setting: its value, where it came from (saved, fixed by the demo, or the default), its default, and the page's label and help |
 | `POST /api/settings` | `{values: {NAME: value or null}}`. Checks the change by building the config from it, saves `settings.json`, and restarts the dashboard in place once nothing is running. `400` names the setting it refused |
 | `GET /api/text/focus`, `GET /api/text/sources` | The whole file for its editor, private part included, with its version and the template a new one starts from. Never part of `/api/state` |
 | `POST /api/text/focus`, `POST /api/text/sources` | `{text, version}`. Saves only if the file is still at `version`; otherwise `409` with what is there now |

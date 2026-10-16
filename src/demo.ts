@@ -27,6 +27,7 @@ import { join } from 'node:path';
 
 import type { BoardDeps } from './board.ts';
 import { PROFILES, type Profile } from './config.ts';
+import { SETTINGS_FILE } from './env.ts';
 import { QUICK_ACTIONS } from './assistant.ts';
 import { actionOf, autoKeys, type AutoAction } from './autoask.ts';
 import { judge } from './prs.ts';
@@ -86,7 +87,7 @@ function timeOn(date: Date, hour: number, minute = 0): string {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hour, minute).toISOString();
 }
 
-/* ---------- the profile and the environment ---------- */
+/* ---------- the profile, the environment and the settings ---------- */
 
 /** `work` unless asked for `personal`; anything else is refused before a store is made. */
 export function demoProfile(raw: string | undefined): Profile {
@@ -98,42 +99,36 @@ export function demoProfile(raw: string | undefined): Profile {
 }
 
 /**
- * The environment the demo runs in: `base` with every setting that shapes what
- * is on screen said explicitly, so a developer's exported variables can't leak
- * a real organisation or a real agent into it. A blank means the default, as
- * `env.ts` reads one. The repo's `.env` is never read: `runServer` is handed
- * this object instead of the real environment.
+ * The environment the demo runs in: `base`, with the store the CLI made for it,
+ * and any free port unless one was asked for, so the demo never collides with a
+ * dashboard already running on 4321.
  */
-export function demoEnv(base: NodeJS.ProcessEnv, store: string, profile: Profile): NodeJS.ProcessEnv {
-  const work = profile === 'work';
+export function demoEnv(base: NodeJS.ProcessEnv, store: string): NodeJS.ProcessEnv {
+  return { ...base, DAILY_FOCUS_DATA: store, DAILY_FOCUS_PORT: base.DAILY_FOCUS_PORT ?? '0' };
+}
+
+/**
+ * The settings held over the demo store's own, so that nothing in it runs: no
+ * agent, no assistant, and no read of Calendar.app, which would ask for access.
+ * The page shows them and can't change them. The boards need nothing fixed, as
+ * they are answered from the sample worlds whatever their settings say.
+ */
+export const DEMO_FIXED: Readonly<Record<string, string>> = {
+  DAILY_FOCUS_AGENT: 'off',
+  DAILY_FOCUS_ASSISTANT: 'off',
+  DAILY_FOCUS_CALENDAR: 'off',
+};
+
+/** The demo store's own settings, as a user of either profile might have saved them. */
+export function demoSettings(profile: Profile): Record<string, string> {
+  if (profile === 'personal') return { DAILY_FOCUS_PROFILE: 'personal' };
   return {
-    ...base,
-    DAILY_FOCUS_DATA: store,
-    // Any free port unless one was asked for, so the demo never collides with a
-    // dashboard already running on 4321.
-    DAILY_FOCUS_PORT: base.DAILY_FOCUS_PORT ?? '0',
-    DAILY_FOCUS_PROFILE: profile,
-    DAILY_FOCUS_AGENT: 'off',
-    DAILY_FOCUS_AGENT_AT: '',
-    DAILY_FOCUS_AGENT_DAYS: '',
-    DAILY_FOCUS_ASSISTANT: 'off',
-    DAILY_FOCUS_CALENDAR: 'off',
-    DAILY_FOCUS_GITHUB: 'on',
-    DAILY_FOCUS_GITHUB_ACCOUNTS: '',
-    DAILY_FOCUS_GITHUB_SCOPE: work ? 'acme' : '',
-    DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS: work ? 'merge-policy' : '',
-    DAILY_FOCUS_GITHUB_POLL_MINUTES: '',
-    DAILY_FOCUS_JIRA: work ? 'on' : 'off',
-    DAILY_FOCUS_JIRA_PROJECTS: work ? 'PROJ, PLAT' : '',
-    DAILY_FOCUS_JIRA_HOLD_STATUSES: work ? 'Blocked' : '',
-    DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES: work ? 'In Progress, In Review' : '',
-    DAILY_FOCUS_JIRA_SITE: '',
-    DAILY_FOCUS_JIRA_POLL_MINUTES: '',
-    DAILY_FOCUS_FREE_WINDOWS: '',
-    DAILY_FOCUS_WORK_START: '',
-    DAILY_FOCUS_WORK_END: '',
-    DAILY_FOCUS_MIN_FREE_WINDOW: '',
-    DAILY_FOCUS_STALE_AFTER_HOURS: '',
+    DAILY_FOCUS_PROFILE: 'work',
+    DAILY_FOCUS_GITHUB_SCOPE: 'acme',
+    DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS: 'merge-policy',
+    DAILY_FOCUS_JIRA_PROJECTS: 'PROJ, PLAT',
+    DAILY_FOCUS_JIRA_HOLD_STATUSES: 'Blocked',
+    DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES: 'In Progress, In Review',
   };
 }
 
@@ -1251,6 +1246,7 @@ export async function writeDemoStore(store: string, profile: Profile, now: Date 
   for (const past of demoArchive(brief, profile, now)) {
     await writeFile(join(store, 'archive', `items-${past.date}.json`), `${JSON.stringify(past, null, 2)}\n`, 'utf8');
   }
+  await writeFile(join(store, SETTINGS_FILE), `${JSON.stringify(demoSettings(profile), null, 2)}\n`, 'utf8');
   await writeFile(join(store, 'focus.md'), FOCUS[profile], 'utf8');
   await writeFile(join(store, 'sources.md'), SOURCES[profile], 'utf8');
   await writeFile(join(store, 'actions.jsonl'), lines(demoActions(profile, now)), 'utf8');

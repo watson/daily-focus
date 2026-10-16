@@ -2,6 +2,7 @@
  * `npm run init` — create the private half of the store.
  *
  *   npm run init
+ *   npm run init -- --profile personal
  *
  * The dashboard needs two things it cannot invent: an objective, and the list of
  * places worth looking. Both are personal, so neither is in this repo — which
@@ -14,6 +15,11 @@
  * this repo, which it points at this checkout. That makes it safe to run when you
  * can't remember whether you have.
  *
+ * `--profile` is for a new store: it saves the profile in the store's settings,
+ * as the setup screen would, so the templates, the prompt it links and the
+ * dashboard all follow the same one. A store already saved as the other
+ * profile is refused rather than switched; that is the settings page's job.
+ *
  * The two files this deliberately does *not* create are `items.json` and
  * `actions.jsonl`. Each has exactly one writer — the agent for the first, the
  * dashboard for the other — and both read as empty when absent, so creating them
@@ -22,14 +28,43 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { relative } from 'node:path';
+import { dirname, relative } from 'node:path';
+import { parseArgs } from 'node:util';
 
-import { loadConfig } from '../src/config.ts';
+import { loadConfig, PROFILES } from '../src/config.ts';
+import { layerSettings, settingSources } from '../src/env.ts';
 import { command, PACKAGED } from '../src/install.ts';
 import { describeLink, linkStore } from '../src/links.ts';
+import { applySettingsChange, saveSettings } from '../src/settings.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from '../src/templates.ts';
 
-const config = loadConfig();
+// Not strict: `daily-focus init` hands over its whole command line, store flags included.
+const { values: flags } = parseArgs({ args: process.argv.slice(2), options: { profile: { type: 'string' } }, strict: false, allowPositionals: true });
+const asked = typeof flags.profile === 'string' ? flags.profile.trim().toLowerCase() : null;
+if (asked !== null && !(PROFILES as readonly string[]).includes(asked)) {
+  console.error(`--profile must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(flags.profile)}`);
+  process.exit(1);
+}
+
+let sources = settingSources();
+const savedProfile = sources.settings.DAILY_FOCUS_PROFILE?.trim().toLowerCase() || null;
+if (asked !== null && savedProfile !== null && savedProfile !== asked) {
+  console.error(`${sources.settingsPath} already says this store briefs the ${savedProfile} profile. Change it in the dashboard's settings.`);
+  process.exit(1);
+}
+const savesProfile = asked !== null && savedProfile === null;
+if (savesProfile) {
+  const applied = applySettingsChange(sources, { DAILY_FOCUS_PROFILE: asked });
+  if ('error' in applied) {
+    console.error(applied.error);
+    process.exit(1);
+  }
+  await mkdir(dirname(sources.settingsPath), { recursive: true });
+  await saveSettings(sources.settingsPath, applied.settings);
+  sources = settingSources();
+}
+
+const config = loadConfig(layerSettings(sources));
 
 let created = 0;
 let linked = 0;
@@ -74,6 +109,7 @@ async function writeIfAbsent(path: string, contents: string, what: string): Prom
 
 console.log(`\n\x1b[1mDaily Focus — store setup\x1b[0m`);
 console.log(`\x1b[2m${config.dataDir} (${config.profile} profile)\x1b[0m`);
+if (savesProfile) ok(`saved the ${asked} profile`, relative(config.dataDir, sources.settingsPath));
 
 section('Directories');
 try {
@@ -90,7 +126,7 @@ const wroteSources = await writeIfAbsent(config.sourcesFile, sourcesTemplate(con
 
 // The same links the dashboard makes each time it starts, made here too so a
 // store set up by hand is complete before the dashboard has ever run. Which prompt
-// follows DAILY_FOCUS_PROFILE, and a link to the other one is repointed.
+// follows the store's profile, and a link to the other one is repointed.
 section('Files linked from the repo');
 for (const outcome of await linkStore(config)) {
   const shown = describeLink(config, outcome);
@@ -124,11 +160,15 @@ const demo = PACKAGED ? 'daily-focus --demo' : 'npm run demo';
 
 section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
-  // A repointed link is the one change a second run makes, and the one worth hearing about:
-  // it means the briefs before it followed another checkout's prompt.
+  // A repointed link is the one change a second run usually makes, and the one worth hearing
+  // about: it means the briefs before it followed another checkout's prompt.
+  const changed = [
+    savesProfile ? `Saved the ${asked} profile` : null,
+    linked > 0 ? `${savesProfile ? 'linked' : 'Linked'} ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout` : null,
+  ].filter((part) => part !== null);
   console.log(
-    linked > 0
-      ? `  The store was already set up. Linked ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout; nothing else changed.`
+    changed.length > 0
+      ? `  The store was already set up. ${changed.join(' and ')}; nothing else changed.`
       : '  The store was already set up. Nothing was changed.',
   );
   console.log(`  ${start}, \`${command('audit')}\` to check the current brief.`);

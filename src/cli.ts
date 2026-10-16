@@ -11,9 +11,9 @@
  * Everything else happens in the dashboard: the setup screen on a new store, and
  * the settings page after. A checkout has the same commands as npm scripts.
  *
- * The subcommands are loaded only when asked for, after the flags have been
- * turned into the environment they read: each of them builds its config the
- * moment it loads.
+ * The subcommands are loaded only when asked for, after `--data`, `--port` and
+ * `--host` have been turned into the environment they read: each of them
+ * builds its config the moment it loads.
  */
 
 import { execFile, spawn } from 'node:child_process';
@@ -35,7 +35,8 @@ Usage
   daily-focus --demo               look around with sample data, in a throwaway store;
                                    add --profile personal to see the personal profile
   daily-focus service [--remove]   keep it running in the background (macOS)
-  daily-focus init                 create the store with templates to edit by hand
+  daily-focus init [--profile <name>]
+                                   create the store with templates to edit by hand
   daily-focus audit [--against <items.json>]
                                    check the current brief against the contract
   daily-focus seed [--force]       write a sample brief to the store
@@ -45,13 +46,14 @@ Options
   --data <dir>      the store (default ~/.daily-focus)
   --port <port>     the port to listen on (default 4321)
   --host <host>     the address to listen on (default 127.0.0.1)
-  --profile <name>  work or personal, for a new store or the demo
+  --profile <name>  work or personal, for the demo or a new store's init
   --no-open         don't open the browser
   --exit-with-stdin stop when standard input closes, for an app running it as a child
   -v, --version     print the version
   -h, --help        print this
 
-Everything else is set up in the dashboard itself.`;
+The first three can also be set as DAILY_FOCUS_DATA, DAILY_FOCUS_PORT and
+DAILY_FOCUS_HOST. Everything else is set up in the dashboard itself.`;
 
 /** Open `url` in the default browser, quietly: failing to is never worth stopping for. */
 function openInBrowser(url: string): void {
@@ -79,7 +81,7 @@ function shouldOpen(flag: boolean): boolean {
  * on the way out.
  */
 async function demo(open: boolean, profile: string | undefined): Promise<void> {
-  const { demoEnv, demoIntegrations, demoProfile, writeDemoStore } = await import('./demo.ts');
+  const { DEMO_FIXED, demoEnv, demoIntegrations, demoProfile, writeDemoStore } = await import('./demo.ts');
   // Checked before the store exists, so a typo costs nothing.
   const chosen = demoProfile(profile);
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-demo-'));
@@ -94,7 +96,7 @@ async function demo(open: boolean, profile: string | undefined): Promise<void> {
       console.log(`\n  The demo is at ${url}, with sample data in a throwaway store (the ${chosen} profile).`);
       console.log('  Nothing is connected and nothing runs. Stop it with Ctrl+C; the store goes with it.\n');
     },
-    { env: demoEnv(process.env, store, chosen), integrations: demoIntegrations(chosen, now) },
+    { env: demoEnv(process.env, store), fixed: DEMO_FIXED, integrations: demoIntegrations(chosen, now) },
   );
 }
 
@@ -173,12 +175,12 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  // The flags are only another way to set the environment, which is how
-  // everything below is configured.
+  // The launch settings are read from the environment, wherever the dashboard
+  // was started from, so these flags are only another way to set it. Every
+  // other setting is the store's.
   if (values.data !== undefined) process.env.DAILY_FOCUS_DATA = values.data;
   if (values.port !== undefined) process.env.DAILY_FOCUS_PORT = values.port;
   if (values.host !== undefined) process.env.DAILY_FOCUS_HOST = values.host;
-  if (values.profile !== undefined) process.env.DAILY_FOCUS_PROFILE = values.profile;
   const open = values.open !== false;
 
   const [command, ...rest] = positionals;
@@ -187,6 +189,8 @@ async function main(argv: string[]): Promise<void> {
   // Every flag is parsed for every command, so one given to the wrong command
   // would otherwise be dropped without a word: `seed --remove` would seed.
   const only: Record<string, readonly string[]> = {
+    // The demo's, or init's, which saves it for a new store.
+    profile: ['start', 'init'],
     demo: ['start'],
     'exit-with-stdin': ['start'],
     open: ['start'],
@@ -206,6 +210,9 @@ async function main(argv: string[]): Promise<void> {
     case undefined:
     case 'start':
       if (values.demo) return demo(open, values.profile);
+      if (values.profile !== undefined) {
+        throw new Error("--profile is for --demo and init; a dashboard's profile is chosen on its setup screen, or in its settings");
+      }
       if (IN_NPX_CACHE) {
         console.log('  Running from npx. To keep it running in the background, install it:');
         console.log('  npm install -g daily-focus, then daily-focus service.\n');

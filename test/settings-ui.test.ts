@@ -56,7 +56,7 @@ const page: SettingsPage = {
       choices: null,
       advanced: false,
       value: '10',
-      source: 'environment',
+      source: 'fixed',
       fallback: '9',
     },
     {
@@ -68,7 +68,7 @@ const page: SettingsPage = {
       choices: null,
       advanced: false,
       value: 'false',
-      source: 'dotenv',
+      source: 'settings',
       fallback: 'On',
     },
   ],
@@ -93,15 +93,16 @@ test('every setting is a field in its group, with its default as the empty choic
   assert.equal(root.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_AGENT_BIN')!.placeholder, 'Found on PATH');
 });
 
-test('a value from the environment is shown but locked; one from .env says where it came from', () => {
+test('a fixed value is shown but locked, and says why; a saved one is just its value', () => {
   const root = render();
   const start = root.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_WORK_START')!;
   assert.equal(start.disabled, true);
   assert.equal(start.value, '10');
-  assert.match(start.closest('.field')!.textContent!, /Set in the environment/);
+  assert.match(start.closest('.field')!.textContent!, /Fixed in the demo/);
   const free = root.querySelector<HTMLSelectElement>('#setting-DAILY_FOCUS_FREE_WINDOWS')!;
-  assert.equal(free.value, 'off', '"false" in .env reads as off');
-  assert.match(free.closest('.field')!.textContent!, /From the \.env file/);
+  assert.equal(free.disabled, false);
+  assert.equal(free.value, 'off', '"false" saved by hand reads as off');
+  assert.equal(free.closest('.field')!.querySelector('.field__note'), null);
 });
 
 test('a change goes to the draft, and the bar offers to save it', () => {

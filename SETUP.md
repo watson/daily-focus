@@ -90,8 +90,9 @@ terminal open while you use the dashboard. `daily-focus --help` lists the rest.
 
 If you'd rather write the files by hand, `daily-focus init` creates the store with
 templates for both. It preserves existing files, so you can safely run it again.
-A setting given in the environment, such as `DAILY_FOCUS_PROFILE`, is shown on the
-setup screen as answered and isn't asked.
+For a personal store, run `daily-focus init --profile personal`: it saves the
+profile in the store's settings, so the templates, the prompt and the dashboard
+agree.
 
 ## Set your objective and sources
 
@@ -132,21 +133,18 @@ Keep real names, account handles, and work details in this private store, outsid
 The dashboard runs the agent through a coding-agent CLI you already have. Install
 and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
 [Claude Code](https://code.claude.com/docs), and choose it on the setup screen or
-under **Morning agent** in the settings. In `.env` or the environment that is:
-
-```dotenv
-DAILY_FOCUS_AGENT=codex
-```
+as **Write the brief with** under **Morning agent** in the settings
+(`DAILY_FOCUS_AGENT`).
 
 Each scheduled morning at 07:00 your time the dashboard starts the agent through
 that CLI, headless, in the store, and the brief appears when it finishes. Set
-`DAILY_FOCUS_AGENT_AT` to another time, such as `06:30`. The dashboard has to be
+**Run it at** (`DAILY_FOCUS_AGENT_AT`) to another time, such as `06:30`. The dashboard has to be
 running at the time; if it wasn't, it runs the agent as soon as it is started that
 day, provided nothing has produced a brief for the day yet. It runs once a day,
 whatever became of the run: a failed morning is reported once, not retried every
 half minute. The days are Monday to Friday unless `DAILY_FOCUS_AGENT_DAYS` says
 otherwise; see [Match your working week](#match-your-working-week).
-`DAILY_FOCUS_AGENT_AT=off` means the dashboard never starts a run on its own; the
+**Run it at** set to `off` means the dashboard never starts a run on its own; the
 refresh icon still does. A new store's first brief always comes from the setup
 screen's last button, so the clock never runs the agent before you've told it where
 to look.
@@ -213,18 +211,9 @@ agent to read.
 ## Configure integrations
 
 Settings are saved in the store, in `settings.json`, by the dashboard's settings
-page; saving one restarts the dashboard to apply it once nothing is running. The
-settings below can also go in a `.env` in the repo, which is how they were set
-before the store kept its own:
-
-```sh
-cp .env.example .env
-```
-
-A value saved in the store beats the same one in `.env`, and a variable set in the
-environment the dashboard starts with beats both; the settings page shows such a
-value but can't change it. `.env` is gitignored because account and organisation
-names belong outside git.
+page; saving one restarts the dashboard to apply it once nothing is running. Each
+is named below by its label on the page, and by its key in `settings.json`, in case
+you edit the file by hand; restart the dashboard after doing that.
 
 ### GitHub
 
@@ -235,22 +224,19 @@ gh auth login
 ```
 
 The board uses the active account by default. To choose accounts and repositories,
-set these in `.env`, replacing the invented examples with your own:
-
-```dotenv
-DAILY_FOCUS_GITHUB_ACCOUNTS=alice,alice_corp
-DAILY_FOCUS_GITHUB_SCOPE=acme,acme-labs/webapp
-```
+set **Accounts** (`DAILY_FOCUS_GITHUB_ACCOUNTS`), such as `alice, alice_corp`, and
+**Only these organisations or repositories** (`DAILY_FOCUS_GITHUB_SCOPE`), such as
+`acme, acme-labs/webapp`, under **Pull requests**.
 
 Named accounts stay fixed even if you switch the active account in another terminal.
 For organisations using SAML, make sure the account's token has access. The board
 reports access problems instead of silently showing no pull requests.
 
 If your repository has a check that represents its merge policy, list its exact,
-case-sensitive name in `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS`. Separate names with
-commas. Pending matches appear under *Waiting on merge gate*.
+case-sensitive name in **Merge gate checks** (`DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS`).
+Separate names with commas. Pending matches appear under *Waiting on merge gate*.
 
-Set `DAILY_FOCUS_GITHUB=off` to disable the board.
+Turn **Pull request board** (`DAILY_FOCUS_GITHUB`) off to disable the board.
 
 ### Jira
 
@@ -260,14 +246,11 @@ Sign in with the Atlassian CLI:
 acli jira auth login
 ```
 
-The board uses that session. You can limit the projects and adjust which statuses
-need attention:
-
-```dotenv
-DAILY_FOCUS_JIRA_PROJECTS=PROJ,OTHER
-DAILY_FOCUS_JIRA_HOLD_STATUSES=Blocked,On Hold
-DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES=In Progress
-```
+The board uses that session. Under **Jira tickets** you can limit the projects with
+**Only these projects** (`DAILY_FOCUS_JIRA_PROJECTS`), such as `PROJ, OTHER`, and
+adjust which statuses need attention with **Statuses that mean on hold**
+(`DAILY_FOCUS_JIRA_HOLD_STATUSES`), such as `Blocked, On Hold`, and **Statuses that
+mean working on it** (`DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES`), such as `In Progress`.
 
 Hold statuses suppress *In flight with nothing linked* reminders. They don't hide
 other status mismatches. The in-progress list filters the *Working on* view;
@@ -280,10 +263,10 @@ for workflow limits and undo behavior.
 
 The board also asks GitHub about your pull requests, because Jira can learn of
 them days late. It uses the pull request board's accounts and scope, and nothing
-else needs to be configured. With `DAILY_FOCUS_GITHUB=off`, the ticket board uses
+else needs to be configured. With the pull request board off, the ticket board uses
 Jira alone.
 
-Set `DAILY_FOCUS_JIRA=off` to disable the board.
+Turn **Jira ticket board** (`DAILY_FOCUS_JIRA`) off to disable the board.
 
 ### Live calendar on macOS
 
@@ -295,19 +278,16 @@ goes in `~/Library/Application Support/Daily Focus/`, where every copy finds it:
 daily-focus build-calendar
 ```
 
-Choose calendar names exactly as Calendar.app shows them, and list your own email
-addresses so the dashboard can recognize meetings you've declined:
-
-```dotenv
-DAILY_FOCUS_CALENDARS=Work,Personal
-DAILY_FOCUS_CALENDAR_ADDRESSES=you@example.com,you@personal.example
-```
+Tick the calendars under **Calendar** in the settings (`DAILY_FOCUS_CALENDARS`,
+spelled exactly as Calendar.app shows them), and list your own email addresses in
+**Your email addresses** (`DAILY_FOCUS_CALENDAR_ADDRESSES`) so the dashboard can
+recognize meetings you've declined.
 
 Start the dashboard and allow the helper's calendar access when macOS asks.
 Rebuilding the helper may prompt again.
 
 Without live calendar access, the agenda uses events from the morning brief.
-Set `DAILY_FOCUS_CALENDAR=off` to use those events explicitly.
+Turn **Live agenda** (`DAILY_FOCUS_CALENDAR`) off to use those events explicitly.
 
 ## Ask the assistant
 
@@ -320,12 +300,8 @@ is failing, what a thread is asking of you, a reply to an email drafted straight
 Gmail as a draft on the thread.
 
 Install and log in to [Claude Code](https://code.claude.com/docs) or the
-[Codex CLI](https://developers.openai.com/codex/cli), then choose it under
-**Assistant** in the settings, or set:
-
-```dotenv
-DAILY_FOCUS_ASSISTANT=claude
-```
+[Codex CLI](https://developers.openai.com/codex/cli), then choose it as **Answer
+questions with** under **Assistant** in the settings (`DAILY_FOCUS_ASSISTANT`).
 
 Once the dashboard has restarted, the assistant appears in the panel. Model and effort default to whatever
 the CLI is configured with; `DAILY_FOCUS_ASSISTANT_MODEL` and
@@ -355,10 +331,11 @@ instructions. What the CLI itself enforces:
   `mcp__claude_ai_Gmail` allows every tool on the Gmail connector, sending and
   deleting included, and `gh` and `acli` can comment, merge and move tickets as well
   as read. Only the instructions keep it from doing those. To hold it to reading
-  mail and drafting replies, name the Gmail tools instead of the connector:
+  mail and drafting replies, name the Gmail tools instead of the connector, in
+  **Tools Claude Code may use** under **Assistant** (`DAILY_FOCUS_ASSISTANT_TOOLS`):
 
-  ```dotenv
-  DAILY_FOCUS_ASSISTANT_TOOLS=Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail__search_threads,mcp__claude_ai_Gmail__get_thread,mcp__claude_ai_Gmail__get_message,mcp__claude_ai_Gmail__list_labels,mcp__claude_ai_Gmail__list_drafts,mcp__claude_ai_Gmail__get_draft,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__update_draft
+  ```text
+  Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail__search_threads,mcp__claude_ai_Gmail__get_thread,mcp__claude_ai_Gmail__get_message,mcp__claude_ai_Gmail__list_labels,mcp__claude_ai_Gmail__list_drafts,mcp__claude_ai_Gmail__get_draft,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__update_draft
   ```
 
   A tool left off the list is refused, so if the connector renames one, the
@@ -382,10 +359,11 @@ instructions. What the CLI itself enforces:
 
 ### Answer ahead
 
-With `DAILY_FOCUS_ASSISTANT_AUTO=on`, the dashboard asks the assistant before you
-do. When a pull request lands in *Waiting on you* because someone reviewed or
-commented, it asks the assistant to assess the review. When a check fails, it asks
-for an explanation of the failure. The first line of the answer appears on the row,
+With **Answer ahead on pull requests** (`DAILY_FOCUS_ASSISTANT_AUTO`) on, the
+dashboard asks the assistant before you do. When a pull request lands in *Waiting on
+you* because someone reviewed or commented, it asks the assistant to assess the
+review. When a check fails, it asks for an explanation of the failure. The first
+line of the answer appears on the row,
 on the board and on the brief item for the same pull request, while it still
 matches the pull request's state. The whole answer is in the panel, as a turn you
 can follow up on.
@@ -496,10 +474,11 @@ checkout it rebuilds the page each time the dashboard starts. It won't install f
 The LaunchAgent is written for this machine and isn't tracked in git, so each
 machine runs the command once. It uses the Node.js that ran it and keeps two things
 from your shell: `PATH`, so the dashboard finds `gh`, `acli` and your agent's CLI,
-and any `DAILY_FOCUS_` variables set there. Each time it starts, the dashboard also
-asks your login shell for its `PATH`, so a CLI installed since is found without
-reinstalling the service. Everything else comes from the store's settings and
-`.env`, which are read each time the dashboard starts. A CLI that relies on a token
+and the store, port and host, whether given as `--data`, `--port` and `--host` or set
+as `DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_HOST`. Each time it starts,
+the dashboard also asks your login shell for its `PATH`, so a CLI installed since is
+found without reinstalling the service. Everything else comes from the store's
+settings, which are read each time the dashboard starts. A CLI that relies on a token
 exported in your shell profile, rather than its own login, won't find it.
 
 Each store gets one service. Running the command again for the same store replaces
@@ -519,18 +498,14 @@ daily-focus service --remove
 Daily Focus can brief your personal life as well as your work: email, family
 calendars, Apple Reminders, Apple Messages, e-Boks and your own GitHub projects. Run it as a second instance
 with its own store, server and morning agent, and choose **Personal life** on its
-setup screen, or set:
-
-```dotenv
-DAILY_FOCUS_PROFILE=personal
-```
+setup screen (`DAILY_FOCUS_PROFILE`).
 
 The dashboard then links the personal prompt, `prompts/morning-brief-personal.md`,
 into the store as `prompt.md`, and the source list starts from a template with
 sections for those sources. The profile also switches off
 the Jira board, and gives the tab a green house icon instead of the blue briefcase. The pull request
 board stays on for side projects; point it at your personal account with
-`DAILY_FOCUS_GITHUB_ACCOUNTS`, or set `DAILY_FOCUS_GITHUB=off`.
+**Accounts**, or turn the board off.
 
 The personal sources often live on another machine, such as a home Mac with access
 to Messages and Reminders. Run the instance there, keep `DAILY_FOCUS_HOST` on
@@ -549,40 +524,45 @@ Tailscale `ts.net` name, or by the name in `DAILY_FOCUS_HOST`. That stops a web 
 from pointing its own name at your dashboard and reading your brief. Reached any
 other way, it replies `403` and names the host it was reached as.
 
-To run both instances on one machine, start the second with its own
-`DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_PROFILE` in its environment,
-which takes precedence over `.env`. `daily-focus service` keeps those variables, so this
-installs the second service beside the first. Use the same variables each time you
+To run both instances on one machine, give the second its own store and port.
+`daily-focus service` keeps them, so this installs the second service beside the
+first, and its setup screen asks what it briefs. Use the same flags each time you
 run it for that instance:
 
 ```sh
-DAILY_FOCUS_PROFILE=personal DAILY_FOCUS_DATA=~/.daily-focus-personal DAILY_FOCUS_PORT=4322 daily-focus service
+daily-focus service --data ~/.daily-focus-personal --port 4322
 ```
 
 ## Match your working week
 
-Set `DAILY_FOCUS_AGENT_DAYS` to the days the dashboard runs the agent. It uses cron
-weekday numbers: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, or `0,6`
-for weekends. Unset means Monday to Friday. `daily-focus audit` shows the schedule in
-use. Days without scheduled runs don't make a brief overdue. Once a refresh is due,
-the dashboard allows 45 minutes before showing a warning.
+Set **On these days** under **Morning agent** (`DAILY_FOCUS_AGENT_DAYS`) to the days
+the dashboard runs the agent. It uses cron weekday numbers: `1-5` for Monday to
+Friday, `0-4` for Sunday to Thursday, or `0,6` for weekends. Unset means Monday to
+Friday. `daily-focus audit` shows the schedule in use. Days without scheduled runs
+don't make a brief overdue. Once a refresh is due, the dashboard allows 45 minutes
+before showing a warning.
 
 ## Settings reference
 
-All settings can be changed on the settings page, which saves them in the store,
-or set in `.env` or the environment; restart after changing those two by hand.
-`DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_HOST` say where the store is
-and how the dashboard listens, so they are never kept in the store and only the
-environment or `.env` can change them. Their defaults suit almost everyone.
-The brief's `dayStart` and `dayEnd` override the configured working hours. Neither
-matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
+Three settings say where the store is and how the dashboard listens, so they are
+never kept in the store. Give them as flags, or set them in the environment the
+dashboard starts in; a flag wins. Their defaults suit almost everyone.
 
-| Variable | Default | Purpose |
+| Flag | Variable | Default | Purpose |
+|---|---|---|---|
+| `--data` | `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
+| `--port` | `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
+| `--host` | `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data. A name here is also one the dashboard answers to, besides localhost, IP addresses and `ts.net` names |
+
+Everything else is set on the settings page, which saves it in the store's
+`settings.json` under the keys below; restart the dashboard after editing that file
+by hand. Nothing else is read from the environment. The brief's `dayStart` and
+`dayEnd` override the configured working hours. Neither matters when
+`DAILY_FOCUS_FREE_WINDOWS` is off.
+
+| Key | Default | Purpose |
 |---|---|---|
 | `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt the dashboard links and the defaults marked below |
-| `DAILY_FOCUS_DATA` | `~/.daily-focus` | Where the store lives |
-| `DAILY_FOCUS_PORT` | `4321` | Port for the dashboard |
-| `DAILY_FOCUS_HOST` | `127.0.0.1` | Loopback only by default, since this is personal data. A name here is also one the dashboard answers to, besides localhost, IP addresses and `ts.net` names |
 | `DAILY_FOCUS_FREE_WINDOWS` | `on`; `off` for personal | `off` shows events only: no free windows in the agenda, and the next event in place of focus time left |
 | `DAILY_FOCUS_WORK_START` | `9` | Local hour the working day starts, when the brief doesn't say |
 | `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends when the brief does not specify it |
