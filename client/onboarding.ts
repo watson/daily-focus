@@ -173,6 +173,15 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
   const revising = conversation.at(-1)?.from === 'you';
   // Continue was pressed while it was still at work: ask first, until it is done.
   const confirming = looking && ui.setupConfirm.value === step.id;
+  // Why Continue can't be pressed, said on it: a greyed-out button with no
+  // reason reads as broken.
+  const held = busy
+    ? 'Saving your last answer…'
+    : empty && looking
+      ? 'Still looking; this fills in when it is done'
+      : empty && step.card.problem?.blocking
+        ? 'Fix what it says above, or decide later'
+        : null;
 
   return el(
     'section',
@@ -285,7 +294,7 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
             { class: 'onboarding__actions' },
             el(
               'button',
-              { type: 'submit', class: 'button button--primary', disabled: busy || (empty && (looking || step.card.problem?.blocking === true)) },
+              { type: 'submit', class: 'button button--primary', disabled: held !== null, title: held ?? undefined },
               ui.setupBusy.value === step.id ? 'Saving…' : 'Continue',
             ),
             step.card.deferrable

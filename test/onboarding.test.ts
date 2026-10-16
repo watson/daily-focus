@@ -146,6 +146,7 @@ async function view(h: Harness): Promise<OnboardingState> {
 
 /** Wait until no question has a session going. */
 async function settled(h: Harness): Promise<OnboardingState> {
+  await h.onboarding.started();
   for (let i = 0; i < 300; i++) {
     const state = await view(h);
     if (!h.onboarding.busy && state.steps.every((step) => step.proposal?.status !== 'working')) return state;
@@ -438,6 +439,7 @@ test('answering while it is still looking stops it, and keeps what the user answ
   h.report = { ...h.report, claude: { ...h.report.claude, path: slow } };
   await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
+  await h.onboarding.started();
   assert.equal((await view(h)).steps.find((step) => step.id === 'objective')!.proposal?.status, 'working');
   assert.equal(await h.onboarding.answer('objective', pick({}, { objective: 'Ship the reliability fix', blocker: '' })), null);
   for (let i = 0; i < 100; i++) {
@@ -449,4 +451,20 @@ test('answering while it is still looking stops it, and keeps what the user answ
   assert.match(objective.proposal?.error ?? '', /you continued before it finished/);
   assert.equal(objective.summary, 'Your objective: Ship the reliability fix');
   await h.onboarding.close();
+});
+
+test('an answer comes back before the sessions it starts have started, so the next question can be answered', async () => {
+  const h = await harness();
+  // Standing in for what makes a start slow for real: Codex's checks, the calendar helper.
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  const list = h.deps.listCalendars;
+  h.deps.listCalendars = async () => (await slow, list());
+  await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
+  await h.onboarding.answer('profile', pick({ profile: ['work'] }));
+  assert.deepEqual(await h.calls(), [], 'the reply did not wait for them');
+  assert.equal(await h.onboarding.answer('schedule', pick({ at: ['07:00'], days: ['1-5'] })), null, 'and the next answer is taken meanwhile');
+  release();
+  await settled(h);
+  assert.equal((await h.calls()).length, 3, 'each question started once, though two answers asked');
 });

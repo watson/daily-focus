@@ -244,7 +244,10 @@ export class Onboarding {
   private loaded = false;
   private readonly running = new Map<string, Running>();
   private readonly steps = new Map<string, AssistantStep[]>();
-  private calendars: Promise<CalendarListing[] | string> | null = null;
+  /** Calendar.app's calendars being listed, which only starting the sessions waits for. */
+  private calendars: Promise<void> | null = null;
+  /** What listing them found, once it has: the calendars, or why they couldn't be listed. */
+  private listed: CalendarListing[] | string | null = null;
   private finishError: string | null = null;
   private readonly config: Config;
   private readonly deps: OnboardingDeps;
@@ -255,6 +258,8 @@ export class Onboarding {
   /** What looking for the CLIs found, once the screen has asked. Not kept: what is installed changes. */
   private detected: CliReport | null = null;
   private detecting: Promise<CliReport> | null = null;
+  /** The pass starting sessions, which the next one waits for; see `startProposals`. */
+  private starting: Promise<void> = Promise.resolve();
   /** The write in progress, which the next one waits for. */
   private writes: Promise<void> = Promise.resolve();
 
@@ -282,7 +287,7 @@ export class Onboarding {
         record.error = RESTARTED;
       }
     }
-    await this.ensureProposals();
+    this.startProposals();
   }
 
   /** The screen, while setup is to do: the store has never had a brief, and setup hasn't finished. */
@@ -349,7 +354,7 @@ export class Onboarding {
   async detect(): Promise<void> {
     await this.load();
     await this.lookForClis(true);
-    await this.ensureProposals();
+    this.startProposals();
     this.deps.onChange();
   }
 
@@ -397,7 +402,7 @@ export class Onboarding {
       for (const other of QUESTIONS) if (other.agent && !file.answers[other.id]) await this.drop(other.id);
     }
     await this.save();
-    await this.ensureProposals();
+    this.startProposals();
     this.deps.onChange();
     return null;
   }
@@ -433,10 +438,13 @@ export class Onboarding {
     const question = questionById(id);
     if (!question) return `there is no question ${JSON.stringify(id)}`;
     if (this.running.has(id)) return 'it is still working on that question';
-    if (id === 'calendars') this.calendars = null;
+    if (id === 'calendars') {
+      this.calendars = null;
+      this.listed = null;
+    }
     if (id === 'cli') await this.lookForClis(true);
     if (question.agent) await this.drop(id);
-    await this.ensureProposals();
+    this.startProposals();
     this.deps.onChange();
     return null;
   }
@@ -469,6 +477,8 @@ export class Onboarding {
     const refused = this.deps.checkSettings(values);
     if (refused) return this.refuse(refused);
 
+    // A pass still starting sessions would start them after this.
+    await this.starting;
     for (const id of [...this.running.keys()]) await this.stop(id, 'setup finished');
 
     // The user's two files, written only when the user has said what goes in
@@ -529,6 +539,7 @@ export class Onboarding {
 
   /** Stop every session, for shutdown, and wait until each has exited and been written down. */
   async close(): Promise<void> {
+    await this.starting;
     const over = [...this.running.values()].map((run) => run.over);
     for (const id of [...this.running.keys()]) await this.stop(id, RESTARTED);
     await Promise.all(over);
@@ -536,12 +547,32 @@ export class Onboarding {
 
   /* ---------- the sessions ---------- */
 
+  /**
+   * Start whatever sessions the answers so far call for, without holding up the
+   * reply that asked: starting one under Codex runs a few checks first, and a
+   * screen waiting on them has every button greyed out with nothing to say why.
+   * One pass at a time, so two quick answers can't both start the same question.
+   */
+  private startProposals(): void {
+    this.starting = this.starting
+      .then(() => this.ensureProposals())
+      .catch((err: unknown) => console.error(`[daily-focus] setup could not start looking: ${(err as Error).message}`));
+  }
+
+  /** Resolves once the sessions asked for so far have started: for tests, and for anything that must not race them. */
+  started(): Promise<void> {
+    return this.starting;
+  }
+
   /** Start a session for each question that has one and needs it: the CLI and the profile are known, and nobody has asked yet. */
   private async ensureProposals(): Promise<void> {
     const file = this.file;
     if (!file || file.finishedAt) return;
     // Not before the user has answered something: see `context`.
     if (Object.keys(file.answers).length === 0) return;
+    // Nor with no CLI to run: put off, or switched off in the environment.
+    const set = (this.deps.readSources().process.DAILY_FOCUS_AGENT ?? '').trim();
+    if ((file.answers.cli && !given(file.answers.cli)) || (set && !CLI_NAMES.includes(set as CliName))) return;
     await this.lookForClis(false);
     const ctx = await this.context({ listCalendars: true });
     const sources = this.deps.readSources();
@@ -878,9 +909,16 @@ export class Onboarding {
     const liveAgenda = !['off', 'false', '0', 'no'].includes((current.DAILY_FOCUS_CALENDAR ?? '').toLowerCase());
     if (setup.calendar.supported && setup.calendar.built && liveAgenda) {
       if (opts.listCalendars === true && profileKnown) {
-        this.calendars ??= this.deps.listCalendars().catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+        this.calendars ??= this.deps
+          .listCalendars()
+          .catch((err: unknown) => (err instanceof Error ? err.message : String(err)))
+          .then((listed) => {
+            this.listed = listed;
+          });
+        await this.calendars;
       }
-      calendars = this.calendars ? await this.calendars : null;
+      // As listed so far: an answer doesn't wait on the helper, which can take twenty seconds.
+      calendars = this.listed;
     }
     const proposals: Record<string, unknown> = {};
     for (const [id, record] of Object.entries(this.file?.proposals ?? {})) {
