@@ -36,7 +36,7 @@ function item(overrides: Partial<ResolvedItem> = {}): ResolvedItem {
 }
 
 function stateAt(now: string, timeZone: string): DashboardState {
-  return { now, timeZone, session: { active: null }, agenda: { conflictIds: [] } } as unknown as DashboardState;
+  return { now, timeZone, agenda: { conflictIds: [] } } as unknown as DashboardState;
 }
 
 /** The date the snooze menu's `label` entry sends, with the server in `timeZone`. */

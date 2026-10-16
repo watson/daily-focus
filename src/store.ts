@@ -28,7 +28,6 @@ import {
 import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, nextRunDate, resolveSchedule, runsOn } from './schedule.ts';
 import { canonicalId } from './ids.ts';
 import { runContractChecks } from './checks.ts';
-import { readSessionState } from './sessions.ts';
 
 const READ_RETRIES = 3;
 const READ_RETRY_MS = 40;
@@ -262,14 +261,10 @@ export class Store {
       objectiveProgress = computeObjectiveProgress(withToday, actions, now, isRunDay);
     }
 
-    // Depends on the agenda, so it has to come after it.
-    const session = await readSessionState(this.config, agenda, now);
-
     return {
       // toPublicFocus, not focus — the agent-only section must never be serialised.
       focus: focus ? toPublicFocus(focus) : null,
       objectiveProgress,
-      session,
       schedule: {
         days: [...schedule.days],
         source: schedule.source,

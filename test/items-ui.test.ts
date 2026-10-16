@@ -17,7 +17,7 @@ import type { DashboardState, ResolvedItem } from '../src/types.ts';
 
 const NOW = '2026-09-15T12:00:00Z';
 
-const STATE = { now: NOW, session: { active: null }, agenda: { conflictIds: [] } } as unknown as DashboardState;
+const STATE = { now: NOW, agenda: { conflictIds: [] } } as unknown as DashboardState;
 const UI = uiWith();
 const HANDLERS = handlersWith();
 

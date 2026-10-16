@@ -176,9 +176,9 @@ test("the store's settings sit between .env and the environment", async () => {
 });
 
 test('the store is found from .env when the environment does not say', async () => {
-  const dir = await store({ DAILY_FOCUS_SESSION_MINUTES: '50' });
+  const dir = await store({ DAILY_FOCUS_MIN_FREE_WINDOW: '50' });
   const sources = envSources({}, { DAILY_FOCUS_DATA: dir });
-  assert.equal(layerEnv(sources).DAILY_FOCUS_SESSION_MINUTES, '50');
+  assert.equal(layerEnv(sources).DAILY_FOCUS_MIN_FREE_WINDOW, '50');
 });
 
 test('a settings file cannot move the store or the server', async () => {
@@ -197,9 +197,9 @@ test('a settings file that cannot be used is reported, not thrown', async () => 
 });
 
 test('a number or true/false written by hand is read as its text, and anything else is reported', async () => {
-  const dir = await store({ DAILY_FOCUS_SESSION_MINUTES: 50, DAILY_FOCUS_GITHUB: false, DAILY_FOCUS_CALENDARS: ['Work'] });
+  const dir = await store({ DAILY_FOCUS_MIN_FREE_WINDOW: 50, DAILY_FOCUS_GITHUB: false, DAILY_FOCUS_CALENDARS: ['Work'] });
   const read = readSettingsFile(join(dir, 'settings.json'));
-  assert.deepEqual(read.values, { DAILY_FOCUS_SESSION_MINUTES: '50', DAILY_FOCUS_GITHUB: 'false' });
+  assert.deepEqual(read.values, { DAILY_FOCUS_MIN_FREE_WINDOW: '50', DAILY_FOCUS_GITHUB: 'false' });
   assert.match(read.error ?? '', /DAILY_FOCUS_CALENDARS/);
 });
 

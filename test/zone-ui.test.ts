@@ -105,7 +105,6 @@ function header(timeZone: string): HTMLElement {
   const state = {
     now: '2026-10-08T02:30:00Z',
     timeZone,
-    session: { active: null },
     brief: { date: '2026-10-07', generatedAt: null },
     agentRun: { schedule: { at: '07:00' }, enabled: true },
   } as unknown as DashboardState;

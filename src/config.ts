@@ -11,10 +11,8 @@ import { parseWeekdays, type Weekday } from './schedule.ts';
  * can still override it.
  *
  * `personal` switches off the Jira board, which would otherwise poll for tickets
- * nobody on this instance has, and away detection, since a personal instance
- * usually runs on a machine nobody sits at — its idle time says nothing about
- * whether the user is still in their session. The pull request board stays on:
- * side projects have pull requests too.
+ * nobody on this instance has. The pull request board stays on: side projects
+ * have pull requests too.
  */
 export type Profile = 'work' | 'personal';
 
@@ -274,17 +272,6 @@ export interface Config {
   schemaSource: string;
   /** Dated snapshots of past briefs, written by the server. */
   archiveDir: string;
-  /** The one running focus session, if any. */
-  sessionFile: string;
-  /** Append-only focus session history, read by the agent. */
-  sessionsLogFile: string;
-  /** Default length of a focus session, in minutes. */
-  sessionMinutes: number;
-  /**
-   * Minutes of an untouched machine after which a running session is treated as
-   * abandoned. 0 disables it, leaving only the two-hour backstop.
-   */
-  awayAfterMinutes: number;
   port: number;
   host: string;
   /**
@@ -639,15 +626,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     schemaFile: resolve(dataDir, 'items.schema.json'),
     schemaSource: resolve(import.meta.dirname, '..', 'schema', 'items.schema.json'),
     archiveDir: resolve(dataDir, 'archive'),
-    sessionFile: resolve(dataDir, 'session.json'),
-    sessionsLogFile: resolve(dataDir, 'sessions.jsonl'),
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
     timeZoneFile: resolve(dataDir, 'timezone.json'),
-    // The same 1 to 120 the session endpoint holds a start to.
-    sessionMinutes: envBounded('DAILY_FOCUS_SESSION_MINUTES', 25, 1, 120, env),
-    awayAfterMinutes: envBounded('DAILY_FOCUS_AWAY_AFTER', profile === 'personal' ? 0 : 10, 0, 24 * 60, env),
     port: envBounded('DAILY_FOCUS_PORT', 4321, 0, 65535, env),
     host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
     freeWindows: envFlag('DAILY_FOCUS_FREE_WINDOWS', profile !== 'personal', env),

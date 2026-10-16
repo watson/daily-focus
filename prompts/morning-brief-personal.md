@@ -16,8 +16,6 @@ not for you.
 - `focus.md` — **you only ever read this.** The standing personal objective, written
   by hand. It decides what "important" means. It may be missing or have a blank
   `objective`; both are normal.
-- `sessions.jsonl` — **you only ever read this.** One line per focus session: what
-  they actually spent time on, as opposed to what they finished.
 - `sources.md` — **you only ever read this.** The personal specifics this prompt
   deliberately doesn't carry: who the user is, which calendars to query, which email
   account, which reminder lists, how to reach Messages and e-Boks, which GitHub login
@@ -81,29 +79,6 @@ email thread, it is handled — even if the thread shows no reply, even if it is
 unread, even if the sender is still sending reminders. They may have replied by
 phone, in person, or in another channel. Absence of upstream evidence is not evidence
 of inaction. Never re-derive a completed item from source state.
-
-**Read `sessions.jsonl`.** It records what the user worked on, which `actions.jsonl`
-cannot tell you. Use it:
-
-- Time spent on something unfinished is progress. Don't re-raise it tomorrow in
-  identical words as though the day never happened; acknowledge it in `detail`.
-- The same item across several days with no completion means stuck. Say so plainly,
-  and consider whether the item is too big or the real blocker is elsewhere.
-- An item the user has never once started, while finishing things around it, is being
-  avoided. Name it gently, once — not every day.
-
-`actualMinutes` is real elapsed time rather than the plan, and `endedBy` says how far
-to trust it:
-
-| `endedBy` | How it ended | What the number is worth |
-|---|---|---|
-| `user` | They pressed Stop. | Exact. |
-| `away` | The machine sat untouched, so the dashboard closed the session back at the last keypress. | Honest to within a minute. The break is already excluded — don't subtract for it twice. |
-| `limit` | It outran a two-hour ceiling on a machine that couldn't say whether anyone was there. | An upper bound, not a measurement. **Never cite it as a long focused stretch.** |
-
-A session that ended `away` was interrupted, not abandoned. `endedBy` is absent on
-sessions recorded before it was tracked — treat those as `user`, but don't lean on the
-duration.
 
 **Read the previous `items.json`** and keep each surviving item's `firstSeen`. If an
 item you are raising today also appeared yesterday under the same `id`, carry its

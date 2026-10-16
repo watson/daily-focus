@@ -14,11 +14,10 @@
  * this repo, which it points at this checkout. That makes it safe to run when you
  * can't remember whether you have.
  *
- * The three files this deliberately does *not* create are `items.json`,
- * `actions.jsonl` and `sessions.jsonl`. Each has exactly one writer — the agent for
- * the first, the dashboard for the other two — and all three read as empty when
- * absent, so creating them here would only blur the ownership rule the store
- * depends on.
+ * The two files this deliberately does *not* create are `items.json` and
+ * `actions.jsonl`. Each has exactly one writer — the agent for the first, the
+ * dashboard for the other — and both read as empty when absent, so creating them
+ * here would only blur the ownership rule the store depends on.
  */
 
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -106,16 +105,7 @@ for (const outcome of await linkStore(config)) {
 section('Files you do not own');
 kept('items.json', 'the briefing agent writes it; absent reads as no brief yet');
 kept('actions.jsonl', 'the dashboard appends to it as you action things');
-kept('sessions.jsonl', 'the dashboard appends to it as you run focus sessions');
 kept('assistant.jsonl', 'the dashboard appends to it as you ask the assistant for help');
-
-if (platform() !== 'darwin') {
-  section('Note');
-  kept(
-    'idle detection is macOS-only',
-    'focus sessions still work; they just fall back to the two-hour backstop instead of closing when you walk away',
-  );
-}
 
 // Only ever ask for what is actually outstanding. Telling someone to go and write an
 // objective they filled in months ago is how the last line of this output stops being

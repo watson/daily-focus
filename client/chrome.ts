@@ -292,8 +292,6 @@ const SHORTCUTS: readonly [readonly string[], string][] = [
   [['Esc'], 'Close the menu, then the panel'],
   [['o'], 'Open the source link'],
   [['u'], 'Undo the last action'],
-  [['f'], 'Focus mode — hide all but the top item'],
-  [['p'], 'Start a focus session on the selected item'],
   [['r'], 'Refresh whichever board you are on'],
   [['w'], 'Jira tickets: switch between out of sync and working on'],
   [[','], 'Settings: your objective, where the agent looks, and the rest'],

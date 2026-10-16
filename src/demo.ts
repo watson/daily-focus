@@ -3,9 +3,9 @@
  * every screen has something on it, for either profile.
  *
  * The brief itself is `sample.ts`. This file adds what a store accumulates over a
- * few weeks of use — an objective, a filled-in source list, the action log, focus
- * sessions, the morning agent's runs and a few assistant conversations, and the
- * archive those metrics are computed from — and the two worlds the boards poll:
+ * few weeks of use — an objective, a filled-in source list, the action log, the
+ * morning agent's runs and a few assistant conversations, and the archive those
+ * metrics are computed from — and the two worlds the boards poll:
  * a set of open pull requests and a set of Jira tickets, handed to the pollers
  * in place of `gh` and `acli` so the tabs fill without anything being connected.
  *
@@ -29,7 +29,6 @@ import type { BoardDeps } from './board.ts';
 import { PROFILES, type Profile } from './config.ts';
 import { QUICK_ACTIONS } from './assistant.ts';
 import { dateFromNow, sampleBrief, sampleGeneratedAt } from './sample.ts';
-import type { LoggedSession } from './sessions.ts';
 import type { TicketBoardDeps } from './ticketboard.ts';
 import { localDateKey } from './time.ts';
 import type { Action, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
@@ -49,9 +48,9 @@ const daysAgo = (now: Date, days: number): string => hoursAgo(now, days * 24);
 
 /**
  * `minutes` ago, but never before today began. What the demo did "today" —
- * marked done, sat through a session, asked the assistant — has to have
- * happened today whatever the hour the demo starts at, or a demo opened
- * just after midnight has nothing cleared and no tally.
+ * marked done, asked the assistant — has to have happened today whatever the
+ * hour the demo starts at, or a demo opened just after midnight has nothing
+ * cleared.
  */
 function minutesAgo(now: Date, minutes: number): string {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 1).getTime();
@@ -132,7 +131,6 @@ export function demoEnv(base: NodeJS.ProcessEnv, store: string, profile: Profile
     DAILY_FOCUS_WORK_START: '',
     DAILY_FOCUS_WORK_END: '',
     DAILY_FOCUS_MIN_FREE_WINDOW: '',
-    DAILY_FOCUS_SESSION_MINUTES: '',
     DAILY_FOCUS_STALE_AFTER_HOURS: '',
   };
 }
@@ -745,34 +743,6 @@ function demoActions(profile: Profile, now: Date): Action[] {
   return actions.sort((a, b) => a.at.localeCompare(b.at));
 }
 
-/** Today's focus sessions, for the tally under the header and the agent's reading of the day. */
-function demoSessions(profile: Profile, now: Date): LoggedSession[] {
-  const session = (
-    id: string,
-    title: string,
-    startMinutesAgo: number,
-    actualMinutes: number,
-    advancesObjective: boolean,
-    endedBy: LoggedSession['endedBy'],
-  ): LoggedSession => ({
-    id,
-    title,
-    startedAt: minutesAgo(now, startMinutesAgo),
-    endedAt: minutesAgo(now, startMinutesAgo - actualMinutes),
-    plannedMinutes: 25,
-    actualMinutes,
-    reachedTarget: actualMinutes >= 25,
-    advancesObjective,
-    endedBy,
-  });
-  return profile === 'work'
-    ? [
-        session('github:pr:acme/webapp#3402', 'CI failing on your PR: Add trace context to fetch instrumentation', 190, 22, false, 'away'),
-        session('gtasks:task:MTU3NDkyODkwMjE2NDcx', 'Write up the staging repro steps for the checkout breakage', 150, 42, true, 'user'),
-      ]
-    : [session('email:thread:19a0c4e2f1', 'Chase Nordvarme for the loft insulation quote', 80, 18, true, 'user')];
-}
-
 /** One finished run of the morning agent, as the log's line pair, plus any question asked of it. */
 interface RunSeed {
   id: string;
@@ -1097,7 +1067,6 @@ export async function writeDemoStore(store: string, profile: Profile, now: Date 
   await writeFile(join(store, 'focus.md'), FOCUS[profile], 'utf8');
   await writeFile(join(store, 'sources.md'), SOURCES[profile], 'utf8');
   await writeFile(join(store, 'actions.jsonl'), lines(demoActions(profile, now)), 'utf8');
-  await writeFile(join(store, 'sessions.jsonl'), lines(demoSessions(profile, now)), 'utf8');
   await writeFile(join(store, 'agent.jsonl'), lines(demoAgentLog(profile, now)), 'utf8');
   await writeFile(join(store, 'assistant.jsonl'), lines(demoAssistantLog(profile, now)), 'utf8');
 }

@@ -21,8 +21,6 @@ import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
 import { refusal } from './guard.ts';
 import { describeLink, linkStore, storeLinkWarning } from './links.ts';
-import { readIdleSeconds } from './presence.ts';
-import { reconcileSession, startSession, stopSession } from './sessions.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
 import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
@@ -56,16 +54,6 @@ const VALID_ACTIONS: ReadonlySet<string> = new Set<ActionType>(ACTION_TYPES);
 
 /** Body cap — actions are a few hundred bytes; anything larger is a mistake or an attack. */
 const MAX_BODY_BYTES = 64 * 1024;
-
-/**
- * How often to ask whether anyone is still at the machine, while a session runs.
- *
- * This is the accuracy of a self-closed session's end time, since the checkpoint it
- * closes back to is only as fresh as the last poll — so it's the interval worth
- * spending a process spawn on. Half a minute of slop in a 90-minute session is
- * noise; ten minutes of it would not be.
- */
-const PRESENCE_POLL_MS = 30_000;
 
 /** How often the morning agent's clock checks whether a run is due. */
 const AGENT_CLOCK_MS = 30_000;
@@ -394,13 +382,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       // snapshot the progress metric reads from.
       void store.archiveCurrentBrief().then(() => broadcast());
     },
-    // The timer re-stamps its own file every poll and the two boards rewrite
-    // prs.json and tickets.json every fetch; that's this process talking to
-    // itself, and all three already broadcast when something actually changed.
+    // The two boards rewrite prs.json and tickets.json every fetch; that's this
+    // process talking to itself, and both already broadcast when something
+    // actually changed.
     {
       ignore: [
-        basename(config.sessionFile),
-        basename(tempPathFor(config.sessionFile)),
         basename(config.pullsFile),
         basename(tempPathFor(config.pullsFile)),
         basename(config.ticketsFile),
@@ -425,52 +411,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     });
   });
 
-  /** Fires once, exactly when the running session reaches its target. */
-  let sessionTick: NodeJS.Timeout | null = null;
-  function scheduleSessionTick(endsAt: string | null): void {
-    if (sessionTick) clearTimeout(sessionTick);
-    sessionTick = null;
-    if (!endsAt) return;
-    const delay = new Date(endsAt).getTime() - Date.now();
-    // The 60s heartbeat covers anything further out; this is for precision.
-    if (delay <= 0 || delay > 3_600_000) return;
-    sessionTick = setTimeout(() => void broadcast(), delay);
-    sessionTick.unref();
-  }
-
-  /**
-   * Ask the OS whether the user is still here, and close the running session back at
-   * the last sign of life if not.
-   *
-   * Runs on a timer of its own rather than off a request, because the case this
-   * exists for is precisely the one where nothing is asking: they walked out, the tab
-   * went to sleep with the laptop, and the only process left to notice is this one.
-   */
-  async function checkPresence(): Promise<void> {
-    let closed;
-    try {
-      closed = await reconcileSession(config, readIdleSeconds);
-    } catch (err) {
-      // A failed check must never take the dashboard with it; the backstop remains.
-      console.error(`[daily-focus] presence check failed: ${(err as Error).message}`);
-      return;
-    }
-    if (!closed) return;
-
-    console.log(
-      `[daily-focus] stopped "${closed.title}" at ${closed.endedAt} after ` +
-        `${closed.actualMinutes} min — machine untouched since then`,
-    );
-    scheduleSessionTick(null);
-    await broadcast();
-  }
-
-  // Before the first render, because the session left running may have been
-  // abandoned while the machine slept or while this process was dead.
-  await checkPresence();
-
-  // Likewise: a turn left running when the last process died is closed as
-  // aborted now, rather than shown as a spinner that never stops.
+  // Before the first render: a turn left running when the last process died is
+  // closed as aborted now, rather than shown as a spinner that never stops.
   await assistant.start();
   await agent.start();
 
@@ -510,9 +452,6 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   }, AGENT_CLOCK_MS);
   agentClock.unref();
 
-  // A session may already be running from before a restart.
-  scheduleSessionTick((await buildState()).session.active?.endsAt ?? null);
-
   // Reads the last fetch off disk, then fetches once in the background so the
   // first tab to open has something to show. Never awaited: GitHub being slow
   // must not hold up the dashboard listening.
@@ -536,11 +475,6 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     void broadcast();
   }, 60_000);
   heartbeat.unref();
-
-  const presencePoll = setInterval(() => {
-    void checkPresence();
-  }, PRESENCE_POLL_MS);
-  presencePoll.unref();
 
   const server = createServer((req, res) => {
     void handle(req, res).catch((err: unknown) => {
@@ -867,59 +801,6 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
-    if (path === '/api/session' && req.method === 'POST') {
-      let body: unknown;
-      try {
-        body = JSON.parse(await readBody(req));
-      } catch (err) {
-        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
-        return;
-      }
-      if (typeof body !== 'object' || body === null) {
-        sendJSON(res, 400, { error: 'body must be an object' });
-        return;
-      }
-
-      const { action, id, minutes } = body as Record<string, unknown>;
-
-      if (action === 'stop') {
-        await stopSession(config);
-      } else if (action === 'start') {
-        if (typeof id !== 'string' || id === '') {
-          sendJSON(res, 400, { error: '"id" is required to start a session' });
-          return;
-        }
-        // The title is snapshotted from the brief rather than taken from the
-        // request, so the log records what was actually on screen.
-        const { brief } = await store.readBrief();
-        const item = brief?.items.find((candidate) => candidate.id === id);
-        if (!item) {
-          sendJSON(res, 404, { error: `no item with id ${id}` });
-          return;
-        }
-        const requested = typeof minutes === 'number' && Number.isFinite(minutes) ? Math.round(minutes) : config.sessionMinutes;
-        if (requested < 1 || requested > 120) {
-          sendJSON(res, 400, { error: '"minutes" must be between 1 and 120' });
-          return;
-        }
-        await startSession(config, {
-          id,
-          title: item.title,
-          minutes: requested,
-          advancesObjective: item.advancesObjective === true,
-        });
-      } else {
-        sendJSON(res, 400, { error: '"action" must be "start" or "stop"' });
-        return;
-      }
-
-      const state = await buildState();
-      sendState(res, state);
-      scheduleSessionTick(state.session.active?.endsAt ?? null);
-      void broadcast(state);
-      return;
-    }
-
     if (path === '/api/settings' && req.method === 'GET') {
       sendJSON(res, 200, { ...describeSettings(readSources()), restart });
       return;
@@ -1076,9 +957,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   /** Everything started above, stopped; the listening socket is the caller's to close. */
   async function stopEverything(): Promise<void> {
     clearInterval(heartbeat);
-    clearInterval(presencePoll);
     clearInterval(agentClock);
-    if (sessionTick) clearTimeout(sessionTick);
     board.stop();
     calendar.stop();
     tickets.stop();

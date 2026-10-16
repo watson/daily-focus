@@ -64,13 +64,6 @@ since you completed something that advanced your objective.
 - Mark tasks **Done** when you've handled them.
 - **Snooze** an item until a date, or **Dismiss** it if it doesn't need attention.
 - Leave a **Note** for the next brief, such as "already replied on Slack".
-- Press **f** for focus mode, which shows your top item and agenda.
-- Press **p** on an item to start a focus timer. Its countdown appears in the tab
-  title, and the session becomes part of the next brief's context.
-
-The timer keeps counting after its target time. On macOS, it ends a session when
-you've been away from the machine, excluding the time you were away. On systems
-without idle detection, a two-hour limit caps the recorded session.
 
 You can undo item actions except notes. The page updates as new data arrives, and
 the theme button switches between system, light, and dark mode.
@@ -177,8 +170,6 @@ Press **?** in the dashboard to see the shortcuts.
 | `a` | Open the panel, ready to ask the assistant |
 | `o` | Open the source link |
 | `u` | Undo the last action |
-| `f` | Toggle focus mode |
-| `p` | Start / stop a focus session |
 | `r` | Refresh the current board |
 | `w` | Switch Jira views |
 | `,` | Settings |

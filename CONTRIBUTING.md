@@ -83,7 +83,6 @@ versions and release notes come from, so CI checks it.
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
 | `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
-| `src/sessions.ts`, `src/presence.ts` | Focus sessions and idle detection |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report and follow-up chat |
 | `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
@@ -99,7 +98,7 @@ versions and release notes come from, so CI checks it.
 ## Keep the contracts in sync
 
 Each store file has one writer. The agent writes `items.json`; the dashboard
-appends actions and sessions, archives briefs, maintains integration caches, saves
+appends actions, archives briefs, maintains integration caches, saves
 settings, and links the prompt. The user edits `focus.md` and `sources.md`, in the
 dashboard's editors or by hand. See the
 [file ownership table](AGENTS.md#private-data-and-store-ownership) before adding
@@ -127,7 +126,7 @@ out of client state, and keep computed board classifications out of the caches.
 ## HTTP API
 
 The server binds to localhost by default. These are the endpoints used by the UI;
-see `src/server.ts` for request validation and additional session/calendar routes.
+see `src/server.ts` for request validation and additional routes.
 
 There is no login, so `src/guard.ts` keeps other pages in the same browser out
 before any route runs. Every `POST` must be `application/json`, which a form on

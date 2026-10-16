@@ -33,15 +33,14 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `session.json`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
 | User, through the dashboard's editors or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
 the file is unchanged since the editor loaded it (`src/editable.ts`), so a hand edit
 is never overwritten. It never writes them on the user's behalf.
 
-Never compact or rewrite `actions.jsonl`, `sessions.jsonl`, `assistant.jsonl` or
-`agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
+Never compact or rewrite `actions.jsonl`, `assistant.jsonl` or `agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
 Integration caches use a sibling temporary file and rename; they store facts, not
 computed board classifications. The demo (`src/demo.ts`) is the one exception to
 all of this: it writes every one of those files into its own throwaway store before

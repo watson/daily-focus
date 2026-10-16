@@ -47,7 +47,7 @@ test('each value says where it came from', () => {
   assert.deepEqual([view(all, 'DAILY_FOCUS_AGENT').value, view(all, 'DAILY_FOCUS_AGENT').source], ['claude', 'settings']);
   assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_START').value, view(all, 'DAILY_FOCUS_WORK_START').source], ['10', 'environment']);
   assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_END').value, view(all, 'DAILY_FOCUS_WORK_END').source], ['18', 'dotenv']);
-  assert.deepEqual([view(all, 'DAILY_FOCUS_SESSION_MINUTES').value, view(all, 'DAILY_FOCUS_SESSION_MINUTES').source], [null, 'default']);
+  assert.deepEqual([view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').value, view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').source], [null, 'default']);
 });
 
 test('defaults that depend on the profile follow the profile in effect', () => {
@@ -70,7 +70,7 @@ test('a change is applied to the saved settings, and null goes back to the defau
 test('a value the dashboard would refuse to start with is refused before it is saved', () => {
   for (const [key, value] of [
     ['DAILY_FOCUS_AGENT', 'gpt'],
-    ['DAILY_FOCUS_SESSION_MINUTES', 'lots'],
+    ['DAILY_FOCUS_MIN_FREE_WINDOW', 'lots'],
     ['DAILY_FOCUS_AGENT_DAYS', 'weekdays'],
     ['DAILY_FOCUS_PROFILE', 'holiday'],
   ] as const) {
@@ -79,11 +79,10 @@ test('a value the dashboard would refuse to start with is refused before it is s
     assert.match(applied.error, new RegExp(key), `the refusal names ${key}`);
   }
   // Numbers the dashboard can't use, refused before they are saved rather than
-  // failing later: a session it won't start, an hour that isn't one, a day that ends
-  // before it begins.
+  // failing later: a free window longer than a day, an hour that isn't one, a day
+  // that ends before it begins.
   const unusable: Record<string, string>[] = [
-    { DAILY_FOCUS_SESSION_MINUTES: '-1' },
-    { DAILY_FOCUS_SESSION_MINUTES: '500' },
+    { DAILY_FOCUS_MIN_FREE_WINDOW: '2000' },
     { DAILY_FOCUS_WORK_START: '24' },
     { DAILY_FOCUS_WORK_START: '17', DAILY_FOCUS_WORK_END: '9' },
     { DAILY_FOCUS_MIN_FREE_WINDOW: '0' },

@@ -99,13 +99,6 @@ export function installKeyboard(handlers: Handlers): void {
         event.preventDefault();
         moveSelection(-1);
         return;
-      case 'f':
-        // Focus mode only affects Today; toggling it from the board would change
-        // nothing on screen and arm a collapsed view for the next visit.
-        if (ui.view.value !== 'today') return;
-        event.preventDefault();
-        handlers.setFocusMode(!ui.focusMode.value);
-        return;
       case '1':
         event.preventDefault();
         handlers.setView('today');
@@ -150,11 +143,10 @@ export function installKeyboard(handlers: Handlers): void {
     const item = selectedItem();
     if (!item) return;
     // A board row — pull request or ticket — can be parked and annotated, but not
-    // done, dismissed or timed. Both show what is still true upstream, and neither
-    // is put right from here.
+    // done or dismissed. Both show what is still true upstream, and neither is put
+    // right from here.
     const boardRow = ui.view.value !== 'today';
     const status = 'status' in item ? item.status : null;
-    const kind = 'kind' in item ? item.kind : null;
 
     switch (event.key) {
       case 'e':
@@ -177,12 +169,6 @@ export function installKeyboard(handlers: Handlers): void {
         if (!state.value?.assistant?.enabled) break;
         event.preventDefault();
         handlers.openDetail(item.id, 'assistant');
-        break;
-      case 'p':
-        event.preventDefault();
-        if (boardRow) break;
-        if (state.value?.session.active?.id === item.id) handlers.stopSession();
-        else if (status === 'open' && kind === 'task') handlers.startSession(item.id);
         break;
       case 'o':
         if (item.url) {

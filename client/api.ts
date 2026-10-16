@@ -64,11 +64,6 @@ export function postTimeZone(timeZone: string): Promise<DashboardState> {
   return post('/api/timezone', { timeZone });
 }
 
-/** Start or stop the focus timer. */
-export function postSession(body: { action: 'start'; id: string } | { action: 'stop' }): Promise<DashboardState> {
-  return post('/api/session', body);
-}
-
 /** Ask the server to poll GitHub now. Resolves once it has. */
 export function postBoardRefresh(): Promise<DashboardState> {
   return post('/api/board/refresh');

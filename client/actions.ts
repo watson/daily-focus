@@ -1,6 +1,6 @@
 /**
  * Everything the page does: the handlers the renderers call, the optimistic
- * actions, the live state feed, the clock and the toast.
+ * actions, the live state feed and the toast.
  *
  * Nothing here renders. A handler writes state and view signals, and the
  * components that read them are rerun by Preact.
@@ -8,13 +8,11 @@
 
 import { batch } from '@preact/signals';
 
-import type { ActionType, ActiveSession, BoardRow, DashboardState, ItemStatus, TicketRow } from '../src/types.ts';
+import type { ActionType, BoardRow, DashboardState, ItemStatus, TicketRow } from '../src/types.ts';
 import * as api from './api.ts';
 import {
   AGENT_RUN_SEEN_KEY,
-  FOCUS_MODE_KEY,
   RUN_PREFIX,
-  UNATTENDED_SEEN_KEY,
   VIEW_KEY,
   availableViews,
   setDetailFor,
@@ -22,7 +20,6 @@ import {
   ui,
 } from './state.ts';
 import { applyTheme, nextTheme } from './theme.ts';
-import { remainingSeconds } from './timer.ts';
 import type { ActionExtra, FocusField, Handlers, SettingsPage, TextEditor, TextName, TicketMode, View } from './types.ts';
 
 /* ---------- small things ---------- */
@@ -107,7 +104,6 @@ export function adoptState(next: DashboardState): void {
     state.value = next;
     ui.connectionError.value = null;
   });
-  startLocalTick();
   checkStore(next.storeId);
   checkAssetVersion(next.assetVersion);
 }
@@ -427,80 +423,6 @@ async function askAgent(run: string, text: string): Promise<void> {
   }
 }
 
-/* ---------- focus sessions ---------- */
-
-async function changeSession(body: { action: 'start'; id: string } | { action: 'stop' }): Promise<void> {
-  // Asking on a real click is the only time the browser will grant it.
-  if (body.action === 'start' && 'Notification' in window && Notification.permission === 'default') {
-    void Notification.requestPermission();
-  }
-  try {
-    state.value = await api.postSession(body);
-    startLocalTick();
-  } catch (err) {
-    showToast(`Could not change the timer: ${(err as Error).message}`);
-  }
-}
-
-/**
- * Tick the clock locally between server pushes.
- *
- * Everything is derived from the server's `endsAt`, never accumulated locally —
- * a background tab gets its timers throttled, so counting ticks would drift badly
- * over 25 minutes while reading a wall clock stays exact. The tick writes one
- * signal, and only the strip and the running row read it.
- */
-let tickTimer: ReturnType<typeof setInterval> | null = null;
-let announcedOverrunFor: string | null = null;
-
-export function startLocalTick(): void {
-  if (tickTimer) clearInterval(tickTimer);
-  tickTimer = setInterval(tick, 1000);
-  tick();
-}
-
-function tick(): void {
-  const active = state.value?.session.active;
-  if (!active) {
-    document.title = 'Daily Focus';
-    if (tickTimer) clearInterval(tickTimer);
-    tickTimer = null;
-    return;
-  }
-
-  const nowMs = Date.now();
-  ui.clock.value = nowMs;
-  const remaining = remainingSeconds(active, nowMs);
-
-  // The tab strip is where this is read from, most of the time.
-  const mm = Math.floor(Math.abs(remaining) / 60);
-  const ss = String(Math.floor(Math.abs(remaining) % 60)).padStart(2, '0');
-  document.title = `${remaining < 0 ? '+' : ''}${mm}:${ss} · ${active.title}`;
-
-  if (remaining <= 0 && announcedOverrunFor !== active.startedAt) {
-    announcedOverrunFor = active.startedAt;
-    announceSessionEnd(active);
-  }
-}
-
-/**
- * A check-in, not a finish line.
- *
- * "Session complete" invites you to stop something that might be going well.
- * The useful question at the target is whether you're still on the thing you
- * said you'd be on — which is the moment a wandering attention gets caught.
- */
-function announceSessionEnd(active: ActiveSession): void {
-  const label = active.minutes === 1 ? '1 minute' : `${active.minutes} minutes`;
-  showToast(`${label} in — still on "${active.title}"?`, null);
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification('Still on this?', {
-      body: `${label} in on ${active.title}. Keep going, or stop and log it.`,
-      tag: 'daily-focus-session',
-    });
-  }
-}
-
 /* ---------- views ---------- */
 
 /** Which panel shows is decided by `body[data-view]` in the stylesheet, and nowhere else. */
@@ -575,16 +497,6 @@ function setTicketMode(mode: TicketMode): void {
     ui.selectedId.value = null;
     closeMenus();
   });
-}
-
-/**
- * Collapse the page to the objective, the single top-ranked item and the agenda.
- * Persisted, because the point is to still be in it after you come back from the
- * thing that distracted you.
- */
-function setFocusMode(on: boolean): void {
-  ui.focusMode.value = on;
-  remember(FOCUS_MODE_KEY, on ? '1' : null);
 }
 
 /* ---------- settings ---------- */
@@ -859,12 +771,6 @@ export const handlers: Handlers = {
       document.querySelector('#tickets .item[data-selected="true"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
     );
   },
-  startSession: (id) => void changeSession({ action: 'start', id }),
-  stopSession: () => void changeSession({ action: 'stop' }),
-  dismissUnattended: (endedAt) => {
-    ui.unattendedSeen.value = endedAt;
-    remember(UNATTENDED_SEEN_KEY, endedAt);
-  },
   // A nudge on Slack is invisible to GitHub, so it's recorded: the board's nudge
   // timer starts over from it, and the agent reads that the user asked.
   nudge: (id) => void applyAction(id, 'nudge'),
@@ -892,7 +798,6 @@ export const handlers: Handlers = {
     applyTheme(mode);
     ui.theme.value = mode;
   },
-  setFocusMode,
   openHelp: () => (document.getElementById('help') as HTMLDialogElement | null)?.showModal(),
   hideToast,
   openSettings,
