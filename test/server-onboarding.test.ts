@@ -77,7 +77,12 @@ test('an answer comes back as fresh state, and one to no question is refused', a
 test('the finish saves the answers, restarts, and the screen is gone', async () => {
   for (const step of (await state()).onboarding!.steps) {
     if (step.status !== 'open') continue;
-    const answer = step.id === 'profile' ? { choices: { profile: ['personal'] }, fields: {} } : { later: true };
+    // Work or personal, and the calendars, are answered; the rest can be put off.
+    const answers: Record<string, unknown> = {
+      profile: { choices: { profile: ['personal'] }, fields: {} },
+      calendars: { choices: { calendars: [] }, fields: {} },
+    };
+    const answer = answers[step.id] ?? { later: true };
     assert.equal((await post('/api/onboarding/answer', { step: step.id, answer })).status, 200, step.id);
   }
   assert.equal((await state()).onboarding!.current, null);
@@ -88,6 +93,7 @@ test('the finish saves the answers, restarts, and the screen is gone', async () 
   assert.equal(res.status, 200);
   for (let i = 0; i < 200 && (restarts < 1 || server === null); i++) await new Promise((done) => setTimeout(done, 10));
   assert.ok(server, 'the dashboard came back');
+  // The boards are set in this test's environment, which wins, so they aren't saved.
   assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'personal' });
   const after = await state();
   assert.equal(after.onboarding, null);

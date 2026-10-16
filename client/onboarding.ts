@@ -58,7 +58,7 @@ export function OnboardingView({ state, ui, handlers }: { state: DashboardState;
             return el('li', { key: step.id }, h(StepCard, { step, ui, handlers, current: step.id === flow.current }));
           }
           if (step.status === 'open') return null;
-          return el('li', { key: step.id }, doneRow(step, handlers, ui.setupBusy.value !== null || editing !== null));
+          return el('li', { key: step.id }, doneRow(step, handlers, ui.setupBusy.value !== null));
         }),
         flow.current === null ? el('li', { key: 'finish' }, h(FinishCard, { flow, ui, handlers })) : ahead(flow, open),
       ),
@@ -129,11 +129,14 @@ function ahead(flow: OnboardingState, open: OnboardingStep[]): JSX.Element | nul
 /** The last few things a CLI did, the newest last. */
 function steps(step: OnboardingStep, count = 3): JSX.Element | null {
   const shown = (step.proposal?.steps ?? []).filter((s) => s.kind === 'tool').slice(-count);
-  if (shown.length === 0) return el('ul', { class: 'onboarding__steps' }, el('li', { 'data-state': 'running' }, 'Starting…'));
+  // Its last call done is not it done: it still has to write its answer, which
+  // can take a few seconds, and a list of ticks alone reads as stuck.
+  const waiting = step.proposal?.status === 'working' && !shown.some((s) => s.state === 'running');
   return el(
     'ul',
     { class: 'onboarding__steps' },
     shown.map((s, index) => el('li', { key: index, 'data-state': s.state, title: s.detail ?? undefined }, s.text)),
+    waiting ? el('li', { key: 'waiting', 'data-state': 'running' }, shown.length ? 'Writing its answer…' : 'Starting…') : null,
   );
 }
 
@@ -165,29 +168,57 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
   const edit = (next: Chosen) => handlers.editSetupDraft(step.id, next, saved?.version ?? step.card.version);
   const tell = ui.setupTell.value.get(step.id) ?? '';
   const empty = step.card.choices.every((choice) => choice.options.length === 0) && step.card.fields.length === 0;
+  const conversation = proposal?.conversation ?? [];
+  // Working on something the user just asked for: their words are on screen already.
+  const revising = conversation.at(-1)?.from === 'you';
 
   return el(
     'section',
     { class: 'onboarding__card', 'data-current': String(current), 'data-step': step.id, 'aria-labelledby': `setup-${step.id}` },
     el('span', { class: 'onboarding__dot onboarding__dot--open', 'aria-hidden': 'true' }),
     el('h2', { id: `setup-${step.id}`, tabIndex: -1 }, step.title),
-    step.card.why && !(looking && empty)
-      ? el('p', { class: 'onboarding__why' }, sparkle(), el('span', null, step.card.why))
-      : null,
+    conversation.length
+      ? el(
+          'ol',
+          { class: 'onboarding__talk' },
+          conversation.map((line, index) =>
+            line.from === 'it'
+              ? el('li', { key: index, class: 'onboarding__why' }, sparkle(), el('span', null, line.text))
+              : el('li', { key: index, class: 'onboarding__said' }, line.text),
+          ),
+        )
+      : step.card.why && !(looking && empty)
+        ? el('p', { class: 'onboarding__why' }, sparkle(), el('span', null, step.card.why))
+        : null,
     looking
       ? el(
           'div',
           { class: 'onboarding__looking', role: 'status' },
-          el(
-            'p',
-            null,
-            empty
-              ? `Looking into ${step.topic}…`
-              : step.card.version > 0
-                ? 'Working on your change. You can answer now, or wait for it.'
-                : 'Still looking. You can answer now, or wait for its pick.',
-          ),
+          revising
+            ? null
+            : el('p', null, empty ? `Looking into ${step.topic}…` : 'Still looking. You can answer now, or wait for its pick.'),
           steps(step),
+        )
+      : null,
+    // Under what it said, so a reply reads as one, and what comes back lands here too.
+    step.card.revisable && !looking
+      ? el(
+          'form',
+          {
+            class: 'onboarding__tell',
+            onSubmit: (event: Event) => {
+              event.preventDefault();
+              if (tell.trim() && !busy) handlers.reviseSetup(step.id, tell, draft);
+            },
+          },
+          el('input', {
+            type: 'text',
+            value: tell,
+            'aria-label': 'Tell it what to change',
+            placeholder: 'Tell it what to change',
+            onInput: (event: Event) => handlers.editSetupTell(step.id, (event.currentTarget as HTMLInputElement).value),
+          }),
+          el('button', { type: 'submit', class: 'button', disabled: busy || tell.trim() === '' }, 'Send'),
         )
       : null,
     proposal?.status === 'failed'
@@ -216,13 +247,7 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
           if (!busy) handlers.answerSetup(step.id, draft);
         },
       },
-      step.card.choices.map((choice) =>
-        h(ChoiceView, {
-          choice,
-          picked: draft.choices[choice.id] ?? [],
-          onPick: (values: string[]) => edit({ ...draft, choices: { ...draft.choices, [choice.id]: values } }),
-        }),
-      ),
+      // Fields first: a card with both asks for the few words before the list.
       step.card.fields.length
         ? el(
             'div',
@@ -232,6 +257,13 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
             ),
           )
         : null,
+      step.card.choices.map((choice) =>
+        h(ChoiceView, {
+          choice,
+          picked: draft.choices[choice.id] ?? [],
+          onPick: (values: string[]) => edit({ ...draft, choices: { ...draft.choices, [choice.id]: values } }),
+        }),
+      ),
       step.card.problem && !step.card.problem.blocking ? problem(step, busy, handlers) : null,
       error ? el('p', { class: 'onboarding__error', role: 'alert' }, error) : null,
       el(
@@ -242,32 +274,18 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
           { type: 'submit', class: 'button button--primary', disabled: busy || (empty && (looking || step.card.problem?.blocking === true)) },
           ui.setupBusy.value === step.id ? 'Saving…' : 'Continue',
         ),
-        el('button', { type: 'button', class: 'button onboarding__quiet', disabled: busy, onClick: () => handlers.answerSetup(step.id, { later: true }) }, 'Decide later'),
+        step.card.deferrable
+          ? el(
+              'button',
+              { type: 'button', class: 'button onboarding__quiet', disabled: busy, onClick: () => handlers.answerSetup(step.id, { later: true }) },
+              'Decide later',
+            )
+          : null,
         editing
           ? el('button', { type: 'button', class: 'button onboarding__quiet', onClick: () => handlers.editSetupStep(null) }, 'Cancel')
           : null,
       ),
     ),
-    step.card.revisable && !looking
-      ? el(
-          'form',
-          {
-            class: 'onboarding__tell',
-            onSubmit: (event: Event) => {
-              event.preventDefault();
-              if (tell.trim() && !busy) handlers.reviseSetup(step.id, tell, draft);
-            },
-          },
-          el('input', {
-            type: 'text',
-            value: tell,
-            'aria-label': 'Tell it what to change',
-            placeholder: 'Or tell it what to change',
-            onInput: (event: Event) => handlers.editSetupTell(step.id, (event.currentTarget as HTMLInputElement).value),
-          }),
-          el('button', { type: 'submit', class: 'button', disabled: busy || tell.trim() === '' }, 'Send'),
-        )
-      : null,
   );
 }
 

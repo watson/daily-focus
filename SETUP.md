@@ -36,28 +36,32 @@ With neither ready, it says what is wrong with each and the command that fixes i
 to one it couldn't find.
 
 Then it asks a few questions, one at a time, and each comes with the answer you
-most likely want already ticked: confirm it, change it, or **Decide later** to
-keep the default. **Change** reopens an earlier answer.
+most likely want already ticked: confirm it or change it. Where leaving one is a
+real answer, **Decide later** keeps the default. **Change** reopens an earlier
+answer.
 
 1. **Who writes the brief**, only when it couldn't pick for you.
 2. **What it briefs**: your work, or your personal life. See
    [A personal instance](#a-personal-instance) for running both.
 3. **When it runs**, and on which days.
-4. **Who you are**: your name as meeting notes write it, your email and your
-   GitHub login.
+4. **Who you are**: your name as meeting notes write it, your email, and each
+   GitHub account `gh` is logged in to, with what it's for.
 5. **What else to show**: the pull request board and the Jira board, each with
    its status.
 6. **Which calendars** the brief reads, which the live agenda follows too.
-7. **The assistant**, on or off.
-8. **Your objective**, which the agent ranks the day against.
+7. **Your objective**, which the agent ranks the day against.
+
+The [assistant](#ask-the-assistant) isn't asked about: it comes on with the CLI
+that writes the brief, unless you've set it already.
 
 Once you've said what it briefs, the CLI looks into the others in the background,
 one short session each, so the slow ones are ready when you get to them. The
 sessions run on the newest flagship model at low effort (Opus for Claude Code,
 the first model in Codex's own list for Codex), which measured as fast as the
 lighter models and, unlike them, told your calendars from other people's: it reads `gh`, your mail and your calendars to tell work from personal, and
-says in a sentence why it ticked what it did. Type what to change under a card,
-such as "also the on-call rota", and it tries again. These sessions only read, in
+says in a sentence why it ticked what it did. Reply under that sentence with what
+to change, such as "also the on-call rota", and it tries again, answering in the
+same place. These sessions only read, in
 an empty directory. Claude Code is given read tools by name, and under Codex every
 connector write is refused, drafts included; `gh` and `acli` are held to reading by
 their instructions, as [the assistant's](#what-the-assistant-can-do) are.

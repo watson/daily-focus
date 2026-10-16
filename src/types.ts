@@ -1030,6 +1030,8 @@ export interface OnboardingCard {
   problem: { message: string; command: string | null; blocking: boolean; links?: { label: string; url: string }[] } | null;
   /** Whether the user can tell the CLI what to change: the step has a proposal behind it. */
   revisable: boolean;
+  /** Whether "Decide later" is offered: only where leaving it is a real answer. */
+  deferrable: boolean;
 }
 
 export interface OnboardingChoice {
@@ -1061,6 +1063,12 @@ export interface OnboardingField {
 
 export interface OnboardingProposal {
   status: 'working' | 'ready' | 'failed';
+  /**
+   * What it said and what the user told it, in order: its reason for each
+   * proposal, and each change asked for. The card shows them where the user
+   * typed, so a reply lands under the question it answers.
+   */
+  conversation: { from: 'you' | 'it'; text: string }[];
   /** What the CLI did on the way, as the assistant's panel shows it. */
   steps: AssistantStep[];
   error: string | null;

@@ -57,7 +57,7 @@ function step(id: string, overrides: Partial<OnboardingStep> = {}): OnboardingSt
     status: 'open',
     summary: null,
     locked: false,
-    card: { version: 0, why: null, choices: [], fields: [], problem: null, revisable: false },
+    card: { version: 0, why: null, choices: [], fields: [], problem: null, revisable: false, deferrable: true },
     proposal: null,
     answer: null,
     ...overrides,
@@ -93,8 +93,9 @@ const CALENDARS = step('calendars', {
     fields: [],
     problem: null,
     revisable: true,
+    deferrable: false,
   },
-  proposal: { status: 'ready', steps: [], error: null },
+  proposal: { status: 'ready', conversation: [{ from: 'it', text: 'These are on your work account.' }], steps: [], error: null },
 });
 
 function flow(steps: OnboardingStep[], current: string | null): OnboardingState {
@@ -136,7 +137,7 @@ test('answered questions fold into their sentence with a Change, and the open on
   );
   const boxes = byTag(card, 'input').filter((input) => (input as HTMLInputElement).type === 'checkbox') as HTMLInputElement[];
   assert.deepEqual(boxes.map((box) => box.checked), [true, false], "the card's own ticks");
-  assert.ok(buttonLabels(card).includes('Decide later'));
+  assert.ok(!buttonLabels(card).includes('Decide later'), 'a list can be left unticked; there is nothing to put off');
   assert.ok(page.querySelector('.onboarding__tell input'), 'a card with a proposal behind it can be told what to change');
   assert.match(byClass(page, 'onboarding__then')[0]!.textContent!, /Then topic objective and your first brief\./);
 });
@@ -144,7 +145,8 @@ test('answered questions fold into their sentence with a Change, and the open on
 test('Continue answers with what the card holds, and Decide later puts it off', async () => {
   const answers: [string, OnboardingAnswer][] = [];
   const handlers = handlersWith({ answerSetup: (id, answer) => void answers.push([id, answer]) });
-  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([CALENDARS], 'calendars') }), ui: uiWith(), handlers }));
+  const deferrable = { ...CALENDARS, card: { ...CALENDARS.card, deferrable: true } };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([deferrable], 'calendars') }), ui: uiWith(), handlers }));
   (page.querySelector('form.onboarding__form') as HTMLFormElement).requestSubmit();
   byTag(page, 'button').find((button) => button.textContent === 'Decide later')!.click();
   assert.deepEqual(answers, [
@@ -166,17 +168,17 @@ test("a tick changed is kept as a draft; a proposal landing under it is offered,
     },
   });
   const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([CALENDARS], 'calendars') }), ui, handlers }));
-  const family = byTag(page, 'input')[1] as HTMLInputElement;
-  family.click();
+  const boxes = (root: HTMLElement) => byTag(root, 'input').filter((input) => (input as HTMLInputElement).type === 'checkbox') as HTMLInputElement[];
+  boxes(page)[1]!.click();
   await settle();
   assert.deepEqual(drafts[0], ['calendars', { choices: { calendars: ['live:work:Robin Lark', 'live:icloud:Family'] }, fields: {} }, 1]);
-  assert.equal((byTag(page, 'input')[1] as HTMLInputElement).checked, true);
+  assert.equal(boxes(page)[1]!.checked, true);
 
   // The CLI comes back with a new version while the draft stands.
   const newer = { ...CALENDARS, card: { ...CALENDARS.card, version: 2 } };
   const again = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([newer], 'calendars') }), ui, handlers }));
   assert.match(again.textContent!, /new suggestion/);
-  assert.equal((byTag(again, 'input')[1] as HTMLInputElement).checked, true, 'the draft stays until the user takes the suggestion');
+  assert.equal(boxes(again)[1]!.checked, true, 'the draft stays until the user takes the suggestion');
 });
 
 test('a value of the user’s own is added to the list and kept ticked', async () => {
@@ -204,7 +206,7 @@ test('while the CLI is still looking, the card says so and shows what it is doin
     title: 'Is this you?',
     topic: 'who you are',
     card: { ...step('x').card, fields: [{ id: 'name', label: 'Your name', value: 'Robin Lark', placeholder: null, help: null }] },
-    proposal: { status: 'working', steps: [{ kind: 'tool', text: 'Look up the GitHub login', detail: 'gh api user', state: 'running' }], error: null },
+    proposal: { status: 'working', conversation: [], steps: [{ kind: 'tool', text: 'Look up the GitHub login', detail: 'gh api user', state: 'running' }], error: null },
   });
   const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([looking], 'identity') }), ui: uiWith(), handlers: handlersWith() }));
   assert.match(byClass(page, 'onboarding__looking')[0]!.textContent!, /Still looking\. You can answer now/);
@@ -213,7 +215,7 @@ test('while the CLI is still looking, the card says so and shows what it is doin
 });
 
 test('what the CLI is already looking into next is shown under the open question', () => {
-  const next = step('calendars', { topic: 'your calendars', proposal: { status: 'working', steps: [], error: null } });
+  const next = step('calendars', { topic: 'your calendars', proposal: { status: 'working', conversation: [], steps: [], error: null } });
   const page = mount(
     h(OnboardingView, { state: stateWith({ onboarding: flow([step('schedule'), next, step('objective')], 'schedule') }), ui: uiWith(), handlers: handlersWith() }),
   );
@@ -282,7 +284,7 @@ test('the screen asks for the CLIs to be looked for when it opens, and not again
   const looking = step('cli', {
     title: 'Which agent should write your brief?',
     topic: 'your coding agent',
-    proposal: { status: 'working', steps: [{ kind: 'tool', text: 'Look for Codex and Claude Code', detail: null, state: 'running' }], error: null },
+    proposal: { status: 'working', conversation: [], steps: [{ kind: 'tool', text: 'Look for Codex and Claude Code', detail: null, state: 'running' }], error: null },
   });
   const page = mount(h(OnboardingView, { state: stateWith({ onboarding: { ...flow([looking], 'cli'), detected: false } }), ui: uiWith(), handlers }));
   // Effects run after the paint, which happy-dom stands in for with a timer.
@@ -329,4 +331,74 @@ test('with no CLI ready, the card links to the installers and takes a path', () 
   assert.equal(continueButton.disabled, false, 'a path is something to answer with');
   (page.querySelector('form.onboarding__form') as HTMLFormElement).requestSubmit();
   assert.deepEqual(answers, [['cli', { choices: {}, fields: { path: '/opt/tools/codex' } }]]);
+});
+
+test('what it said and what the user told it read as one conversation, with the reply box under it', () => {
+  const talked = {
+    ...CALENDARS,
+    proposal: {
+      status: 'ready' as const,
+      conversation: [
+        { from: 'it' as const, text: 'These are on your work account.' },
+        { from: 'you' as const, text: 'Also the on-call rota' },
+        { from: 'it' as const, text: 'Added the on-call rota from the same account.' },
+      ],
+      steps: [],
+      error: null,
+    },
+  };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([talked], 'calendars') }), ui: uiWith(), handlers: handlersWith() }));
+  const card = byClass(page, 'onboarding__card')[0]!;
+  assert.deepEqual(
+    [...card.querySelectorAll('.onboarding__talk > li')].map((line) => [line.className, line.textContent]),
+    [
+      ['onboarding__why', 'These are on your work account.'],
+      ['onboarding__said', 'Also the on-call rota'],
+      ['onboarding__why', 'Added the on-call rota from the same account.'],
+    ],
+  );
+  const order = [...card.children].map((child) => child.className.split(' ')[0]);
+  assert.ok(order.indexOf('onboarding__talk') < order.indexOf('onboarding__tell'), 'the reply box under the conversation');
+  assert.ok(order.indexOf('onboarding__tell') < order.indexOf('onboarding__form'), 'and above the answer it changes');
+  assert.equal(byTag(card, 'button').find((b) => b.textContent === 'Send')?.textContent, 'Send');
+});
+
+test('while it works on a change, the user sees their words, its steps, and that it is still writing once they are done', () => {
+  const working = {
+    ...CALENDARS,
+    proposal: {
+      status: 'working' as const,
+      conversation: [
+        { from: 'it' as const, text: 'These are on your work account.' },
+        { from: 'you' as const, text: 'Also the on-call rota' },
+      ],
+      steps: [{ kind: 'tool' as const, text: 'Calendar: list calendars', detail: null, state: 'done' as const }],
+      error: null,
+    },
+  };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([working], 'calendars') }), ui: uiWith(), handlers: handlersWith() }));
+  const looking = byClass(page, 'onboarding__looking')[0]!;
+  assert.equal(looking.querySelector('p'), null, 'no "still looking": their words say what it is doing');
+  assert.deepEqual(
+    [...looking.querySelectorAll('li')].map((li) => [li.textContent, li.getAttribute('data-state')]),
+    [
+      ['Calendar: list calendars', 'done'],
+      ['Writing its answer…', 'running'],
+    ],
+  );
+  assert.equal(page.querySelector('.onboarding__tell'), null, 'nothing more to say until it answers');
+});
+
+test('reopening one answer leaves Change on the others', () => {
+  const identity = step('identity', { status: 'answered', summary: "You're Robin Lark.", answer: { choices: {}, fields: { name: 'Robin Lark' } } });
+  const page = mount(
+    h(OnboardingView, {
+      state: stateWith({ onboarding: flow([CLI, identity, CALENDARS], 'calendars') }),
+      ui: uiWith({ setupEditing: 'cli' }),
+      handlers: handlersWith(),
+    }),
+  );
+  const changes = byClass(page, 'onboarding__change') as HTMLButtonElement[];
+  assert.deepEqual(changes.map((button) => [button.closest('.onboarding__done')!.getAttribute('data-step'), button.disabled]), [['identity', false]]);
+  assert.equal(byClass(page, 'onboarding__card').length, 2, 'the one reopened, and the one still open');
 });

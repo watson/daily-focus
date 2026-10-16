@@ -111,6 +111,8 @@ interface ProposalRecord {
   error: string | null;
   /** Bumped each time `result` changes, so the screen can tell a draft made against an older one. */
   version: number;
+  /** Its reason for each proposal and each change the user asked for, in order. */
+  conversation: { from: 'you' | 'it'; text: string }[];
 }
 
 interface OnboardingFile {
@@ -191,6 +193,12 @@ function parseFile(text: string): OnboardingFile {
         result: record.result ?? null,
         error: typeof record.error === 'string' ? record.error : null,
         version: typeof record.version === 'number' ? record.version : 0,
+        conversation: Array.isArray(record.conversation)
+          ? record.conversation.filter(
+              (line): line is { from: 'you' | 'it'; text: string } =>
+                typeof line === 'object' && line !== null && (line.from === 'you' || line.from === 'it') && typeof line.text === 'string',
+            )
+          : [],
       };
     }
   }
@@ -305,11 +313,21 @@ export class Onboarding {
         status: answer ? (chosen ? 'answered' : 'later') : 'open',
         summary: chosen ? question.summary(chosen, ctx) : null,
         locked,
-        card: { ...drawn, version: record?.version ?? 0, revisable: Boolean(question.agent && record) },
+        card: { ...drawn, version: record?.version ?? 0, revisable: Boolean(question.agent && record), deferrable: question.deferrable },
         proposal: looking
-          ? { status: 'working', steps: [{ kind: 'tool', text: 'Look for Codex and Claude Code', detail: null, state: 'running' }], error: null }
+          ? {
+              status: 'working',
+              conversation: [],
+              steps: [{ kind: 'tool', text: 'Look for Codex and Claude Code', detail: null, state: 'running' }],
+              error: null,
+            }
           : record
-            ? { status: record.status, steps: this.steps.get(question.id) ?? [], error: record.status === 'failed' ? record.error : null }
+            ? {
+                status: record.status,
+                conversation: record.conversation,
+                steps: this.steps.get(question.id) ?? [],
+                error: record.status === 'failed' ? record.error : null,
+              }
             : null,
         answer,
       });
@@ -345,6 +363,7 @@ export class Onboarding {
     const question = questionById(id);
     let answer = cleanAnswer(raw);
     if (!question || !answer) return `there is no question ${JSON.stringify(id)}, or that is not an answer to it`;
+    if (!given(answer) && !question.deferrable) return `"${question.topic}" needs an answer`;
     if (id === 'cli' && given(answer)) {
       const chosen = await this.chooseCli(given(answer)!);
       if (typeof chosen === 'string') return chosen;
@@ -394,7 +413,8 @@ export class Onboarding {
       'Revise your proposal, and answer with the whole of it again.',
     ].join('\n');
     const resume = record.sessionId && record.cli === ctx.cli ? record.sessionId : null;
-    await this.ask(question, ctx, resume ? request : `${await this.firstMessage(question, ctx)}\n\n${request}`, resume);
+    const said = [...record.conversation, { from: 'you' as const, text: text.trim() }];
+    await this.ask(question, ctx, resume ? request : `${await this.firstMessage(question, ctx)}\n\n${request}`, resume, said);
     return null;
   }
 
@@ -551,7 +571,13 @@ export class Onboarding {
     ].join('\n');
   }
 
-  private async ask(question: Question, ctx: QuestionContext, prompt: string, resume: string | null): Promise<void> {
+  private async ask(
+    question: Question,
+    ctx: QuestionContext,
+    prompt: string,
+    resume: string | null,
+    conversation: ProposalRecord['conversation'] = [],
+  ): Promise<void> {
     const file = (this.file ??= blankFile());
     const cli = ctx.cli!;
     const previous = file.proposals[question.id];
@@ -563,6 +589,7 @@ export class Onboarding {
       result: previous?.cli === cli && previous.profile === ctx.profile ? previous.result : null,
       error: null,
       version: previous?.version ?? 0,
+      conversation,
     };
     file.proposals[question.id] = record;
     this.steps.set(question.id, []);
@@ -684,6 +711,8 @@ export class Onboarding {
         record.status = 'ready';
         record.error = null;
         record.version += 1;
+        const why = (record.result as { why?: unknown } | null)?.why;
+        if (typeof why === 'string' && why.trim()) record.conversation.push({ from: 'it', text: why.trim() });
       } catch {
         record.status = 'failed';
         record.error = 'it answered, but not in the shape asked for';
@@ -851,7 +880,7 @@ export class Onboarding {
       profile,
       cli: cli && CLI_NAMES.includes(cli) ? cli : null,
       clis,
-      identity: started ? await this.deps.identity() : { name: null, login: null, email: null },
+      identity: started ? await this.deps.identity() : { name: null, login: null, logins: [], email: null },
       calendars,
       calendar: setup.calendar,
       boards: await this.deps.boards(),

@@ -66,7 +66,7 @@ export interface SourcesSection {
 }
 
 /** A card as a question draws it; the version and whether it can be revised are the caller's. */
-export type DrawnCard = Omit<OnboardingCard, 'version' | 'revisable'>;
+export type DrawnCard = Omit<OnboardingCard, 'version' | 'revisable' | 'deferrable'>;
 
 export interface Question {
   id: string;
@@ -81,6 +81,11 @@ export interface Question {
    * save could not change it.
    */
   keys: readonly string[];
+  /**
+   * Whether "Decide later" is offered: only where leaving it is a real answer.
+   * Work or personal can't be left, and a list can simply be left unticked.
+   */
+  deferrable: boolean;
   card(ctx: QuestionContext): DrawnCard;
   summary(answer: Chosen, ctx: QuestionContext): string;
   settings?(answer: Chosen, ctx: QuestionContext): Record<string, string | null>;
@@ -169,6 +174,8 @@ const cli: Question = {
   title: () => 'Which agent should write your brief?',
   topic: 'your coding agent',
   keys: ['DAILY_FOCUS_AGENT'],
+  // Later is a dashboard with its boards and no brief yet.
+  deferrable: true,
   card(ctx) {
     if (!ctx.clis) return card({});
     const report = ctx.clis;
@@ -208,10 +215,17 @@ const cli: Question = {
     const chosen = CLI_LABEL[one(answer, 'cli') as CliName];
     return chosen ? `${chosen} writes your brief.` : 'No agent writes your brief yet.';
   },
+  // The assistant comes with it, on the same CLI, unless it has been set: it
+  // only reads and drafts, and it is what the Ask button on every row needs.
   settings: (answer, ctx) => {
     const chosen = one(answer, 'cli') as CliName | null;
     const bin = binFor(ctx, chosen);
-    return { DAILY_FOCUS_AGENT: chosen, ...(bin ? { DAILY_FOCUS_AGENT_BIN: bin } : {}) };
+    const assistant = chosen && !ctx.current.DAILY_FOCUS_ASSISTANT;
+    return {
+      DAILY_FOCUS_AGENT: chosen,
+      ...(bin ? { DAILY_FOCUS_AGENT_BIN: bin } : {}),
+      ...(assistant ? { DAILY_FOCUS_ASSISTANT: chosen, ...(bin ? { DAILY_FOCUS_ASSISTANT_BIN: bin } : {}) } : {}),
+    };
   },
 };
 
@@ -220,6 +234,7 @@ const profile: Question = {
   topic: 'what it covers',
   title: () => 'What should your brief cover?',
   keys: ['DAILY_FOCUS_PROFILE'],
+  deferrable: false,
   card: (ctx) =>
     card({
       choices: [
@@ -247,6 +262,7 @@ const schedule: Question = {
   title: () => 'When should your brief be ready?',
   applies: (ctx) => ctx.cli !== null,
   keys: ['DAILY_FOCUS_AGENT_AT', 'DAILY_FOCUS_AGENT_DAYS'],
+  deferrable: false,
   card(ctx) {
     const at = ctx.current.DAILY_FOCUS_AGENT_AT || '07:00';
     const days = ctx.current.DAILY_FOCUS_AGENT_DAYS || '1-5';
@@ -273,17 +289,39 @@ const schedule: Question = {
   settings: (answer) => ({ DAILY_FOCUS_AGENT_AT: one(answer, 'at'), DAILY_FOCUS_AGENT_DAYS: one(answer, 'days') }),
 };
 
+/** The GitHub accounts a proposal named, with what each is for, as it said. */
+function proposedAccounts(proposal: Record<string, unknown> | null): { login: string; note: string }[] {
+  const raw = Array.isArray(proposal?.githubAccounts) ? (proposal.githubAccounts as unknown[]) : [];
+  return raw.flatMap((entry) => {
+    const account = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
+    const login = str(account.login);
+    return login ? [{ login, note: str(account.note) }] : [];
+  });
+}
+
+/** Every GitHub account the card offers: gh's own, then any the proposal added, each with the proposal's note. */
+function githubAccounts(ctx: QuestionContext): { login: string; note: string }[] {
+  const accounts = new Map<string, { login: string; note: string }>();
+  for (const login of ctx.identity.logins) accounts.set(login.toLowerCase(), { login, note: '' });
+  for (const { login, note } of proposedAccounts(proposalOf(ctx, 'identity'))) {
+    accounts.set(login.toLowerCase(), { login: accounts.get(login.toLowerCase())?.login ?? login, note });
+  }
+  return [...accounts.values()];
+}
+
 const identity: Question = {
   id: 'identity',
   topic: 'who you are',
   title: () => 'Is this you?',
   keys: [],
+  // Later leaves who you are out of the source list, and the brief says what that cost.
+  deferrable: true,
   card(ctx) {
     const proposal = proposalOf(ctx, 'identity');
     const names = Array.isArray(proposal?.names) ? proposal.names.map(str).filter(Boolean) : [];
     const name = names.length ? names.join(', ') : (ctx.identity.name ?? '');
     const email = str(proposal?.email) || (ctx.identity.email ?? '');
-    const login = str(proposal?.githubLogin) || (ctx.identity.login ?? '');
+    const accounts = githubAccounts(ctx);
     return card({
       why: str(proposal?.why) || 'The brief tells your to-dos from everyone else’s by these.',
       fields: [
@@ -292,29 +330,52 @@ const identity: Question = {
           help: 'Add short forms after a comma, such as Robin L.',
         }),
         field('email', ctx.profile === 'personal' ? 'Your email' : 'Your work email', email, { placeholder: 'robin@example.com' }),
-        field('login', 'Your GitHub login', login, { placeholder: 'rlark' }),
+      ],
+      choices: [
+        choice(
+          'github',
+          accounts.map((account) => option(account.login, account.login, account.note || null)),
+          accounts.map((account) => account.login),
+          { label: 'Your GitHub accounts', multiple: true, custom: 'Add a GitHub login' },
+        ),
       ],
     });
   },
   summary(answer) {
     const name = answer.fields.name?.split(',')[0]?.trim();
-    const rest = [answer.fields.email?.trim() ?? '', answer.fields.login?.trim() ? `${answer.fields.login.trim()} on GitHub` : ''].filter(Boolean);
+    const logins = answer.choices.github ?? [];
+    const rest = [answer.fields.email?.trim() ?? '', logins.length ? `${listed(logins)} on GitHub` : ''].filter(Boolean);
     if (!name) return rest.length ? `You're ${listed(rest)}.` : 'No details about you.';
     return `You're ${name}${rest.length ? `, ${rest.join(', ')}` : ''}.`;
   },
-  // The address also tells the live agenda which reply on an invitation is yours.
-  settings: (answer): Record<string, string | null> =>
-    answer.fields.email?.trim() ? { DAILY_FOCUS_CALENDAR_ADDRESSES: answer.fields.email.trim() } : {},
+  settings(answer, ctx): Record<string, string | null> {
+    const values: Record<string, string | null> = {};
+    // The address also tells the live agenda which reply on an invitation is yours.
+    if (answer.fields.email?.trim()) values.DAILY_FOCUS_CALENDAR_ADDRESSES = answer.fields.email.trim();
+    // The board reads as gh's active account unless told otherwise: told when
+    // there is more than one, or the one isn't the active one.
+    const logins = answer.choices.github ?? [];
+    if (logins.length > 1 || (logins.length === 1 && logins[0] !== ctx.identity.logins[0])) {
+      values.DAILY_FOCUS_GITHUB_ACCOUNTS = logins.join(', ');
+    }
+    return values;
+  },
   sources(answer, ctx) {
     const names = (answer.fields.name ?? '').split(',').map((n) => n.trim()).filter(Boolean);
     const email = answer.fields.email?.trim();
-    const login = answer.fields.login?.trim();
+    const notes = new Map(githubAccounts(ctx).map((account) => [account.login, account.note]));
+    const logins = answer.choices.github ?? [];
     const lines = [
       names.length
         ? `- Name, as meeting notes and Doc assignments write it: ${ticked(names[0]!)}${names.length > 1 ? `, also ${listed(names.slice(1).map(ticked))}` : ''}`
         : null,
       email ? `- ${ctx.profile === 'personal' ? 'Personal' : 'Work'} email: ${ticked(email)}` : null,
-      login ? `- GitHub login: ${ticked(login)} — review requests and authorship are judged against it` : null,
+      logins.length
+        ? [
+            `- GitHub ${logins.length > 1 ? 'logins' : 'login'}, which review requests and authorship are judged against:`,
+            ...logins.map((login) => `  - ${ticked(login)}${notes.get(login) ? ` — ${notes.get(login)}` : ''}`),
+          ].join('\n')
+        : null,
     ].filter((line): line is string => line !== null);
     return lines.length ? [{ heading: 'Identity', body: lines.join('\n') }] : [];
   },
@@ -323,12 +384,14 @@ const identity: Question = {
       'Who the user is, as their morning brief needs to know them: their name as meeting notes and document ' +
       'assignments write it, with any short forms colleagues use, their ' +
       (ctx.profile === 'personal' ? 'personal' : 'work') +
-      ' email address, and their GitHub login. Start from what the dashboard found, below. Check the address they ' +
-      'send mail from, how others address them, and `gh api user` for the login.',
+      ' email address, and every GitHub account they work as: gh may hold several, such as one for an ' +
+      'employer’s organisation. Give each account a few words on what it is for when you can tell. Start from ' +
+      'what the dashboard found, below. Check the address they send mail from, how others address them, and ' +
+      '`gh auth status`.',
     facts: (ctx) =>
       [
         ctx.identity.name ? `- gh says their name is ${ctx.identity.name}` : null,
-        ctx.identity.login ? `- gh is logged in as ${ctx.identity.login}` : null,
+        ctx.identity.logins.length ? `- gh is logged in to GitHub as ${listed(ctx.identity.logins)}; the first is active` : null,
         ctx.identity.email ? `- git's global email is ${ctx.identity.email}` : null,
       ]
         .filter(Boolean)
@@ -339,9 +402,20 @@ const identity: Question = {
         why: { type: 'string', description: 'One or two sentences on where these came from.' },
         names: { type: 'array', items: { type: 'string' }, description: 'Full name first, then short forms.' },
         email: { type: 'string' },
-        githubLogin: { type: 'string' },
+        githubAccounts: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              login: { type: 'string' },
+              note: { type: 'string', description: 'What the account is for, in a few words, or empty.' },
+            },
+            required: ['login', 'note'],
+            additionalProperties: false,
+          },
+        },
       },
-      required: ['why', 'names', 'email', 'githubLogin'],
+      required: ['why', 'names', 'email', 'githubAccounts'],
       additionalProperties: false,
     },
   },
@@ -360,6 +434,7 @@ const boards: Question = {
   topic: 'the boards',
   title: () => 'What else should the dashboard show?',
   keys: ['DAILY_FOCUS_GITHUB', 'DAILY_FOCUS_JIRA'],
+  deferrable: false,
   card(ctx) {
     const { github, jira } = ctx.boards;
     const selected = [
@@ -474,6 +549,7 @@ const calendars: Question = {
   topic: 'your calendars',
   title: (ctx) => (ctx.profile === 'personal' ? 'Which calendars belong in your brief?' : 'Which calendars belong in your work brief?'),
   keys: ['DAILY_FOCUS_CALENDARS'],
+  deferrable: false,
   card(ctx) {
     const entries = calendarEntries(ctx);
     const proposal = proposalOf(ctx, 'calendars');
@@ -576,42 +652,12 @@ const calendars: Question = {
   },
 };
 
-const assistant: Question = {
-  id: 'assistant',
-  topic: 'the assistant',
-  title: () => 'Should an assistant help with each item?',
-  applies: (ctx) => ctx.cli !== null,
-  keys: ['DAILY_FOCUS_ASSISTANT'],
-  card(ctx) {
-    const set = ctx.current.DAILY_FOCUS_ASSISTANT;
-    const cliName = ctx.cli!;
-    return card({
-      why: 'Ask it about any row: whether a review is right, why a check fails, or for a reply drafted in Gmail. It reads and drafts; it never sends.',
-      choices: [
-        choice(
-          'assistant',
-          [option(cliName, `Yes, with ${CLI_LABEL[cliName]}`), option('off', 'No')],
-          [set === 'off' ? 'off' : cliName],
-        ),
-      ],
-    });
-  },
-  summary: (answer) => {
-    const chosen = one(answer, 'assistant');
-    return chosen && chosen !== 'off' ? `The assistant uses ${CLI_LABEL[chosen as CliName] ?? chosen}.` : 'No assistant.';
-  },
-  settings: (answer, ctx) => {
-    const chosen = one(answer, 'assistant');
-    const bin = chosen && chosen !== 'off' ? binFor(ctx, chosen as CliName) : null;
-    return { DAILY_FOCUS_ASSISTANT: chosen, ...(bin ? { DAILY_FOCUS_ASSISTANT_BIN: bin } : {}) };
-  },
-};
-
 const objective: Question = {
   id: 'objective',
   topic: 'your objective',
   title: () => 'What are you trying to get done right now?',
   keys: [],
+  deferrable: true,
   card: () =>
     card({
       why: 'The brief ranks the day against it. A next move works better than a project name.',
@@ -621,7 +667,7 @@ const objective: Question = {
   objective: (answer) => answer.fields.objective?.trim() || null,
 };
 
-export const QUESTIONS: readonly Question[] = [cli, profile, schedule, identity, boards, calendars, assistant, objective];
+export const QUESTIONS: readonly Question[] = [cli, profile, schedule, identity, boards, calendars, objective];
 
 export function questionById(id: string): Question | undefined {
   return QUESTIONS.find((question) => question.id === id);

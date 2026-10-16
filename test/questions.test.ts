@@ -20,7 +20,7 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
     profile: 'work',
     cli: 'claude',
     clis: report(READY('/usr/local/bin/claude'), MISSING('Codex')),
-    identity: { name: 'Robin Lark', login: 'rlark', email: 'robin@example.com' },
+    identity: { name: 'Robin Lark', login: 'rlark', logins: ['rlark'], email: 'robin@example.com' },
     calendars: [
       { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 4 },
       { title: 'Platform team', source: 'robin@northwind.example', eventsToday: 2 },
@@ -66,14 +66,41 @@ test('the CLI card offers the ready ones, Codex first, and says what is wrong wi
   assert.equal(question('cli').summary(chosen({ cli: ['off'] }), ctx()), 'No agent writes your brief yet.');
 });
 
-test('a CLI found off PATH is saved with its path, for the agent and the assistant', () => {
+test('the chosen CLI brings the assistant with it, and a path off PATH is saved for both', () => {
   const c = ctx({ clis: report(MISSING('Claude Code'), READY('/home/robin/.codex/bin/codex', false)) });
-  assert.deepEqual(question('cli').settings!(chosen({ cli: ['codex'] }), c), { DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_BIN: '/home/robin/.codex/bin/codex' });
-  assert.deepEqual(question('assistant').settings!(chosen({ assistant: ['codex'] }), c), {
+  assert.deepEqual(question('cli').settings!(chosen({ cli: ['codex'] }), c), {
+    DAILY_FOCUS_AGENT: 'codex',
+    DAILY_FOCUS_AGENT_BIN: '/home/robin/.codex/bin/codex',
     DAILY_FOCUS_ASSISTANT: 'codex',
     DAILY_FOCUS_ASSISTANT_BIN: '/home/robin/.codex/bin/codex',
   });
-  assert.deepEqual(question('cli').settings!(chosen({ cli: ['claude'] }), ctx()), { DAILY_FOCUS_AGENT: 'claude' }, 'on PATH, no path to save');
+  assert.deepEqual(
+    question('cli').settings!(chosen({ cli: ['claude'] }), ctx()),
+    { DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_ASSISTANT: 'claude' },
+    'on PATH, no path to save',
+  );
+  assert.deepEqual(
+    question('cli').settings!(chosen({ cli: ['claude'] }), ctx({ current: { DAILY_FOCUS_ASSISTANT: 'off' } })),
+    { DAILY_FOCUS_AGENT: 'claude' },
+    'an assistant already set is left as it is',
+  );
+});
+
+test('Decide later is offered only where leaving it is a real answer', () => {
+  const offered = (id: string) => questionById(id)!.deferrable;
+  assert.deepEqual(
+    ['cli', 'profile', 'schedule', 'identity', 'boards', 'calendars', 'objective'].map((id) => [id, offered(id)]),
+    [
+      ['cli', true],
+      ['profile', false],
+      ['schedule', false],
+      ['identity', true],
+      ['boards', false],
+      ['calendars', false],
+      ['objective', true],
+    ],
+  );
+  assert.equal(questionById('assistant'), undefined, 'the assistant comes with the CLI, unasked');
 });
 
 test('the schedule writes the time and the days, and a time of its own is offered back', () => {
@@ -90,21 +117,54 @@ test('the schedule writes the time and the days, and a time of its own is offere
 
 test("identity starts from gh and git, takes the CLI's proposal over them, and writes no placeholder", () => {
   const plain = question('identity').card(ctx());
-  assert.deepEqual(plain.fields.map((f) => f.value), ['Robin Lark', 'robin@example.com', 'rlark']);
+  assert.deepEqual(plain.fields.map((f) => f.value), ['Robin Lark', 'robin@example.com']);
+  assert.deepEqual(plain.choices[0]!.selected, ['rlark']);
 
   const proposed = question('identity').card(
-    ctx({ proposals: { identity: { why: 'Your sent mail says so.', names: ['Robin Lark', 'Robin L.'], email: 'robin@northwind.example', githubLogin: '' } } }),
+    ctx({ proposals: { identity: { why: 'Your sent mail says so.', names: ['Robin Lark', 'Robin L.'], email: 'robin@northwind.example', githubAccounts: [] } } }),
   );
   assert.equal(proposed.why, 'Your sent mail says so.');
-  assert.deepEqual(proposed.fields.map((f) => f.value), ['Robin Lark, Robin L.', 'robin@northwind.example', 'rlark']);
+  assert.deepEqual(proposed.fields.map((f) => f.value), ['Robin Lark, Robin L.', 'robin@northwind.example']);
 
-  const answer = chosen({}, { name: 'Robin Lark, Robin L.', email: 'robin@northwind.example', login: 'rlark' });
+  const answer = chosen({ github: ['rlark'] }, { name: 'Robin Lark, Robin L.', email: 'robin@northwind.example' });
   assert.equal(question('identity').summary(answer, ctx()), "You're Robin Lark, robin@northwind.example, rlark on GitHub.");
   assert.deepEqual(question('identity').settings!(answer, ctx()), { DAILY_FOCUS_CALENDAR_ADDRESSES: 'robin@northwind.example' });
   const [section] = question('identity').sources!(answer, ctx());
   assert.equal(section!.heading, 'Identity');
   assert.match(section!.body, /`Robin Lark`, also `Robin L\.`/);
-  assert.deepEqual(question('identity').sources!(chosen({}, { name: '', email: '', login: '' }), ctx()), [], 'nothing known, nothing written');
+  assert.deepEqual(question('identity').sources!(chosen({}, { name: '', email: '' }), ctx()), [], 'nothing known, nothing written');
+});
+
+test('every GitHub account gh holds is offered, with what the proposal says each is for, and more than one is read as', () => {
+  const c = ctx({
+    identity: { name: 'Robin Lark', login: 'rlark', logins: ['rlark', 'rlark-acme'], email: null },
+    proposals: {
+      identity: {
+        why: 'gh holds two accounts.',
+        names: ['Robin Lark'],
+        email: '',
+        githubAccounts: [
+          { login: 'rlark-acme', note: 'for the acme organisation' },
+          { login: 'rlark', note: 'your own projects' },
+        ],
+      },
+    },
+  });
+  const accounts = question('identity').card(c).choices[0]!;
+  assert.deepEqual(accounts.options.map((o) => [o.value, o.detail]), [
+    ['rlark', 'your own projects'],
+    ['rlark-acme', 'for the acme organisation'],
+  ]);
+  assert.deepEqual(accounts.selected, ['rlark', 'rlark-acme']);
+
+  const both = chosen({ github: ['rlark', 'rlark-acme'] }, { name: 'Robin Lark', email: '' });
+  assert.deepEqual(question('identity').settings!(both, c), { DAILY_FOCUS_GITHUB_ACCOUNTS: 'rlark, rlark-acme' });
+  assert.match(question('identity').sources!(both, c)[0]!.body, /- GitHub logins, [^\n]*\n  - `rlark` — your own projects\n  - `rlark-acme` — for the acme organisation/);
+  assert.deepEqual(
+    question('identity').settings!(chosen({ github: ['rlark-acme'] }, { name: '', email: '' }), c),
+    { DAILY_FOCUS_GITHUB_ACCOUNTS: 'rlark-acme' },
+    'one that is not the active one is said',
+  );
 });
 
 test('the boards are ticked when they work, and Jira only for work', () => {

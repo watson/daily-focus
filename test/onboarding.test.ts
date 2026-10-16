@@ -33,7 +33,7 @@ const PROPOSAL = {
   why: 'From your sent mail.',
   names: ['Robin Lark', 'Robin L.'],
   email: 'robin@northwind.example',
-  githubLogin: 'rlark',
+  githubAccounts: [{ login: 'rlark', note: '' }],
   calendars: [
     { title: 'Robin Lark', account: 'robin@northwind.example', include: true, holiday: false, briefName: '', note: 'Your primary calendar' },
     { title: 'Family', account: 'iCloud', include: false, holiday: false, briefName: '', note: '' },
@@ -102,7 +102,7 @@ async function harness(env: NodeJS.ProcessEnv = {}, reply: unknown = PROPOSAL, r
         : { cli: null, found: { path, version: null, onPath: false, ready: false, problem: `Nothing runs at ${path}`, fix: null } },
     readSources: sources,
     setup: async () => setup,
-    identity: async () => ({ name: 'Robin Lark', login: 'rlark', email: 'robin@example.com' }),
+    identity: async () => ({ name: 'Robin Lark', login: 'rlark', logins: ['rlark'], email: 'robin@example.com' }),
     boards: async () => ({
       github: { enabled: true, fetchedAt: '2026-10-16T08:00:00Z', reason: null },
       jira: { enabled: true, fetchedAt: '2026-10-16T08:00:00Z', reason: null },
@@ -164,7 +164,7 @@ test('a new store opens looking for the CLIs, and runs nothing until the screen 
   assert.deepEqual(
     state.steps.map((step) => step.id),
     ['cli', 'profile', 'identity', 'boards', 'calendars', 'objective'],
-    'no schedule or assistant until there is an agent',
+    'no schedule until there is an agent',
   );
   const cli = state.steps[0]!;
   assert.equal(cli.proposal?.status, 'working');
@@ -209,7 +209,14 @@ test('with none ready, the card says why, and a path that runs is taken for the 
   await settled(h);
   assert.equal((await h.calls()).length, 2);
   let next: string | null;
-  while ((next = (await view(h)).current)) await h.onboarding.answer(next, { later: true });
+  while ((next = (await view(h)).current)) {
+    const fixed: Record<string, ReturnType<typeof pick>> = {
+      schedule: pick({ at: ['07:00'], days: ['1-5'] }),
+      boards: pick({ boards: [] }),
+      calendars: pick({ calendars: [] }),
+    };
+    await h.onboarding.answer(next, fixed[next] ?? { later: true });
+  }
   assert.ok(!('error' in (await h.onboarding.finish())));
   assert.equal(h.settings.DAILY_FOCUS_AGENT, 'claude');
   assert.equal(h.settings.DAILY_FOCUS_AGENT_BIN, fake);
@@ -225,7 +232,8 @@ test('once the CLI and the profile are answered, each question is looked into, a
   const identity = state.steps.find((step) => step.id === 'identity')!;
   assert.equal(identity.proposal?.status, 'ready');
   assert.equal(identity.card.why, 'From your sent mail.');
-  assert.deepEqual(identity.card.fields.map((f) => f.value), ['Robin Lark, Robin L.', 'robin@northwind.example', 'rlark']);
+  assert.deepEqual(identity.card.fields.map((f) => f.value), ['Robin Lark, Robin L.', 'robin@northwind.example']);
+  assert.deepEqual(identity.proposal?.conversation, [{ from: 'it', text: 'From your sent mail.' }]);
   assert.equal(identity.card.version, 1);
   assert.equal(identity.card.revisable, true);
   assert.deepEqual(identity.proposal?.steps.map((s) => [s.text, s.state]), [['Look up the GitHub login', 'done']]);
@@ -261,7 +269,13 @@ test('telling it what to change resumes the same session, with what the card hol
   assert.equal(revision[revision.indexOf('--resume') + 1], 'sess-identity');
   assert.ok(revision.join('\n').includes('The user says: Use my short name too'));
   assert.ok(revision.join('\n').includes('"name":"Robin Lark"'));
-  assert.equal(state.steps.find((step) => step.id === 'identity')!.card.version, 2);
+  const identity = state.steps.find((step) => step.id === 'identity')!;
+  assert.equal(identity.card.version, 2);
+  assert.deepEqual(identity.proposal?.conversation.map((line) => [line.from, line.text]), [
+    ['it', 'From your sent mail.'],
+    ['you', 'Use my short name too'],
+    ['it', 'From your sent mail.'],
+  ]);
 });
 
 test('a new profile throws away what was proposed and answered for the old one', async () => {
@@ -269,7 +283,7 @@ test('a new profile throws away what was proposed and answered for the old one',
   await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   await settled(h);
-  await h.onboarding.answer('identity', pick({}, { name: 'Robin Lark', email: 'robin@northwind.example', login: 'rlark' }));
+  await h.onboarding.answer('identity', pick({ github: ['rlark'] }, { name: 'Robin Lark', email: 'robin@northwind.example' }));
   await h.onboarding.answer('profile', pick({ profile: ['personal'] }));
   const state = await settled(h);
   assert.equal(state.steps.find((step) => step.id === 'identity')!.status, 'open', 'the work identity is asked again');
@@ -297,10 +311,9 @@ test('the finish saves everything at once, writes the two files, and asks for th
   assert.match((await h.onboarding.finish() as { error: string }).error, /answer/, 'not before every question is answered');
 
   await h.onboarding.answer('schedule', pick({ at: ['06:30'], days: ['1-5'] }));
-  await h.onboarding.answer('identity', pick({}, { name: 'Robin Lark', email: 'robin@northwind.example', login: 'rlark' }));
+  await h.onboarding.answer('identity', pick({ github: ['rlark'] }, { name: 'Robin Lark', email: 'robin@northwind.example' }));
   await h.onboarding.answer('boards', pick({ boards: ['github'] }));
   await h.onboarding.answer('calendars', pick({ calendars: ['live:robin@northwind.example:Robin Lark'] }));
-  await h.onboarding.answer('assistant', { later: true });
   await h.onboarding.answer('objective', pick({}, { objective: 'Ship the reliability fix' }));
   assert.equal((await view(h)).current, null, 'only the finish is left');
 
@@ -311,6 +324,8 @@ test('the finish saves everything at once, writes the two files, and asks for th
   assert.deepEqual(await h.onboarding.finish(), { restart: true });
   assert.deepEqual(h.settings, {
     DAILY_FOCUS_AGENT: 'claude',
+    // Not asked: it comes with the CLI.
+    DAILY_FOCUS_ASSISTANT: 'claude',
     DAILY_FOCUS_AGENT_AT: '06:30',
     DAILY_FOCUS_AGENT_DAYS: '1-5',
     DAILY_FOCUS_CALENDARS: 'Robin Lark',
@@ -342,9 +357,15 @@ test('a source list the user wrote is kept, and a setting from the environment i
   assert.equal(profile.status, 'answered');
   assert.equal(profile.summary, 'It briefs your personal life.');
 
-  // Choosing the CLI brings the schedule and the assistant in: follow the screen, not the list it started with.
+  // Choosing the CLI brings the schedule in: follow the screen, not the list it started with.
+  const firsts: Record<string, ReturnType<typeof pick>> = {
+    cli: pick({ cli: ['claude'] }),
+    schedule: pick({ at: ['07:00'], days: ['1-5'] }),
+    boards: pick({ boards: [] }),
+    calendars: pick({ calendars: [] }),
+  };
   while ((state = await view(h)).current) {
-    await h.onboarding.answer(state.current, state.current === 'cli' ? pick({ cli: ['claude'] }) : { later: true });
+    await h.onboarding.answer(state.current, firsts[state.current] ?? { later: true });
   }
   await settled(h);
   assert.equal((await h.onboarding.previewSources()).kept, true);
@@ -393,8 +414,18 @@ test('an agent the environment turns off is no agent: nothing to schedule, and n
   const h = await harness({ DAILY_FOCUS_AGENT: 'off' });
   const state = await view(h);
   assert.equal(state.steps.find((step) => step.id === 'cli')!.summary, 'No agent writes your brief yet.');
-  assert.ok(!state.steps.some((step) => step.id === 'schedule' || step.id === 'assistant'));
+  assert.ok(!state.steps.some((step) => step.id === 'schedule'));
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   await settled(h);
   assert.equal((await h.calls()).length, 0);
+});
+
+test('Decide later is refused where it is not offered', async () => {
+  const h = await harness();
+  await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
+  assert.match((await h.onboarding.answer('profile', { later: true })) ?? '', /needs an answer/);
+  assert.equal(await h.onboarding.answer('objective', { later: true }), null);
+  const state = await view(h);
+  assert.equal(state.steps.find((step) => step.id === 'profile')!.card.deferrable, false);
+  assert.equal(state.steps.find((step) => step.id === 'objective')!.card.deferrable, true);
 });

@@ -2463,6 +2463,30 @@ body[data-onboarding='true'] {
   font-size: 14.5px;
   line-height: 1.5;
 }
+/*
+ * What it said and what the user told it, in order, under the question: its
+ * lines as the reason always reads, the user's set off to the right.
+ */
+.onboarding__talk {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.onboarding__talk .onboarding__why {
+  margin: 0;
+}
+.onboarding__said {
+  justify-self: end;
+  max-width: 85%;
+  padding: 7px 12px;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--accent-wash);
+  color: var(--ink-1);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
 .onboarding__sparkle {
   flex: none;
   margin-top: 3px;
@@ -2768,7 +2792,7 @@ body[data-onboarding='true'] {
 .onboarding__tell {
   display: flex;
   gap: 8px;
-  margin-top: 14px;
+  margin: 0 0 18px;
 }
 .onboarding .onboarding__tell .button {
   padding: 6px 12px;
