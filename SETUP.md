@@ -613,6 +613,7 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the server's PATH lacks it. `~` is expanded |
 | `DAILY_FOCUS_AGENT_MODEL` | *the CLI's own* | Model passed to the CLI untouched. Unset passes no flag |
 | `DAILY_FOCUS_AGENT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched. Unset passes no flag |
+| `DAILY_FOCUS_AGENT_SEARCH_TRASH` | `off` | Whether the agent searches the mail account's Trash as well as the inbox and archive. The dashboard writes it to `agent-settings.json` in the store before each run, where the agent reads it |
 | `DAILY_FOCUS_AGENT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use to reach your sources, in its permission syntax, comma-separated. Writing `items.json`, and nothing else in the store, is allowed regardless. The default allows every Gmail tool, sending included. Ignored by Codex |
 
 ## If something looks wrong

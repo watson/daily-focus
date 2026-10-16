@@ -14,7 +14,9 @@
  *
  *  - The agent is still the only writer of `items.json`. The dashboard starts
  *    the process and reads what it prints; it never writes the brief, and it
- *    never hands the agent anything the store doesn't already hold.
+ *    never hands the agent anything the store doesn't already hold. The settings
+ *    that change how it gathers go into the store first, as
+ *    `agent-settings.json`, which the prompt tells it to read.
  *  - The run's working directory is the store. For Codex that is the file
  *    write policy: its sandbox confines writes to it, and `codex.ts` refuses
  *    every connector write. Claude Code is held to `items.json` and its
@@ -49,6 +51,7 @@ import { createInterface } from 'node:readline';
 import { ADAPTERS, type ParsedEvent } from './assistant.ts';
 import { CodexGate } from './codex.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
+import { writeJsonAtomic } from './fs.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
 import type { ExecFile } from './shellpath.ts';
 import type { AgentRun, AgentRunState, AgentTurn } from './types.ts';
@@ -86,6 +89,20 @@ export function agentPrompt(promptPath: string): string {
     '',
     'Finish by reporting back as that file asks you to.',
   ].join('\n');
+}
+
+/**
+ * What `agent-settings.json` says: the settings-page choices that change how the
+ * agent gathers, by the names both prompts use for them. The runner writes it
+ * before every run, so a value set in `.env` or the environment reaches the agent
+ * as surely as one saved on the page, and a run's settings are in the store with
+ * everything else it read. The prompts say what each one means and what its
+ * absence means; `test/docs-contract.test.ts` checks that both name every key.
+ */
+export function agentSettings(config: Config): Record<string, unknown> {
+  return {
+    searchTrash: config.agent.searchTrash,
+  };
 }
 
 /**
@@ -376,6 +393,15 @@ export class AgentRunner {
     };
     this.runs.push(run);
     await this.append({ event: 'started', run: run.id, cli, trigger, at: run.startedAt });
+
+    // In the log as failed rather than thrown, so the clock doesn't try again
+    // every half minute, and never started on whatever an earlier run left there.
+    try {
+      await writeJsonAtomic(this.config.agentSettingsFile, agentSettings(this.config));
+    } catch (err) {
+      await this.finish(run, null, { ok: false, error: `could not write ${displayPath(this.config.agentSettingsFile)}: ${(err as Error).message}` });
+      return run;
+    }
 
     const adapter = ADAPTERS[cli];
     const args = adapter.args({

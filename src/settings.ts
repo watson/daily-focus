@@ -118,6 +118,14 @@ export const SETTINGS: readonly SettingDef[] = [
     fallback: always("The CLI's own"),
   },
   {
+    key: 'DAILY_FOCUS_AGENT_SEARCH_TRASH',
+    group: 'agent',
+    label: 'Search deleted mail',
+    help: 'Lets the agent look in your mail’s Trash as well as the inbox and archive. Off, it leaves out what you deleted.',
+    kind: 'flag',
+    fallback: always('Off'),
+  },
+  {
     key: 'DAILY_FOCUS_AGENT_TOOLS',
     group: 'agent',
     label: 'Tools Claude Code may use',

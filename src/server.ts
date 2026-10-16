@@ -511,6 +511,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         // Appended by this process, which broadcasts on its own.
         basename(config.assistantLogFile),
         basename(config.agentLogFile),
+        // Rewritten by the runner before every run; nothing on the page shows it.
+        basename(config.agentSettingsFile),
+        basename(tempPathFor(config.agentSettingsFile)),
         // Rewritten by the setup screen, which broadcasts on its own.
         basename(config.onboardingFile),
         basename(tempPathFor(config.onboardingFile)),

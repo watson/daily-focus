@@ -22,6 +22,10 @@ not for you.
   how to judge it; that file says *who* and *where*.
 - `items.schema.json` — **you only ever read this.** The machine-readable shape of
   `items.json`. Validate against it in step 5 if you can.
+- `agent-settings.json` — **you only ever read this.** The choices the user made on
+  the dashboard's settings page about how you gather, rewritten by the dashboard
+  before every run. Each key is explained where it applies below; a missing file or
+  key means that key's default.
 
 There is also an `archive/` directory of dated past briefs. The dashboard maintains
 it; you never write to it. Read it if you want history — it is how the dashboard
@@ -166,6 +170,12 @@ Search Gmail account-wide within the relevant time window — archived mail, and
 the user's filters moved out of the inbox, included. Mail they filed is not mail they
 finished with, and a label records how they sorted something, not whether they dealt
 with it.
+
+Mail the user deleted is mail they finished with, so leave Trash out unless
+`searchTrash` in `agent-settings.json` is `true` (default `false`). A search with no
+`in:` operator already covers archived mail and skips Trash and Spam; when the
+setting is off, don't widen it with `in:anywhere` or a trash option. When it is on,
+search Trash as well, and still never Spam.
 
 Prioritise direct requests, deadlines, decisions, travel and logistics,
 finance/legal/security, and anyone plausibly waiting on a reply. **Do not limit

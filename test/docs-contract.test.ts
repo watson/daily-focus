@@ -184,8 +184,24 @@ test("the server, the client and the README agree on the ticket board's courts",
  */
 test('AGENTS.md names the brief, action log, and integration caches', async () => {
   const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
-  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'prs.json', 'calendar.json', 'tickets.json']) {
+  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'tickets.json']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
+  }
+});
+
+/**
+ * A setting reaches the agent only as a key in `agent-settings.json`, and the key
+ * means nothing until the prompt says what it does. Each prompt is read on its own,
+ * so each has to name the file and every key in it.
+ */
+test('both prompts explain every key the dashboard hands the agent', async () => {
+  const { agentSettings } = await import('../src/agent.ts');
+  const { loadConfig } = await import('../src/config.ts');
+  const keys = Object.keys(agentSettings(loadConfig({})));
+  assert.ok(keys.length > 0, 'agentSettings hands over nothing; did it move?');
+  for (const [name, markdown] of Object.entries(docs)) {
+    assert.ok(markdown.includes('`agent-settings.json`'), `${name} never tells the agent to read agent-settings.json`);
+    for (const key of keys) assert.ok(markdown.includes(`\`${key}\``), `${name} never explains \`${key}\` in agent-settings.json`);
   }
 });
 

@@ -36,6 +36,7 @@ alongside `items.schema.json`, so a run only ever names a path inside the store:
   focus.md            you write it, on the setup screen, in the dashboard or by hand
   sources.md          you write it, on the setup screen, in the dashboard or by hand
   settings.json       the dashboard writes: what you set on its settings page
+  agent-settings.json the dashboard writes before every run: the settings the agent reads
   items.json          the agent writes it
   actions.jsonl       the dashboard appends
   agent.jsonl         the dashboard appends: every run, its report, and the questions asked of it
@@ -70,6 +71,12 @@ names `prompt.md` by its store path and tells the agent to read it now and follo
 it. Nothing else is handed over: no extra instructions, no checkout, no copy of the
 prompt. Everything that evolves lives in the prompt, in git, where a change to it is
 reviewable, and the wrapper should never need editing.
+
+A setting that changes how the agent gathers, such as searching deleted mail, reaches
+it the same way everything else does: through the store. Before each run the dashboard
+writes `agent-settings.json` with the values it is running with, whether they were
+saved on the settings page or set in `.env`, and both prompts say what each key means.
+The wrapper stays the same whatever the settings are.
 
 Which days it runs is `DAILY_FOCUS_AGENT_DAYS` — cron-numbered, so `1-5` is Mon–Fri
 and `0-4` is the Sun–Thu week — and Mon–Fri when unset. The same schedule drives the
