@@ -15,6 +15,7 @@ import { runHelper } from './calendar.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
+import { AutoAsk } from './autoask.ts';
 import { codexVersionWarning } from './codex.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
@@ -272,9 +273,20 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
 
   let assetVersion = await computeAssetVersion(PUBLIC_DIR);
 
+  // Asks the assistant ahead about pull requests waiting on the user, whenever
+  // the board or a turn changes. Made below, once what it reads exists.
+  let autoAsk: AutoAsk | null = null;
+
   // The board polls only while a tab is open, so it's told the audience below,
   // and it broadcasts on its own whenever a fetch starts or lands.
-  const board = new Board(config, () => void broadcast(), options.integrations?.github);
+  const board = new Board(
+    config,
+    () => {
+      void broadcast();
+      autoAsk?.poke();
+    },
+    options.integrations?.github,
+  );
   const calendar = new CalendarBoard(config, () => void broadcast());
   const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
 
@@ -285,8 +297,19 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     onChange: () => {
       void broadcast();
       restartWhenIdle();
+      autoAsk?.poke();
     },
   });
+
+  autoAsk = new AutoAsk({
+    config,
+    assistant,
+    rows: async () => board.view(await store.readActions(), new Date()).rows,
+    context: async (id) => contextFor(id, await buildState()),
+    // Nothing new starts while saved settings wait on the restart that applies them.
+    canStart: () => restart !== 'waiting',
+  });
+  const ahead = autoAsk;
 
   // The morning agent, on the dashboard's clock and when the user asks for a
   // fresh brief. It writes the brief itself, and the watcher below picks it up
@@ -343,17 +366,31 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     const setup = await setupState(config, {
       profileChosen: Boolean(layerEnv(sources).DAILY_FOCUS_PROFILE?.trim()),
     });
+    const pulls = board.view(actions, now);
     return {
       ...state,
-      board: board.view(actions, now),
+      board: pulls,
       tickets: tickets.view(actions, now),
-      assistant: assistant.view(),
+      assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
       setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
       restart,
       setup,
       assetVersion,
       storeId,
+    };
+  }
+
+  /**
+   * The row as the dashboard shows it, so the assistant is told what the user is
+   * looking at rather than left to find it. The same id may be a brief item and
+   * a board row at once; both go along.
+   */
+  function contextFor(id: string, current: DashboardState): AskContext {
+    return {
+      item: current.items.find((item) => item.id === id),
+      pull: current.board.rows.find((row) => row.id === id),
+      ticket: current.tickets.rows.find((row) => row.id === id) ?? current.tickets.inProgress.find((row) => row.id === id),
     };
   }
 
@@ -458,6 +495,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   void board.start().catch((err: unknown) => {
     console.error(`[daily-focus] pull request board failed to start: ${(err as Error).message}`);
   });
+  // The board's cached rows are there before its first read: whatever they call
+  // for, and was not asked before the last shutdown, is asked now.
+  ahead.poke();
 
   // Same treatment: a calendar that is slow, unbuilt or unpermitted must not hold
   // up the dashboard listening. The agenda falls back to the brief until it lands.
@@ -659,17 +699,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         return;
       }
 
-      // The row as the dashboard shows it, so the assistant is told what the
-      // user is looking at rather than left to find it. The same id may be a
-      // brief item and a board row at once; both go along.
-      const current = await buildState();
-      const context: AskContext = {
-        item: current.items.find((item) => item.id === id),
-        pull: current.board.rows.find((row) => row.id === id),
-        ticket:
-          current.tickets.rows.find((row) => row.id === id) ??
-          current.tickets.inProgress.find((row) => row.id === id),
-      };
+      const context = contextFor(id, await buildState());
       if (!context.item && !context.pull && !context.ticket) {
         sendJSON(res, 404, { error: `no item with id ${id}` });
         return;
@@ -958,6 +988,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   async function stopEverything(): Promise<void> {
     clearInterval(heartbeat);
     clearInterval(agentClock);
+    ahead.close();
     board.stop();
     calendar.stop();
     tickets.stop();

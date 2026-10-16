@@ -367,6 +367,11 @@ export interface PullRequest {
   requestedReviewers: string[];
   /** The latest formal review per reviewer, bots and the author excluded. */
   reviews: { login: string; state: string; at: string }[];
+  /**
+   * The head commit, which an answer about its failing checks is about. Absent
+   * on a cache written before it was kept.
+   */
+  headSha?: string | null;
   /** Newest thing the author did: opened it, pushed, commented, reviewed, marked ready. */
   lastActivityByYou: string | null;
   /** Newest thing anyone else did, bots excluded. */
@@ -687,6 +692,11 @@ export interface AssistantTurn {
   request: string;
   /** The quick action it came from, when it did. */
   action: string | null;
+  /**
+   * Set when the dashboard asked on its own rather than the user: what about the
+   * row it answered, as `autoask.ts` keys it. Null for a turn the user started.
+   */
+  auto: string | null;
   startedAt: string;
   endedAt: string | null;
   status: 'running' | 'done' | 'failed' | 'aborted';
@@ -742,6 +752,26 @@ export interface AssistantState {
   quickActions: AssistantQuickAction[];
   /** By item id. Only items that have ever been asked about appear. */
   items: Record<string, AssistantItemState>;
+  /** Asking ahead, on the pull requests waiting on the user. */
+  auto: AssistantAuto;
+}
+
+/**
+ * The assistant asked ahead: on its own, about pull requests waiting on the
+ * user, so the answer is on the row when they look. See `autoask.ts`.
+ */
+export interface AssistantAuto {
+  /** `DAILY_FOCUS_ASSISTANT_AUTO`, and an assistant to ask. */
+  enabled: boolean;
+  /** How many turns it may start a day, and how many it has today. */
+  limit: number;
+  usedToday: number;
+  /**
+   * By row id, what the row's state calls for now, as the keys a turn's `auto`
+   * carries. A turn whose key is still listed answers the row as it stands; one
+   * whose key has gone answered something that has since changed.
+   */
+  rows: Record<string, string[]>;
 }
 
 /* ---------- the morning agent, run by the dashboard ---------- */

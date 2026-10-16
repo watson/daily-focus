@@ -189,6 +189,23 @@ export const SETTINGS: readonly SettingDef[] = [
     fallback: always('Off'),
   },
   {
+    key: 'DAILY_FOCUS_ASSISTANT_AUTO',
+    group: 'assistant',
+    label: 'Answer ahead on pull requests',
+    help: 'When a pull request starts waiting on you because of a review or a failing check, asks the assistant about it before you do, so the answer is on the row when you look. Only reads; it never drafts. It spends the CLI’s usage without you pressing anything.',
+    kind: 'flag',
+    fallback: always('Off'),
+  },
+  {
+    key: 'DAILY_FOCUS_ASSISTANT_AUTO_LIMIT',
+    group: 'assistant',
+    label: 'Answer ahead at most',
+    help: 'Times a day the assistant may start on its own, counted on the dashboard’s calendar.',
+    kind: 'number',
+    fallback: always('10 a day'),
+    advanced: true,
+  },
+  {
     key: 'DAILY_FOCUS_ASSISTANT_BIN',
     group: 'assistant',
     label: 'Path to the CLI',

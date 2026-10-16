@@ -42,13 +42,15 @@ async function tempStore(): Promise<string> {
 /** The demo's dashboard, started as the CLI starts it, minus the browser. */
 async function demoServer(profile: Profile) {
   const store = await tempStore();
-  await writeDemoStore(store, profile);
+  // One clock for the store and the boards, as the CLI has it.
+  const now = new Date();
+  await writeDemoStore(store, profile, now);
   const env = demoEnv(
     { PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' },
     store,
     profile,
   );
-  const server = await startServer(env, { integrations: demoIntegrations(profile) });
+  const server = await startServer(env, { integrations: demoIntegrations(profile, now) });
   const fetchState = async (): Promise<DashboardState> => (await fetch(`${server.url}/api/state`)).json() as Promise<DashboardState>;
   // The boards fetch in the background once the server listens; wait for both.
   const settled = async (): Promise<DashboardState> => {
@@ -253,6 +255,15 @@ for (const profile of PROFILES) {
         assert.equal(entry.running, false);
         assert.ok(entry.turns.every((turn) => turn.status === 'done'));
       }
+
+      // Its answers ahead are still about their rows, so the rows show them.
+      const ahead = Object.values(state.assistant.items).flatMap((entry) => entry.turns.filter((turn) => turn.auto !== null));
+      assert.ok(ahead.length >= 1, 'the board shows an answer given ahead');
+      for (const turn of ahead) {
+        assert.ok(state.assistant.auto.rows[turn.itemId]?.includes(turn.auto!), `${turn.itemId}'s answer ahead is still on its row`);
+        assert.ok(state.board.rows.some((row) => row.id === turn.itemId && row.court === 'you'));
+      }
+      assert.equal(state.assistant.auto.enabled, false, 'nothing is asked in the demo');
     } finally {
       await server.close();
     }

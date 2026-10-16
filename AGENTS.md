@@ -83,6 +83,10 @@ run it again with `--remove` afterwards.
   draft, for the agent too. Leave Codex's shell approvals, rules and sandbox escapes
   to the user's own config: briefs reach GitHub and other local sources through them,
   so tightening them needs a real brief run on each profile first.
+- The assistant starts on its own only through `src/autoask.ts`: behind
+  `DAILY_FOCUS_ASSISTANT_AUTO`, off by default, for pull requests waiting on the
+  user, with `AUTO_ACTIONS` alone, each key once and within the daily limit. Never
+  add a quick action that creates something, a draft included, to `AUTO_ACTIONS`.
 - `src/agent.ts` starts the briefing agent on the dashboard's clock, 07:00 unless
   `DAILY_FOCUS_AGENT_AT` says otherwise, once a day, and after a user click. Nothing
   else starts it, so the run log is the whole record of its runs; do not add a

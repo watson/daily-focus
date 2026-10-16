@@ -138,6 +138,13 @@ block in it meant for pasting, and to open a draft it created. The field stays a
 the foot of the panel, so you can follow up in the same conversation. The panel
 stays on the item it was opened for while you move through the list.
 
+It can also answer before you ask. With **Answer ahead** on in the settings, when a
+pull request starts waiting on you because someone reviewed it or a check failed,
+the assistant assesses the review or explains the failure on its own. The first
+line of its answer appears on the row, such as "Flaky, not yours: the Safari job
+timed out", so the card already says what to do. It asks about each state once,
+one at a time, and no more than ten times a day unless you change the limit.
+
 It is told to read and draft, and nothing more. An email reply is created as a Gmail
 draft on the thread, so it is waiting there when you open the mail; a reply to a
 reviewer is handed back as text for you to post. It is told never to send, post, or

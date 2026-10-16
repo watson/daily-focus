@@ -303,6 +303,9 @@ test('the file on disk is the last good fetch, written atomically', async () => 
   assert.equal(upgraded?.pulls[0]?.account, '');
   assert.deepEqual(upgraded?.accounts, [{ login: 'alice', ok: true, error: null }]);
   assert.equal(normalizeStoredPull({ id: 'x' }), null);
+  assert.equal(upgraded?.pulls[0]?.headSha, null, 'a cache from before the head commit was kept');
+  // Kept once it is, or an answer ahead about failing checks would be keyed anew after a restart.
+  assert.equal(normalizeStoredPull({ ...pull('alice', 2), headSha: 'abc123' })?.headSha, 'abc123');
 });
 
 test('a stored pull from before the merge state existed reads as "nobody said"', async () => {

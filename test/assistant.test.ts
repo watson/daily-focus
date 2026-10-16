@@ -225,6 +225,27 @@ test('under Codex, the last message is the answer and the earlier ones are steps
   ]);
 });
 
+test('a turn asked ahead carries its key into the log, and back out of it', async () => {
+  const config = await makeConfig([INIT, RESULT('Dana is right.')]);
+  const assistant = new Assistant(config, { onChange: () => {} });
+  await assistant.ask({ itemId: 'gh:1', action: 'assess-review' }, {}, { auto: 'assess-review@2026-10-16T09:00:00Z' });
+  await assistant.ask({ itemId: 'gh:2', text: 'mine' }, {});
+  await settle(assistant, 'gh:1');
+  await settle(assistant, 'gh:2');
+
+  const log = (await readFile(config.assistantLogFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  const started = log.filter((record) => record.event === 'started');
+  assert.equal(started.find((record) => record.item === 'gh:1').auto, 'assess-review@2026-10-16T09:00:00Z');
+  assert.ok(!('auto' in started.find((record) => record.item === 'gh:2')), "a turn the user asked carries none");
+
+  const reread = new Assistant(config, { onChange: () => {} });
+  await reread.start();
+  assert.deepEqual(
+    reread.autoTurns().map((turn) => [turn.itemId, turn.auto, turn.status]),
+    [['gh:1', 'assess-review@2026-10-16T09:00:00Z', 'done']],
+  );
+});
+
 test('a reply is kept whole; nothing in it becomes a note on the item', async () => {
   const config = await makeConfig([INIT, RESULT('Drafted it.\n\nNote for the morning agent: a draft is waiting.')]);
   const assistant = new Assistant(config, { onChange: () => {} });

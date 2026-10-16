@@ -366,6 +366,7 @@ function renderAssistantTurn(turn: AssistantTurn, label: ReadonlyMap<string, Ass
   // A quick action shows as its label, plus whatever was typed alongside it.
   const extra = action && turn.request.startsWith(action.request) ? turn.request.slice(action.request.length).trim() : null;
   const asked: ComponentChild[] = action ? [el('strong', null, action.label), extra ? ` — ${extra}` : ''] : [turn.request];
+  if (turn.auto) asked.push(el('span', { class: 'assistant__auto', title: 'The dashboard asked this on its own, when the pull request started waiting on you.' }, ' · asked ahead'));
   const { body, created } = turn.status === 'done' ? splitCreated(turn.reply) : { body: turn.reply, created: [] };
 
   const status =
