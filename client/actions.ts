@@ -380,6 +380,32 @@ async function stopAssistant(id: string): Promise<void> {
   }
 }
 
+/**
+ * The clipboard API wants a secure context, which a dashboard reached by its
+ * address on the network is not; the old way still works there.
+ */
+async function copy(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const field = document.createElement('textarea');
+      field.value = text;
+      field.setAttribute('readonly', '');
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.append(field);
+      field.select();
+      const copied = document.execCommand('copy');
+      field.remove();
+      if (!copied) throw new Error('the browser would not copy');
+    }
+    showToast('Copied');
+  } catch (err) {
+    showToast(`Could not copy: ${(err as Error).message}`);
+  }
+}
+
 /* ---------- the morning agent ---------- */
 
 /**
@@ -780,6 +806,7 @@ export const handlers: Handlers = {
   refreshCalendar: () => void refreshCalendar(),
   ask: (id, body) => void ask(id, body),
   stopAssistant: (id) => void stopAssistant(id),
+  copy: (text) => void copy(text),
   runAgent: () => void runAgent(),
   stopAgent: () => void stopAgent(),
   askAgent: (run, text) => void askAgent(run, text),

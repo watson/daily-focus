@@ -12,6 +12,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { after } from 'node:test';
 
 import { Window } from 'happy-dom';
 import { render, type ComponentChild } from 'preact';
@@ -49,11 +50,20 @@ for (const name of [...GLOBALS, 'window'] as const) {
   }
 }
 
+const mounted: HTMLElement[] = [];
+
+// Unmounted when the file's tests are done, so a component's timer — the
+// assistant's running clock — stops, and the test process can exit.
+after(() => {
+  for (const root of mounted.splice(0)) render(null, root);
+});
+
 /** Render `node` into a fresh container on the page, and hand the container back. */
 export function mount(node: ComponentChild): HTMLElement {
   const root = document.createElement('div');
   document.body.append(root);
   render(node, root);
+  mounted.push(root);
   return root;
 }
 

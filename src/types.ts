@@ -673,8 +673,8 @@ export interface TicketsFile {
  * One request to the assistant and what came back. A line-pair in
  * `assistant.jsonl`: a `started` record, then one of `finished`, `failed` or
  * `aborted`. The transcript itself stays with the CLI, which keeps it under the
- * session id; this is the join, plus the one thing the panel has to redraw after
- * a reload, which is the reply.
+ * session id; this is the join, plus what the panel has to redraw after a
+ * reload: the reply, and the steps that led to it.
  */
 export interface AssistantTurn {
   id: string;
@@ -690,10 +690,31 @@ export interface AssistantTurn {
   startedAt: string;
   endedAt: string | null;
   status: 'running' | 'done' | 'failed' | 'aborted';
-  /** The assistant's final message, or so far while running. Markdown. */
+  /**
+   * The answer: the assistant's last message, once the turn is over. Markdown.
+   * Empty while it runs, when everything it says is still on the way there and
+   * is in `steps`.
+   */
   reply: string;
+  /** What it did on the way to the answer, in order. Empty on turns logged before steps were kept. */
+  steps: AssistantStep[];
   /** Why a turn failed or was aborted, in the CLI's words where it had any. */
   error: string | null;
+}
+
+/**
+ * One thing the assistant did on the way to its answer: a tool it called, or
+ * something it said before it was done. Kept so the panel can show the work
+ * while it happens, and after.
+ */
+export interface AssistantStep {
+  kind: 'tool' | 'message';
+  /** A tool step in a few words ("View the pull request", "Gmail: get thread"), or the message itself. */
+  text: string;
+  /** The command, query, address or arguments behind a tool step, cut short. Null for a message. */
+  detail: string | null;
+  /** A message is always done. A tool step is running until the CLI says how the call went. */
+  state: 'running' | 'done' | 'failed';
 }
 
 /** A canned request offered as a button, so common asks need no typing. */

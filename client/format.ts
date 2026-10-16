@@ -198,6 +198,21 @@ export function relativeTime(value: DateLike, now = new Date()): string {
 }
 
 /** The first non-empty line, without the Markdown that would read as noise in one. */
+/** "40 s", "7 min", "1 h 12 min": how long something took, from its start to its end. Empty when either is missing. */
+export function durationBetween(start: DateLike, end: DateLike): string {
+  const from = parseDate(start);
+  const to = parseDate(end);
+  if (!from || !to || to < from) return '';
+  const seconds = Math.round((to.getTime() - from.getTime()) / 1000);
+  return seconds < 60 ? `${seconds} s` : formatDuration(Math.round(seconds / 60));
+}
+
+/** "0:07", "1:42", "12:05": a running clock, in minutes and seconds. */
+export function formatClock(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
 export function firstLine(text: unknown): string {
   const line = String(text).split('\n').find((l) => l.trim() !== '') ?? '';
   return line.replace(/^[#>*\-\s]+/, '').replace(/[*_`]/g, '').trim();

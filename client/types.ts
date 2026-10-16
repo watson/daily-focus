@@ -181,6 +181,8 @@ export interface Handlers {
   refreshCalendar(): void;
   ask(id: string, body: { action?: string; text?: string }): void;
   stopAssistant(id: string): void;
+  /** Put text on the clipboard: a reply, or a block in one meant for pasting. */
+  copy(text: string): void;
   runAgent(): void;
   stopAgent(): void;
   askAgent(run: string, text: string): void;

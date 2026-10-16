@@ -44,12 +44,20 @@ function anchor(href: string, label: string): JSX.Element {
   return el('a', { href: /^https?:\/\//i.test(href) ? href : '#', target: '_blank', rel: 'noopener noreferrer' }, label);
 }
 
+export interface BlockOptions {
+  /**
+   * Given, each fenced block gets a Copy button that hands this its text. A
+   * fence is how the assistant marks something meant to be pasted elsewhere.
+   */
+  onCopy?: (text: string) => void;
+}
+
 /**
  * Markdown with paragraphs, lists and fenced code, on top of the inline forms
  * `renderMarkdown` knows. The assistant writes whole answers; everything else on
  * the page is a sentence.
  */
-export function renderMarkdownBlocks(value: unknown): JSX.Element[] {
+export function renderMarkdownBlocks(value: unknown, options: BlockOptions = {}): JSX.Element[] {
   const out: JSX.Element[] = [];
   const lines = String(value).replace(/\r\n/g, '\n').split('\n');
   let i = 0;
@@ -60,7 +68,18 @@ export function renderMarkdownBlocks(value: unknown): JSX.Element[] {
       i++;
       while (i < lines.length && !/^\s*```/.test(lines[i]!)) code.push(lines[i++]!);
       i++;
-      out.push(el('pre', null, code.join('\n')));
+      const text = code.join('\n');
+      const { onCopy } = options;
+      out.push(
+        onCopy
+          ? el(
+              'div',
+              { class: 'code-block' },
+              el('pre', null, text),
+              el('button', { type: 'button', class: 'code-block__copy', title: 'Copy to the clipboard', onClick: () => onCopy(text) }, 'Copy'),
+            )
+          : el('pre', null, text),
+      );
       continue;
     }
     if (line.trim() === '') {
@@ -72,7 +91,7 @@ export function renderMarkdownBlocks(value: unknown): JSX.Element[] {
     if (/^\s*>/.test(line)) {
       const quoted: string[] = [];
       while (i < lines.length && /^\s*>/.test(lines[i]!)) quoted.push(lines[i++]!.replace(/^\s*>\s?/, ''));
-      out.push(el('blockquote', null, renderMarkdownBlocks(quoted.join('\n'))));
+      out.push(el('blockquote', null, renderMarkdownBlocks(quoted.join('\n'), options)));
       continue;
     }
     if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {

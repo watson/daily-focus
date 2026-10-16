@@ -51,7 +51,12 @@ thread the Gmail tool did not find — say so plainly at the top, and answer as 
 the rest allows. A confident answer built on half the material is worse than a
 shorter one that says what it is missing.
 
-Give the URL of anything you created, so it can be opened from the panel.
+End with one line for each thing you created, in exactly this form, so the panel
+can offer it as a button:
+
+```
+Created: [Gmail draft](https://mail.google.com/mail/u/0/#drafts?compose=…)
+```
 
 ## Stay in this chat
 
@@ -59,4 +64,4 @@ This conversation is the whole record of what you did. Do not leave notes on the
 item, do not write to the dashboard's files, and do not try to mark the item done,
 snoozed or handled: the user does that from the dashboard once they have read your
 reply. If you created or changed something — a draft, most often — say so in the
-reply, with its URL, and stop there.
+reply, end with its `Created:` line, and stop there.

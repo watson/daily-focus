@@ -130,9 +130,13 @@ why is CI red, what does this thread actually want from me. With
 `DAILY_FOCUS_ASSISTANT` set to `claude` or `codex`, every item's panel gets an
 assistant that runs that CLI headless against the item, with quick actions for the
 common asks and a field for anything else. Click a card to open its panel, where its
-notes live too; the reply streams in there, and you can follow up in the same
-conversation. The panel stays on the item it was opened for while you move through
-the list.
+notes live too. While the assistant works, the panel shows what it is doing: each
+command it runs and each page, thread or ticket it reads, with a clock, and a cross
+on anything that failed, such as a repository it couldn't see. Once it answers,
+that trail folds away under the answer. The answer has buttons to copy it, or any
+block in it meant for pasting, and to open a draft it created. The field stays at
+the foot of the panel, so you can follow up in the same conversation. The panel
+stays on the item it was opened for while you move through the list.
 
 It is told to read and draft, and nothing more. An email reply is created as a Gmail
 draft on the thread, so it is waiting there when you open the mail; a reply to a

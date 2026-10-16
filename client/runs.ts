@@ -15,7 +15,7 @@ import { useRef } from 'preact/hooks';
 
 import type { AgentRun, AgentRunState, DashboardState } from '../src/types.ts';
 import { el } from './el.ts';
-import { firstLine, formatDay, formatDuration, formatShortDay, formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
+import { durationBetween, firstLine, formatDay, formatShortDay, formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdownBlocks } from './markdown.ts';
 import { usePanel } from './panel.ts';
 import type { Handlers, UiState } from './types.ts';
@@ -190,11 +190,7 @@ function runStatus(run: AgentRun, now: Date, handlers: Handlers): JSX.Element {
 
 /** "40 s", "7 min", "1 h 12 min": how long a finished run took. Empty while it hasn't. */
 function runDuration(run: AgentRun): string {
-  const from = parseDate(run.startedAt);
-  const to = parseDate(run.endedAt);
-  if (!from || !to || to < from) return '';
-  const seconds = Math.round((to.getTime() - from.getTime()) / 1000);
-  return seconds < 60 ? `${seconds} s` : formatDuration(Math.round(seconds / 60));
+  return durationBetween(run.startedAt, run.endedAt);
 }
 
 /**
