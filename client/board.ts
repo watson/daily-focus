@@ -7,7 +7,7 @@ import { banner } from './banners.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
-import { cssId, onCard, renderSnoozeMenu, rowPills, sourceColor, type RowProps } from './items.ts';
+import { cssId, onCard, renderAhead, renderSnoozeMenu, rowPills, sourceColor, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
@@ -164,6 +164,7 @@ export function PullRow({ item: row, state, ui, handlers }: RowProps<BoardRow>):
       renderPullMeta(row, state, now),
       renderPullReasons(row, now),
       renderCancelledChecks(row),
+      renderAhead(row.id, state),
     ),
     renderPullActions(row, ui, handlers),
     ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false }) : null,

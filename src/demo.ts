@@ -28,10 +28,12 @@ import { join } from 'node:path';
 import type { BoardDeps } from './board.ts';
 import { PROFILES, type Profile } from './config.ts';
 import { QUICK_ACTIONS } from './assistant.ts';
+import { actionOf, autoKeys, type AutoAction } from './autoask.ts';
+import { judge } from './prs.ts';
 import { dateFromNow, sampleBrief, sampleGeneratedAt } from './sample.ts';
 import type { TicketBoardDeps } from './ticketboard.ts';
 import { localDateKey } from './time.ts';
-import type { Action, AssistantStep, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
+import type { Action, AssistantStep, BoardRow, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
 
 /** The GitHub login every sample pull request was fetched as. */
 const LOGIN = 'mara-l';
@@ -188,6 +190,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
       reviewDecision: 'REVIEW_REQUIRED',
       checks: 'failure',
       failingChecks: ['unit-tests (node-20)'],
+      headSha: '9c41e07d2b5f3a8e6d1c0b4a7f2e9d8c5b3a1f60',
       mergeStateStatus: 'UNSTABLE',
       lastActivityByYou: hoursAgo(now, 3),
       requestedReviewers: ['eli'],
@@ -330,6 +333,7 @@ function personalPulls(now: Date): PullRequest[] {
       createdAt: daysAgo(now, 2),
       checks: 'failure',
       failingChecks: ['build (macos)'],
+      headSha: '3e8a1c5f9b2d7e4a6c0f1b8d3e5a7c9f2b4d6e81',
       mergeStateStatus: 'UNSTABLE',
       lastActivityByYou: hoursAgo(now, 15),
     }),
@@ -465,12 +469,15 @@ export interface DemoIntegrations {
 }
 
 /**
- * The pollers' dependencies, answered from the sample worlds. Each fetch is
- * dated from the clock, so a refresh in the demo moves the "as of" time and
- * keeps every "opened 3 days ago" true. A ticket moved from the dashboard moves
- * here, and the refresh that follows reads it back, exactly as a real one would.
+ * The pollers' dependencies, answered from the sample worlds. A refresh in the
+ * demo moves the "as of" time, but the pull requests stay dated from when the
+ * demo started, the `now` its store was written with: the assistant's answers
+ * ahead in that store are keyed by when each review came in, and a review that
+ * moved with the clock would be a new one at every read. A demo lasts minutes,
+ * so the waits barely move. A ticket moved from the dashboard moves here, and
+ * the refresh that follows reads it back, exactly as a real one would.
  */
-export function demoIntegrations(profile: Profile): DemoIntegrations {
+export function demoIntegrations(profile: Profile, now: Date = new Date()): DemoIntegrations {
   const world = demoTickets();
   return {
     github: {
@@ -481,7 +488,7 @@ export function demoIntegrations(profile: Profile): DemoIntegrations {
         return 'demo';
       },
       async fetch() {
-        return { login: LOGIN, pulls: demoPulls(profile, new Date()), warnings: [], orgs: {}, rateLimitRemaining: null };
+        return { login: LOGIN, pulls: demoPulls(profile, now), warnings: [], orgs: {}, rateLimitRemaining: null };
       },
     },
     jira: {
@@ -924,6 +931,8 @@ interface TurnSeed {
   seconds: number;
   steps: AssistantStep[];
   reply: string;
+  /** Asked ahead: the key of what it answered, from `aheadKey`. */
+  auto?: string;
 }
 
 /** A tool call in a demo turn's trail. */
@@ -936,9 +945,32 @@ function turnLines(seed: TurnSeed): Record<string, unknown>[] {
   const request = quick ? (seed.text ? `${quick.request}\n\n${seed.text}` : quick.request) : (seed.text ?? '');
   const endedAt = new Date(new Date(seed.at).getTime() + seed.seconds * 1000).toISOString();
   return [
-    { event: 'started', turn: seed.id, item: seed.item, agent: 'claude', request, action: quick?.id ?? null, at: seed.at },
+    {
+      event: 'started',
+      turn: seed.id,
+      item: seed.item,
+      agent: 'claude',
+      request,
+      action: quick?.id ?? null,
+      ...(seed.auto ? { auto: seed.auto } : {}),
+      at: seed.at,
+    },
     { event: 'finished', turn: seed.id, sessionId: `sample-${seed.item}`, reply: seed.reply, steps: seed.steps, at: endedAt },
   ];
+}
+
+/**
+ * The key the board hands a sample pull request's answer ahead, worked out the
+ * way the board works it out, so the answer in the log is still on the row. A
+ * sample that no longer calls for that question is a mistake in the samples.
+ */
+function aheadKey(profile: Profile, now: Date, id: string, action: AutoAction): string {
+  const pr = demoPulls(profile, now).find((candidate) => candidate.id === id);
+  if (!pr) throw new Error(`the demo has no pull request ${id}`);
+  const row: BoardRow = { ...pr, ...judge(pr, now, null), status: 'open', notes: [] };
+  const key = autoKeys(row).find((candidate) => actionOf(candidate) === action);
+  if (!key) throw new Error(`the demo's ${id} calls for no ${action} ahead`);
+  return key;
 }
 
 /** The assistant's log: a few conversations on rows the demo shows, read back into their panels. */
@@ -1016,9 +1048,32 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             ].join('\n'),
           },
           {
+            id: 'turn-d1',
+            item: 'github:pr:acme/webapp#3398',
+            action: 'assess-review',
+            auto: aheadKey(profile, now, 'github:pr:acme/webapp#3398', 'assess-review'),
+            at: minutesAgo(now, 172),
+            seconds: 47,
+            steps: [
+              call('Read the review comments', 'gh pr view 3398 --repo acme/webapp --comments'),
+              call('Read the diff', 'gh pr diff 3398 --repo acme/webapp'),
+            ],
+            reply: [
+              'Dana is right: the backoff never resets after a send succeeds.',
+              '',
+              'She commented on `beacon.ts:41` that `attempt` is only zeroed on page load. The diff bears her out: after one ' +
+                'failed send, every later failure waits longer, for the life of the tab. Reset `attempt` in the success branch ' +
+                'of `sendBeacon` and add a test where a success between two failures starts the delay over.',
+              '',
+              'Her second point, capping the delay at 30 seconds rather than 60, is a preference. Sixty is defensible for a ' +
+                'beacon nobody waits on; say so and leave it.',
+            ].join('\n'),
+          },
+          {
             id: 'turn-c1',
             item: 'github:pr:acme/webapp#3402',
             action: 'explain-ci',
+            auto: aheadKey(profile, now, 'github:pr:acme/webapp#3402', 'explain-ci'),
             at: minutesAgo(now, 20),
             seconds: 58,
             steps: [
@@ -1028,6 +1083,8 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
               call('Read the retry code', 'gh api repos/acme/webapp/contents/src/tracing/fetch.ts'),
             ],
             reply: [
+              'Yours, not flaky: the retry path drops the trace headers.',
+              '',
               'The failing check is `unit-tests (node-20)`, in `tracing/fetch.spec.ts`:',
               '',
               fence,
@@ -1065,6 +1122,25 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
               '3. Nothing says what happens when the clock stops mid-loop.',
               '',
               'A kind review that asks for the first two and lets the third go is probably right for a first contribution.',
+            ].join('\n'),
+          },
+          {
+            id: 'turn-p3',
+            item: 'github:pr:mara-l/pedalboard#51',
+            action: 'explain-ci',
+            auto: aheadKey(profile, now, 'github:pr:mara-l/pedalboard#51', 'explain-ci'),
+            at: minutesAgo(now, 64),
+            seconds: 39,
+            steps: [
+              call('List the checks', 'gh pr checks 51 --repo mara-l/pedalboard'),
+              call('Read the failing job’s log', 'gh run view 4471920 --repo mara-l/pedalboard --log-failed'),
+            ],
+            reply: [
+              'Not your change: the macOS runner could not download the JUCE cache.',
+              '',
+              'The `build (macos)` job stops in its setup step with a 503 from the cache server, before any of your code is ' +
+                'compiled. The Linux and Windows builds of the same commit pass. Rerun the job; if it fails the same way, the ' +
+                'cache key in `.github/workflows/build.yml` can fall back to a fresh download.',
             ].join('\n'),
           },
           {

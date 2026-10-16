@@ -339,6 +339,25 @@ instructions. What the CLI itself enforces:
   assistant or the morning agent on it at all; before 0.149.0 it can't switch
   computer use off, so the assistant won't answer while that setting is off.
 
+### Answer ahead
+
+With `DAILY_FOCUS_ASSISTANT_AUTO=on`, the dashboard asks the assistant before you
+do. When a pull request lands in *Waiting on you* because someone reviewed or
+commented, it asks the assistant to assess the review. When a check fails, it asks
+for an explanation of the failure. The first line of the answer appears on the row,
+on the board and on the brief item for the same pull request, while it still
+matches the pull request's state. The whole answer is in the panel, as a turn you
+can follow up on.
+
+It asks about each state once. A new comment or a new failure is a new question;
+the same checks failing again on the same commit are not. It runs one question at a
+time and never on a row you're asking about, and it starts no more than
+`DAILY_FOCUS_ASSISTANT_AUTO_LIMIT` a day (10 by default). It uses only those two
+quick actions, which read and answer, and never one that drafts. It follows the
+board, which reads only while a tab is open, so it asks while you have the
+dashboard open. It is off by default because it spends the CLI's usage without
+you pressing anything.
+
 Its instructions live in `prompts/assistant.md`, linked into the store as
 `assistant.md` each time the dashboard starts. What it says stays in the chat in the panel: it
 never leaves notes on the item or marks it handled. That is yours to do once you have
@@ -546,6 +565,8 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
 | `DAILY_FOCUS_ASSISTANT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched: `low`, `medium`, `high`, `xhigh` or `max`. Unset passes no flag |
 | `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. The default allows every Gmail tool, sending included; see [What the assistant can do](#what-the-assistant-can-do) to narrow it. Ignored by Codex |
 | `DAILY_FOCUS_ASSISTANT_COMPUTER_USE` | `off` | `on` lets the assistant use Codex's computer-use and browser plugins, which act in your apps and browser with your sign-ins. `off` switches them off for its runs. Ignored by Claude Code, which uses only the tools in its list |
+| `DAILY_FOCUS_ASSISTANT_AUTO` | `off` | `on` asks the assistant ahead about pull requests waiting on you, after a review or a failing check, and puts the answer's first line on the row. See [Answer ahead](#answer-ahead) |
+| `DAILY_FOCUS_ASSISTANT_AUTO_LIMIT` | `10` | How many times a day the assistant may start on its own, from 1 to 100 |
 | `DAILY_FOCUS_AGENT` | `off` | `codex` or `claude` lets the dashboard run the morning agent through that CLI: each scheduled morning, and from the refresh icon beside the brief's age. `off` hides it |
 | `DAILY_FOCUS_AGENT_AT` | `07:00` | Local time, `HH:MM`, at which the dashboard starts the agent on each scheduled day, or as soon as it is running after that. `off` means it never starts one on its own; the refresh icon still does. Needs `DAILY_FOCUS_AGENT` |
 | `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the server's PATH lacks it. `~` is expanded |

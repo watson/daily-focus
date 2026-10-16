@@ -252,3 +252,69 @@ test('more than three pending checks are summarised rather than listed', () => {
   });
   assert.match(byClass(node, 'item__reason')[0]?.textContent ?? '', /still running: a, b, c and 2 more/);
 });
+
+/* ---------- answered ahead ---------- */
+
+/** A red row waiting on you, and the state around it with the assistant's turns on it. */
+function ahead(turns: Partial<import('../src/types.ts').AssistantTurn>[], auto: Partial<import('../src/types.ts').AssistantAuto> = {}) {
+  const [row] = resolveBoard([pr({ checks: 'failure', failingChecks: ['unit'], headSha: 'abc', reviewDecision: 'REVIEW_REQUIRED', reviews: [], lastActivityByOthers: null })], [], NOW, GATES);
+  assert.ok(row && row.court === 'you');
+  const key = 'explain-ci@abc:unit';
+  const state = {
+    now: NOW.toISOString(),
+    assistant: {
+      enabled: true,
+      agent: 'claude',
+      quickActions: [],
+      items: {
+        [row.id]: {
+          running: turns.some((turn) => turn.status === 'running'),
+          sessionId: null,
+          turns: turns.map((turn, i) => ({
+            id: `t${i}`,
+            itemId: row.id,
+            agent: 'claude',
+            sessionId: null,
+            request: 'x',
+            action: 'explain-ci',
+            auto: key,
+            startedAt: hoursAgo(1),
+            endedAt: hoursAgo(0.9),
+            status: 'done',
+            reply: '',
+            steps: [],
+            error: null,
+            ...turn,
+          })),
+        },
+      },
+      auto: { enabled: true, limit: 10, usedToday: 1, rows: { [row.id]: [key] }, ...auto },
+    },
+  } as unknown as DashboardState;
+  return { row, key, node: mountOne(renderPullRow(row, state, UI, HANDLERS)) };
+}
+
+test("an answer given ahead puts its first line on the row while it is still about the row's state", () => {
+  const { node } = ahead([{ reply: '**Flaky, not yours:** the Safari job timed out.\n\nThe log shows…' }]);
+  const line = byClass(node, 'item__ahead')[0]!;
+  assert.equal(line.textContent, '✦Flaky, not yours: the Safari job timed out.');
+  assert.match(line.getAttribute('title')!, /Answered ahead .* Open the panel/);
+  assert.equal(line.querySelector('strong')!.textContent, 'Flaky, not yours:', 'its Markdown is kept');
+  const named = byClass(ahead([{ reply: '## Raise `MAX_BATCHES` to 400\n\nWhy…' }]).node, 'item__ahead')[0]!;
+  assert.equal(named.textContent, '✦Raise MAX_BATCHES to 400');
+  assert.equal(named.querySelector('code')!.textContent, 'MAX_BATCHES');
+
+  const { node: stale } = ahead([{ reply: 'About an older commit.', auto: 'explain-ci@old:unit' }]);
+  assert.equal(byClass(stale, 'item__ahead').length, 0, 'an answer about a state the row has left says nothing about it now');
+
+  const { node: mine } = ahead([{ reply: 'You asked this yourself.', auto: null }]);
+  assert.equal(byClass(mine, 'item__ahead').length, 0, "the user's own questions stay in the panel");
+});
+
+test('while it reads, when it failed, and when the day is spent, the row says so quietly', () => {
+  assert.equal(byClass(ahead([{ status: 'running', endedAt: null }]).node, 'item__ahead')[0]!.textContent, '✦Reading the failing checks…');
+  assert.match(byClass(ahead([{ status: 'failed', error: 'gh: not found' }]).node, 'item__ahead')[0]!.textContent!, /Could not answer ahead/);
+  assert.match(byClass(ahead([], { usedToday: 10 }).node, 'item__ahead')[0]!.textContent!, /today's 10 are used/);
+  assert.equal(byClass(ahead([]).node, 'item__ahead').length, 0, 'waiting its turn is not worth a line');
+  assert.equal(byClass(ahead([], { enabled: false, usedToday: 10 }).node, 'item__ahead').length, 0);
+});

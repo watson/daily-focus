@@ -1156,6 +1156,7 @@ export async function fetchPulls(
       for (const [nodeId, head] of checks.heads) {
         const pull = found.get(nodeId);
         if (!pull) continue;
+        pull.headSha = head.oid;
         applyChecks(pull, head.rollup);
         if (head.rollup && rollupTruncated(head.rollup)) {
           partial.push({ id: nodeId, pull, oid: head.oid, rollup: head.rollup });

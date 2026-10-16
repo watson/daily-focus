@@ -61,6 +61,13 @@ import type {
  */
 const TURN_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * Why a turn was cut short by the dashboard going away rather than by anyone's
+ * choice. Asking ahead tries such a turn again; see `autoask.ts`.
+ */
+export const RESTARTED = 'the dashboard restarted while this was running';
+export const SHUT_DOWN = 'the dashboard shut down';
+
 /** How many turns a row's panel carries. The log keeps all of them. */
 const TURNS_SHOWN = 20;
 
@@ -188,6 +195,8 @@ type LogRecord =
       agent: AssistantAgent;
       request: string;
       action: string | null;
+      /** Only on a turn the dashboard started on its own: what it answered. */
+      auto?: string;
       at: string;
     }
   | { event: 'finished'; turn: string; sessionId: string | null; reply: string; steps: AssistantStep[]; at: string }
@@ -219,6 +228,7 @@ export function foldAssistantLog(text: string): Map<string, AssistantTurn> {
         sessionId: null,
         request: record.request,
         action: typeof record.action === 'string' ? record.action : null,
+        auto: typeof record.auto === 'string' ? record.auto : null,
         startedAt: record.at,
         endedAt: null,
         status: 'running',
@@ -696,7 +706,7 @@ export class Assistant {
     for (const turn of this.turns.values()) {
       if (turn.status !== 'running') continue;
       turn.status = 'aborted';
-      turn.error = 'the dashboard restarted while this was running';
+      turn.error = RESTARTED;
       turn.endedAt = new Date().toISOString();
       await this.append({
         event: 'aborted',
@@ -710,7 +720,17 @@ export class Assistant {
     }
   }
 
-  view(): AssistantState {
+  /**
+   * Every turn the dashboard started on its own, however old: what has been
+   * asked ahead is never asked again, and the panel's window of recent turns
+   * is no record of that.
+   */
+  autoTurns(): AssistantTurn[] {
+    return [...this.turns.values()].filter((turn) => turn.auto !== null);
+  }
+
+  /** The assistant's half of the state. Asking ahead is `autoask.ts`'s to add, since it needs the board. */
+  view(): Omit<AssistantState, 'auto'> {
     const items: Record<string, AssistantItemState> = {};
     for (const turn of this.turns.values()) {
       const entry = (items[turn.itemId] ??= { running: false, sessionId: null, turns: [] });
@@ -745,9 +765,10 @@ export class Assistant {
 
   /**
    * Start a turn. Returns once the process is running, not once it has answered;
-   * the answer arrives through `onChange` and the next state.
+   * the answer arrives through `onChange` and the next state. `auto` marks a
+   * turn the dashboard started on its own, with the key of what it answers.
    */
-  async ask(ask: AskRequest, context: AskContext): Promise<AssistantTurn> {
+  async ask(ask: AskRequest, context: AskContext, options: { auto?: string } = {}): Promise<AssistantTurn> {
     const agent = this.config.assistant.agent;
     if (!agent) throw new Error('the assistant is off; set DAILY_FOCUS_ASSISTANT to claude or codex');
     if (this.running.has(ask.itemId)) throw new Error('the assistant is already working on this item');
@@ -765,6 +786,7 @@ export class Assistant {
       sessionId: null,
       request: resolved.request,
       action: resolved.action,
+      auto: options.auto ?? null,
       startedAt: new Date().toISOString(),
       endedAt: null,
       status: 'running',
@@ -780,6 +802,7 @@ export class Assistant {
       agent,
       request: turn.request,
       action: turn.action,
+      ...(turn.auto ? { auto: turn.auto } : {}),
       at: turn.startedAt,
     });
 
@@ -898,7 +921,7 @@ export class Assistant {
 
   /** Kill everything, for shutdown. The exit handlers write the aborted lines. */
   async close(): Promise<void> {
-    for (const itemId of [...this.running.keys()]) await this.stop(itemId, 'the dashboard shut down');
+    for (const itemId of [...this.running.keys()]) await this.stop(itemId, SHUT_DOWN);
   }
 
   private async finish(turn: AssistantTurn, outcome: NonNullable<ParsedEvent['done']>, aborted = false): Promise<void> {

@@ -84,14 +84,17 @@ async function demo(open: boolean, profile: string | undefined): Promise<void> {
   const chosen = demoProfile(profile);
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-demo-'));
   process.on('exit', () => rmSync(store, { recursive: true, force: true }));
-  await writeDemoStore(store, chosen);
+  // One clock for the store and the boards: the assistant's answers ahead in the
+  // store are keyed by when the sample reviews came in, which the boards date.
+  const now = new Date();
+  await writeDemoStore(store, chosen, now);
   await start(
     open,
     (url) => {
       console.log(`\n  The demo is at ${url}, with sample data in a throwaway store (the ${chosen} profile).`);
       console.log('  Nothing is connected and nothing runs. Stop it with Ctrl+C; the store goes with it.\n');
     },
-    { env: demoEnv(process.env, store, chosen), integrations: demoIntegrations(chosen) },
+    { env: demoEnv(process.env, store, chosen), integrations: demoIntegrations(chosen, now) },
   );
 }
 

@@ -193,6 +193,14 @@ export interface AssistantConfig {
    * its tool list decides.
    */
   computerUse: boolean;
+  /**
+   * `DAILY_FOCUS_ASSISTANT_AUTO`: whether the dashboard asks on its own about
+   * pull requests waiting on the user (see `autoask.ts`). Off by default: it
+   * spends the CLI's usage without anyone pressing anything.
+   */
+  auto: boolean;
+  /** `DAILY_FOCUS_ASSISTANT_AUTO_LIMIT`: how many turns it may start on its own a day. */
+  autoLimit: number;
 }
 
 /** A local time of day, as `DAILY_FOCUS_AGENT_AT` gives it. */
@@ -489,6 +497,8 @@ function envAssistant(env: NodeJS.ProcessEnv): AssistantConfig {
     effort: envString('DAILY_FOCUS_ASSISTANT_EFFORT', '', env) || null,
     tools: tools.length > 0 ? tools : DEFAULT_ASSISTANT_TOOLS,
     computerUse: envFlag('DAILY_FOCUS_ASSISTANT_COMPUTER_USE', false, env),
+    auto: envFlag('DAILY_FOCUS_ASSISTANT_AUTO', false, env),
+    autoLimit: envBounded('DAILY_FOCUS_ASSISTANT_AUTO_LIMIT', 10, 1, 100, env),
   };
 }
 

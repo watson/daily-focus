@@ -70,6 +70,7 @@ test('with the assistant off, what it said while on is still in the panel, read-
     sessionId: 's',
     request: QUICK_ACTIONS.find((a) => a.id === 'draft-reply')!.request,
     action: 'draft-reply',
+    auto: null,
     startedAt: NOW,
     endedAt: NOW,
     status: 'done',
@@ -107,6 +108,7 @@ test('a reply renders as blocks, and a running turn says so with a Stop button',
     sessionId: 's',
     request: QUICK_ACTIONS.find((a) => a.id === 'draft-reply')!.request,
     action: 'draft-reply',
+    auto: null,
     startedAt: NOW,
     endedAt: NOW,
     status: 'done',
@@ -161,6 +163,7 @@ function turn(overrides: Partial<AssistantTurn> = {}): AssistantTurn {
     sessionId: 's',
     request: 'What do they want?',
     action: null,
+    auto: null,
     startedAt: '2026-09-24T11:59:00Z',
     endedAt: '2026-09-24T11:59:52Z',
     status: 'done',
@@ -275,4 +278,18 @@ test("a ticket's panel offers the ticket's quick actions, not a pull request's",
   const offered = buttonLabels(byClass(node, 'assistant__quick')[0]!);
   assert.ok(offered.includes('Summarise the ticket'));
   assert.ok(!offered.includes('Assess the review'));
+});
+
+test('a turn the dashboard asked on its own says so in the panel', () => {
+  const node = panelWith([turn({ action: 'assess-review', request: QUICK_ACTIONS.find((a) => a.id === 'assess-review')!.request, auto: 'assess-review@x' })]);
+  assert.equal(byClass(node, 'assistant__request')[0]!.textContent, 'Assess the review · asked ahead');
+  const brief = mountOne(
+    renderItem(
+      item(),
+      state({ ...ENABLED, items: { 'email:thread:1': { running: false, sessionId: 's', turns: [turn({ auto: 'k', reply: 'Yes, Friday.' })] } }, auto: { enabled: true, limit: 10, usedToday: 1, rows: { 'email:thread:1': ['k'] } } }),
+      uiWith(),
+      HANDLERS,
+    ),
+  );
+  assert.equal(byClass(brief, 'item__ahead')[0]!.textContent, '✦Yes, Friday.', 'a brief item with the same id shows it too');
 });

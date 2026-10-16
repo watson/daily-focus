@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 
 import type { DashboardState, ResolvedItem } from '../src/types.ts';
 import { el } from './el.ts';
-import { addDays, addMonths, dayKey, daysFromToday, formatShortDay, relativeDay } from './format.ts';
+import { addDays, addMonths, dayKey, daysFromToday, formatShortDay, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdown } from './markdown.ts';
 import type { Handlers, UiState } from './types.ts';
 
@@ -176,6 +176,7 @@ export function ItemRow({ item, state, ui, handlers }: RowProps<ResolvedItem>): 
       el('p', { class: 'item__title' }, title),
       renderMeta(item, state, now),
       item.detail ? el('p', { class: 'item__detail' }, renderMarkdown(item.detail)) : null,
+      renderAhead(item.id, state),
     ),
     renderActions(item, ui, handlers),
     ui.menuFor.value === item.id ? renderSnoozeMenu(item, now, handlers) : null,
@@ -260,6 +261,58 @@ function rowPillTexts(row: { id: string; notes?: readonly unknown[] }, state: Da
 
 export function rowPills(row: { id: string; notes?: readonly unknown[] }, state: DashboardState): JSX.Element[] {
   return rowPillTexts(row, state).map(([cls, text]) => el('span', { class: cls }, text));
+}
+
+/** What the assistant is doing while it answers ahead, by the quick action it was asked. */
+const READING: Readonly<Record<string, string>> = {
+  'assess-review': 'Reading the review…',
+  'explain-ci': 'Reading the failing checks…',
+};
+
+/**
+ * What the assistant, asked ahead, made of the row as it stands: the first line
+ * of its answer, which the prompt asks to be the verdict. Only while the answer
+ * is still about the row's state — an answer about a review that has since had
+ * another comment, or checks that have since passed, says nothing about the row
+ * now. The whole answer is in the panel, which the card opens.
+ *
+ * A pull request's row and its brief item share an id, so both show it.
+ */
+export function renderAhead(id: string, state: DashboardState): JSX.Element | null {
+  const auto = state.assistant?.auto;
+  const keys = auto?.rows?.[id];
+  if (!auto || !keys?.length) return null;
+  const turn = (state.assistant.items?.[id]?.turns ?? []).findLast((candidate) => candidate.auto !== null && keys.includes(candidate.auto));
+  const mark = el('span', { class: 'item__ahead-mark', 'aria-hidden': 'true' }, '✦');
+  if (!turn) {
+    // Waiting its turn says nothing worth a line; a limit that stops it does.
+    return auto.enabled && auto.usedToday >= auto.limit
+      ? el('p', { class: 'item__ahead item__ahead--quiet' }, mark, `Not answered ahead: today's ${auto.limit} are used.`)
+      : null;
+  }
+  if (turn.status === 'running') {
+    return el('p', { class: 'item__ahead item__ahead--quiet', 'data-status': 'running' }, mark, READING[turn.action ?? ''] ?? 'Reading…');
+  }
+  if (turn.status === 'failed') {
+    return el('p', { class: 'item__ahead item__ahead--quiet' }, mark, 'Could not answer ahead; the panel says why.');
+  }
+  const verdict = turn.status === 'done' ? verdictLine(turn.reply) : '';
+  if (!verdict) return null;
+  return el(
+    'p',
+    { class: 'item__ahead', title: `Answered ahead ${relativeTime(turn.endedAt ?? turn.startedAt, new Date(state.now))}. Open the panel for the whole answer.` },
+    mark,
+    renderMarkdown(verdict),
+  );
+}
+
+/**
+ * An answer's first line, less a heading, quote or list marker, with its inline
+ * Markdown kept: a verdict that names `MAX_BATCHES` should still say it.
+ */
+function verdictLine(reply: string): string {
+  const line = reply.split('\n').find((candidate) => candidate.trim() !== '') ?? '';
+  return line.replace(/^\s*(?:#{1,6}\s+|>\s*|[-*•]\s+|\d+[.)]\s+)/, '').trim();
 }
 
 function renderActions(item: ResolvedItem, ui: UiState, handlers: Handlers): JSX.Element {

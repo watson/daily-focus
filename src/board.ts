@@ -509,6 +509,9 @@ export function normalizeStoredPull(raw: unknown): PullRequest | null {
     autoMerge: raw.autoMerge === true,
     requestedReviewers: strings(raw.requestedReviewers),
     reviews,
+    // Kept, or a restart would hand the assistant's answers ahead about failing
+    // checks a key the live read doesn't, and they would be asked again.
+    headSha: typeof raw.headSha === 'string' ? raw.headSha : null,
     lastActivityByYou: typeof raw.lastActivityByYou === 'string' ? raw.lastActivityByYou : null,
     lastActivityByOthers,
   };
