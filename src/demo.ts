@@ -31,7 +31,7 @@ import { QUICK_ACTIONS } from './assistant.ts';
 import { dateFromNow, sampleBrief, sampleGeneratedAt } from './sample.ts';
 import type { TicketBoardDeps } from './ticketboard.ts';
 import { localDateKey } from './time.ts';
-import type { Action, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
+import type { Action, AssistantStep, Brief, Item, PullRequest, Ticket, TicketStatusCategory } from './types.ts';
 
 /** The GitHub login every sample pull request was fetched as. */
 const LOGIN = 'mara-l';
@@ -913,7 +913,7 @@ function demoAgentLog(profile: Profile, now: Date): Record<string, unknown>[] {
   return runs.flatMap(runLines);
 }
 
-/** One assistant exchange, as the log's line pair: what was asked, and what came back. */
+/** One assistant exchange, as the log's line pair: what was asked, what it did, and what came back. */
 interface TurnSeed {
   id: string;
   item: string;
@@ -922,8 +922,14 @@ interface TurnSeed {
   text?: string;
   at: string;
   seconds: number;
+  steps: AssistantStep[];
   reply: string;
 }
+
+/** A tool call in a demo turn's trail. */
+const call = (text: string, detail: string, state: AssistantStep['state'] = 'done'): AssistantStep => ({ kind: 'tool', text, detail, state });
+/** Something said on the way. */
+const said = (text: string): AssistantStep => ({ kind: 'message', text, detail: null, state: 'done' });
 
 function turnLines(seed: TurnSeed): Record<string, unknown>[] {
   const quick = seed.action ? QUICK_ACTIONS.find((candidate) => candidate.id === seed.action) : undefined;
@@ -931,7 +937,7 @@ function turnLines(seed: TurnSeed): Record<string, unknown>[] {
   const endedAt = new Date(new Date(seed.at).getTime() + seed.seconds * 1000).toISOString();
   return [
     { event: 'started', turn: seed.id, item: seed.item, agent: 'claude', request, action: quick?.id ?? null, at: seed.at },
-    { event: 'finished', turn: seed.id, sessionId: `sample-${seed.item}`, reply: seed.reply, at: endedAt },
+    { event: 'finished', turn: seed.id, sessionId: `sample-${seed.item}`, reply: seed.reply, steps: seed.steps, at: endedAt },
   ];
 }
 
@@ -947,6 +953,12 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             action: 'summarise-pr',
             at: minutesAgo(now, 46),
             seconds: 52,
+            steps: [
+              call('View the pull request', 'gh pr view 3421 --repo acme/webapp --json title,body,files,reviews'),
+              call('Read the diff', 'gh pr diff 3421 --repo acme/webapp'),
+              said('Four files. The recorder change is the substance; the rest is its tests and a type.'),
+              call('Read the issue it closes', 'gh issue view 3388 --repo acme/webapp --comments'),
+            ],
             reply: [
               '**What it changes.** Session replay keeps every recorded mutation batch in an array on the recorder for the life of ' +
                 'the tab, and only ever appends; on a tab left open for a day that is hundreds of megabytes. The change caps the ' +
@@ -971,6 +983,11 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             text: 'Is the Safari fallback actually reachable?',
             at: minutesAgo(now, 44),
             seconds: 31,
+            steps: [
+              call('Find where the fallback is chosen', 'gh search code "WeakRef" --repo acme/webapp'),
+              call('Read the SDK docs on browser support', 'gh api repos/acme/sdk-docs/contents/support.md', 'failed'),
+              call("Read the webapp's copy of the support matrix", 'gh api repos/acme/webapp/contents/docs/browser-support.md'),
+            ],
             reply:
               'Only on Safari 14.0 and below, which the SDK’s support matrix dropped in v5. Under the current matrix the branch is ' +
               'dead code. I would ask Alice to remove it rather than test it.',
@@ -981,6 +998,12 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             action: 'draft-reply',
             at: minutesAgo(now, 38),
             seconds: 64,
+            steps: [
+              call('Gmail: get thread', '{"threadId":"18f2a9c4b7"}'),
+              call('Gmail: search threads', '{"query":"Q4 planning doc headcount"}'),
+              said('Bob wants numbers per team with a reason each. The planning doc has both.'),
+              call('Gmail: create draft', '{"threadId":"18f2a9c4b7"}'),
+            ],
             reply: [
               'I read the thread — four messages, Bob twice. He wants the Q4 team split: how many of the six open roles go to ' +
                 'Platform and how many to Webapp, with a line of justification each, by the end of the week so it lands in the planning deck.',
@@ -988,6 +1011,8 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
               'I have created a Gmail draft on the thread, from you, proposing four Platform and two Webapp with the reasons from the ' +
                 'planning doc, and asking whether the deck can carry a footnote that the SDK hire depends on the Q3 numbers. It is ' +
                 '**not sent**; it is waiting on the thread when you open it.',
+              '',
+              'Created: [Gmail draft](https://mail.google.com/mail/u/0/#drafts?compose=18f2a9c4b7)',
             ].join('\n'),
           },
           {
@@ -996,6 +1021,12 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             action: 'explain-ci',
             at: minutesAgo(now, 20),
             seconds: 58,
+            steps: [
+              call('List the checks', 'gh pr checks 3402 --repo acme/webapp'),
+              call('Read the failing job’s log', 'gh run view 9182734 --repo acme/webapp --log-failed'),
+              said('One failure, in tracing/fetch.spec.ts. Reading the retry path it exercises.'),
+              call('Read the retry code', 'gh api repos/acme/webapp/contents/src/tracing/fetch.ts'),
+            ],
             reply: [
               'The failing check is `unit-tests (node-20)`, in `tracing/fetch.spec.ts`:',
               '',
@@ -1018,6 +1049,10 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             action: 'summarise-pr',
             at: minutesAgo(now, 52),
             seconds: 47,
+            steps: [
+              call('View the pull request', 'gh pr view 47 --repo mara-l/pedalboard --json title,body,files,commits'),
+              call('Read the diff', 'gh pr diff 47 --repo mara-l/pedalboard'),
+            ],
             reply: [
               'Tomas adds MIDI clock sync to the looper: the transport listens for MIDI clock at 24 pulses per quarter note and for ' +
                 'start and stop, derives the tempo, and quantises the loop start to the next beat. +212/−18 across three files, with a ' +
@@ -1038,10 +1073,12 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             action: 'draft-reply',
             at: minutesAgo(now, 30),
             seconds: 41,
+            steps: [call('Gmail: get thread', '{"threadId":"19a0c4e2f1"}'), call('Gmail: create draft', '{"threadId":"19a0c4e2f1"}')],
             reply:
               'The thread is three messages: your request on the 28th, their “within the week” on the 29th, and nothing since. I have ' +
               'created a Gmail draft on it that asks, briefly and politely, whether the quote is still coming this week, and says the ' +
-              'other quotes are in and you would like to decide by Friday. It is **not sent**; open the thread to read it.',
+              'other quotes are in and you would like to decide by Friday. It is **not sent**; open the thread to read it.\n\n' +
+              'Created: [Gmail draft](https://mail.google.com/mail/u/0/#drafts?compose=19a0c4e2f1)',
           },
         ];
   return turns.flatMap(turnLines);

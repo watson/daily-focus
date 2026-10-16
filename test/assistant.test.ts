@@ -18,8 +18,10 @@ import {
   claudeAdapter,
   codexAdapter,
   composePrompt,
+  connectorLabel,
   foldAssistantLog,
   QUICK_ACTIONS,
+  unwrapShell,
 } from '../src/assistant.ts';
 import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
 import { briefWritingTools, DEFAULT_AGENT_TOOLS, DEFAULT_ASSISTANT_TOOLS, loadConfig, type Config } from '../src/config.ts';
@@ -51,13 +53,39 @@ const SAID = (text: string) =>
 const RESULT = (text: string) =>
   `{"type":"result","subtype":"success","is_error":false,"session_id":"sess-1","result":${JSON.stringify(text)}}`;
 
+/** A tool call, as Claude Code prints one. */
+const CALLED = (id: string, name: string, input: Record<string, unknown>) =>
+  JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input, caller: { type: 'direct' } }] } });
+/** A tool's answer, which Claude Code prints as a user message. */
+const ANSWERED = (id: string, isError = false) =>
+  JSON.stringify({ type: 'user', message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result', content: isError ? 'denied' : 'ok', is_error: isError }] } });
+
+/**
+ * Wait until every turn on the item is over, and logged as over: a turn is
+ * marked done in memory a moment before its closing line reaches the log, and
+ * a test that reads the log must not land in between.
+ */
 async function settle(assistant: Assistant, itemId: string): Promise<void> {
   for (let i = 0; i < 200; i++) {
     const entry = assistant.view().items[itemId];
-    if (entry && !entry.running && entry.turns.every((turn) => turn.status !== 'running')) return;
+    if (entry && !entry.running && entry.turns.every((turn) => turn.status !== 'running') && (await logged(assistant, entry.turns))) return;
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error('the turn never finished');
+}
+
+async function logged(assistant: Assistant, turns: readonly { id: string }[]): Promise<boolean> {
+  const file = (assistant as unknown as { config: Config }).config.assistantLogFile;
+  const text = await readFile(file, 'utf8').catch(() => '');
+  const closed = new Set(
+    text
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { event: string; turn: string })
+      .filter((record) => record.event !== 'started')
+      .map((record) => record.turn),
+  );
+  return turns.every((turn) => closed.has(turn.id));
 }
 
 test('a turn is logged as started then finished, with the reply and the session id', async () => {
@@ -122,6 +150,79 @@ test('switching CLIs starts a fresh session rather than resuming the other one',
   const argv = await readFile(join(config.dataDir, 'argv'), 'utf8');
   assert.ok(!argv.includes('--resume'));
   assert.equal(assistant.view().items['gh:1']!.sessionId, 'sess-1');
+});
+
+test('what it did on the way is kept as steps, and the reply is only the answer', async () => {
+  const config = await makeConfig([
+    INIT,
+    SAID('Reading the review first.'),
+    CALLED('toolu_1', 'Bash', { command: 'gh pr view 1 --comments', description: 'View the pull request' }),
+    ANSWERED('toolu_1'),
+    CALLED('toolu_2', 'Bash', { command: 'gh api repos/acme/private/pulls/1' }),
+    ANSWERED('toolu_2', true),
+    SAID('The review is right.'),
+    RESULT('The review is right.'),
+  ]);
+  const changes: number[] = [];
+  const assistant = new Assistant(config, { onChange: () => changes.push(Date.now()) });
+  await assistant.ask({ itemId: 'gh:1', action: 'assess-review' }, {});
+  await settle(assistant, 'gh:1');
+
+  const turn = assistant.view().items['gh:1']!.turns[0]!;
+  assert.equal(turn.reply, 'The review is right.', 'the narration is not part of the answer');
+  assert.deepEqual(turn.steps, [
+    { kind: 'message', text: 'Reading the review first.', detail: null, state: 'done' },
+    { kind: 'tool', text: 'View the pull request', detail: 'gh pr view 1 --comments', state: 'done' },
+    { kind: 'tool', text: 'Run a command', detail: 'gh api repos/acme/private/pulls/1', state: 'failed' },
+  ]);
+  assert.ok(changes.length >= 6, 'each step reaches the tabs as it happens');
+
+  // And the log keeps them, so a reload shows the same trail.
+  const log = (await readFile(config.assistantLogFile, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(log[1].steps, turn.steps);
+  assert.deepEqual(foldAssistantLog(await readFile(config.assistantLogFile, 'utf8')).get(turn.id)!.steps, turn.steps);
+});
+
+test('a turn that fails keeps everything it said as steps, and a call left hanging failed with it', async () => {
+  const config = await makeConfig([INIT, SAID('Checking the CI log.'), CALLED('toolu_1', 'Bash', { command: 'gh run view 7 --log-failed' })]);
+  const assistant = new Assistant(config, { onChange: () => {} });
+  await assistant.ask({ itemId: 'gh:1', action: 'explain-ci' }, {});
+  await settle(assistant, 'gh:1');
+
+  const turn = assistant.view().items['gh:1']!.turns[0]!;
+  assert.equal(turn.status, 'failed');
+  assert.equal(turn.reply, '', 'nothing it said on the way was an answer');
+  assert.deepEqual(
+    turn.steps.map((step) => [step.kind, step.state]),
+    [
+      ['message', 'done'],
+      ['tool', 'failed'],
+    ],
+  );
+});
+
+test('under Codex, the last message is the answer and the earlier ones are steps', async () => {
+  const config = await makeConfig(
+    [
+      '{"type":"thread.started","thread_id":"t-1"}',
+      '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll read the thread first.\\n"}}',
+      `{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'gh pr view 1'","aggregated_output":"","exit_code":null,"status":"in_progress"}}`,
+      `{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'gh pr view 1'","aggregated_output":"ok","exit_code":0,"status":"completed"}}`,
+      '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Drafted."}}',
+      '{"type":"turn.completed","usage":{}}',
+    ],
+    { DAILY_FOCUS_ASSISTANT: 'codex', DAILY_FOCUS_ASSISTANT_COMPUTER_USE: 'on' },
+  );
+  const assistant = new Assistant(config, { onChange: () => {} }, undefined, listing([]));
+  await assistant.ask({ itemId: 'gh:1', text: 'hi' }, {});
+  await settle(assistant, 'gh:1');
+
+  const turn = assistant.view().items['gh:1']!.turns[0]!;
+  assert.equal(turn.reply, 'Drafted.');
+  assert.deepEqual(turn.steps, [
+    { kind: 'message', text: 'I’ll read the thread first.\n', detail: null, state: 'done' },
+    { kind: 'tool', text: 'Run a command', detail: 'gh pr view 1', state: 'done' },
+  ]);
 });
 
 test('a reply is kept whole; nothing in it becomes a note on the item', async () => {
@@ -301,7 +402,14 @@ test('the log folds forgivingly', () => {
   const text = [
     JSON.stringify({ event: 'started', turn: 'a', item: 'i', agent: 'claude', request: 'q', action: null, at: '1' }),
     '{broken',
-    JSON.stringify({ event: 'finished', turn: 'a', sessionId: 's', reply: 'r', at: '2' }),
+    JSON.stringify({
+      event: 'finished',
+      turn: 'a',
+      sessionId: 's',
+      reply: 'r',
+      steps: [{ kind: 'tool', text: 'Run a command', detail: 'gh pr view 1', state: 'failed' }, { text: 7 }, null, { text: 'said', kind: 'message' }],
+      at: '2',
+    }),
     JSON.stringify({ event: 'finished', turn: 'never-started', sessionId: 's', reply: 'r', at: '2' }),
     JSON.stringify({ event: 'started', turn: 'b', item: 'i', agent: 'claude', request: 'q2', action: 'x', at: '3' }),
   ].join('\n');
@@ -310,7 +418,12 @@ test('the log folds forgivingly', () => {
   assert.equal(turns.get('a')!.status, 'done');
   assert.equal(turns.get('a')!.reply, 'r');
   assert.equal(turns.get('a')!.sessionId, 's');
+  assert.deepEqual(turns.get('a')!.steps, [
+    { kind: 'tool', text: 'Run a command', detail: 'gh pr view 1', state: 'failed' },
+    { kind: 'message', text: 'said', detail: null, state: 'done' },
+  ]);
   assert.equal(turns.get('b')!.status, 'running');
+  assert.deepEqual(turns.get('b')!.steps, [], 'a line from before steps were kept has none');
 });
 
 /** The options every adapter test starts from. */
@@ -337,6 +450,67 @@ test('the Claude adapter reads what Claude Code prints', () => {
   const bare = claudeAdapter.args({ ...BASE, sessionId: 'abc' });
   assert.ok(!bare.includes('--model') && !bare.includes('--effort') && !bare.includes('--allowedTools'));
   assert.ok(bare.includes('--resume') && bare[bare.indexOf('--resume') + 1] === 'abc');
+});
+
+test("the Claude adapter turns tool calls into steps, and the tools' answers into how they went", () => {
+  assert.deepEqual(claudeAdapter.parse(CALLED('toolu_1', 'Bash', { command: 'echo hello', description: 'Print hello' })), {
+    steps: [{ id: 'toolu_1', text: 'Print hello', detail: 'echo hello', state: 'running' }],
+  });
+  assert.deepEqual(claudeAdapter.parse(ANSWERED('toolu_1')), { steps: [{ id: 'toolu_1', state: 'done' }] });
+  assert.deepEqual(claudeAdapter.parse(ANSWERED('toolu_2', true)), { steps: [{ id: 'toolu_2', state: 'failed' }] });
+
+  // A message can say something and call a tool at once; the text came first.
+  const both = JSON.stringify({
+    type: 'assistant',
+    message: { content: [{ type: 'text', text: 'Looking.' }, { type: 'tool_use', id: 't', name: 'WebFetch', input: { url: 'https://example.com/a', prompt: 'x' } }] },
+  });
+  assert.deepEqual(claudeAdapter.parse(both), {
+    text: 'Looking.',
+    steps: [{ id: 't', text: 'Fetch a page', detail: 'https://example.com/a', state: 'running' }],
+  });
+
+  const gmail = claudeAdapter.parse(CALLED('t', 'mcp__claude_ai_Gmail__get_thread', { threadId: '18f2' }));
+  assert.deepEqual(gmail?.steps, [{ id: 't', text: 'Gmail: get thread', detail: '{"threadId":"18f2"}', state: 'running' }]);
+  assert.equal(claudeAdapter.parse(CALLED('t', 'ToolSearch', { query: 'select:x' })), null, "Claude Code's housekeeping is not a step");
+  assert.equal(claudeAdapter.parse(CALLED('t', 'Bash', { command: 'a'.repeat(500) }))!.steps![0]!.detail!.length, 200);
+  assert.equal(claudeAdapter.parse(CALLED('t', 'Bash', { command: 'cat <<EOF\nsecret\nEOF' }))!.steps![0]!.detail, 'cat <<EOF …');
+});
+
+test('the Codex adapter turns commands, connector calls and searches into steps', () => {
+  const item = (event: string, fields: Record<string, unknown>) => JSON.stringify({ type: event, item: fields });
+  const command = { id: 'item_1', type: 'command_execution', command: "/bin/zsh -lc 'ls /nope'", aggregated_output: '' };
+  assert.deepEqual(codexAdapter.parse(item('item.started', { ...command, exit_code: null, status: 'in_progress' })), {
+    steps: [{ id: 'item_1', text: 'Run a command', detail: 'ls /nope', state: 'running' }],
+  });
+  assert.equal(codexAdapter.parse(item('item.completed', { ...command, exit_code: 1, status: 'failed' }))!.steps![0]!.state, 'failed');
+  assert.equal(codexAdapter.parse(item('item.completed', { ...command, exit_code: 0, status: 'completed' }))!.steps![0]!.state, 'done');
+
+  // A search doesn't know its query until it is done.
+  assert.deepEqual(codexAdapter.parse(item('item.started', { id: 'ws', type: 'web_search', query: '', action: { type: 'other' } }))!.steps, [
+    { id: 'ws', text: 'Search the web', detail: null, state: 'running' },
+  ]);
+  const searched = item('item.completed', { id: 'ws', type: 'web_search', query: 'node lts', action: { type: 'search', query: 'node lts' } });
+  assert.deepEqual(codexAdapter.parse(searched)!.steps, [{ id: 'ws', text: 'Search the web', detail: 'node lts', state: 'done' }]);
+  const opened = item('item.completed', { id: 'ws', type: 'web_search', query: 'https://x.dev', action: { type: 'open_page', url: 'https://x.dev' } });
+  assert.deepEqual(codexAdapter.parse(opened)!.steps, [{ id: 'ws', text: 'Open a page', detail: 'https://x.dev', state: 'done' }]);
+
+  const mcp = { id: 'm', type: 'mcp_tool_call', server: 'codex_apps', tool: 'gmail_create_draft', arguments: { thread_id: '18f2' } };
+  assert.deepEqual(codexAdapter.parse(item('item.completed', { ...mcp, status: 'completed' }))!.steps, [
+    { id: 'm', text: 'Gmail create draft', detail: '{"thread_id":"18f2"}', state: 'done' },
+  ]);
+  assert.equal(codexAdapter.parse(item('item.completed', { ...mcp, status: 'failed', error: { message: 'refused' } }))!.steps![0]!.state, 'failed');
+  assert.equal(codexAdapter.parse(item('item.completed', { id: 'r', type: 'reasoning', text: '…' })), null);
+  assert.equal(codexAdapter.parse(item('item.started', { id: 'f', type: 'file_change', changes: [] })), null);
+});
+
+test("a step names a connector's tool and the command that was asked for", () => {
+  assert.equal(connectorLabel('claude_ai_Gmail', 'search_threads'), 'Gmail: search threads');
+  assert.equal(connectorLabel('atlassian', 'getJiraIssue'), 'atlassian: getJiraIssue');
+  assert.equal(connectorLabel('codex_apps', 'gmail_get_thread'), 'Gmail get thread');
+  assert.equal(unwrapShell("/bin/zsh -lc 'gh pr view 1'"), 'gh pr view 1');
+  assert.equal(unwrapShell(`bash -lc 'echo '\\''hi'\\'''`), "echo 'hi'");
+  assert.equal(unwrapShell('/bin/sh -c "ls -la"'), 'ls -la');
+  assert.equal(unwrapShell('gh pr view 1'), 'gh pr view 1');
 });
 
 test('Claude receives the first prompt separately from the default tool permissions', () => {

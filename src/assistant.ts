@@ -11,8 +11,9 @@
  * Three things to keep apart, each with one owner:
  *
  *  - The conversation lives with the CLI, under its session id. Nothing here
- *    copies it. What is kept is the join — item, session, and the final reply of
- *    each turn — which is all the panel needs to redraw after a reload.
+ *    copies it. What is kept is the join — item, session, the final reply of
+ *    each turn, and a line for each call it made on the way — which is all the
+ *    panel needs to redraw after a reload.
  *  - The running process lives in this process's memory and nowhere else. A
  *    restart loses it, and `start` says so: any turn left running in the log is
  *    closed as aborted rather than shown as a spinner that never stops.
@@ -45,6 +46,7 @@ import type {
   AssistantItemState,
   AssistantQuickAction,
   AssistantState,
+  AssistantStep,
   AssistantTurn,
   BoardRow,
   InProgressTicket,
@@ -61,6 +63,15 @@ const TURN_TIMEOUT_MS = 10 * 60_000;
 
 /** How many turns a row's panel carries. The log keeps all of them. */
 const TURNS_SHOWN = 20;
+
+/**
+ * How many steps a turn keeps, the newest. A turn that calls a hundred tools
+ * has a trail nobody reads to the start of, and every tab is sent all of it.
+ */
+const STEPS_KEPT = 100;
+
+/** How much of a command, query or argument list a step shows. The CLI's own log has the rest. */
+const DETAIL_LENGTH = 200;
 
 /**
  * The canned requests. Each is a full sentence to the assistant rather than a
@@ -179,9 +190,9 @@ type LogRecord =
       action: string | null;
       at: string;
     }
-  | { event: 'finished'; turn: string; sessionId: string | null; reply: string; at: string }
-  | { event: 'failed'; turn: string; sessionId: string | null; error: string; reply: string; at: string }
-  | { event: 'aborted'; turn: string; sessionId: string | null; reason: string; reply: string; at: string };
+  | { event: 'finished'; turn: string; sessionId: string | null; reply: string; steps: AssistantStep[]; at: string }
+  | { event: 'failed'; turn: string; sessionId: string | null; error: string; reply: string; steps: AssistantStep[]; at: string }
+  | { event: 'aborted'; turn: string; sessionId: string | null; reason: string; reply: string; steps: AssistantStep[]; at: string };
 
 /**
  * Fold the log into turns. Forgiving line by line, as the action log is: one
@@ -212,6 +223,7 @@ export function foldAssistantLog(text: string): Map<string, AssistantTurn> {
         endedAt: null,
         status: 'running',
         reply: '',
+        steps: [],
         error: null,
       });
       continue;
@@ -221,6 +233,7 @@ export function foldAssistantLog(text: string): Map<string, AssistantTurn> {
     if (!turn) continue;
     turn.sessionId = typeof record.sessionId === 'string' ? record.sessionId : turn.sessionId;
     turn.reply = typeof record.reply === 'string' ? record.reply : turn.reply;
+    turn.steps = readSteps((record as { steps?: unknown }).steps);
     turn.endedAt = record.at;
     if (record.event === 'finished') {
       turn.status = 'done';
@@ -235,15 +248,56 @@ export function foldAssistantLog(text: string): Map<string, AssistantTurn> {
   return turns;
 }
 
+/** Add a step to a running turn, letting the oldest go past `STEPS_KEPT`. */
+function addStep(turn: AssistantTurn, step: AssistantStep): void {
+  turn.steps.push(step);
+  if (turn.steps.length > STEPS_KEPT) turn.steps.shift();
+}
+
+/** The same text but for spacing: how a CLI's final result compares with the message it repeats. */
+function sameWords(a: string, b: string): boolean {
+  return a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
+}
+
+/** A logged step list, keeping the steps that still read as steps. Lines from before steps were kept have none. */
+function readSteps(value: unknown): AssistantStep[] {
+  if (!Array.isArray(value)) return [];
+  const steps: AssistantStep[] = [];
+  for (const candidate of value as Partial<AssistantStep>[]) {
+    if (typeof candidate !== 'object' || candidate === null || typeof candidate.text !== 'string') continue;
+    steps.push({
+      kind: candidate.kind === 'message' ? 'message' : 'tool',
+      text: candidate.text,
+      detail: typeof candidate.detail === 'string' ? candidate.detail : null,
+      state: candidate.state === 'failed' ? 'failed' : 'done',
+    });
+  }
+  return steps;
+}
+
 /* ---------- the CLIs ---------- */
 
 /** What one line of a CLI's output meant, reduced to what the panel needs. */
 export interface ParsedEvent {
   sessionId?: string;
-  /** A piece of assistant text: appended to the reply so far. */
+  /** Something the assistant said: on the way, or, the last time, the answer. */
   text?: string;
+  /** Tool calls the line starts or settles. When a line has text too, the text came first. */
+  steps?: ParsedStep[];
   /** The turn is over. `reply` replaces whatever was accumulated when given. */
   done?: { ok: boolean; reply?: string; error?: string };
+}
+
+/**
+ * A tool call as one line reports it. The CLI's id for the call ties the line
+ * that starts it to the one that says how it went; the second may carry only
+ * the outcome, or, for a web search, the query the first did not know yet.
+ */
+export interface ParsedStep {
+  id: string;
+  text?: string;
+  detail?: string | null;
+  state: AssistantStep['state'];
 }
 
 export interface SpawnOptions {
@@ -328,14 +382,22 @@ export const claudeAdapter: Adapter = {
     if (type === 'system' && typeof event.session_id === 'string') {
       return { sessionId: event.session_id };
     }
-    if (type === 'assistant') {
+    if (type === 'assistant' || type === 'user') {
       const message = event.message as { content?: unknown } | undefined;
-      const content = Array.isArray(message?.content) ? (message!.content as { type?: string; text?: string }[]) : [];
-      const text = content
-        .filter((block) => block.type === 'text' && typeof block.text === 'string')
-        .map((block) => block.text!)
-        .join('\n\n');
-      return text ? { text } : null;
+      const content = Array.isArray(message?.content) ? (message!.content as ClaudeBlock[]) : [];
+      const parsed: ParsedEvent = {};
+      // Only the assistant speaks; a user line is the tools answering it.
+      const text =
+        type === 'assistant'
+          ? content
+              .filter((block) => block.type === 'text' && typeof block.text === 'string')
+              .map((block) => block.text!)
+              .join('\n\n')
+          : '';
+      if (text) parsed.text = text;
+      const steps = content.flatMap((block) => claudeStep(block) ?? []);
+      if (steps.length) parsed.steps = steps;
+      return text || steps.length ? parsed : null;
     }
     if (type === 'result') {
       const ok = event.is_error !== true && event.subtype === 'success';
@@ -384,10 +446,11 @@ export const codexAdapter: Adapter = {
     if (type === 'thread.started' && typeof event.thread_id === 'string') {
       return { sessionId: event.thread_id };
     }
-    if (type === 'item.completed') {
-      const item = event.item as { type?: string; text?: string } | undefined;
-      if (item?.type === 'agent_message' && typeof item.text === 'string') return { text: item.text };
-      return null;
+    if (type === 'item.started' || type === 'item.completed') {
+      const item = event.item as CodexItem | undefined;
+      if (type === 'item.completed' && item?.type === 'agent_message' && typeof item.text === 'string') return { text: item.text };
+      const step = item ? codexStep(item, type === 'item.completed') : null;
+      return step ? { steps: [step] } : null;
     }
     if (type === 'turn.completed') return { done: { ok: true } };
     if (type === 'turn.failed' || type === 'error') {
@@ -403,6 +466,149 @@ export const ADAPTERS: Readonly<Record<AssistantAgent, Adapter>> = {
   claude: claudeAdapter,
   codex: codexAdapter,
 };
+
+/* ---------- steps: what each CLI's tool calls look like on the panel ---------- */
+
+/** A content block in a Claude Code message: text, a tool call, or a tool's answer. */
+interface ClaudeBlock {
+  type?: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  is_error?: boolean;
+}
+
+/**
+ * Claude Code's own housekeeping, which says nothing about the item: loading a
+ * tool's schema, and keeping a to-do list.
+ */
+const CLAUDE_QUIET_TOOLS = new Set(['ToolSearch', 'TodoWrite']);
+
+/**
+ * A step for a tool call or a tool's answer. Worded as an instruction, the way
+ * Claude Code's own command descriptions are ("View the pull request"), so a
+ * step reads the same running and done.
+ */
+function claudeStep(block: ClaudeBlock): ParsedStep | null {
+  if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+    return { id: block.tool_use_id, state: block.is_error === true ? 'failed' : 'done' };
+  }
+  if (block.type !== 'tool_use' || typeof block.id !== 'string' || typeof block.name !== 'string') return null;
+  if (CLAUDE_QUIET_TOOLS.has(block.name)) return null;
+  const input = block.input ?? {};
+  const said = (key: string): string | null => (typeof input[key] === 'string' && input[key] !== '' ? (input[key] as string) : null);
+  const step = (text: string, detail: string | null): ParsedStep => ({ id: block.id!, text, detail: shorten(detail), state: 'running' });
+  switch (block.name) {
+    case 'Bash':
+      return step(said('description') ?? 'Run a command', said('command'));
+    case 'WebFetch':
+      return step('Fetch a page', said('url'));
+    case 'WebSearch':
+      return step('Search the web', said('query'));
+    case 'Read':
+      return step('Read a file', said('file_path'));
+    case 'Grep':
+      return step('Search files', said('pattern'));
+    case 'Glob':
+      return step('List files', said('pattern'));
+    case 'Task':
+    case 'Agent':
+      return step('Hand part of it to a subagent', said('description'));
+  }
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(block.name);
+  if (mcp) return step(connectorLabel(mcp[1]!, mcp[2]!), compactArgs(input));
+  return step(block.name, compactArgs(input));
+}
+
+/** An item in Codex's JSON stream: the fields of the kinds a step is made from. */
+interface CodexItem {
+  id?: string;
+  type?: string;
+  text?: string;
+  command?: string;
+  exit_code?: number | null;
+  status?: string;
+  server?: string;
+  tool?: string;
+  arguments?: unknown;
+  error?: unknown;
+  query?: string;
+  action?: { type?: string; query?: string; url?: string; pattern?: string };
+}
+
+/**
+ * A step for a Codex item, when it is a call to something: a shell command, a
+ * connector's tool, a web search. Started, it is running; completed, it says how
+ * it went. Reasoning, plans and the messages are not steps.
+ */
+function codexStep(item: CodexItem, completed: boolean): ParsedStep | null {
+  if (typeof item.id !== 'string') return null;
+  const failed = item.status === 'failed' || (item.error !== undefined && item.error !== null);
+  const state: AssistantStep['state'] = completed ? (failed ? 'failed' : 'done') : 'running';
+  if (item.type === 'command_execution') {
+    const exited = typeof item.exit_code === 'number' && item.exit_code !== 0;
+    return {
+      id: item.id,
+      text: 'Run a command',
+      detail: shorten(unwrapShell(item.command ?? '')),
+      state: completed && exited ? 'failed' : state,
+    };
+  }
+  if (item.type === 'mcp_tool_call' && typeof item.server === 'string' && typeof item.tool === 'string') {
+    return { id: item.id, text: connectorLabel(item.server, item.tool), detail: compactArgs(item.arguments), state };
+  }
+  if (item.type === 'web_search') {
+    // Started, Codex doesn't know the query yet; completed says what it did.
+    const action = item.action ?? {};
+    if (action.type === 'open_page') return { id: item.id, text: 'Open a page', detail: shorten(action.url ?? null), state };
+    if (action.type === 'find_in_page') return { id: item.id, text: 'Find in a page', detail: shorten(action.pattern ?? action.url ?? null), state };
+    return { id: item.id, text: 'Search the web', detail: shorten(action.query || item.query || null), state };
+  }
+  return null;
+}
+
+/**
+ * Codex runs each command through the user's login shell, `/bin/zsh -lc '…'`;
+ * the panel shows the command that was asked for.
+ */
+export function unwrapShell(command: string): string {
+  const wrapped = /^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/.exec(command.trim());
+  if (!wrapped) return command.trim();
+  return wrapped[1] === "'" ? wrapped[2]!.replaceAll(`'\\''`, `'`) : wrapped[2]!;
+}
+
+/**
+ * "Gmail: get thread" for a connector's tool. Claude Code names its claude.ai
+ * connectors `claude_ai_Gmail`; Codex reaches its apps through one server,
+ * `codex_apps`, whose tool names start with the app's.
+ */
+export function connectorLabel(server: string, tool: string): string {
+  const words = (name: string): string => name.replace(/[_-]+/g, ' ').trim();
+  if (server === 'codex_apps') {
+    const said = words(tool);
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  }
+  return `${words(server.replace(/^claude_ai_/, ''))}: ${words(tool)}`;
+}
+
+/** A tool's arguments in a line: the JSON, unless there are none. */
+function compactArgs(input: unknown): string | null {
+  if (input === null || input === undefined) return null;
+  if (typeof input === 'object' && Object.keys(input).length === 0) return null;
+  return shorten(typeof input === 'string' ? input : JSON.stringify(input));
+}
+
+/** The first line, and no more than `DETAIL_LENGTH` of it. */
+function shorten(value: string | null): string | null {
+  if (!value) return null;
+  const lines = value.trim().split('\n');
+  const first = lines[0]!.trim();
+  const more = lines.length > 1;
+  if (first.length > DETAIL_LENGTH) return `${first.slice(0, DETAIL_LENGTH - 1)}…`;
+  return more ? `${first} …` : first;
+}
 
 /* ---------- the prompt ---------- */
 
@@ -498,6 +704,7 @@ export class Assistant {
         sessionId: turn.sessionId,
         reason: turn.error,
         reply: turn.reply,
+        steps: turn.steps,
         at: turn.endedAt,
       });
     }
@@ -562,6 +769,7 @@ export class Assistant {
       endedAt: null,
       status: 'running',
       reply: '',
+      steps: [],
       error: null,
     };
     this.turns.set(turn.id, turn);
@@ -634,16 +842,30 @@ export class Assistant {
       stderr.push(chunk.toString('utf8'));
       if (stderr.length > 50) stderr.shift();
     });
+    // Each tool call's step, by the CLI's id for the call, for the line that says how it went.
+    const calls = new Map<string, AssistantStep>();
     if (child.stdout) {
       const lines = createInterface({ input: child.stdout });
       lines.on('line', (line) => {
         const event = adapter.parse(line);
         if (!event) return;
         if (event.sessionId) turn.sessionId = event.sessionId;
-        if (event.text) {
-          turn.reply = turn.reply ? `${turn.reply}\n\n${event.text}` : event.text;
-          this.hooks.onChange();
+        // Everything said is a step until the turn is over; the last of it is
+        // then the answer, and comes out of the trail (see `finish`).
+        if (event.text) addStep(turn, { kind: 'message', text: event.text, detail: null, state: 'done' });
+        for (const parsed of event.steps ?? []) {
+          const known = calls.get(parsed.id);
+          if (known) {
+            if (parsed.text) known.text = parsed.text;
+            if (parsed.detail) known.detail = parsed.detail;
+            known.state = parsed.state;
+          } else if (parsed.text) {
+            const step: AssistantStep = { kind: 'tool', text: parsed.text, detail: parsed.detail ?? null, state: parsed.state };
+            calls.set(parsed.id, step);
+            addStep(turn, step);
+          }
         }
+        if (event.text || event.steps) this.hooks.onChange();
         if (event.done) done = event.done;
       });
     }
@@ -684,20 +906,30 @@ export class Assistant {
     // The reply is the whole record. Nothing the assistant says is copied onto
     // the item: the chat is where the user asked, and the chat is where the
     // answer stays.
-    const reply = outcome.reply ?? turn.reply;
+    //
+    // Finished, the last thing said is the answer, and it is said once: as the
+    // reply, not again as the last step on the way to it. Stopped or failed, it
+    // was only ever on the way — both CLIs send an answer whole, at the end — so
+    // all of it stays in the steps.
+    const last = turn.steps.findLast((step) => step.kind === 'message');
+    const reply = outcome.ok ? (outcome.reply ?? last?.text ?? '') : '';
+    if (outcome.ok && last && sameWords(last.text, reply)) turn.steps.splice(turn.steps.lastIndexOf(last), 1);
+    // A call nobody reported back on went the way the turn did.
+    for (const step of turn.steps) if (step.state === 'running') step.state = outcome.ok ? 'done' : 'failed';
     turn.reply = reply;
     turn.endedAt = at;
+    const steps = turn.steps;
     if (outcome.ok) {
       turn.status = 'done';
-      await this.append({ event: 'finished', turn: turn.id, sessionId: turn.sessionId, reply, at });
+      await this.append({ event: 'finished', turn: turn.id, sessionId: turn.sessionId, reply, steps, at });
     } else if (aborted) {
       turn.status = 'aborted';
       turn.error = outcome.error ?? 'stopped';
-      await this.append({ event: 'aborted', turn: turn.id, sessionId: turn.sessionId, reason: turn.error, reply, at });
+      await this.append({ event: 'aborted', turn: turn.id, sessionId: turn.sessionId, reason: turn.error, reply, steps, at });
     } else {
       turn.status = 'failed';
       turn.error = outcome.error ?? 'failed';
-      await this.append({ event: 'failed', turn: turn.id, sessionId: turn.sessionId, error: turn.error, reply, at });
+      await this.append({ event: 'failed', turn: turn.id, sessionId: turn.sessionId, error: turn.error, reply, steps, at });
     }
     this.hooks.onChange();
   }

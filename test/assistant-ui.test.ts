@@ -18,6 +18,7 @@ import { Flyout } from '../client/flyout.ts';
 import { renderItem } from '../client/items.ts';
 import { renderMarkdownBlocks } from '../client/markdown.ts';
 import { QUICK_ACTIONS } from '../src/assistant.ts';
+import { resolveTickets } from '../src/tickets.ts';
 import type { AssistantTurn, DashboardState, ResolvedItem } from '../src/types.ts';
 
 const NOW = '2026-09-24T12:00:00Z';
@@ -73,6 +74,7 @@ test('with the assistant off, what it said while on is still in the panel, read-
     endedAt: NOW,
     status: 'done',
     reply: 'Drafted, not sent.',
+    steps: [],
     error: null,
   };
   const off = { enabled: false, agent: null, quickActions: QUICK_ACTIONS, items: { 'email:thread:1': { running: false, sessionId: null, turns: [said] } } };
@@ -109,6 +111,7 @@ test('a reply renders as blocks, and a running turn says so with a Stop button',
     endedAt: NOW,
     status: 'done',
     reply: 'Drafted.\n\n- one\n- two',
+    steps: [],
     error: null,
   };
   const running: AssistantTurn = { ...done, id: 't2', action: null, request: 'and shorter?', status: 'running', reply: '', endedAt: null };
@@ -145,4 +148,131 @@ test('markdown blocks: paragraphs, lists, fences and a heading as a lead line', 
   );
   assert.equal(byTag(blocks[0]!, 'strong')[0]!.textContent, 'Verdict');
   assert.equal(blocks[3]!.textContent, 'code here');
+});
+
+/* ---------- the work, and what to do with the answer ---------- */
+
+/** A turn on the email row, finished unless a test says otherwise. */
+function turn(overrides: Partial<AssistantTurn> = {}): AssistantTurn {
+  return {
+    id: 't1',
+    itemId: 'email:thread:1',
+    agent: 'claude',
+    sessionId: 's',
+    request: 'What do they want?',
+    action: null,
+    startedAt: '2026-09-24T11:59:00Z',
+    endedAt: '2026-09-24T11:59:52Z',
+    status: 'done',
+    reply: 'They want a date.',
+    steps: [],
+    error: null,
+    ...overrides,
+  };
+}
+
+const panelWith = (turns: AssistantTurn[], handlers = HANDLERS): HTMLElement =>
+  mountOne(
+    h(Flyout, {
+      row: item(),
+      run: null,
+      state: state({ ...ENABLED, items: { 'email:thread:1': { running: turns.some((t) => t.status === 'running'), sessionId: 's', turns } } }),
+      ui: uiWith({ detailFor: 'email:thread:1' }),
+      handlers,
+    }),
+  );
+
+const STEPS: AssistantTurn['steps'] = [
+  { kind: 'message', text: 'Reading the thread first.', detail: null, state: 'done' },
+  { kind: 'tool', text: 'Gmail: get thread', detail: '{"threadId":"1"}', state: 'done' },
+  { kind: 'tool', text: 'Read the shared doc', detail: 'https://docs.example.com/d/1', state: 'failed' },
+];
+
+test('running, the turn shows a clock and each step as it comes, with no answer yet', () => {
+  const running = turn({ status: 'running', endedAt: null, reply: '', startedAt: new Date().toISOString(), steps: [...STEPS, { kind: 'tool', text: 'Gmail: search threads', detail: '{"query":"x"}', state: 'running' }] });
+  const node = panelWith([running]);
+
+  assert.match(byClass(node, 'assistant__status')[0]!.textContent!, /^Working · 0:0\d$/);
+  const steps = byClass(node, 'assistant__step');
+  assert.deepEqual(
+    steps.map((step) => step.dataset.state ?? 'message'),
+    ['message', 'done', 'failed', 'running'],
+  );
+  assert.equal(steps[0]!.textContent, 'Reading the thread first.');
+  assert.equal(byClass(steps[1]!, 'assistant__step-text')[0]!.textContent, 'Gmail: get thread');
+  assert.equal(byClass(steps[1]!, 'assistant__step-detail')[0]!.textContent, '{"threadId":"1"}');
+  assert.equal(byClass(node, 'assistant__reply').length, 0);
+  assert.equal(byTag(node, 'details').length, 0, 'nothing is folded away while it works');
+});
+
+test('done, the work folds under what it took, and a failed turn keeps it open', () => {
+  const done = panelWith([turn({ steps: STEPS })]);
+  const work = byTag(done, 'details')[0]!;
+  assert.equal(work.querySelector('summary')!.textContent, 'Worked for 52 s · 3 steps · 1 failed');
+  assert.equal((work as HTMLDetailsElement).open, false);
+  assert.equal(byClass(done, 'assistant__reply')[0]!.textContent, 'They want a date.');
+
+  const failed = panelWith([turn({ status: 'failed', reply: '', error: 'claude exited with code 1', steps: STEPS })]);
+  assert.equal((byTag(failed, 'details')[0] as HTMLDetailsElement).open, true);
+  assert.match(byTag(failed, 'summary')[0]!.textContent!, /^Ran for 52 s/);
+
+  const before = panelWith([turn()]);
+  assert.equal(byTag(before, 'details').length, 0, 'a turn logged before steps were kept has no trail');
+  assert.equal(byClass(before, 'assistant__took')[0]!.textContent, 'Answered in 52 s');
+});
+
+test('what the assistant created is a button, and the answer and its blocks can be copied', () => {
+  const copied: string[] = [];
+  const reply = 'Drafted a reply.\n\n```\nThanks, Friday works.\n```\n\nCreated: [Gmail draft](https://mail.google.com/mail/u/0/#drafts?compose=1)';
+  const node = panelWith([turn({ reply })], handlersWith({ copy: (text) => copied.push(text) }));
+
+  const answer = byClass(node, 'assistant__reply')[0]!;
+  assert.ok(!answer.textContent!.includes('Created:'), 'the line becomes the button, not prose');
+  const open = byClass(node, 'assistant__after')[0]!.querySelector('a')!;
+  assert.equal(open.textContent, 'Gmail draft ↗');
+  assert.equal(open.getAttribute('href'), 'https://mail.google.com/mail/u/0/#drafts?compose=1');
+  assert.equal(open.getAttribute('target'), '_blank');
+
+  byClass(answer, 'code-block__copy')[0]!.click();
+  byTag(node, 'button').find((button) => button.textContent === 'Copy reply')!.click();
+  assert.deepEqual(copied, ['Thanks, Friday works.', 'Drafted a reply.\n\n```\nThanks, Friday works.\n```']);
+});
+
+test('an answer that names its draft in prose keeps the link where it put it', () => {
+  const node = panelWith([turn({ reply: 'Created a draft: https://mail.google.com/x' })]);
+  assert.equal(byClass(node, 'assistant__reply')[0]!.querySelector('a')!.getAttribute('href'), 'https://mail.google.com/x');
+  assert.equal(byClass(node, 'assistant__after')[0]!.querySelectorAll('a').length, 0);
+});
+
+test("the field is pinned in the panel's foot, outside the part that scrolls", () => {
+  const node = panelWith([turn()]);
+  const footer = byClass(node, 'flyout__footer')[0]!;
+  assert.equal(byClass(footer, 'assistant__input').length, 1);
+  assert.equal(byClass(footer, 'assistant__quick').length, 1);
+  assert.equal(byClass(byClass(node, 'flyout__body')[0]!, 'assistant__input').length, 0);
+});
+
+test("a ticket's panel offers the ticket's quick actions, not a pull request's", () => {
+  const [row] = resolveTickets(
+    [
+      {
+        id: 'jira:PROJ-1',
+        key: 'PROJ-1',
+        summary: 'Ship it',
+        workflowStatus: 'In Progress',
+        statusCategory: 'indeterminate',
+        issueType: 'Task',
+        url: 'https://acme.atlassian.net/browse/PROJ-1',
+        hasAnyPr: false,
+        hasOpenPr: false,
+        allPrsClosed: false,
+      },
+    ],
+    [],
+    new Date(NOW),
+  );
+  const node = mountOne(h(Flyout, { row: row!, run: null, state: state(ENABLED), ui: uiWith({ detailFor: 'jira:PROJ-1' }), handlers: HANDLERS }));
+  const offered = buttonLabels(byClass(node, 'assistant__quick')[0]!);
+  assert.ok(offered.includes('Summarise the ticket'));
+  assert.ok(!offered.includes('Assess the review'));
 });

@@ -13,11 +13,11 @@
  */
 
 import { h, type ComponentChild, type RefObject, type JSX } from 'preact';
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { AgentRun, AssistantItemState, AssistantQuickAction, AssistantTurn, DashboardState } from '../src/types.ts';
+import type { AgentRun, AssistantItemState, AssistantQuickAction, AssistantStep, AssistantTurn, DashboardState } from '../src/types.ts';
 import { el } from './el.ts';
-import { relativeTime } from './format.ts';
+import { durationBetween, formatClock, parseDate, relativeTime } from './format.ts';
 import { SOURCE_LABEL, githubRepo, sourceColor } from './items.ts';
 import { renderMarkdown, renderMarkdownBlocks } from './markdown.ts';
 import { usePanel } from './panel.ts';
@@ -54,7 +54,7 @@ export function Flyout({ row, run, state, ui, handlers }: FlyoutProps): JSX.Elem
   );
 }
 
-function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
+function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: DashboardState; ui: UiState; handlers: Handlers }): (JSX.Element | null)[] {
   const noteInput = useRef<HTMLInputElement>(null);
   const askInput = useRef<HTMLTextAreaElement>(null);
   const { body, onScroll } = usePanel(ui, { note: noteInput, assistant: askInput });
@@ -90,12 +90,9 @@ function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: Dashboa
           : el('p', { class: 'flyout__empty' }, 'Nothing noted yet. A note goes to the morning agent as free text.'),
         h(NoteForm, { row, title: facts.title, ui, handlers, inputRef: noteInput }),
       ),
-      enabled
-        ? renderAssistantSection(row, facts, state, entry, ui, handlers, askInput)
-        : entry.turns.length
-          ? renderAssistantHistory(state, entry)
-          : null,
+      entry.turns.length ? renderAssistantSection(state, entry, enabled, handlers) : null,
     ),
+    enabled ? renderAssistantFooter(facts, state, entry, ui, handlers, askInput, row) : null,
   ];
 }
 
@@ -237,37 +234,49 @@ function NoteForm({
 }
 
 /**
- * The conversation so far, the canned asks that fit this row's source, and the
- * field, in that order — one section, with the field at its foot the way a chat
- * has one. All of it scrolls with the panel; `usePanel` keeps the end in view
- * while a reply grows.
+ * The conversation so far: each request, what the assistant did about it, and
+ * its answer. The field to continue it is in the panel's foot, not here, so it
+ * stays in reach however long this gets.
+ *
+ * The conversation belongs to the row, not to the setting: switching the
+ * assistant off must not make a reply vanish from the panel that showed it.
+ * Off, the section says why there is nowhere to ask, where the field would be.
  */
-function renderAssistantSection(
-  row: DetailRow,
+function renderAssistantSection(state: DashboardState, entry: AssistantItemState, enabled: boolean, handlers: Handlers): JSX.Element {
+  const label = new Map((state.assistant?.quickActions ?? []).map((action) => [action.id, action]));
+  return el(
+    'section',
+    { class: 'flyout__section assistant', 'data-running': String(entry.running) },
+    el('h3', { class: 'flyout__label' }, 'Assistant'),
+    el(
+      'div',
+      { class: 'assistant__turns' },
+      entry.turns.map((turn) => renderAssistantTurn(turn, label, handlers)),
+    ),
+    enabled ? null : el('p', { class: 'flyout__empty' }, 'The assistant is switched off (DAILY_FOCUS_ASSISTANT), so nothing more can be asked here.'),
+  );
+}
+
+/**
+ * The panel's foot: the canned asks that fit this row's source, and the field.
+ * Pinned under the scrolling body the way a chat's field is, so a follow-up is
+ * never a scroll away from the answer it follows.
+ */
+function renderAssistantFooter(
   facts: RowFacts,
   state: DashboardState,
   entry: AssistantItemState,
   ui: UiState,
   handlers: Handlers,
   inputRef: RefObject<HTMLTextAreaElement>,
+  row: DetailRow,
 ): JSX.Element {
-  const source = 'source' in row ? row.source : 'github';
   const actions = (state.assistant?.quickActions ?? []).filter(
-    (action) => action.sources === null || action.sources.includes(source),
+    (action) => action.sources === null || (action.sources as readonly string[]).includes(facts.source),
   );
-  const label = new Map((state.assistant?.quickActions ?? []).map((action) => [action.id, action]));
-
   return el(
-    'section',
-    { class: 'flyout__section assistant', 'data-running': String(entry.running) },
-    el('h3', { class: 'flyout__label' }, 'Assistant'),
-    entry.turns.length
-      ? el(
-          'div',
-          { class: 'assistant__turns' },
-          entry.turns.map((turn) => renderAssistantTurn(turn, label)),
-        )
-      : null,
+    'div',
+    { class: 'flyout__footer' },
     entry.running
       ? null
       : el(
@@ -290,30 +299,7 @@ function renderAssistantSection(
   );
 }
 
-/**
- * What was asked of the assistant while it was on, once it is off.
- *
- * The conversation belongs to the row, not to the setting: switching the
- * assistant off must not make a reply vanish from the panel that showed it.
- * Read-only, since there is nothing to ask now, and it says so where the field
- * would be rather than leaving a section that ends mid-sentence.
- */
-function renderAssistantHistory(state: DashboardState, entry: AssistantItemState): JSX.Element {
-  const label = new Map((state.assistant?.quickActions ?? []).map((action) => [action.id, action]));
-  return el(
-    'section',
-    { class: 'flyout__section assistant', 'data-running': 'false' },
-    el('h3', { class: 'flyout__label' }, 'Assistant'),
-    el(
-      'div',
-      { class: 'assistant__turns' },
-      entry.turns.map((turn) => renderAssistantTurn(turn, label)),
-    ),
-    el('p', { class: 'flyout__empty' }, 'The assistant is switched off (DAILY_FOCUS_ASSISTANT), so nothing more can be asked here.'),
-  );
-}
-
-/** The field at the foot of the assistant section. Its own component, for the reason `NoteForm` is. */
+/** The field at the foot of the panel. Its own component, for the reason `NoteForm` is. */
 function AssistantComposer({
   row,
   title,
@@ -350,7 +336,7 @@ function AssistantComposer({
       rows: 2,
       ref: inputRef,
       value: ui.assistantDraft.value,
-      placeholder: entry.turns.length ? 'Follow up…' : 'What do you need help with?',
+      placeholder: entry.turns.length ? 'Follow up…' : 'Ask the assistant about this…',
       'aria-label': `Ask the assistant about ${title}`,
       disabled: entry.running,
       onInput: (event: Event) => {
@@ -370,27 +356,126 @@ function AssistantComposer({
   );
 }
 
-/** One exchange: the request as it was asked, and the reply or what became of it. */
-function renderAssistantTurn(turn: AssistantTurn, label: ReadonlyMap<string, AssistantQuickAction>): JSX.Element {
+/**
+ * One exchange: the request as it was asked, the work, and the answer or what
+ * became of it. A finished answer ends in what can be done with it here: open
+ * what the assistant created, or copy the answer.
+ */
+function renderAssistantTurn(turn: AssistantTurn, label: ReadonlyMap<string, AssistantQuickAction>, handlers: Handlers): JSX.Element {
   const action = turn.action ? label.get(turn.action) : null;
   // A quick action shows as its label, plus whatever was typed alongside it.
   const extra = action && turn.request.startsWith(action.request) ? turn.request.slice(action.request.length).trim() : null;
   const asked: ComponentChild[] = action ? [el('strong', null, action.label), extra ? ` — ${extra}` : ''] : [turn.request];
+  const { body, created } = turn.status === 'done' ? splitCreated(turn.reply) : { body: turn.reply, created: [] };
 
   const status =
-    turn.status === 'running'
-      ? el('p', { class: 'assistant__status' }, 'Working…')
-      : turn.status === 'failed'
-        ? el('p', { class: 'assistant__status assistant__status--bad' }, `Failed: ${turn.error}`)
-        : turn.status === 'aborted'
-          ? el('p', { class: 'assistant__status' }, `Stopped: ${turn.error}`)
-          : null;
+    turn.status === 'failed'
+      ? el('p', { class: 'assistant__status assistant__status--bad' }, `Failed: ${turn.error}`)
+      : turn.status === 'aborted'
+        ? el('p', { class: 'assistant__status' }, `Stopped: ${turn.error}`)
+        : null;
 
   return el(
     'div',
-    { class: 'assistant__turn', 'data-status': turn.status },
+    { key: turn.id, class: 'assistant__turn', 'data-status': turn.status },
     el('p', { class: 'assistant__request' }, asked),
-    turn.reply ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(turn.reply)) : null,
+    renderWork(turn),
+    body ? el('div', { class: 'assistant__reply' }, renderMarkdownBlocks(body, { onCopy: (text) => handlers.copy(text) })) : null,
     status,
+    turn.status === 'done' && (body || created.length)
+      ? el(
+          'div',
+          { class: 'assistant__after' },
+          created.map((link) =>
+            el('a', { class: 'button', href: link.url, target: '_blank', rel: 'noopener noreferrer', title: link.url }, `${link.label} ↗`),
+          ),
+          body ? el('button', { type: 'button', class: 'button', onClick: () => handlers.copy(body) }, 'Copy reply') : null,
+        )
+      : null,
   );
+}
+
+/**
+ * What the assistant did on the way to its answer.
+ *
+ * Running, it is the turn: a clock, and each call and remark as it comes, the
+ * newest at the foot where the panel follows it. Over, it folds away under one
+ * line that says how long it took and how much it did, since the answer is what
+ * there is to read now; a failed turn's stays open, since the steps are the
+ * likeliest place to see why.
+ */
+function renderWork(turn: AssistantTurn): JSX.Element | null {
+  const steps = turn.steps ?? [];
+  if (turn.status === 'running') {
+    return el(
+      'div',
+      { class: 'assistant__work' },
+      el('p', { class: 'assistant__status assistant__status--working' }, 'Working · ', h(Elapsed, { since: turn.startedAt })),
+      steps.length ? renderSteps(steps) : null,
+    );
+  }
+  const took = durationBetween(turn.startedAt, turn.endedAt);
+  if (!steps.length) return took ? el('p', { class: 'assistant__took' }, `Answered in ${took}`) : null;
+  const failed = steps.filter((step) => step.state === 'failed').length;
+  const summary = [
+    took ? `${turn.status === 'done' ? 'Worked' : 'Ran'} for ${took}` : null,
+    `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`,
+    failed ? `${failed} failed` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return el('details', { class: 'assistant__work', open: turn.status === 'failed' }, el('summary', null, summary), renderSteps(steps));
+}
+
+function renderSteps(steps: readonly AssistantStep[]): JSX.Element {
+  return el(
+    'ol',
+    { class: 'assistant__steps' },
+    steps.map((step, index) =>
+      step.kind === 'message'
+        ? el('li', { key: index, class: 'assistant__step assistant__step--message' }, renderMarkdown(step.text.trim()))
+        : el(
+            'li',
+            { key: index, class: 'assistant__step', 'data-state': step.state },
+            el('span', { class: 'assistant__step-text' }, step.text),
+            step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
+          ),
+    ),
+  );
+}
+
+/** "1:42" since a turn started, ticking on its own: the page's state arrives once a minute. */
+function Elapsed({ since }: { since: string }): JSX.Element {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const start = parseDate(since)?.getTime() ?? now;
+  return el('span', { class: 'assistant__clock' }, formatClock((now - start) / 1000));
+}
+
+/** A link to something the assistant made, as its answer's last lines name it: `Created: [Gmail draft](https://…)`. */
+export interface CreatedLink {
+  label: string;
+  url: string;
+}
+
+const CREATED = /^\s*(?:[-*]\s+)?Created:\s*\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\s*\.?\s*$/i;
+
+/**
+ * The answer, less its `Created:` lines, and the links those lines name. The
+ * prompt asks for one such line per thing created, so the panel can offer it
+ * as a button rather than a link somewhere in the prose; an answer that doesn't
+ * follow it keeps its links where it put them.
+ */
+export function splitCreated(reply: string): { body: string; created: CreatedLink[] } {
+  const created: CreatedLink[] = [];
+  const kept: string[] = [];
+  for (const line of reply.split('\n')) {
+    const match = CREATED.exec(line);
+    if (match) created.push({ label: match[1]!.trim(), url: match[2]! });
+    else kept.push(line);
+  }
+  return { body: created.length ? kept.join('\n').trim() : reply, created };
 }
