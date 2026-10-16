@@ -18,7 +18,7 @@ import { after, test } from 'node:test';
 
 import { loadConfig } from '../src/config.ts';
 import type { CliFound, CliReport } from '../src/clis.ts';
-import type { EnvSources } from '../src/env.ts';
+import type { SettingSources } from '../src/env.ts';
 import { Onboarding, type OnboardingDeps } from '../src/onboarding.ts';
 import { applySettingsChange } from '../src/settings.ts';
 import type { OnboardingAnswer, OnboardingState, SetupState } from '../src/types.ts';
@@ -44,7 +44,8 @@ interface Harness {
   dataDir: string;
   onboarding: Onboarding;
   settings: Record<string, string>;
-  env: NodeJS.ProcessEnv;
+  /** What the config was built from: the store, and the settings it started with. */
+  values: Record<string, string>;
   calls(): Promise<string[][]>;
   deps: OnboardingDeps;
   /** How many times it has looked for the CLIs. */
@@ -59,7 +60,7 @@ const MISSING_CODEX: CliFound = { path: null, version: null, onPath: false, read
  * A store, and a fake `claude` that records its argv and prints a session id
  * named for the question it was asked, then the proposal as its result.
  */
-async function harness(env: NodeJS.ProcessEnv = {}, reply: unknown = PROPOSAL, raw = false): Promise<Harness> {
+async function harness(saved: Record<string, string> = {}, reply: unknown = PROPOSAL, raw = false): Promise<Harness> {
   const dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-onboarding-'));
   dirs.push(dataDir);
   const bin = join(dataDir, 'fake-claude');
@@ -80,10 +81,16 @@ async function harness(env: NodeJS.ProcessEnv = {}, reply: unknown = PROPOSAL, r
   await writeFile(bin, `${script}\n`, 'utf8');
   await chmod(bin, 0o755);
 
-  const fullEnv: NodeJS.ProcessEnv = { DAILY_FOCUS_DATA: dataDir, ...env };
-  const config = loadConfig(fullEnv);
-  const h = { dataDir, settings: {} as Record<string, string>, env: fullEnv } as Harness;
-  const sources = (): EnvSources => ({ dotenv: {}, settings: h.settings, process: fullEnv, settingsPath: join(dataDir, 'settings.json'), settingsError: null });
+  const values: Record<string, string> = { DAILY_FOCUS_DATA: dataDir, ...saved };
+  const config = loadConfig(values);
+  const h = { dataDir, settings: { ...saved }, values } as Harness;
+  const sources = (): SettingSources => ({
+    launch: { DAILY_FOCUS_DATA: dataDir },
+    settings: h.settings,
+    fixed: {},
+    settingsPath: join(dataDir, 'settings.json'),
+    settingsError: null,
+  });
   const setup: SetupState = {
     needed: true,
     profile: 'work',
@@ -361,26 +368,25 @@ test('the finish saves everything at once, writes the two files, and asks for th
   assert.equal(await h.onboarding.takeBriefRequest(), false, 'asked once');
 
   // The record survives the restart the save asks for.
-  const again = new Onboarding(loadConfig(h.env), h.deps);
+  const again = new Onboarding(loadConfig(h.values), h.deps);
   assert.equal(await again.view(NEW), null);
 });
 
-test('a source list the user wrote is kept, and a setting from the environment is shown and never saved', async () => {
+test('a source list the user wrote is kept, and a setting already saved is still asked about', async () => {
   const h = await harness({ DAILY_FOCUS_PROFILE: 'personal' });
   await writeFile(join(h.dataDir, 'sources.md'), '# My own list\n', 'utf8');
-  let state = await view(h);
-  const profile = state.steps.find((step) => step.id === 'profile')!;
-  assert.equal(profile.locked, true);
-  assert.equal(profile.status, 'answered');
-  assert.equal(profile.summary, 'It briefs your personal life.');
+  const state = await view(h);
+  assert.equal(state.steps.find((step) => step.id === 'profile')!.status, 'open');
 
+  await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
+  await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   // Choosing the CLI brings the schedule in: follow the screen, not the list it started with.
   await answerTheRest(h);
   await settled(h);
   assert.equal((await h.onboarding.previewSources()).kept, true);
   assert.ok(!('error' in (await h.onboarding.finish())));
   assert.equal(await readFile(join(h.dataDir, 'sources.md'), 'utf8'), '# My own list\n');
-  assert.equal(h.settings.DAILY_FOCUS_PROFILE, undefined, 'the environment wins, so it is not saved');
+  assert.equal(h.settings.DAILY_FOCUS_PROFILE, 'work', 'the answer is saved over it');
   assert.equal(h.settings.DAILY_FOCUS_AGENT, 'claude');
 });
 
@@ -399,7 +405,7 @@ test('an answer that is not JSON fails the question, which falls back and can be
   assert.equal((await h.calls()).length, 4, 'one more, for the question asked again');
 });
 
-test('nothing reaches outside the dashboard until the user answers something, even with the CLI and profile set', async () => {
+test('nothing reaches outside the dashboard until the user answers something, even with the CLI and profile saved', async () => {
   const h = await harness({ DAILY_FOCUS_PROFILE: 'work', DAILY_FOCUS_AGENT: 'claude' });
   let identities = 0;
   let listings = 0;
@@ -408,25 +414,17 @@ test('nothing reaches outside the dashboard until the user answers something, ev
   const list = h.deps.listCalendars;
   h.deps.listCalendars = async () => (listings++, list());
   await h.onboarding.start(true);
+  // What the screen asks for when it opens: looking for the CLIs reaches nothing outside.
+  await h.onboarding.detect();
   const state = await view(h);
-  assert.deepEqual(state.steps.filter((step) => step.locked).map((step) => step.id), ['cli', 'profile']);
-  assert.equal(state.current, 'schedule');
+  assert.equal(state.steps.find((step) => step.id === 'cli')!.summary, 'Claude Code writes your brief.', 'the saved CLI is the one picked');
+  assert.equal(state.current, 'profile');
   assert.deepEqual([identities, listings, (await h.calls()).length], [0, 0, 0]);
 
-  await h.onboarding.answer('schedule', pick({ at: ['07:00'], days: ['1-5'] }));
+  await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   await settled(h);
   assert.equal((await h.calls()).length, 3, 'the first answer starts every question');
   assert.ok(identities > 0 && listings === 1);
-});
-
-test('an agent the environment turns off is no agent: nothing to schedule, and nobody to ask', async () => {
-  const h = await harness({ DAILY_FOCUS_AGENT: 'off' });
-  const state = await view(h);
-  assert.equal(state.steps.find((step) => step.id === 'cli')!.summary, 'No agent writes your brief yet.');
-  assert.ok(!state.steps.some((step) => step.id === 'schedule'));
-  await h.onboarding.answer('profile', pick({ profile: ['work'] }));
-  await settled(h);
-  assert.equal((await h.calls()).length, 0);
 });
 
 test('a question is left only where it offers to be, and the thread says what leaving it means', async () => {

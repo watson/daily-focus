@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { detectClis, probeCli } from './clis.ts';
 import { loadConfig, type CliName, type Config } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
-import { envSources, layerEnv, readDotEnv, type EnvSources } from './env.ts';
+import { layerSettings, oldDotenvWarning, settingSources, type SettingSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board, type BoardDeps } from './board.ts';
@@ -141,20 +141,20 @@ async function readJsonObject(req: IncomingMessage, res: ServerResponse): Promis
  * where it gets fixed, and it has to be up for that. The page normally refuses
  * such a value before saving it, so this is for a file edited by hand.
  */
-function configure(sources: EnvSources): { config: Config; warnings: string[] } {
+function configure(sources: SettingSources): { config: Config; warnings: string[] } {
   const warnings: string[] = [];
   if (sources.settingsError) {
     warnings.push(`${sources.settingsError}. The dashboard is ignoring it; saving on the settings page writes a fresh one.`);
   }
   try {
-    return { config: loadConfig(layerEnv(sources)), warnings };
+    return { config: loadConfig(layerSettings(sources)), warnings };
   } catch (error) {
     if (Object.keys(sources.settings).length === 0) throw error;
     warnings.push(
       `\`${sources.settingsPath}\` has a value the dashboard can't use, so it is ignoring the whole file: ` +
         `${(error as Error).message}. Fix it on the settings page.`,
     );
-    return { config: loadConfig(layerEnv(sources, {})), warnings };
+    return { config: loadConfig(layerSettings(sources, {})), warnings };
   }
 }
 
@@ -214,23 +214,26 @@ export interface ServerOptions {
    */
   onRestart?: () => void;
   integrations?: Integrations;
+  /** Settings held over the store's: the demo's, so nothing in it runs. See `SettingSources`. */
+  fixed?: Readonly<Record<string, string>>;
   /** Reads the Mac's zone; a test passes its own so it can move it. */
   readSystemZone?: () => Promise<string | null>;
 }
 
 /**
- * Start listening. `env` is the environment to configure from; the default reads
- * the real one over the store's settings over the repo's `.env`, and a test
- * passes its own so a developer's private file can't leak into it. The store's
- * settings are read either way.
+ * Start listening. `env` is the environment the launch settings are read from,
+ * the real one unless a test or the demo passes its own; every other setting
+ * comes from the store's settings, or from `options.fixed`.
  */
 export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOptions = {}): Promise<StartedServer> {
   // Everything a setting can come from, read again whenever the settings page
   // asks: a save lands in the store before the restart that applies it.
   const processEnv = env ?? process.env;
-  const dotenv = env ? {} : readDotEnv();
-  const readSources = (): EnvSources => envSources(processEnv, dotenv);
+  const readSources = (): SettingSources => settingSources(processEnv, options.fixed);
   const { config, warnings: configWarnings } = configure(readSources());
+  // Only on a real start: a test or the demo has no business with a checkout's .env.
+  const dotenvWarning = env ? null : oldDotenvWarning();
+  if (dotenvWarning) configWarnings.push(dotenvWarning);
   for (const warning of configWarnings) console.warn(`[daily-focus] ${warning}`);
 
   const store = new Store(config);
@@ -1179,12 +1182,10 @@ export class PortInUseError extends Error {
 
 export interface RunOptions {
   onStarted?: (url: string) => void;
-  /**
-   * The environment to configure from, in place of the real one layered over
-   * `.env`. The demo passes its own, so a developer's `.env` can't reach it.
-   */
+  /** The environment to read the launch settings from, in place of the real one: the demo's names its store. */
   env?: NodeJS.ProcessEnv;
   integrations?: Integrations;
+  fixed?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -1202,7 +1203,7 @@ export async function runServer(options: RunOptions = {}): Promise<void> {
   let stopping = false;
 
   async function start(): Promise<void> {
-    current = await startServer(options.env, { onRestart: () => void restart(), integrations: options.integrations });
+    current = await startServer(options.env, { onRestart: () => void restart(), integrations: options.integrations, fixed: options.fixed });
   }
 
   async function restart(): Promise<void> {

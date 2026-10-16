@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { lstat, mkdtemp, readFile, readlink, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -12,9 +12,13 @@ let server: StartedServer | null = null;
 let url = '';
 let restarts = 0;
 
+/** Never let a test reach for gh, the calendar or acli. Fixed, as the demo fixes what would run something. */
+const FIXED = { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_CALENDAR: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_STALE_AFTER_HOURS: '30' };
+
 /** What `runServer` does, minus the process: close this one, start the next on the same environment. */
 async function start(): Promise<void> {
   server = await startServer(env, {
+    fixed: FIXED,
     onRestart: () => {
       restarts++;
       const previous = server;
@@ -37,11 +41,6 @@ before(async () => {
     DAILY_FOCUS_DATA: dataDir,
     DAILY_FOCUS_PORT: '0',
     DAILY_FOCUS_HOST: '127.0.0.1',
-    DAILY_FOCUS_GITHUB: 'off',
-    DAILY_FOCUS_CALENDAR: 'off',
-    DAILY_FOCUS_JIRA: 'off',
-    // Locked: set for this launch, so the page can't change it.
-    DAILY_FOCUS_STALE_AFTER_HOURS: '30',
   };
   await start();
 });
@@ -67,7 +66,7 @@ test('the settings page sees every setting, where it came from, and what the def
   const agent = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_AGENT');
   assert.deepEqual([agent.value, agent.source, agent.fallback], [null, 'default', 'Off']);
   const stale = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_STALE_AFTER_HOURS');
-  assert.deepEqual([stale.value, stale.source], ['30', 'environment']);
+  assert.deepEqual([stale.value, stale.source], ['30', 'fixed']);
   assert.ok(!settings.settings.some((s: { key: string }) => s.key === 'DAILY_FOCUS_DATA'), 'the store path is not on the page');
   assert.equal(settings.restart, null);
 });
@@ -80,7 +79,7 @@ test('a bad value is refused and nothing is written', async () => {
 
   const locked = await post('/api/settings', { values: { DAILY_FOCUS_STALE_AFTER_HOURS: '50' } });
   assert.equal(locked.status, 400);
-  assert.match((await json(locked)).error, /environment/);
+  assert.match((await json(locked)).error, /fixed/);
 });
 
 test('a saved setting lands in the store and takes effect after the restart it asks for', async () => {
@@ -177,14 +176,16 @@ test('the status the menu bar app reads is small and says what it needs', async 
 test("the morning agent's clock waits for the first brief, which comes from the setup screen", async () => {
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-first-brief-'));
   // Due every minute of the day, so only the first-brief rule can be holding it back.
-  const due = await startServer({
-    ...env,
-    DAILY_FOCUS_DATA: store,
-    DAILY_FOCUS_AGENT: 'codex',
-    DAILY_FOCUS_AGENT_AT: '00:00',
-    DAILY_FOCUS_AGENT_DAYS: '0-6',
-    DAILY_FOCUS_AGENT_BIN: '/usr/bin/false',
-  });
+  await writeFile(
+    join(store, 'settings.json'),
+    JSON.stringify({
+      DAILY_FOCUS_AGENT: 'codex',
+      DAILY_FOCUS_AGENT_AT: '00:00',
+      DAILY_FOCUS_AGENT_DAYS: '0-6',
+      DAILY_FOCUS_AGENT_BIN: '/usr/bin/false',
+    }),
+  );
+  const due = await startServer({ ...env, DAILY_FOCUS_DATA: store }, { fixed: FIXED });
   try {
     await new Promise((done) => setTimeout(done, 200));
     const state = await json(await fetch(`${due.url}/api/state`));

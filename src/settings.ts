@@ -2,11 +2,11 @@
  * The settings page: what can be changed from the dashboard, how each setting is
  * shown, and how a change is checked before it is saved.
  *
- * Every setting is an environment variable read by `config.ts`, and the page
- * saves them to the store's `settings.json` under the same names. This table adds
- * only what a page needs that a variable name can't say: a label, a line of help,
- * what kind of field it is, and its default in words. `test/docs-contract.test.ts`
- * checks that every variable `config.ts` reads is either here or a launch setting,
+ * Every setting `config.ts` reads is kept in the store's `settings.json`, under
+ * the name it is read by, and this page is how it gets there. This table adds
+ * only what a page needs that a name can't say: a label, a line of help, what
+ * kind of field it is, and its default in words. `test/docs-contract.test.ts`
+ * checks that every name `config.ts` reads is either here or a launch setting,
  * so a new one can't be left off the page.
  *
  * A change is checked by building the whole config from it, the way the next
@@ -15,7 +15,7 @@
  */
 
 import { loadConfig, PROFILES, type Profile } from './config.ts';
-import { layerEnv, LAUNCH_SETTINGS, type EnvSources } from './env.ts';
+import { layerSettings, LAUNCH_SETTINGS, type SettingSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
 
 export type SettingGroup = 'instance' | 'agent' | 'assistant' | 'github' | 'jira' | 'calendar' | 'day';
@@ -36,8 +36,8 @@ export interface SettingChoice {
 }
 
 /**
- * What kind of field a setting is. Lists are comma-separated text, as in `.env`,
- * since several of them hold names with spaces in.
+ * What kind of field a setting is. Lists are comma-separated text, since
+ * several of them hold names with spaces in.
  */
 export type SettingKind = 'choice' | 'flag' | 'text' | 'number' | 'list' | 'time';
 
@@ -414,8 +414,8 @@ export const SETTINGS: readonly SettingDef[] = [
 
 const BY_KEY = new Map(SETTINGS.map((def) => [def.key, def]));
 
-/** Where the value in effect came from: the page shows it, and locks the environment's. */
-export type SettingSource = 'environment' | 'settings' | 'dotenv' | 'default';
+/** Where the value in effect came from: the page shows it, and locks a fixed one. */
+export type SettingSource = 'fixed' | 'settings' | 'default';
 
 export interface SettingView {
   key: string;
@@ -445,26 +445,19 @@ function present(record: Readonly<Record<string, string | undefined>>, key: stri
 }
 
 /** The profile the layered values add up to, for the defaults that depend on it. */
-function profileOf(sources: EnvSources, settings: Readonly<Record<string, string>> = sources.settings): Profile {
-  const raw = (present(layerEnv(sources, settings), 'DAILY_FOCUS_PROFILE') ?? 'work').toLowerCase();
+function profileOf(sources: SettingSources, settings: Readonly<Record<string, string>> = sources.settings): Profile {
+  const raw = (present(layerSettings(sources, settings), 'DAILY_FOCUS_PROFILE') ?? 'work').toLowerCase();
   return (PROFILES as readonly string[]).includes(raw) ? (raw as Profile) : 'work';
 }
 
 /** Every setting as the page shows it: what is in effect, where it came from, and what the default would be. */
-export function describeSettings(sources: EnvSources): SettingsView {
+export function describeSettings(sources: SettingSources): SettingsView {
   const profile = profileOf(sources);
   const settings = SETTINGS.map((def): SettingView => {
-    const fromEnv = present(sources.process, def.key);
-    const fromSettings = present(sources.settings, def.key);
-    const fromDotenv = present(sources.dotenv, def.key);
+    const fixed = present(sources.fixed, def.key);
+    const saved = present(sources.settings, def.key);
     const [value, source]: [string | null, SettingSource] =
-      fromEnv !== null
-        ? [fromEnv, 'environment']
-        : fromSettings !== null
-          ? [fromSettings, 'settings']
-          : fromDotenv !== null
-            ? [fromDotenv, 'dotenv']
-            : [null, 'default'];
+      fixed !== null ? [fixed, 'fixed'] : saved !== null ? [saved, 'settings'] : [null, 'default'];
     return {
       key: def.key,
       group: def.group,
@@ -488,31 +481,30 @@ export type SettingsChange = Readonly<Record<string, string | null>>;
  * Apply `change` to the store's settings, or say why not. Nothing is written
  * here; the caller saves what comes back.
  *
- * A value set in the environment can't be changed from the page, since the
- * environment would still win, and a save that changes nothing on screen
- * would read as broken. The candidate is checked by building the config from it
- * exactly as the next start will.
+ * A fixed value can't be changed from the page, since it would still win, and
+ * a save that changes nothing on screen would read as broken. The candidate is
+ * checked by building the config from it exactly as the next start will.
  */
 export function applySettingsChange(
-  sources: EnvSources,
+  sources: SettingSources,
   change: SettingsChange,
 ): { settings: Record<string, string> } | { error: string } {
   const next: Record<string, string> = { ...sources.settings };
   for (const [key, raw] of Object.entries(change)) {
     if (LAUNCH_SETTINGS.includes(key)) {
-      return { error: `${key} says where the store is or how the server listens, so it is set in the environment, not here` };
+      return { error: `${key} says where the store is or how the server listens, so it is given when the dashboard starts, not here` };
     }
     if (!BY_KEY.has(key)) return { error: `${key} is not a setting` };
     if (raw !== null && typeof raw !== 'string') return { error: `${key} must be text, or null for the default` };
-    if (present(sources.process, key) !== null) {
-      return { error: `${key} is set in the environment the dashboard was started with, which wins over this page` };
+    if (present(sources.fixed, key) !== null) {
+      return { error: `${key} is fixed in this dashboard, so it can't be changed here` };
     }
     const value = raw?.trim() ?? '';
     if (value === '') delete next[key];
     else next[key] = value;
   }
   try {
-    loadConfig(layerEnv(sources, next));
+    loadConfig(layerSettings(sources, next));
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

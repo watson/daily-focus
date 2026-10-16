@@ -31,7 +31,7 @@ import { preferredCli, type CliFound, type CliReport } from './clis.ts';
 import { CodexGate, codexLatestModel, computerUseOff } from './codex.ts';
 import { CLI_NAMES, PROFILES, type CliName, type Config, type Profile } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
-import { expandHome, layerEnv, type EnvSources } from './env.ts';
+import { expandHome, layerSettings, type SettingSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
   composeSources,
@@ -140,7 +140,7 @@ export interface OnboardingDeps {
   /** What the program at a path the user gave is, and whether it is ready. */
   probeCli(path: string): Promise<{ cli: CliName | null; found: CliFound }>;
   /** Every place a setting can come from, read afresh. */
-  readSources(): EnvSources;
+  readSources(): SettingSources;
   /** What the dashboard can check for itself: the calendar helper, mostly. */
   setup(): Promise<SetupState>;
   identity(): Promise<Identity>;
@@ -235,14 +235,6 @@ function given(answer: OnboardingAnswer | null | undefined): Chosen | null {
   return answer && answer.later !== true ? answer : null;
 }
 
-/** The answer a card's own ticks and fields add up to: what a locked step stands at. */
-function answerFromCard(card: { choices: { id: string; selected: string[] }[]; fields: { id: string; value: string }[] }): Chosen {
-  return {
-    choices: Object.fromEntries(card.choices.map((choice) => [choice.id, choice.selected])),
-    fields: Object.fromEntries(card.fields.map((field) => [field.id, field.value])),
-  };
-}
-
 export class Onboarding {
   private file: OnboardingFile | null = null;
   private loaded = false;
@@ -300,20 +292,12 @@ export class Onboarding {
     if (!setup.needed || this.file?.finishedAt) return null;
     const file = this.file ?? blankFile();
     const ctx = await this.context({ setup });
-    const sources = this.deps.readSources();
     const answers = this.effective(ctx, file.answers);
     const steps: OnboardingStep[] = [];
     for (const question of this.questions(ctx)) {
-      const locked = this.locked(question, sources);
       const drawn = question.card(ctx);
       const record = file.proposals[question.id];
-      // A step the environment answers stands at what is in effect. For the CLI
-      // that is the setting itself: its card has nothing to show until it has looked.
-      const answer: OnboardingAnswer | null = locked
-        ? question.id === 'cli'
-          ? { choices: { cli: ctx.cli ? [ctx.cli] : [] }, fields: {} }
-          : answerFromCard(drawn)
-        : (answers[question.id] ?? null);
+      const answer: OnboardingAnswer | null = answers[question.id] ?? null;
       const chosen = given(answer);
       // Until it has looked, the first question is the looking.
       const looking = question.id === 'cli' && !answer && !this.detected;
@@ -323,7 +307,6 @@ export class Onboarding {
         topic: question.topic,
         status: answer ? (chosen ? 'answered' : 'later') : 'open',
         summary: chosen ? question.summary(chosen, ctx) : answer ? (question.later?.summary ?? null) : null,
-        locked,
         card: { ...drawn, version: record?.version ?? 0, revisable: Boolean(question.agent && record), later: question.later?.label ?? null },
         proposal: looking
           ? {
@@ -465,14 +448,13 @@ export class Onboarding {
     // The CLI it picked without asking is an answer too, and needs it to have looked.
     if (!file.answers.cli) await this.lookForClis(false);
     const ctx = await this.context();
-    const sources = this.deps.readSources();
     const answers = this.effective(ctx, file.answers);
     const sections: SourcesSection[] = [];
     let objective: { objective: string; blocker: string | null } | null = null;
     for (const question of this.questions(ctx)) {
       const answer = answers[question.id];
-      if (!answer && !this.locked(question, sources)) return this.refuse(`answer "${question.title(ctx)}", or decide it later`);
-      const chosen = this.locked(question, sources) ? null : given(answer);
+      if (!answer) return this.refuse(`answer "${question.title(ctx)}", or decide it later`);
+      const chosen = given(answer);
       if (!chosen) continue;
       sections.push(...(question.sources?.(chosen, ctx) ?? []));
       objective = question.objective?.(chosen) ?? objective;
@@ -501,7 +483,7 @@ export class Onboarding {
     file.finishedAt = new Date().toISOString();
     file.briefRequested = ctx.cli !== null;
     await this.save();
-    const before = JSON.stringify(Object.entries(sources.settings).sort());
+    const before = JSON.stringify(Object.entries(this.deps.readSources().settings).sort());
     const saveRefused = await this.deps.saveSettings(values);
     if (saveRefused) {
       file.finishedAt = null;
@@ -574,14 +556,11 @@ export class Onboarding {
     if (!file || file.finishedAt) return;
     // Not before the user has answered something: see `context`.
     if (Object.keys(file.answers).length === 0) return;
-    // Nor with no CLI to run: put off, or switched off in the environment.
-    const set = (this.deps.readSources().process.DAILY_FOCUS_AGENT ?? '').trim();
-    if ((file.answers.cli && !given(file.answers.cli)) || (set && !CLI_NAMES.includes(set as CliName))) return;
+    // Nor with no CLI to run: put off.
+    if (file.answers.cli && !given(file.answers.cli)) return;
     await this.lookForClis(false);
     const ctx = await this.context({ listCalendars: true });
-    const sources = this.deps.readSources();
-    const profileKnown = given(file.answers.profile) !== null || (sources.process.DAILY_FOCUS_PROFILE ?? '').trim() !== '';
-    if (!ctx.cli || !profileKnown) return;
+    if (!ctx.cli || given(file.answers.profile) === null) return;
     for (const question of this.questions(ctx)) {
       if (!question.agent || file.answers[question.id] || this.running.has(question.id)) continue;
       const record = file.proposals[question.id];
@@ -845,24 +824,14 @@ export class Onboarding {
     return { ...answers, cli: { choices: { cli: [ctx.cli] }, fields: {} } };
   }
 
-  /** Set in the environment, which wins over setup: shown as it stands, never asked. */
-  private locked(question: Question, sources: EnvSources): boolean {
-    return question.keys.length > 0 && question.keys.every((key) => (sources.process[key] ?? '').trim() !== '');
-  }
-
-  /**
-   * The settings these answers add up to, in question order, less what the
-   * environment sets: that can't be saved over, and wins anyway.
-   */
+  /** The settings these answers add up to, in question order. */
   private settingsOf(answers: Readonly<Record<string, OnboardingAnswer>>, ctx: QuestionContext): Record<string, string | null> {
-    const sources = this.deps.readSources();
     const values: Record<string, string | null> = {};
     const effective = this.effective(ctx, answers);
     for (const question of this.questions(ctx)) {
-      const chosen = this.locked(question, sources) ? null : given(effective[question.id]);
+      const chosen = given(effective[question.id]);
       if (chosen) Object.assign(values, question.settings?.(chosen, ctx) ?? {});
     }
-    for (const key of Object.keys(values)) if ((sources.process[key] ?? '').trim() !== '') delete values[key];
     return values;
   }
 
@@ -882,11 +851,10 @@ export class Onboarding {
   private async context(
     opts: { listCalendars?: boolean; answers?: Readonly<Record<string, OnboardingAnswer>>; setup?: SetupState } = {},
   ): Promise<QuestionContext> {
-    const sources = this.deps.readSources();
-    const env = layerEnv(sources);
+    const values = layerSettings(this.deps.readSources());
     const current: Record<string, string> = {};
     for (const def of SETTINGS) {
-      const value = (env[def.key] ?? '').trim();
+      const value = (values[def.key] ?? '').trim();
       if (value) current[def.key] = value;
     }
     const setup = opts.setup ?? (await this.deps.setup());
@@ -907,22 +875,13 @@ export class Onboarding {
       clis = { ...clis, [answered]: { ...clis[answered], path: typed, onPath: false, ready: true, problem: null, fix: null } };
     }
     const set = current.DAILY_FOCUS_AGENT as CliName | undefined;
-    const cliLocked = (sources.process.DAILY_FOCUS_AGENT ?? '').trim() !== '';
-    const cli: CliName | null = answers.cli
-      ? (answered ?? null)
-      : cliLocked
-        ? (set && CLI_NAMES.includes(set) ? set : null)
-        : set && clis?.[set]?.ready
-          ? set
-          : clis
-            ? preferredCli(clis)
-            : null;
+    const cli: CliName | null = answers.cli ? (answered ?? null) : set && clis?.[set]?.ready ? set : clis ? preferredCli(clis) : null;
     // Nothing reaches outside the dashboard until the user has answered
     // something, which is how it knows they are at the screen: a new store's
     // state is read before anyone is, and the calendar helper may ask for
     // access, a prompt that should come while they're there to answer it.
     const started = Object.keys(answers).length > 0;
-    const profileKnown = started && (given(answers.profile) !== null || (sources.process.DAILY_FOCUS_PROFILE ?? '').trim() !== '');
+    const profileKnown = started && given(answers.profile) !== null;
     let calendars: CalendarListing[] | string | null = null;
     const liveAgenda = !['off', 'false', '0', 'no'].includes((current.DAILY_FOCUS_CALENDAR ?? '').toLowerCase());
     if (setup.calendar.supported && setup.calendar.built && liveAgenda) {

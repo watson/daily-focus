@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { DEFAULT_DATA_DIR, expandHome, loadEnv, SETTINGS_FILE } from './env.ts';
+import { DEFAULT_DATA_DIR, expandHome, loadSettings, SETTINGS_FILE, type SettingValues } from './env.ts';
 import { APP_CALENDAR_APP, USER_CALENDAR_APP } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 
@@ -250,10 +250,10 @@ export interface AgentRunConfig {
 }
 
 /**
- * All configuration is read as environment variables, so a setting has one name
- * wherever it is set. The values come from the real environment, layered over the
- * store's `settings.json` (which the settings page writes), layered over the repo's
- * `.env`; see `env.ts`. Every one has a default that suits most people.
+ * Everything the dashboard is configured with. The store's `settings.json`, which
+ * the settings page writes, holds all of it but where the store is and how the
+ * server listens, which come from the environment or the flags that set it; see
+ * `env.ts`. Every setting has a default that suits most people.
  */
 export interface Config {
   profile: Profile;
@@ -365,8 +365,8 @@ export interface Config {
   onboardingPromptSource: string;
 }
 
-function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
-  const raw = env[name];
+function intSetting(name: string, fallback: number, values: SettingValues): number {
+  const raw = values[name];
   if (raw === undefined || raw.trim() === '') return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n)) {
@@ -380,10 +380,10 @@ function envInt(name: string, fallback: number, env: NodeJS.ProcessEnv): number 
  * settings page checks a change by building the config from it, so a bound here
  * is also what keeps an unusable value from being saved there.
  */
-function envBounded(name: string, fallback: number, min: number, max: number, env: NodeJS.ProcessEnv): number {
-  const n = envInt(name, fallback, env);
+function boundedSetting(name: string, fallback: number, min: number, max: number, values: SettingValues): number {
+  const n = intSetting(name, fallback, values);
   if (!Number.isInteger(n) || n < min || n > max) {
-    throw new Error(`${name} must be a whole number from ${min} to ${max}, got ${JSON.stringify(env[name])}`);
+    throw new Error(`${name} must be a whole number from ${min} to ${max}, got ${JSON.stringify(values[name])}`);
   }
   return n;
 }
@@ -391,11 +391,11 @@ function envBounded(name: string, fallback: number, min: number, max: number, en
 /**
  * A comma-separated list, trimmed, empties and duplicates dropped.
  *
- * Commas only, unlike `envList`: GitHub check names contain spaces often enough
+ * Commas only, unlike `listSetting`: GitHub check names contain spaces often enough
  * that splitting on whitespace would turn one name into three that match nothing.
  */
-function envNameList(name: string, env: NodeJS.ProcessEnv): string[] {
-  const raw = env[name];
+function nameListSetting(name: string, values: SettingValues): string[] {
+  const raw = values[name];
   if (raw === undefined) return [];
   const names: string[] = [];
   for (const entry of raw.split(',')) {
@@ -406,8 +406,8 @@ function envNameList(name: string, env: NodeJS.ProcessEnv): string[] {
 }
 
 /** A comma- or whitespace-separated list, trimmed, empties dropped. */
-function envList(name: string, env: NodeJS.ProcessEnv): string[] {
-  const raw = env[name];
+function listSetting(name: string, values: SettingValues): string[] {
+  const raw = values[name];
   if (raw === undefined) return [];
   return raw
     .split(/[\s,]+/)
@@ -434,67 +434,67 @@ export function parseScope(entries: readonly string[]): string[] {
 }
 
 /** An on/off switch; unset or empty means `fallback`. */
-function envFlag(name: string, fallback: boolean, env: NodeJS.ProcessEnv): boolean {
-  const flag = (env[name] ?? '').trim().toLowerCase();
+function flagSetting(name: string, fallback: boolean, values: SettingValues): boolean {
+  const flag = (values[name] ?? '').trim().toLowerCase();
   if (flag === '') return fallback;
   return !['off', 'false', '0', 'no'].includes(flag);
 }
 
-function envGitHub(env: NodeJS.ProcessEnv): GitHubConfig {
-  const pollMinutes = envInt('DAILY_FOCUS_GITHUB_POLL_MINUTES', 5, env);
+function gitHubConfig(values: SettingValues): GitHubConfig {
+  const pollMinutes = intSetting('DAILY_FOCUS_GITHUB_POLL_MINUTES', 5, values);
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_GITHUB_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
   return {
-    enabled: envFlag('DAILY_FOCUS_GITHUB', true, env),
-    accounts: envList('DAILY_FOCUS_GITHUB_ACCOUNTS', env),
-    scope: parseScope(envList('DAILY_FOCUS_GITHUB_SCOPE', env)),
-    mergeGateChecks: envNameList('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', env),
+    enabled: flagSetting('DAILY_FOCUS_GITHUB', true, values),
+    accounts: listSetting('DAILY_FOCUS_GITHUB_ACCOUNTS', values),
+    scope: parseScope(listSetting('DAILY_FOCUS_GITHUB_SCOPE', values)),
+    mergeGateChecks: nameListSetting('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', values),
     pollMinutes,
-    ghPath: expandHome((env.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
+    ghPath: expandHome((values.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
   };
 }
 
-function envCalendar(env: NodeJS.ProcessEnv): CalendarConfig {
-  const pollMinutes = envInt('DAILY_FOCUS_CALENDAR_POLL_MINUTES', 5, env);
+function calendarConfig(values: SettingValues): CalendarConfig {
+  const pollMinutes = intSetting('DAILY_FOCUS_CALENDAR_POLL_MINUTES', 5, values);
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_CALENDAR_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
   return {
-    enabled: envFlag('DAILY_FOCUS_CALENDAR', true, env),
+    enabled: flagSetting('DAILY_FOCUS_CALENDAR', true, values),
     // Commas only, as for merge gate checks: calendar names contain spaces.
-    names: envNameList('DAILY_FOCUS_CALENDARS', env),
-    addresses: envNameList('DAILY_FOCUS_CALENDAR_ADDRESSES', env),
+    names: nameListSetting('DAILY_FOCUS_CALENDARS', values),
+    addresses: nameListSetting('DAILY_FOCUS_CALENDAR_ADDRESSES', values),
     pollMinutes,
     // What the user set, then the helper the Mac app carries, then the one
     // `daily-focus build-calendar` installs, then a checkout's own build.
     appPath: expandHome(
-      (env.DAILY_FOCUS_CALENDAR_APP ?? '').trim() ||
+      (values.DAILY_FOCUS_CALENDAR_APP ?? '').trim() ||
         [APP_CALENDAR_APP, USER_CALENDAR_APP].find((path): path is string => path !== null && existsSync(path)) ||
         resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app'),
     ),
   };
 }
 
-function envJira(env: NodeJS.ProcessEnv, profile: Profile): JiraConfig {
+function jiraConfig(values: SettingValues, profile: Profile): JiraConfig {
   // Fifteen rather than the boards' five: status hygiene is never urgent, and
   // three searches a poll is a cost worth paying three times less often.
-  const pollMinutes = envInt('DAILY_FOCUS_JIRA_POLL_MINUTES', 15, env);
+  const pollMinutes = intSetting('DAILY_FOCUS_JIRA_POLL_MINUTES', 15, values);
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_JIRA_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
   return {
-    enabled: envFlag('DAILY_FOCUS_JIRA', profile === 'work', env),
-    projects: envList('DAILY_FOCUS_JIRA_PROJECTS', env),
+    enabled: flagSetting('DAILY_FOCUS_JIRA', profile === 'work', values),
+    projects: listSetting('DAILY_FOCUS_JIRA_PROJECTS', values),
     // Commas only, as for merge gate checks and calendars: status names contain
     // spaces almost by default — "In Review", "Waiting for customer".
-    holdStatuses: envNameList('DAILY_FOCUS_JIRA_HOLD_STATUSES', env),
-    inProgressStatuses: envNameList('DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES', env),
+    holdStatuses: nameListSetting('DAILY_FOCUS_JIRA_HOLD_STATUSES', values),
+    inProgressStatuses: nameListSetting('DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES', values),
     pollMinutes,
     // Tolerates a pasted URL, since that is what is on screen when someone goes
     // looking for their site's name.
-    site: envString('DAILY_FOCUS_JIRA_SITE', '', env).replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || null,
-    acliPath: expandHome((env.DAILY_FOCUS_ACLI ?? '').trim() || 'acli'),
+    site: stringSetting('DAILY_FOCUS_JIRA_SITE', '', values).replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || null,
+    acliPath: expandHome((values.DAILY_FOCUS_ACLI ?? '').trim() || 'acli'),
   };
 }
 
@@ -502,8 +502,8 @@ function envJira(env: NodeJS.ProcessEnv, profile: Profile): JiraConfig {
  * `off`, or one of the CLIs. Anything else throws: read as off, a typo would
  * quietly remove the assistant and nothing would say why.
  */
-function envCli(name: string, env: NodeJS.ProcessEnv): CliName | null {
-  const raw = envString(name, 'off', env).toLowerCase();
+function cliSetting(name: string, values: SettingValues): CliName | null {
+  const raw = stringSetting(name, 'off', values).toLowerCase();
   if (['off', 'false', '0', 'no', 'none'].includes(raw)) return null;
   if (!(CLI_NAMES as readonly string[]).includes(raw)) {
     throw new Error(`${name} must be off or one of ${CLI_NAMES.join(', ')}, got ${JSON.stringify(raw)}`);
@@ -511,19 +511,19 @@ function envCli(name: string, env: NodeJS.ProcessEnv): CliName | null {
   return raw as CliName;
 }
 
-function envAssistant(env: NodeJS.ProcessEnv): AssistantConfig {
-  const agent = envCli('DAILY_FOCUS_ASSISTANT', env);
+function assistantConfig(values: SettingValues): AssistantConfig {
+  const agent = cliSetting('DAILY_FOCUS_ASSISTANT', values);
   // Commas only: a Claude Code permission rule has a space in it, `Bash(gh *)`.
-  const tools = envNameList('DAILY_FOCUS_ASSISTANT_TOOLS', env);
+  const tools = nameListSetting('DAILY_FOCUS_ASSISTANT_TOOLS', values);
   return {
     agent,
-    binPath: expandHome((env.DAILY_FOCUS_ASSISTANT_BIN ?? '').trim() || (agent ?? 'claude')),
-    model: envString('DAILY_FOCUS_ASSISTANT_MODEL', '', env) || null,
-    effort: envString('DAILY_FOCUS_ASSISTANT_EFFORT', '', env) || null,
+    binPath: expandHome((values.DAILY_FOCUS_ASSISTANT_BIN ?? '').trim() || (agent ?? 'claude')),
+    model: stringSetting('DAILY_FOCUS_ASSISTANT_MODEL', '', values) || null,
+    effort: stringSetting('DAILY_FOCUS_ASSISTANT_EFFORT', '', values) || null,
     tools: tools.length > 0 ? tools : DEFAULT_ASSISTANT_TOOLS,
-    computerUse: envFlag('DAILY_FOCUS_ASSISTANT_COMPUTER_USE', false, env),
-    auto: envFlag('DAILY_FOCUS_ASSISTANT_AUTO', false, env),
-    autoLimit: envBounded('DAILY_FOCUS_ASSISTANT_AUTO_LIMIT', 10, 1, 100, env),
+    computerUse: flagSetting('DAILY_FOCUS_ASSISTANT_COMPUTER_USE', false, values),
+    auto: flagSetting('DAILY_FOCUS_ASSISTANT_AUTO', false, values),
+    autoLimit: boundedSetting('DAILY_FOCUS_ASSISTANT_AUTO_LIMIT', 10, 1, 100, values),
   };
 }
 
@@ -568,30 +568,30 @@ export function briefWritingTools(): string[] {
 /** When the dashboard starts the agent unless told otherwise. */
 export const DEFAULT_AGENT_AT: TimeOfDay = { hour: 7, minute: 0 };
 
-function envAgent(env: NodeJS.ProcessEnv): AgentRunConfig {
-  const cli = envCli('DAILY_FOCUS_AGENT', env);
-  const at = envTimeOfDay('DAILY_FOCUS_AGENT_AT', env);
+function agentConfig(values: SettingValues): AgentRunConfig {
+  const cli = cliSetting('DAILY_FOCUS_AGENT', values);
+  const at = timeOfDaySetting('DAILY_FOCUS_AGENT_AT', values);
   // A time set by hand with no CLI would be a schedule that never fires, and
   // nothing on screen would say so. Refuse it at startup instead.
-  if (at && !cli && envString('DAILY_FOCUS_AGENT_AT', '', env) !== '') {
+  if (at && !cli && stringSetting('DAILY_FOCUS_AGENT_AT', '', values) !== '') {
     throw new Error('DAILY_FOCUS_AGENT_AT needs DAILY_FOCUS_AGENT set to codex or claude');
   }
   // Commas only, for the reason the assistant's list gives.
-  const tools = envNameList('DAILY_FOCUS_AGENT_TOOLS', env);
+  const tools = nameListSetting('DAILY_FOCUS_AGENT_TOOLS', values);
   return {
     cli,
     at: cli ? at : null,
-    binPath: expandHome((env.DAILY_FOCUS_AGENT_BIN ?? '').trim() || (cli ?? 'codex')),
-    model: envString('DAILY_FOCUS_AGENT_MODEL', '', env) || null,
-    effort: envString('DAILY_FOCUS_AGENT_EFFORT', '', env) || null,
+    binPath: expandHome((values.DAILY_FOCUS_AGENT_BIN ?? '').trim() || (cli ?? 'codex')),
+    model: stringSetting('DAILY_FOCUS_AGENT_MODEL', '', values) || null,
+    effort: stringSetting('DAILY_FOCUS_AGENT_EFFORT', '', values) || null,
     tools: tools.length > 0 ? tools : DEFAULT_AGENT_TOOLS,
-    searchTrash: envFlag('DAILY_FOCUS_AGENT_SEARCH_TRASH', false, env),
+    searchTrash: flagSetting('DAILY_FOCUS_AGENT_SEARCH_TRASH', false, values),
   };
 }
 
 /** `06:30`, `6:30` or `18:00`, local time. Unset is 07:00; `off` leaves runs to the refresh icon. */
-function envTimeOfDay(name: string, env: NodeJS.ProcessEnv): TimeOfDay | null {
-  const raw = envString(name, '', env).toLowerCase();
+function timeOfDaySetting(name: string, values: SettingValues): TimeOfDay | null {
+  const raw = stringSetting(name, '', values).toLowerCase();
   if (raw === '') return DEFAULT_AGENT_AT;
   if (['off', 'false', '0', 'no', 'none', 'never'].includes(raw)) return null;
   const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw);
@@ -606,8 +606,8 @@ function envTimeOfDay(name: string, env: NodeJS.ProcessEnv): TimeOfDay | null {
  * to fill in. A bad spec throws at startup rather than being silently read as
  * Mon–Fri, since a wrong schedule makes the staleness banner lie.
  */
-function envWeekdays(name: string, env: NodeJS.ProcessEnv): readonly Weekday[] | null {
-  const raw = env[name];
+function weekdaysSetting(name: string, values: SettingValues): readonly Weekday[] | null {
+  const raw = values[name];
   if (raw === undefined || raw.trim() === '') return null;
   try {
     return parseWeekdays(raw);
@@ -616,16 +616,16 @@ function envWeekdays(name: string, env: NodeJS.ProcessEnv): readonly Weekday[] |
   }
 }
 
-/** A string knob; an empty value in `.env` means the default, as it does for numbers. */
-function envString(name: string, fallback: string, env: NodeJS.ProcessEnv): string {
-  const raw = env[name];
+/** A string knob; an empty value means the default, as it does for numbers. */
+function stringSetting(name: string, fallback: string, values: SettingValues): string {
+  const raw = values[name];
   return raw === undefined || raw.trim() === '' ? fallback : raw.trim();
 }
 
 /** The working day's hours, which have to be hours of one day, in order. */
-function workingDay(env: NodeJS.ProcessEnv): { workStartHour: number; workEndHour: number } {
-  const workStartHour = envBounded('DAILY_FOCUS_WORK_START', 9, 0, 23, env);
-  const workEndHour = envBounded('DAILY_FOCUS_WORK_END', 17, 1, 24, env);
+function workingDay(values: SettingValues): { workStartHour: number; workEndHour: number } {
+  const workStartHour = boundedSetting('DAILY_FOCUS_WORK_START', 9, 0, 23, values);
+  const workEndHour = boundedSetting('DAILY_FOCUS_WORK_END', 17, 1, 24, values);
   if (workEndHour <= workStartHour) {
     throw new Error(`DAILY_FOCUS_WORK_END (${workEndHour}) must be later than DAILY_FOCUS_WORK_START (${workStartHour})`);
   }
@@ -633,8 +633,8 @@ function workingDay(env: NodeJS.ProcessEnv): { workStartHour: number; workEndHou
 }
 
 /** An unknown profile throws: read as `work`, it would quietly poll work accounts. */
-function envProfile(env: NodeJS.ProcessEnv): Profile {
-  const raw = envString('DAILY_FOCUS_PROFILE', 'work', env).toLowerCase();
+function profileSetting(values: SettingValues): Profile {
+  const raw = stringSetting('DAILY_FOCUS_PROFILE', 'work', values).toLowerCase();
   if (!(PROFILES as readonly string[]).includes(raw)) {
     throw new Error(`DAILY_FOCUS_PROFILE must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(raw)}`);
   }
@@ -642,13 +642,13 @@ function envProfile(env: NodeJS.ProcessEnv): Profile {
 }
 
 /**
- * Build the config. With no argument it reads the real environment over the
- * store's settings over the repo's `.env`; tests pass an explicit object and
- * never touch either file.
+ * Build the config. With no argument it reads the launch settings from the
+ * environment and the rest from the store's settings; tests pass an explicit
+ * object and touch neither.
  */
-export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
-  const dataDir = expandHome(envString('DAILY_FOCUS_DATA', DEFAULT_DATA_DIR, env));
-  const profile = envProfile(env);
+export function loadConfig(values: SettingValues = loadSettings()): Config {
+  const dataDir = expandHome(stringSetting('DAILY_FOCUS_DATA', DEFAULT_DATA_DIR, values));
+  const profile = profileSetting(values);
   return {
     profile,
     dataDir,
@@ -666,22 +666,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = loadEnv()): Config {
     calendarFile: resolve(dataDir, 'calendar.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
     timeZoneFile: resolve(dataDir, 'timezone.json'),
-    port: envBounded('DAILY_FOCUS_PORT', 4321, 0, 65535, env),
-    host: envString('DAILY_FOCUS_HOST', '127.0.0.1', env),
-    freeWindows: envFlag('DAILY_FOCUS_FREE_WINDOWS', profile !== 'personal', env),
-    ...workingDay(env),
-    minFreeWindowMinutes: envBounded('DAILY_FOCUS_MIN_FREE_WINDOW', 45, 1, 24 * 60, env),
-    staleAfterHours: envBounded('DAILY_FOCUS_STALE_AFTER_HOURS', 24, 1, 24 * 30, env),
-    agentDays: envWeekdays('DAILY_FOCUS_AGENT_DAYS', env),
-    github: envGitHub(env),
-    calendar: envCalendar(env),
-    jira: envJira(env, profile),
-    assistant: envAssistant(env),
+    port: boundedSetting('DAILY_FOCUS_PORT', 4321, 0, 65535, values),
+    host: stringSetting('DAILY_FOCUS_HOST', '127.0.0.1', values),
+    freeWindows: flagSetting('DAILY_FOCUS_FREE_WINDOWS', profile !== 'personal', values),
+    ...workingDay(values),
+    minFreeWindowMinutes: boundedSetting('DAILY_FOCUS_MIN_FREE_WINDOW', 45, 1, 24 * 60, values),
+    staleAfterHours: boundedSetting('DAILY_FOCUS_STALE_AFTER_HOURS', 24, 1, 24 * 30, values),
+    agentDays: weekdaysSetting('DAILY_FOCUS_AGENT_DAYS', values),
+    github: gitHubConfig(values),
+    calendar: calendarConfig(values),
+    jira: jiraConfig(values, profile),
+    assistant: assistantConfig(values),
     assistantLogFile: resolve(dataDir, 'assistant.jsonl'),
     assistantDir: resolve(dataDir, 'assistant'),
     assistantPromptFile: resolve(dataDir, 'assistant.md'),
     assistantPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'assistant.md'),
-    agent: envAgent(env),
+    agent: agentConfig(values),
     agentLogFile: resolve(dataDir, 'agent.jsonl'),
     agentSettingsFile: resolve(dataDir, 'agent-settings.json'),
     onboardingFile: resolve(dataDir, 'onboarding.json'),

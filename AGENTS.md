@@ -23,7 +23,7 @@ calls them "it" rather than either word.
 
 - Use invented names, accounts, ticket keys, and content in tracked files, fixtures,
   screenshots, and commit messages. A real brief is private data, even as a fixture.
-  Personal configuration belongs in the store (`settings.json`) or gitignored `.env`.
+  Personal configuration belongs in the store's `settings.json`.
 - The default store is `~/.daily-focus`. For development, set `DAILY_FOCUS_DATA` to a
   temporary directory or gitignored `./data`, and `DAILY_FOCUS_PORT` to a free port.
   Stop that server by its PID: the real dashboard and other worktrees' servers run on
@@ -116,7 +116,7 @@ run it again with `--remove` afterwards.
   names `prompt.md` and nothing more. Do not hand it extra instructions, a
   checkout, or a copy of the prompt. A setting reaches it as a key in
   `agentSettings`, which the runner writes to `agent-settings.json` before each
-  run with the values in force, `.env` included; explain each key in both
+  run with the values in force; explain each key in both
   prompts. A follow-up question resumes the run's session with nothing to write;
   it must never become a way to edit the brief.
 - Under Codex, a run's subagents are read from Codex's own session files
@@ -147,5 +147,7 @@ works out versions and release notes from those. Never set the version in
 `npm run audit` checks the brief in the selected store, not the code.
 `test/docs-contract.test.ts` checks prompt/schema, configuration, and board-label
 consistency. New settings must appear in `src/config.ts`, `src/settings.ts` (the
-settings page), `.env.example`, and `SETUP.md`. Only `DAILY_FOCUS_DATA`, `_PORT` and
-`_HOST` stay off the page: they locate the store, so they can't be kept in it.
+settings page) and `SETUP.md`. Only `DAILY_FOCUS_DATA`, `_PORT` and `_HOST` stay off
+the page: they locate the store, so they can't be kept in it. They are the only
+settings read from the environment (or `--data`, `--port`, `--host`); don't read
+another from it, or a `.env`.

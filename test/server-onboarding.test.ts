@@ -6,7 +6,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -19,6 +19,8 @@ let server: StartedServer | null = null;
 let url = '';
 let restarts = 0;
 let env: NodeJS.ProcessEnv;
+/** What the store starts with: boards off, and gh and the calendar helper pointing at nothing. */
+let SAVED: Record<string, string>;
 
 async function start(): Promise<void> {
   server = await startServer(env, {
@@ -34,15 +36,18 @@ async function start(): Promise<void> {
 
 before(async () => {
   dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-server-onboarding-'));
-  env = {
-    DAILY_FOCUS_DATA: dataDir,
-    DAILY_FOCUS_PORT: '0',
-    DAILY_FOCUS_HOST: '127.0.0.1',
+  SAVED = {
     DAILY_FOCUS_GITHUB: 'off',
     DAILY_FOCUS_JIRA: 'off',
     DAILY_FOCUS_GH: join(dataDir, 'no-gh'),
     DAILY_FOCUS_CALENDAR_APP: join(dataDir, 'no-helper.app'),
   };
+  env = {
+    DAILY_FOCUS_DATA: dataDir,
+    DAILY_FOCUS_PORT: '0',
+    DAILY_FOCUS_HOST: '127.0.0.1',
+  };
+  await writeFile(join(dataDir, 'settings.json'), JSON.stringify(SAVED));
   await start();
 });
 
@@ -77,9 +82,10 @@ test('an answer comes back as fresh state, and one to no question is refused', a
 test('the finish saves the answers, restarts, and the screen is gone', async () => {
   for (const step of (await state()).onboarding!.steps) {
     if (step.status !== 'open') continue;
-    // Work or personal, the calendars and the objective are answered; the rest can be left.
+    // Work or personal, the boards, the calendars and the objective are answered; the rest can be left.
     const answers: Record<string, unknown> = {
       profile: { choices: { profile: ['personal'] }, fields: {} },
+      boards: { choices: { boards: [] }, fields: {} },
       calendars: { choices: { calendars: [] }, fields: {} },
       objective: { choices: {}, fields: { objective: '', blocker: '' } },
     };
@@ -94,8 +100,8 @@ test('the finish saves the answers, restarts, and the screen is gone', async () 
   assert.equal(res.status, 200);
   for (let i = 0; i < 200 && (restarts < 1 || server === null); i++) await new Promise((done) => setTimeout(done, 10));
   assert.ok(server, 'the dashboard came back');
-  // The boards are set in this test's environment, which wins, so they aren't saved.
-  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'personal' });
+  // What the store had stands beside the answers, which leave both boards off.
+  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), { ...SAVED, DAILY_FOCUS_PROFILE: 'personal' });
   const after = await state();
   assert.equal(after.onboarding, null);
   assert.equal(after.setup.needed, true, 'no brief yet, and no agent to write one');

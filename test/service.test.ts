@@ -32,12 +32,14 @@ test("the service's PATH drops what npm adds and keeps Node and the system on it
   assert.equal(servicePath('/usr/local/bin:/usr/bin', '/usr/local/bin'), '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin');
 });
 
-test('the service keeps PATH and the DAILY_FOCUS_ settings, and nothing else from the shell', () => {
+test('the service keeps PATH, the store, port and host, and nothing else from the shell', () => {
   const env = serviceEnvironment(
     {
       PATH: '/usr/bin',
       DAILY_FOCUS_PORT: '4322',
       DAILY_FOCUS_DATA: '~/.daily-focus-personal',
+      DAILY_FOCUS_HOST: ' ',
+      DAILY_FOCUS_GITHUB_SCOPE: 'acme',
       npm_lifecycle_event: 'service',
       SOME_TOKEN: 'secret',
     },
@@ -55,14 +57,14 @@ const spec = {
   node: '/Users/alice/.nvm/versions/node/v24.0.0/bin/node',
   repo: '/Users/alice/src/R&D <focus>',
   log: '/Users/alice/Library/Logs/local.daily-focus.log',
-  env: { PATH: '/usr/bin:/bin', DAILY_FOCUS_GITHUB_SCOPE: 'acme & co' },
+  env: { PATH: '/usr/bin:/bin', DAILY_FOCUS_DATA: '/Users/alice/acme & co' },
   packaged: false,
 };
 
 test('the plist escapes what XML would misread', () => {
   const plist = servicePlist(spec);
   assert.ok(plist.includes('<string>/Users/alice/src/R&amp;D &lt;focus&gt;</string>'));
-  assert.ok(plist.includes('<string>acme &amp; co</string>'));
+  assert.ok(plist.includes('<string>/Users/alice/acme &amp; co</string>'));
   assert.ok(!plist.includes('R&D'));
 });
 

@@ -110,9 +110,8 @@ export function agentPrompt(promptPath: string): string {
 /**
  * What `agent-settings.json` says: the settings-page choices that change how the
  * agent gathers, by the names both prompts use for them. The runner writes it
- * before every run, so a value set in `.env` or the environment reaches the agent
- * as surely as one saved on the page, and a run's settings are in the store with
- * everything else it read. The prompts say what each one means and what its
+ * before every run with the values in force, so a run's settings are in the store
+ * with everything else it read. The prompts say what each one means and what its
  * absence means; `test/docs-contract.test.ts` checks that both name every key.
  */
 export function agentSettings(config: Config): Record<string, unknown> {

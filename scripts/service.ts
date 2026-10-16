@@ -8,14 +8,15 @@
  * misses the morning's brief without anything on screen to say so. This installs a
  * LaunchAgent for the current user that starts the dashboard at login and again if
  * it crashes, then waits until it answers. Running it again rewrites the LaunchAgent
- * and restarts the dashboard, which is how a `git pull` or an edited `.env` takes
- * effect. `--remove` stops it and uninstalls it.
+ * and restarts the dashboard, which is how a `git pull` takes effect. `--remove`
+ * stops it and uninstalls it.
  *
  * The LaunchAgent is generated here rather than tracked, because everything in it
  * belongs to this machine: the checkout, the Node binary, and the PATH that finds
  * `gh`, `acli` and the agent's CLI. launchd hands a job almost no environment of its
- * own, so the PATH and any `DAILY_FOCUS_` variables are taken from the shell this
- * runs in. `.env` is not copied; the server reads it at every start.
+ * own, so the PATH and the store, port and host are taken from the shell this runs
+ * in, `--data`, `--port` and `--host` included. Every other setting is the store's,
+ * read at every start.
  *
  * One service per store. The label is derived from the store's path, so a second
  * install against the same store replaces the first instead of starting a second
@@ -29,6 +30,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { loadConfig } from '../src/config.ts';
+import { LAUNCH_SETTINGS } from '../src/env.ts';
 import { command, IN_NPX_CACHE, PACKAGED, ranDirectly, ROOT } from '../src/install.ts';
 
 const run = promisify(execFile);
@@ -60,15 +62,15 @@ export function servicePath(path: string, nodeDir: string): string {
 }
 
 /**
- * The environment the service keeps from this shell: PATH, and every
- * `DAILY_FOCUS_` variable, since a variable set in the environment beats `.env`
- * and is how a second instance on the same checkout is told apart.
+ * The environment the service keeps from this shell: PATH, and the launch
+ * settings, which are how a second instance on the same checkout is told apart.
+ * Nothing else: the dashboard reads no other setting from its environment.
  */
 export function serviceEnvironment(env: NodeJS.ProcessEnv, nodeDir: string): Record<string, string> {
   const kept: Record<string, string> = { PATH: servicePath(env.PATH ?? '', nodeDir) };
-  for (const key of Object.keys(env).sort()) {
-    const value = env[key];
-    if (key.startsWith('DAILY_FOCUS_') && value !== undefined) kept[key] = value;
+  for (const key of LAUNCH_SETTINGS) {
+    const value = env[key]?.trim();
+    if (value) kept[key] = value;
   }
   return kept;
 }
@@ -259,9 +261,9 @@ export async function main(args: readonly string[]): Promise<number> {
     if (found.dataDir === config.dataDir) {
       bad(`this dashboard is already running at ${url}${by}`, 'stop the one started by hand, then run this again');
     } else if (found.dataDir) {
-      bad(`port ${config.port} is taken by the dashboard for ${tilde(found.dataDir)}${by}`, 'give one of them its own DAILY_FOCUS_PORT');
+      bad(`port ${config.port} is taken by the dashboard for ${tilde(found.dataDir)}${by}`, 'give one of them its own --port');
     } else {
-      bad(`port ${config.port} is taken by something else${by}`, 'set DAILY_FOCUS_PORT to a free one');
+      bad(`port ${config.port} is taken by something else${by}`, 'give it a free one with --port');
     }
     console.log();
     return 1;

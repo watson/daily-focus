@@ -15,12 +15,17 @@ before(async () => {
   process.env.DAILY_FOCUS_DATA = dataDir;
   process.env.DAILY_FOCUS_PORT = '0'; // any free port
   process.env.DAILY_FOCUS_HOST = '127.0.0.1';
-  // Never let a test reach for gh or the network.
-  process.env.DAILY_FOCUS_GITHUB = 'off';
-  // ...nor for the real calendar, which would mean a TCC prompt in CI.
-  process.env.DAILY_FOCUS_CALENDAR = 'off';
-  // ...nor for acli, which would spawn a CLI and hit a real Jira.
-  process.env.DAILY_FOCUS_JIRA = 'off';
+  await writeFile(
+    join(dataDir, 'settings.json'),
+    JSON.stringify({
+      // Never let a test reach for gh or the network...
+      DAILY_FOCUS_GITHUB: 'off',
+      // ...nor for the real calendar, which would mean a TCC prompt in CI...
+      DAILY_FOCUS_CALENDAR: 'off',
+      // ...nor for acli, which would spawn a CLI and hit a real Jira.
+      DAILY_FOCUS_JIRA: 'off',
+    }),
+  );
 
   await writeFile(
     join(dataDir, 'items.json'),
@@ -31,7 +36,6 @@ before(async () => {
     }),
   );
 
-  // The process environment only, never the developer's private .env.
   server = await startServer(process.env);
 });
 

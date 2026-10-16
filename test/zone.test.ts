@@ -181,13 +181,18 @@ test('the page reports its zone, the morning clock follows, and a restart keeps 
     DAILY_FOCUS_DATA: dataDir,
     DAILY_FOCUS_PORT: '0',
     DAILY_FOCUS_HOST: '127.0.0.1',
-    DAILY_FOCUS_GITHUB: 'off',
-    DAILY_FOCUS_CALENDAR: 'off',
-    DAILY_FOCUS_JIRA: 'off',
-    DAILY_FOCUS_AGENT: 'codex',
-    DAILY_FOCUS_AGENT_DAYS: '0-6',
-    DAILY_FOCUS_AGENT_BIN: '/usr/bin/false',
   };
+  await writeFile(
+    join(dataDir, 'settings.json'),
+    JSON.stringify({
+      DAILY_FOCUS_GITHUB: 'off',
+      DAILY_FOCUS_CALENDAR: 'off',
+      DAILY_FOCUS_JIRA: 'off',
+      DAILY_FOCUS_AGENT: 'codex',
+      DAILY_FOCUS_AGENT_DAYS: '0-6',
+      DAILY_FOCUS_AGENT_BIN: '/usr/bin/false',
+    }),
+  );
   // A brief, and a run that started just now: today's in every zone, so the
   // next run is tomorrow at seven and nothing starts.
   const now = new Date().toISOString();

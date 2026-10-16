@@ -5,8 +5,8 @@
  *
  * The rules worth holding: every file the demo writes is one the dashboard can
  * read without complaint, since a warning banner is the one thing a demo must
- * not open with; both profiles fill every tab they have; nothing in the real
- * environment reaches it; and the one write the dashboard can make, a ticket's
+ * not open with; both profiles fill every tab they have; nothing that would run
+ * a CLI can be switched on; and the one write the dashboard can make, a ticket's
  * status, lands in the sample world and nowhere else.
  */
 
@@ -19,8 +19,9 @@ import { after, test } from 'node:test';
 import { foldAgentLog } from '../src/agent.ts';
 import { foldAssistantLog } from '../src/assistant.ts';
 import { loadConfig, PROFILES, type Profile } from '../src/config.ts';
-import { demoEnv, demoIntegrations, demoProfile, workingDayBack, writeDemoStore } from '../src/demo.ts';
-import { envSources, layerEnv } from '../src/env.ts';
+import { DEMO_FIXED, demoEnv, demoIntegrations, demoProfile, workingDayBack, writeDemoStore } from '../src/demo.ts';
+import { layerSettings, settingSources } from '../src/env.ts';
+import { applySettingsChange } from '../src/settings.ts';
 import { parseFocus } from '../src/focus.ts';
 import { startServer } from '../src/server.ts';
 import { placeholdersIn } from '../src/setup.ts';
@@ -45,12 +46,8 @@ async function demoServer(profile: Profile) {
   // One clock for the store and the boards, as the CLI has it.
   const now = new Date();
   await writeDemoStore(store, profile, now);
-  const env = demoEnv(
-    { PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' },
-    store,
-    profile,
-  );
-  const server = await startServer(env, { integrations: demoIntegrations(profile, now) });
+  const env = demoEnv({ PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' }, store);
+  const server = await startServer(env, { fixed: DEMO_FIXED, integrations: demoIntegrations(profile, now) });
   const fetchState = async (): Promise<DashboardState> => (await fetch(`${server.url}/api/state`)).json() as Promise<DashboardState>;
   // The boards fetch in the background once the server listens; wait for both.
   const settled = async (): Promise<DashboardState> => {
@@ -71,38 +68,40 @@ test('the profile is checked before a store is made', () => {
   assert.throws(() => demoProfile('home'), /--profile must be one of work, personal/);
 });
 
-test('the demo environment says every setting that shapes the screen itself, so nothing real leaks in', () => {
-  const real = {
-    PATH: '/usr/bin',
-    DAILY_FOCUS_GITHUB_SCOPE: 'realorg',
-    DAILY_FOCUS_GITHUB_ACCOUNTS: 'me, me-work',
-    DAILY_FOCUS_AGENT: 'codex',
-    DAILY_FOCUS_AGENT_AT: '06:30',
-    DAILY_FOCUS_ASSISTANT: 'claude',
-    DAILY_FOCUS_JIRA: 'on',
-    DAILY_FOCUS_JIRA_PROJECTS: 'REAL',
-  };
-  const personal = loadConfig(layerEnv(envSources(demoEnv(real, '/tmp/demo-store', 'personal'), {})));
-  assert.equal(personal.profile, 'personal');
-  assert.equal(personal.dataDir, '/tmp/demo-store');
-  assert.equal(personal.agent.cli, null, 'the agent is off, whatever the real environment says');
-  assert.equal(personal.agent.at, null);
-  assert.equal(personal.assistant.agent, null);
-  assert.equal(personal.calendar.enabled, false);
-  assert.equal(personal.github.enabled, true);
-  assert.deepEqual(personal.github.accounts, []);
-  assert.deepEqual(personal.github.scope, []);
-  assert.equal(personal.jira.enabled, false, 'the personal profile has no Jira, even with it on outside');
-  assert.equal(personal.freeWindows, false);
-
-  const work = loadConfig(layerEnv(envSources(demoEnv(real, '/tmp/demo-store', 'work'), {})));
-  assert.equal(work.jira.enabled, true);
-  assert.deepEqual(work.jira.projects, ['PROJ', 'PLAT']);
-  assert.deepEqual(work.jira.holdStatuses, ['Blocked']);
-  assert.deepEqual(work.github.scope, ['org:acme']);
-  assert.deepEqual(work.github.mergeGateChecks, ['merge-policy']);
-  assert.equal(work.port, 0, 'any free port unless one was asked for');
-  assert.equal(demoEnv({ DAILY_FOCUS_PORT: '4322' }, '/tmp/demo-store', 'work').DAILY_FOCUS_PORT, '4322');
+test('the demo store holds its own settings, and what would run something is fixed over them', async () => {
+  for (const profile of PROFILES) {
+    const store = await tempStore();
+    await writeDemoStore(store, profile);
+    // Whatever a developer has exported, only the store and the port are taken from it.
+    const real = { PATH: '/usr/bin', DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_GITHUB_SCOPE: 'realorg' };
+    const sources = settingSources(demoEnv(real, store), DEMO_FIXED);
+    const config = loadConfig(layerSettings(sources));
+    assert.equal(config.profile, profile);
+    assert.equal(config.dataDir, store);
+    assert.equal(config.port, 0, 'any free port unless one was asked for');
+    assert.equal(config.agent.cli, null);
+    assert.equal(config.agent.at, null);
+    assert.equal(config.assistant.agent, null);
+    assert.equal(config.calendar.enabled, false);
+    assert.equal(config.github.enabled, true);
+    assert.deepEqual(config.github.accounts, []);
+    if (profile === 'work') {
+      assert.equal(config.jira.enabled, true);
+      assert.deepEqual(config.jira.projects, ['PROJ', 'PLAT']);
+      assert.deepEqual(config.jira.holdStatuses, ['Blocked']);
+      assert.deepEqual(config.github.scope, ['org:acme']);
+      assert.deepEqual(config.github.mergeGateChecks, ['merge-policy']);
+    } else {
+      assert.equal(config.jira.enabled, false);
+      assert.deepEqual(config.github.scope, []);
+      assert.equal(config.freeWindows, false);
+    }
+    for (const key of Object.keys(DEMO_FIXED)) {
+      const applied = applySettingsChange(sources, { [key]: 'claude' });
+      assert.ok('error' in applied, `${key} can't be switched on in the demo`);
+    }
+  }
+  assert.equal(demoEnv({ DAILY_FOCUS_PORT: '4322' }, '/tmp/demo-store').DAILY_FOCUS_PORT, '4322');
 });
 
 test('working days back skip the weekend, so nothing in the demo is dated on a Sunday', () => {

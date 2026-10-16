@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
@@ -21,11 +21,8 @@ async function tempStore(): Promise<string> {
   return dir;
 }
 
-// The agent is set so an already set-up store has nothing left to ask for.
-function init(dataDir: string) {
-  return run(process.execPath, [script], {
-    env: { ...process.env, DAILY_FOCUS_DATA: dataDir, DAILY_FOCUS_PROFILE: 'personal', DAILY_FOCUS_AGENT: 'codex' },
-  });
+function init(dataDir: string, ...args: string[]) {
+  return run(process.execPath, [script, '--profile', 'personal', ...args], { env: { ...process.env, DAILY_FOCUS_DATA: dataDir } });
 }
 
 test('a first run never suggests seeding the store it just set up', async () => {
@@ -61,4 +58,35 @@ test('says so when it repoints a link at this checkout', async () => {
   assert.match(stdout, /Linked 1 file to this checkout; nothing else changed\./);
   assert.doesNotMatch(stdout, /Nothing was changed/);
   assert.equal(await readlink(join(dir, 'prompt.md')), personalPrompt);
+});
+
+test('--profile saves the profile for a new store, so the dashboard follows the same one', async () => {
+  const dir = await tempStore();
+  const { stdout } = await init(dir);
+
+  assert.match(stdout, /saved the personal profile/);
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'personal' });
+  assert.match(await readFile(join(dir, 'sources.md'), 'utf8'), /e-Boks/i, 'the personal template');
+  assert.equal(await readlink(join(dir, 'prompt.md')), personalPrompt);
+});
+
+test('a store set up without a profile has it saved, and says so', async () => {
+  const dir = await tempStore();
+  await run(process.execPath, [script], { env: { ...process.env, DAILY_FOCUS_DATA: dir } });
+
+  const { stdout } = await init(dir);
+
+  assert.match(stdout, /The store was already set up\. Saved the personal profile and linked 1 file to this checkout; nothing else changed\./);
+});
+
+test('a store saved as the other profile is refused, not switched', async () => {
+  const dir = await tempStore();
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ DAILY_FOCUS_PROFILE: 'work', DAILY_FOCUS_AGENT: 'codex' }));
+
+  await assert.rejects(init(dir), (error: { code: number; stderr: string }) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stderr, /already says this store briefs the work profile/);
+    return true;
+  });
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'work', DAILY_FOCUS_AGENT: 'codex' });
 });

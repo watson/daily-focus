@@ -56,7 +56,6 @@ function step(id: string, overrides: Partial<OnboardingStep> = {}): OnboardingSt
     topic: `topic ${id}`,
     status: 'open',
     summary: null,
-    locked: false,
     card: { version: 0, why: null, choices: [], fields: [], problem: null, revisable: false, later: 'Decide later' },
     proposal: null,
     answer: null,

@@ -74,8 +74,8 @@ reviewable, and the wrapper should never need editing.
 
 A setting that changes how the agent gathers, such as searching deleted mail, reaches
 it the same way everything else does: through the store. Before each run the dashboard
-writes `agent-settings.json` with the values it is running with, whether they were
-saved on the settings page or set in `.env`, and both prompts say what each key means.
+writes `agent-settings.json` with the values it is running with, as saved on the
+settings page, and both prompts say what each key means.
 The wrapper stays the same whatever the settings are.
 
 The prompt has the agent hand the reading of its sources to subagents, which share
