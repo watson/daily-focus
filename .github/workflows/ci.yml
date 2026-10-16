@@ -82,7 +82,71 @@ jobs:
         uses: actions/cache@v6
         with:
           path: macos/build/node-v*
-          key: app-node-${{ hashFiles('macos/node-version') }}
+          key: app-node-${{ hashFiles('node-version') }}
 
       - name: Build the menu bar app and its disk image, and run its self-test
         run: npm run app -- --test
+
+  binaries:
+    # The Linux and Windows executables are the official Node.js with the package
+    # injected, which asks nothing of the platform each is for, so one Linux runner
+    # builds all of them. It runs the one for itself; the Windows one is run below.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache the Node.js the executables carry
+        uses: actions/cache@v6
+        with:
+          path: binaries/build/node-v*
+          key: binaries-node-${{ hashFiles('node-version') }}
+
+      - name: Build the executables and run the Linux one
+        run: npm run binaries -- --test
+
+      - name: Hand the Windows executable to its check
+        uses: actions/upload-artifact@v7
+        with:
+          name: daily-focus-win-x64
+          path: binaries/build/daily-focus-win-x64.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  binaries-windows:
+    needs: binaries
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      # For the check alone, which runs the executable and needs no package installed.
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Fetch the Windows executable
+        uses: actions/download-artifact@v8
+        with:
+          name: daily-focus-win-x64
+          path: binaries/build
+
+      - name: Run it
+        run: |
+          New-Item -ItemType Directory -Path binaries/build/check | Out-Null
+          tar -xf binaries/build/daily-focus-win-x64.zip -C binaries/build/check
+          node binaries/build.ts --check binaries/build/check/daily-focus.exe

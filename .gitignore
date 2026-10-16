@@ -26,3 +26,7 @@ dist/
 
 # The menu bar app and its zip, assembled by macos/build.sh.
 macos/build/
+
+# The Linux and Windows executables, the Node.js they carry, and the loader and
+# blob injected into them, assembled by binaries/build.ts.
+binaries/build/

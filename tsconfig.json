@@ -18,5 +18,5 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["src", "scripts", "test", "client"]
+  "include": ["src", "scripts", "test", "client", "binaries"]
 }

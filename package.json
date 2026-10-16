@@ -56,13 +56,15 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
     "package": "node scripts/package.ts",
-    "prepack": "node scripts/build.ts && node scripts/package.ts"
+    "prepack": "node scripts/build.ts && node scripts/package.ts",
+    "binaries": "node binaries/build.ts"
   },
   "devDependencies": {
     "@preact/signals": "2.11.2",
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
     "happy-dom": "20.14.5",
+    "postject": "1.0.0-alpha.6",
     "preact": "10.29.8",
     "typescript": "7.0.2"
   }

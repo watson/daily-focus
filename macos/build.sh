@@ -13,7 +13,7 @@
 #               already have one (see macos/DailyFocus/Updater.swift).
 # --test        runs the app's self-test after building.
 #
-# The app carries its own Node.js, at the version in macos/node-version, downloaded
+# The app carries its own Node.js, at the version in node-version, downloaded
 # from nodejs.org on the first build and checked against its published checksums.
 #
 # Signing uses DAILY_FOCUS_SIGN_IDENTITY when set, else the first Developer ID
@@ -88,12 +88,12 @@ cp "$build/art/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 # The Node.js the dashboard runs on, carried in the app so that nothing has to be
 # installed first: the official Apple silicon release, at the version in
-# macos/node-version. The download is checked against the checksums nodejs.org
-# publishes, fetched over HTTPS from the same place, and kept in macos/build/ so a
-# rebuild doesn't fetch it again. It is signed again below with this app's
-# identity, since the official build carries get-task-allow, a debugging
-# entitlement notarisation refuses.
-node_version=$(tr -d '[:space:]' < "$here/node-version")
+# node-version, which the Linux and Windows executables carry too. The download
+# is checked against the checksums nodejs.org publishes, fetched over HTTPS from
+# the same place, and kept in macos/build/ so a rebuild doesn't fetch it again.
+# It is signed again below with this app's identity, since the official build
+# carries get-task-allow, a debugging entitlement notarisation refuses.
+node_version=$(tr -d '[:space:]' < "$repo/node-version")
 node_cache="$build/node-v$node_version"
 mkdir -p "$node_cache"
 if [ ! -s "$node_cache/SHASUMS256.txt" ]; then
