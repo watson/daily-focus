@@ -5,12 +5,13 @@
 | [`morning-brief-work.md`](./morning-brief-work.md) | The prompt for the work briefing agent, run once every workday morning. |
 | [`morning-brief-personal.md`](./morning-brief-personal.md) | The prompt for the personal briefing agent: email, family calendars, Apple Reminders, Apple Messages, e-Boks and the user's own GitHub projects. |
 | [`assistant.md`](./assistant.md) | The instructions for the on-demand assistant, which the server runs headless when the user presses Ask on a row. One file for both profiles. Linked into the store as `assistant.md`. |
+| [`onboarding.md`](./onboarding.md) | The instructions for the setup screen's CLI sessions, one per question, which propose the answer a new user most likely wants. Not linked into the store: the server reads it from the running copy and inlines it, as it does the assistant's. |
 
-All three are **nothing but prompt** — each is read verbatim by its agent, so anything
+All four are **nothing but prompt** — each is read verbatim by its agent, so anything
 else in there is either noise the agent has to skip or, worse, an instruction it
 might try to act on. Notes about the prompts belong in this file instead.
 
-The assistant's file differs from the other two in one way: the server does read it.
+The assistant's file differs from the briefing prompts in one way: the server does read it.
 It is the server that starts the assistant, so it is the server that inlines these
 instructions ahead of the row and the request on the first turn of a session. The
 quick actions the panel offers are sentences in `src/assistant.ts`, not in the
@@ -32,14 +33,15 @@ alongside `items.schema.json`, so a run only ever names a path inside the store:
 ~/.daily-focus/
   prompt.md           → prompts/morning-brief-work.md   (symlink, made by the dashboard at start)
   items.schema.json   → schema/items.schema.json   (symlink, made by the dashboard at start)
-  focus.md            you write it, in the dashboard or by hand
-  sources.md          you write it, in the dashboard or by hand
+  focus.md            you write it, on the setup screen, in the dashboard or by hand
+  sources.md          you write it, on the setup screen, in the dashboard or by hand
   settings.json       the dashboard writes: what you set on its settings page
   items.json          the agent writes it
   actions.jsonl       the dashboard appends
   agent.jsonl         the dashboard appends: every run, its report, and the questions asked of it
   archive/            the dashboard writes
   prs.json            the dashboard writes: its last fetch of the user's open pull requests
+  onboarding.json     the dashboard writes: the setup screen's answers, and what was proposed for them
 ```
 
 That boundary is the point, and it is worth being strict about. A prompt that reaches

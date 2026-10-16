@@ -235,3 +235,30 @@ export async function codexVersionWarning(bin: string, run: ExecFile = defaultEx
       'computer use is off in its settings.';
   return `Codex ${version} is older than ${CODEX_MINIMUM}, the oldest the dashboard's limits on Codex work with. ${consequence} Update Codex.`;
 }
+
+/**
+ * The model Codex itself recommends first: the listed model with the lowest
+ * priority number in its catalog, which is the newest flagship. For setup's
+ * sessions, which want the best judgement Codex has at a low effort; a lighter
+ * model was faster there and wrong about whose calendar was whose.
+ *
+ * The catalog comes from `codex debug models`, a debugging command, so anything
+ * unexpected in it gives null, and the session runs on the user's own default.
+ */
+export async function codexLatestModel(bin: string, run: ExecFile = defaultExec): Promise<string | null> {
+  try {
+    const catalog = JSON.parse(await run(bin, ['debug', 'models'], { timeout: LIST_TIMEOUT_MS })) as { models?: unknown };
+    const listed = (Array.isArray(catalog.models) ? catalog.models : []).filter(
+      (model): model is { slug: string; priority: number } =>
+        typeof model === 'object' &&
+        model !== null &&
+        typeof (model as { slug?: unknown }).slug === 'string' &&
+        typeof (model as { priority?: unknown }).priority === 'number' &&
+        (model as { visibility?: unknown }).visibility === 'list',
+    );
+    listed.sort((a, b) => a.priority - b.priority);
+    return listed[0]?.slug ?? null;
+  } catch {
+    return null;
+  }
+}

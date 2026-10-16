@@ -8,7 +8,7 @@
  *   daily-focus service [--remove]   keep it running in the background on macOS
  *   daily-focus init | audit | seed | build-calendar
  *
- * Everything else happens in the dashboard: the setup steps on a new store, and
+ * Everything else happens in the dashboard: the setup screen on a new store, and
  * the settings page after. A checkout has the same commands as npm scripts.
  *
  * The subcommands are loaded only when asked for, after the flags have been

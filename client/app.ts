@@ -15,6 +15,7 @@ import { BoardView } from './board.ts';
 import { Header, HelpDialog, Tabs } from './chrome.ts';
 import { el } from './el.ts';
 import { Flyout } from './flyout.ts';
+import { OnboardingView } from './onboarding.ts';
 import { SettingsView } from './settings.ts';
 import { detailRow, detailRun, state } from './state.ts';
 import { TicketsView } from './tickets.ts';
@@ -26,6 +27,9 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
   const view = ui.view.value;
   const run = current ? detailRun(current, ui) : null;
   const row = current && !run ? detailRow(current, ui) : null;
+
+  // A new store is the setup screen and nothing else, until it is set up.
+  if (current?.onboarding) return [h(OnboardingView, { state: current, ui, handlers }), h(Toast, { ui, handlers })];
 
   return [
     el('a', { class: 'skip-link', href: '#main' }, 'Skip to content'),

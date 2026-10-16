@@ -35,9 +35,11 @@ To use your own data:
 npx daily-focus
 ```
 
-Until the first brief exists, the Today tab walks you through the rest: what it
-briefs, your objective, which coding-agent CLI writes the brief (Claude Code or
-Codex), and where it should look. Everything stays on the settings page afterwards.
+A new store opens on the setup screen: a few questions, one at a time, each with
+the likely answer already ticked. Once you've chosen the coding-agent CLI that writes
+the brief (Claude Code or Codex), it looks into the rest for you, such as which of
+your calendars are work ones, so most answers are a click. Everything stays on the
+settings page afterwards.
 To keep it running in the background on macOS, install it and run it as a service:
 
 ```sh

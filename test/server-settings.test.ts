@@ -174,7 +174,7 @@ test('the status the menu bar app reads is small and says what it needs', async 
   assert.equal(status.waitingOnYou, 0);
 });
 
-test("the morning agent's clock waits for the first brief, which comes from the setup steps", async () => {
+test("the morning agent's clock waits for the first brief, which comes from the setup screen", async () => {
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-first-brief-'));
   // Due every minute of the day, so only the first-brief rule can be holding it back.
   const due = await startServer({

@@ -71,7 +71,11 @@ versions and release notes come from, so CI checks it.
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
 | `src/config.ts`, `src/env.ts` | Settings, layered: the environment over the store's `settings.json` over `.env` |
 | `src/settings.ts` | The settings page: every setting's label, help and field, and checking a change before it is saved |
-| `src/setup.ts`, `client/setup.ts` | What a new store still needs, and the setup steps Today shows until the first brief |
+| `src/setup.ts` | What a new store still needs: the CLIs installed, the calendar helper, whether a brief has ever existed |
+| `src/clis.ts` | Finding Codex and Claude Code: installed, new enough and logged in, and which setup uses without asking |
+| `src/questions.ts` | The setup screen's questions: each card, what a CLI is asked to propose for it, and what the answer writes |
+| `src/onboarding.ts`, `client/onboarding.ts` | The setup screen: the CLI sessions that propose answers, the answers kept until the finish, and the page that asks |
+| `client/setup.ts` | Today between the setup screen's finish and the first brief |
 | `client/settings.ts` | The settings page, built from `src/settings.ts`, and the editors for `focus.md` and `sources.md` |
 | `src/editable.ts`, `src/templates.ts` | Saving `focus.md` and `sources.md` from the editors without overwriting a hand edit, and what they start as |
 | `src/shellpath.ts` | Your login shell's PATH, for a dashboard started by launchd or an app |
@@ -93,7 +97,7 @@ versions and release notes come from, so CI checks it.
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
 | `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
-| `prompts/` | The briefing agent's instructions |
+| `prompts/` | The briefing agent's instructions, the assistant's, and setup's |
 | `apps-script/` | Optional Google Tasks export |
 
 ## Keep the contracts in sync
@@ -148,6 +152,12 @@ free of side effects, since only `POST` is checked for its content type.
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
 | `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `409` when it is off or already running |
+| `POST /api/onboarding/detect` | Looks for Codex and Claude Code, which the setup screen asks when it opens; with one ready, the first question answers itself |
+| `POST /api/onboarding/answer` | `{step, answer}`. Records a setup answer, or `{later: true}`; returns state. `409` with the reason when its settings would be refused |
+| `POST /api/onboarding/revise` | `{step, text, draft}`. Tells the CLI looking into a setup question what to change; the new proposal streams in over SSE |
+| `POST /api/onboarding/retry` | `{step}`. Looks into a setup question again, or checks again what it needs |
+| `POST /api/onboarding/finish` | Saves every setup answer at once and asks for the first brief; the dashboard restarts to apply the settings |
+| `GET /api/onboarding/sources` | The source list the finish would write, or that it keeps the one there is |
 | `POST /api/agent/ask` | `{run, text}`. Asks a finished run a question in its own session; returns state with the answer coming. The reply streams in over SSE. `409` when it is off, busy, or the run can't be continued |
 | `POST /api/agent/stop` | Kills whatever the morning agent is doing: a run, or a question about one |
 | `GET /api/settings` | Every setting: its value, where it came from (environment, settings, `.env` or default), its default, and the page's label and help |

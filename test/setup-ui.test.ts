@@ -1,19 +1,29 @@
+/**
+ * The setup screen and what Today shows after it, rendered.
+ *
+ * What is worth holding: a new store is the setup screen and nothing else;
+ * answered questions fold into their sentence; the open one starts from what
+ * its card ticks, keeps what the user changed when a proposal lands under them,
+ * and answers with what the card holds; and between the finish and the first
+ * brief, Today says where the brief is. All invented people and calendars.
+ */
+
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { h } from 'preact';
 
 // Imported ahead of the client, for the document it installs.
-import { buttonLabels, byClass, handlersWith, mount, settle, uiWith } from './dom.ts';
+import { buttonLabels, byClass, byTag, handlersWith, mount, settle, uiWith } from './dom.ts';
+import { App } from '../client/app.ts';
 import { renderBanners } from '../client/banners.ts';
-import { SetupCard } from '../client/setup.ts';
+import { OnboardingView } from '../client/onboarding.ts';
+import { FirstBriefCard } from '../client/setup.ts';
+import { state as stateSignal } from '../client/state.ts';
 import { TodayView } from '../client/today.ts';
-import type { SettingsPage } from '../client/types.ts';
-import type { SettingView } from '../src/settings.ts';
-import type { DashboardState, SetupState } from '../src/types.ts';
+import type { DashboardState, OnboardingAnswer, OnboardingState, OnboardingStep } from '../src/types.ts';
 
-function stateWith(overrides: { setup?: Partial<SetupState>; [key: string]: unknown } = {}): DashboardState {
-  const { setup, ...rest } = overrides;
+function stateWith(overrides: Partial<DashboardState> = {}): DashboardState {
   return {
     brief: { generatedAt: null, ageHours: null, stale: false, refreshPending: false },
     schedule: { runsToday: true },
@@ -24,244 +34,462 @@ function stateWith(overrides: { setup?: Partial<SetupState>; [key: string]: unkn
     focus: null,
     items: [],
     agendaSource: { live: false, problem: null },
-    board: { enabled: true, fetchedAt: '2026-10-04T08:00:00Z', reason: null },
-    tickets: { enabled: false, fetchedAt: null, reason: null },
-    agentRun: { enabled: false, cli: null, schedule: null, last: null, runs: [] },
+    board: { enabled: true, fetchedAt: '2026-10-04T08:00:00Z', reason: null, rows: [], counts: { you: 0 } },
+    tickets: { enabled: false, fetchedAt: null, reason: null, rows: [], inProgress: [] },
+    agentRun: { enabled: true, cli: 'claude', schedule: null, last: null, runs: [] },
     setup: {
       needed: true,
       profile: 'work',
-      profileChosen: false,
-      sources: { exists: false, placeholders: 0 },
+      sources: { exists: true, placeholders: 0 },
       clis: { claude: '/usr/local/bin/claude', codex: null },
-      calendar: { supported: false, built: false, chosen: 0, buildCommand: 'npm run build:calendar' },
-      ...setup,
+      calendar: { supported: false, built: false, chosen: 0, buildCommand: 'daily-focus build-calendar' },
     },
-    ...rest,
+    onboarding: null,
+    ...overrides,
   } as unknown as DashboardState;
 }
 
-const steps = (root: HTMLElement) =>
-  byClass(root, 'setup__step').map((step) => [step.querySelector('h3')!.textContent, step.dataset.done ?? null]);
-
-test('a new store opens on the setup steps, not an empty list and an alarm', () => {
-  const state = stateWith();
-  const page = mount(h('div', null, h(TodayView, { state, ui: uiWith(), handlers: handlersWith() })));
-  assert.equal(byClass(page, 'setup').length, 1);
-  assert.equal(byClass(page, 'stats').length, 0);
-
-  const banners = mount(h('div', null, renderBanners(state, uiWith(), handlersWith())));
-  assert.equal(byClass(banners, 'banner--critical').length, 0, 'no red "No brief yet" while setting up');
-
-  // Once setup is over, a missing brief is an alarm again.
-  const later = mount(h('div', null, renderBanners(stateWith({ setup: { needed: false } }), uiWith(), handlersWith())));
-  assert.equal(byClass(later, 'banner--critical').length, 1);
-});
-
-test('each step says whether it is done', () => {
-  const card = mount(h(SetupCard, { state: stateWith(), ui: uiWith(), handlers: handlersWith() }));
-  assert.deepEqual(steps(card), [
-    ['What should it brief?', 'false'],
-    ['What are you trying to achieve?', 'false'],
-    ['Which agent writes the brief?', 'false'],
-    ['Who are you, and where should it look?', 'false'],
-    ['What else should the dashboard show?', null],
-    ['Your first brief', null],
-  ]);
-
-  const done = mount(
-    h(SetupCard, {
-      state: stateWith({
-        setup: { profileChosen: true, sources: { exists: true, placeholders: 0 } },
-        focus: { objective: 'Ship the reliability fix', blocker: null, note: null },
-        agentRun: { enabled: true, cli: 'claude', schedule: { at: '07:00', nextRunAt: null }, last: null, runs: [] },
-      }),
-      ui: uiWith(),
-      handlers: handlersWith(),
-    }),
-  );
-  assert.deepEqual(
-    steps(done).slice(0, 4).map(([, state]) => state),
-    ['true', 'true', 'true', 'true'],
-  );
-  assert.match(done.textContent!, /Claude Code\. After the first brief, it runs by itself each scheduled morning at 07:00/);
-});
-
-test('the choices are a click: the profile, the CLI it found, and turning off a board', () => {
-  const chosen: Record<string, string | null>[] = [];
-  const card = mount(h(SetupCard, { state: stateWith(), ui: uiWith(), handlers: handlersWith({ chooseSettings: (values) => void chosen.push(values) }) }));
-  const click = (label: string) => [...card.querySelectorAll('button')].find((button) => button.textContent === label)!.click();
-
-  assert.ok(buttonLabels(card).includes('Use Claude Code'));
-  assert.ok(!buttonLabels(card).includes('Use Codex'), 'only what is installed is offered');
-  click('Personal life');
-  click('Use Claude Code');
-  click('Turn off the pull request board');
-  assert.deepEqual(chosen, [{ DAILY_FOCUS_PROFILE: 'personal' }, { DAILY_FOCUS_AGENT: 'claude' }, { DAILY_FOCUS_GITHUB: 'off' }]);
-});
-
-test('with no CLI installed, the step says what to install instead of offering nothing', () => {
-  const card = mount(h(SetupCard, { state: stateWith({ setup: { clis: { claude: null, codex: null } } }), ui: uiWith(), handlers: handlersWith() }));
-  assert.ok(!buttonLabels(card).some((label) => label.startsWith('Use ')));
-  assert.match(card.textContent!, /Install Claude Code or the Codex CLI/);
-});
-
-test('the first brief waits for the agent to be chosen, and a source list with placeholders is not done', () => {
-  const runs: string[] = [];
-  const card = mount(
-    h(SetupCard, {
-      state: stateWith({ setup: { sources: { exists: true, placeholders: 3 } } }),
-      ui: uiWith(),
-      handlers: handlersWith({ runAgent: () => void runs.push('run') }),
-    }),
-  );
-  const write = [...card.querySelectorAll('button')].find((button) => button.textContent === 'Run the morning agent now')!;
-  assert.equal(write.disabled, true, 'nothing to run it with yet');
-  assert.match(card.textContent!, /still has 3 of the template's placeholders/);
-  assert.equal(steps(card)[3]![1], 'false');
-});
-
-test('a restart waiting on saved settings is said, and so is one nobody can do for you', () => {
-  const waiting = mount(h('div', null, renderBanners(stateWith({ restart: 'waiting', setup: { needed: false }, problem: null }), uiWith(), handlersWith())));
-  assert.match(waiting.textContent!, /Settings saved\. The dashboard restarts to apply them/);
-  const manual = mount(h('div', null, renderBanners(stateWith({ restart: 'manual', setup: { needed: false }, problem: null }), uiWith(), handlersWith())));
-  assert.match(manual.textContent!, /Restart the dashboard to apply them/);
-});
-
-test('a choice draws its answers alike, so none looks like the one to pick', () => {
-  const card = mount(h(SetupCard, { state: stateWith({ setup: { clis: { claude: '/bin/claude', codex: '/bin/codex' } } }), ui: uiWith(), handlers: handlersWith() }));
-  for (const group of byClass(card, 'setup__choices')) {
-    const buttons = [...group.querySelectorAll('button')];
-    assert.ok(buttons.length > 1);
-    assert.ok(buttons.every((button) => button.className === 'button'), buttons.map((button) => button.className).join(', '));
-  }
-});
-
-test('the source list is written in its step, not on another page', () => {
-  const calls: string[] = [];
-  const handlers = handlersWith({
-    loadText: (name) => void calls.push(`load:${name}`),
-    toggleDrawer: (key, open) => void calls.push(`${key}:${open}`),
-    openSettings: () => void calls.push('settings'),
-  });
-  const closed = mount(h(SetupCard, { state: stateWith(), ui: uiWith(), handlers }));
-  [...closed.querySelectorAll('button')].find((button) => button.textContent === 'Write it')!.click();
-  assert.deepEqual(calls, ['load:sources', 'setup:sources:true'], 'it opens here, and loads the template');
-
-  const editor = {
-    saved: null,
-    version: 'absent',
-    template: '# Sources\n',
-    draft: '# Sources\n',
-    conflict: null,
-    saving: false,
+function step(id: string, overrides: Partial<OnboardingStep> = {}): OnboardingStep {
+  return {
+    id,
+    title: `Question ${id}?`,
+    topic: `topic ${id}`,
+    status: 'open',
+    summary: null,
+    locked: false,
+    card: { version: 0, why: null, choices: [], fields: [], problem: null, revisable: false, later: 'Decide later' },
+    proposal: null,
+    answer: null,
+    ...overrides,
   };
-  const open = mount(
-    h(SetupCard, { state: stateWith(), ui: uiWith({ openDrawers: new Set(['setup:sources']), texts: { sources: editor } }), handlers }),
-  );
-  assert.equal(byClass(open, 'text-editor').length, 1);
-  assert.ok(open.querySelector('textarea[aria-label="sources.md"]'));
+}
+
+const CLI = step('cli', {
+  title: 'Which agent should write your brief?',
+  status: 'answered',
+  summary: 'Claude Code writes your brief.',
+  answer: { choices: { cli: ['claude'] }, fields: {} },
 });
 
-test('each board says how it is doing the same way: a mark, and words in one colour', () => {
-  const card = mount(
-    h(SetupCard, {
-      state: stateWith({
-        board: { enabled: true, fetchedAt: null, reason: null },
-        tickets: { enabled: true, fetchedAt: '2026-10-04T08:00:00Z', reason: null },
-      }),
-      ui: uiWith(),
-      handlers: handlersWith(),
-    }),
-  );
-  const rows = byClass(card, 'setup__board').map((row) => [row.dataset.health, row.querySelector('.setup__board-text')!.textContent]);
-  assert.deepEqual(rows, [
-    ['checking', 'Checking GitHub through gh…'],
-    ['ok', 'Connected, through acli.'],
-  ]);
-});
-
-test('a source list still holding placeholders holds the first run back; none at all does not', () => {
-  const agent = { enabled: true, cli: 'claude', schedule: null, last: null, runs: [] };
-  const run = (root: HTMLElement) => [...root.querySelectorAll('button')].find((button) => button.textContent === 'Run the morning agent now')!;
-
-  const template = mount(h(SetupCard, { state: stateWith({ agentRun: agent, setup: { sources: { exists: true, placeholders: 2 } } }), ui: uiWith(), handlers: handlersWith() }));
-  assert.equal(run(template).disabled, true);
-  assert.match(template.textContent!, /Replace the source list's placeholders first/);
-
-  const none = mount(h(SetupCard, { state: stateWith({ agentRun: agent }), ui: uiWith(), handlers: handlersWith() }));
-  assert.equal(run(none).disabled, false);
-  assert.match(none.textContent!, /Without a source list it briefs from what it can reach/);
-});
-
-test("the agent's model, effort and tools are folded away in its step, and saved on their own", async () => {
-  const setting = (key: string, label: string, kind: SettingView['kind']): SettingView => ({
-    key,
-    group: 'agent',
-    label,
-    help: '',
-    kind,
-    choices: kind === 'choice' ? [{ value: 'high', label: 'high' }] : null,
-    advanced: false,
-    value: null,
-    source: 'default',
-    fallback: "The CLI's own",
-  });
-  const page: SettingsPage = {
-    groups: [{ id: 'agent', title: 'Morning agent' }],
-    settings: [
-      setting('DAILY_FOCUS_AGENT_MODEL', 'Model', 'text'),
-      setting('DAILY_FOCUS_AGENT_EFFORT', 'Effort', 'choice'),
-      setting('DAILY_FOCUS_AGENT_TOOLS', 'Tools Claude Code may use', 'list'),
+const CALENDARS = step('calendars', {
+  title: 'Which calendars belong in your work brief?',
+  topic: 'your calendars',
+  card: {
+    version: 1,
+    why: 'These are on your work account.',
+    choices: [
+      {
+        id: 'calendars',
+        label: null,
+        multiple: true,
+        options: [
+          { value: 'live:work:Robin Lark', label: 'Robin Lark', detail: 'Your primary calendar', group: 'robin@northwind.example' },
+          { value: 'live:icloud:Family', label: 'Family', detail: null, group: 'iCloud' },
+        ],
+        selected: ['live:work:Robin Lark'],
+        custom: 'Add a calendar by name',
+      },
     ],
-    error: null,
-    restart: null,
-  };
-  const agent = (cli: string) => ({ agentRun: { enabled: true, cli, schedule: null, last: null, runs: [] } });
-  const labels = (root: HTMLElement) => byClass(byClass(root, 'setup__advanced')[0]!, 'field__label').map((label) => label.textContent);
+    fields: [],
+    problem: null,
+    revisable: true,
+    later: null,
+  },
+  proposal: { status: 'ready', conversation: [{ from: 'it', text: 'These are on your work account.' }], steps: [], error: null },
+});
 
-  // Closed until asked for, and the settings load when it is first opened.
-  const calls: string[] = [];
-  const unloaded = mount(
-    h(SetupCard, {
-      state: stateWith(agent('claude')),
+function flow(steps: OnboardingStep[], current: string | null): OnboardingState {
+  return { detected: true, steps, current, error: null };
+}
+
+test('a new store is the setup screen and nothing else', () => {
+  const state = stateWith({ onboarding: flow([CLI, CALENDARS], 'calendars') });
+  stateSignal.value = state;
+  const page = mount(h(App, { ui: uiWith(), handlers: handlersWith() }));
+  assert.equal(byClass(page, 'onboarding').length, 1);
+  assert.equal(byClass(page, 'tabs').length, 0, 'no tabs to wander off to');
+  assert.equal(byClass(page, 'banners').length, 0);
+  stateSignal.value = null;
+});
+
+test('answered questions fold into their sentence with a Change, and the open one is a card', () => {
+  const changed: (string | null)[] = [];
+  const page = mount(
+    h(OnboardingView, {
+      state: stateWith({ onboarding: flow([CLI, CALENDARS, step('objective')], 'calendars') }),
       ui: uiWith(),
-      handlers: handlersWith({ loadSettings: () => void calls.push('load'), toggleDrawer: (key, open) => void calls.push(`${key}:${open}`) }),
+      handlers: handlersWith({ editSetupStep: (id) => void changed.push(id) }),
     }),
   );
-  const fold = byClass(unloaded, 'setup__advanced')[0] as HTMLDetailsElement;
-  assert.equal(fold.open, false);
-  assert.equal(fold.querySelector('summary')!.textContent, 'Advanced: model, effort and tools');
-  fold.open = true;
-  await settle();
-  assert.deepEqual(calls, ['load', 'setup:agent-advanced:true']);
+  const done = byClass(page, 'onboarding__done');
+  assert.deepEqual(done.map((row) => row.querySelector('.onboarding__summary')!.textContent), ['Claude Code writes your brief.']);
+  byTag(done[0]!, 'button')[0]!.click();
+  assert.deepEqual(changed, ['cli']);
 
-  // Save sends only these settings, and only once one of them has changed.
-  const saved: (readonly string[] | undefined)[] = [];
-  const handlers = handlersWith({ saveSettings: (keys) => void saved.push(keys) });
-  const open = (cli: string, draft: [string, string | null][] = []) =>
-    mount(
-      h(SetupCard, {
-        state: stateWith(agent(cli)),
-        ui: uiWith({ settings: page, settingsDraft: new Map(draft), openDrawers: new Set(['setup:agent-advanced']) }),
-        handlers,
-      }),
-    );
-  const save = (root: HTMLElement) => [...root.querySelectorAll('button')].find((button) => button.textContent === 'Save')!;
+  const card = byClass(page, 'onboarding__card')[0]!;
+  assert.equal(card.dataset.step, 'calendars');
+  assert.equal(card.querySelector('h2')!.textContent, 'Which calendars belong in your work brief?');
+  assert.match(card.querySelector('.onboarding__why')!.textContent!, /work account/);
+  assert.deepEqual(
+    byClass(card, 'onboarding__group-name').map((group) => group.textContent),
+    ['robin@northwind.example', 'iCloud'],
+    'grouped by account',
+  );
+  const boxes = byTag(card, 'input').filter((input) => (input as HTMLInputElement).type === 'checkbox') as HTMLInputElement[];
+  assert.deepEqual(boxes.map((box) => box.checked), [true, false], "the card's own ticks");
+  assert.ok(!buttonLabels(card).includes('Decide later'), 'a list can be left unticked; there is nothing to put off');
+  assert.ok(page.querySelector('.onboarding__tell input'), 'a card with a proposal behind it can be told what to change');
+  assert.match(byClass(page, 'onboarding__then')[0]!.textContent!, /Then topic objective and your first brief\./);
+});
 
-  const untouched = open('claude');
-  assert.deepEqual(labels(untouched), ['Model', 'Effort', 'Tools Claude Code may use']);
-  assert.equal(save(untouched).disabled, true);
-
-  const edited = open('claude', [
-    ['DAILY_FOCUS_AGENT_MODEL', 'opus'],
-    ['DAILY_FOCUS_WORK_START', '8'],
+test('Continue answers with what the card holds, and Decide later puts it off', async () => {
+  const answers: [string, OnboardingAnswer][] = [];
+  const handlers = handlersWith({ answerSetup: (id, answer) => void answers.push([id, answer]) });
+  const leavable = { ...CALENDARS, card: { ...CALENDARS.card, later: 'Decide later' } };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([leavable], 'calendars') }), ui: uiWith(), handlers }));
+  (page.querySelector('form.onboarding__form') as HTMLFormElement).requestSubmit();
+  byTag(page, 'button').find((button) => button.textContent === 'Decide later')!.click();
+  assert.deepEqual(answers, [
+    ['calendars', { choices: { calendars: ['live:work:Robin Lark'] }, fields: {} }],
+    ['calendars', { later: true }],
   ]);
-  assert.equal((edited.querySelector('#setting-DAILY_FOCUS_AGENT_MODEL') as HTMLInputElement).value, 'opus');
-  save(edited).click();
-  assert.deepEqual(saved, [['DAILY_FOCUS_AGENT_MODEL', 'DAILY_FOCUS_AGENT_EFFORT', 'DAILY_FOCUS_AGENT_TOOLS']]);
+});
 
-  // Codex ignores the tool list, so it isn't offered.
-  const codex = open('codex');
-  assert.equal(byClass(codex, 'setup__advanced')[0]!.querySelector('summary')!.textContent, 'Advanced: model and effort');
-  assert.deepEqual(labels(codex), ['Model', 'Effort']);
+test("a tick changed is kept as a draft; a proposal landing under it is offered, not forced", async () => {
+  const drafts: unknown[] = [];
+  const ui = uiWith();
+  const handlers = handlersWith({
+    editSetupDraft: (id, answer, version) => {
+      drafts.push([id, answer, version]);
+      const next = new Map(ui.setupDrafts.value);
+      if (answer) next.set(id, { version, answer });
+      else next.delete(id);
+      ui.setupDrafts.value = next;
+    },
+  });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([CALENDARS], 'calendars') }), ui, handlers }));
+  const boxes = (root: HTMLElement) => byTag(root, 'input').filter((input) => (input as HTMLInputElement).type === 'checkbox') as HTMLInputElement[];
+  boxes(page)[1]!.click();
+  await settle();
+  assert.deepEqual(drafts[0], ['calendars', { choices: { calendars: ['live:work:Robin Lark', 'live:icloud:Family'] }, fields: {} }, 1]);
+  assert.equal(boxes(page)[1]!.checked, true);
+
+  // The CLI comes back with a new version while the draft stands.
+  const newer = { ...CALENDARS, card: { ...CALENDARS.card, version: 2 } };
+  const again = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([newer], 'calendars') }), ui, handlers }));
+  assert.match(again.textContent!, /new suggestion/);
+  assert.equal(boxes(again)[1]!.checked, true, 'the draft stays until the user takes the suggestion');
+});
+
+test('a value of the user’s own is added to the list and kept ticked', async () => {
+  const ui = uiWith();
+  const handlers = handlersWith({
+    editSetupDraft: (id, answer, version) => {
+      ui.setupDrafts.value = new Map([[id, { version, answer: answer! }]]);
+    },
+  });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([CALENDARS], 'calendars') }), ui, handlers }));
+  byTag(page, 'button').find((button) => button.textContent === 'Add a calendar by name')!.click();
+  await settle();
+  const input = page.querySelector('.onboarding__add input') as HTMLInputElement;
+  input.value = 'On-call rota';
+  input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  await settle();
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await settle();
+  assert.deepEqual(ui.setupDrafts.value.get('calendars')!.answer.choices.calendars, ['live:work:Robin Lark', 'On-call rota']);
+  assert.ok(byClass(page, 'onboarding__group-name').some((group) => group.textContent === 'Added by you'));
+});
+
+test('while the CLI is still looking, the card says so and shows what it is doing', () => {
+  const looking = step('identity', {
+    title: 'Is this you?',
+    topic: 'who you are',
+    card: { ...step('x').card, fields: [{ id: 'name', label: 'Your name', value: 'Robin Lark', placeholder: null, help: null }] },
+    proposal: { status: 'working', conversation: [], steps: [{ kind: 'tool', text: 'Look up the GitHub login', detail: 'gh api user', state: 'running' }], error: null },
+  });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([looking], 'identity') }), ui: uiWith(), handlers: handlersWith() }));
+  assert.match(byClass(page, 'onboarding__looking')[0]!.textContent!, /Still looking\. You can answer now/);
+  assert.match(byClass(page, 'onboarding__looking')[0]!.textContent!, /Look up the GitHub login/);
+  assert.equal(page.querySelector('.onboarding__tell'), null, 'nothing to tell it until it has answered');
+});
+
+test('what the CLI is already looking into next is shown under the open question', () => {
+  const next = step('calendars', { topic: 'your calendars', proposal: { status: 'working', conversation: [], steps: [], error: null } });
+  const page = mount(
+    h(OnboardingView, { state: stateWith({ onboarding: flow([step('schedule'), next, step('objective')], 'schedule') }), ui: uiWith(), handlers: handlersWith() }),
+  );
+  assert.match(byClass(page, 'onboarding__next')[0]!.textContent!, /Next, your calendars\. It's already looking/);
+});
+
+test('a problem that blocks the card holds Continue back; one that does not sits under the list', () => {
+  const blocked = step('cli', { card: { ...step('x').card, problem: { message: 'Install Claude Code or Codex.', command: null, blocking: true } } });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([blocked], 'cli') }), ui: uiWith(), handlers: handlersWith() }));
+  assert.equal((byTag(page, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement).disabled, true);
+  assert.ok(buttonLabels(page).includes('Check again'));
+
+  const note = { ...CALENDARS, card: { ...CALENDARS.card, problem: { message: 'Build the helper.', command: 'daily-focus build-calendar', blocking: false } } };
+  const other = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([note], 'calendars') }), ui: uiWith(), handlers: handlersWith() }));
+  assert.equal((byTag(other, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement).disabled, false);
+  const form = other.querySelector('form.onboarding__form')!;
+  assert.ok(form.querySelector('.onboarding__problem[data-blocking="false"]'), 'inside the form, after the list');
+});
+
+test('with every question answered, the finish offers the first brief, and the source list behind a fold', () => {
+  let loads = 0;
+  let finishes = 0;
+  const handlers = handlersWith({ loadSetupSources: () => void loads++, finishSetup: () => void finishes++ });
+  const ui = uiWith({ setupSources: { text: '# Sources\n\n## Identity\n', kept: false } });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([CLI], null) }), ui, handlers }));
+  assert.equal(page.querySelector('#setup-finish')!.textContent, 'Ready for your first brief');
+  assert.match(page.querySelector('.onboarding__preview pre')!.textContent!, /## Identity/);
+  byTag(page, 'button').find((button) => button.textContent === 'Write my first brief')!.click();
+  assert.equal(finishes, 1);
+
+  const later = step('cli', { status: 'later' });
+  const without = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([later], null) }), ui: uiWith(), handlers }));
+  assert.ok(buttonLabels(without).includes('Finish setup'), 'no brief to write without an agent');
+  assert.match(byClass(without, 'onboarding__done')[0]!.textContent!, /Topic cli: decide later\./);
+});
+
+test('between the finish and the first brief, Today says where the brief is', () => {
+  const today = (overrides: Partial<DashboardState>) =>
+    mount(h('div', null, h(TodayView, { state: stateWith(overrides), ui: uiWith(), handlers: handlersWith() })));
+  assert.equal(byClass(today({}), 'first-brief').length, 1);
+  assert.equal(byClass(today({}), 'stats').length, 0);
+
+  const card = (overrides: Partial<DashboardState>) =>
+    mount(h(FirstBriefCard, { state: stateWith(overrides), handlers: handlersWith() })).querySelector('h2')!.textContent;
+  const run = (status: string, error: string | null = null) => ({
+    enabled: true,
+    cli: 'claude',
+    schedule: null,
+    last: { id: 'r1', status, error, startedAt: '2026-10-16T07:00:00Z', endedAt: null },
+    runs: [],
+  });
+  assert.equal(card({ restart: 'waiting' }), 'Saving your settings');
+  assert.equal(card({ agentRun: run('running') as never }), 'Writing your first brief');
+  assert.equal(card({ agentRun: run('failed', 'claude is not logged in') as never }), 'Your first brief didn’t finish');
+  assert.equal(card({ agentRun: { enabled: false, cli: null, schedule: null, last: null, runs: [] } as never }), 'Choose who writes your brief');
+  assert.equal(card({}), 'Write your first brief');
+
+  // The missing brief isn't an alarm until setup is behind it.
+  const banners = mount(h('div', null, renderBanners(stateWith(), uiWith(), handlersWith())));
+  assert.equal(byClass(banners, 'banner--critical').length, 0);
+});
+
+test('the screen asks for the CLIs to be looked for when it opens, and not again once they have been', async () => {
+  let asked = 0;
+  const handlers = handlersWith({ detectSetup: () => void asked++ });
+  const looking = step('cli', {
+    title: 'Which agent should write your brief?',
+    topic: 'your coding agent',
+    proposal: { status: 'working', conversation: [], steps: [{ kind: 'tool', text: 'Look for Codex and Claude Code', detail: null, state: 'running' }], error: null },
+  });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: { ...flow([looking], 'cli'), detected: false } }), ui: uiWith(), handlers }));
+  // Effects run after the paint, which happy-dom stands in for with a timer.
+  for (let i = 0; i < 50 && asked === 0; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(asked, 1);
+  assert.match(byClass(page, 'onboarding__looking')[0]!.textContent!, /Looking into your coding agent…Look for Codex and Claude Code/);
+  assert.equal((byTag(page, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement).disabled, true);
+
+  mount(h(OnboardingView, { state: stateWith({ onboarding: flow([CLI, CALENDARS], 'calendars') }), ui: uiWith(), handlers }));
+  await new Promise((done) => setTimeout(done, 150));
+  assert.equal(asked, 1, 'already looked');
+});
+
+test('with no CLI ready, the card links to the installers and takes a path', () => {
+  const answers: [string, OnboardingAnswer][] = [];
+  const none = step('cli', {
+    title: 'Which agent should write your brief?',
+    card: {
+      ...step('x').card,
+      problem: {
+        message: "Codex isn't installed. Claude Code isn't installed. Install one, log in once in a terminal, then check again.",
+        command: null,
+        blocking: true,
+        links: [
+          { label: 'Install Codex', url: 'https://developers.openai.com/codex/cli' },
+          { label: 'Install Claude Code', url: 'https://code.claude.com/docs' },
+        ],
+      },
+      fields: [{ id: 'path', label: 'Its path', value: '', placeholder: '/opt/homebrew/bin/codex', help: null }],
+    },
+  });
+  const page = mount(
+    h(OnboardingView, {
+      state: stateWith({ onboarding: flow([none], 'cli') }),
+      ui: uiWith({ setupDrafts: new Map([['cli', { version: 0, answer: { choices: {}, fields: { path: '/opt/tools/codex' } } }]]) }),
+      handlers: handlersWith({ answerSetup: (id, answer) => void answers.push([id, answer]) }),
+    }),
+  );
+  assert.deepEqual(byTag(page, 'a').map((a) => [a.textContent, a.getAttribute('href')]), [
+    ['Install Codex', 'https://developers.openai.com/codex/cli'],
+    ['Install Claude Code', 'https://code.claude.com/docs'],
+  ]);
+  const continueButton = byTag(page, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement;
+  assert.equal(continueButton.disabled, false, 'a path is something to answer with');
+  (page.querySelector('form.onboarding__form') as HTMLFormElement).requestSubmit();
+  assert.deepEqual(answers, [['cli', { choices: {}, fields: { path: '/opt/tools/codex' } }]]);
+});
+
+test('what it said and what the user told it read as one conversation, with the reply box under it', () => {
+  const talked = {
+    ...CALENDARS,
+    proposal: {
+      status: 'ready' as const,
+      conversation: [
+        { from: 'it' as const, text: 'These are on your work account.' },
+        { from: 'you' as const, text: 'Also the on-call rota' },
+        { from: 'it' as const, text: 'Added the on-call rota from the same account.' },
+      ],
+      steps: [],
+      error: null,
+    },
+  };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([talked], 'calendars') }), ui: uiWith(), handlers: handlersWith() }));
+  const card = byClass(page, 'onboarding__card')[0]!;
+  assert.deepEqual(
+    [...card.querySelectorAll('.onboarding__talk > li')].map((line) => [line.className, line.textContent]),
+    [
+      ['onboarding__why', 'These are on your work account.'],
+      ['onboarding__said', 'Also the on-call rota'],
+      ['onboarding__why', 'Added the on-call rota from the same account.'],
+    ],
+  );
+  const order = [...card.children].map((child) => child.className.split(' ')[0]);
+  assert.ok(order.indexOf('onboarding__talk') < order.indexOf('onboarding__tell'), 'the reply box under the conversation');
+  assert.ok(order.indexOf('onboarding__tell') < order.indexOf('onboarding__form'), 'and above the answer it changes');
+  assert.equal(byTag(card, 'button').find((b) => b.textContent === 'Send')?.textContent, 'Send');
+});
+
+test('while it works on a change, the user sees their words, its steps, and that it is still writing once they are done', () => {
+  const working = {
+    ...CALENDARS,
+    proposal: {
+      status: 'working' as const,
+      conversation: [
+        { from: 'it' as const, text: 'These are on your work account.' },
+        { from: 'you' as const, text: 'Also the on-call rota' },
+      ],
+      steps: [{ kind: 'tool' as const, text: 'Calendar: list calendars', detail: null, state: 'done' as const }],
+      error: null,
+    },
+  };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([working], 'calendars') }), ui: uiWith(), handlers: handlersWith() }));
+  const looking = byClass(page, 'onboarding__looking')[0]!;
+  assert.equal(looking.querySelector('p'), null, 'no "still looking": their words say what it is doing');
+  assert.deepEqual(
+    [...looking.querySelectorAll('li')].map((li) => [li.textContent, li.getAttribute('data-state')]),
+    [
+      ['Calendar: list calendars', 'done'],
+      ['Writing its answer…', 'running'],
+    ],
+  );
+  assert.equal(page.querySelector('.onboarding__tell'), null, 'nothing more to say until it answers');
+});
+
+test('reopening one answer leaves Change on the others', () => {
+  const identity = step('identity', { status: 'answered', summary: "You're Robin Lark.", answer: { choices: {}, fields: { name: 'Robin Lark' } } });
+  const page = mount(
+    h(OnboardingView, {
+      state: stateWith({ onboarding: flow([CLI, identity, CALENDARS], 'calendars') }),
+      ui: uiWith({ setupEditing: 'cli' }),
+      handlers: handlersWith(),
+    }),
+  );
+  const changes = byClass(page, 'onboarding__change') as HTMLButtonElement[];
+  assert.deepEqual(changes.map((button) => [button.closest('.onboarding__done')!.getAttribute('data-step'), button.disabled]), [['identity', false]]);
+  assert.equal(byClass(page, 'onboarding__card').length, 2, 'the one reopened, and the one still open');
+});
+
+test('Continue while it is still filling the card in asks first, and only the second press answers', async () => {
+  const answers: string[] = [];
+  const ui = uiWith();
+  const handlers = handlersWith({
+    answerSetup: (id) => void answers.push(id),
+    confirmSetup: (id) => void (ui.setupConfirm.value = id),
+  });
+  const looking = {
+    ...CALENDARS,
+    proposal: {
+      status: 'working' as const,
+      conversation: [],
+      steps: [{ kind: 'tool' as const, text: 'Calendar: list calendars', detail: null, state: 'running' as const }],
+      error: null,
+    },
+  };
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([looking], 'calendars') }), ui, handlers }));
+  const form = () => page.querySelector('form.onboarding__form') as HTMLFormElement;
+  form().requestSubmit();
+  await settle();
+  assert.deepEqual(answers, [], 'not yet');
+  assert.match(byClass(page, 'onboarding__confirm')[0]!.textContent!, /still filling this in\. Continue with what’s here, and stop it\?/);
+  assert.deepEqual(buttonLabels(byClass(page, 'onboarding__confirm')[0]!), ['Continue without it', 'Wait for it']);
+
+  byTag(page, 'button').find((b) => b.textContent === 'Wait for it')!.click();
+  await settle();
+  assert.equal(byClass(page, 'onboarding__confirm').length, 0);
+
+  form().requestSubmit();
+  await settle();
+  form().requestSubmit();
+  assert.deepEqual(answers, ['calendars']);
+});
+
+test('a suggestion under a field is offered, not filled in, and a click puts it in', async () => {
+  const ui = uiWith();
+  const handlers = handlersWith({
+    editSetupDraft: (id, answer, version) => {
+      ui.setupDrafts.value = new Map([[id, { version, answer: answer! }]]);
+    },
+  });
+  const objective = step('objective', {
+    title: 'What are you trying to get done right now?',
+    card: {
+      ...step('x').card,
+      fields: [
+        {
+          id: 'objective',
+          label: 'Your objective',
+          value: '',
+          placeholder: null,
+          help: null,
+          suggestions: [{ text: 'Get checkout retries merged', detail: 'your 4 open pull requests on checkout' }],
+        },
+        { id: 'blocker', label: 'What’s in the way, if anything', value: '', placeholder: null, help: null },
+      ],
+    },
+  });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([objective], 'objective') }), ui, handlers }));
+  const input = () => byTag(page, 'input')[0] as HTMLInputElement;
+  assert.equal(input().value, '');
+  const suggestion = page.querySelector('.onboarding__suggestions button') as HTMLButtonElement;
+  assert.equal(suggestion.textContent, 'Get checkout retries mergedyour 4 open pull requests on checkout');
+  suggestion.click();
+  await settle();
+  assert.equal(ui.setupDrafts.value.get('objective')!.answer.fields.objective, 'Get checkout retries merged');
+  assert.equal(input().value, 'Get checkout retries merged');
+  assert.equal(suggestion.getAttribute('aria-pressed'), 'true');
+});
+
+test('the button that leaves a question says what it does, and an empty objective says Continue without one', async () => {
+  const identity = step('identity', { card: { ...step('x').card, later: 'Leave this out', fields: [{ id: 'name', label: 'Your name', value: 'Robin Lark', placeholder: null, help: null }] } });
+  const page = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([identity], 'identity') }), ui: uiWith(), handlers: handlersWith() }));
+  assert.deepEqual(buttonLabels(page.querySelector('.onboarding__actions')!), ['Continue', 'Leave this out']);
+
+  const objective = step('objective', {
+    card: {
+      ...step('x').card,
+      later: null,
+      empty: 'Continue without one',
+      fields: [{ id: 'objective', label: 'Your objective', value: '', placeholder: null, help: null }],
+    },
+  });
+  const ui = uiWith();
+  const empty = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([objective], 'objective') }), ui, handlers: handlersWith() }));
+  assert.deepEqual(buttonLabels(empty.querySelector('.onboarding__actions')!), ['Continue without one']);
+  ui.setupDrafts.value = new Map([['objective', { version: 0, answer: { choices: {}, fields: { objective: 'Ship it' } } }]]);
+  await settle();
+  assert.deepEqual(buttonLabels(empty.querySelector('.onboarding__actions')!), ['Continue']);
 });

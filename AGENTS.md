@@ -14,7 +14,10 @@ when changing what a briefing agent must produce or understand.
 Two agents, two words. "The agent" is the morning briefing agent. "The assistant" is
 the CLI the dashboard runs headless when the user presses Ask on a row; its
 instructions are [`prompts/assistant.md`](prompts/assistant.md) and its runner is
-`src/assistant.ts`. Keep the words apart in code, prompts and UI copy.
+`src/assistant.ts`. Keep the words apart in code, prompts and UI copy. The setup
+screen's CLI sessions are a third role, "onboarding" in code: `src/onboarding.ts`
+runs them on [`prompts/onboarding.md`](prompts/onboarding.md), and the screen's copy
+calls them "it" rather than either word.
 
 ## Private data and store ownership
 
@@ -24,21 +27,26 @@ instructions are [`prompts/assistant.md`](prompts/assistant.md) and its runner i
 - The default store is `~/.daily-focus`. For development, set `DAILY_FOCUS_DATA` to a
   temporary directory or gitignored `./data`. Do not put real briefs at the repo root.
 - `sources.md`, and the private half of `focus.md` after `<!-- agent-only -->`, reach
-  the browser only through the editor endpoints that ask for them (`/api/text/*`).
-  Never put either in `/api/state`, which every tab is sent: state carries
-  `toPublicFocus` and nothing of the source list.
+  the browser only through the endpoints that ask for them: the editors'
+  (`/api/text/*`), and the setup screen's preview of the list it would write
+  (`/api/onboarding/sources`). Never put either in `/api/state`, which every tab is
+  sent: state carries `toPublicFocus` and nothing of the source list. The one
+  exception is the setup screen itself, whose answers become the list; `onboarding`
+  is in state only until the finish.
 
 Each store file has one writer. There is no locking, so preserve these boundaries:
 
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `archive/`, `assistant/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
-| User, through the dashboard's editors or by hand | `focus.md`, `sources.md` |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
+| User, through the dashboard's editors, the setup screen, or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
-the file is unchanged since the editor loaded it (`src/editable.ts`), so a hand edit
-is never overwritten. It never writes them on the user's behalf.
+the file is unchanged since it was read (`src/editable.ts`), so a hand edit is never
+overwritten. The setup screen's finish is such a save: it writes the source list the
+user's answers add up to, shown to them first, and only when there is none, and
+sets the objective they typed. Nothing else writes them on the user's behalf.
 
 Never compact or rewrite `actions.jsonl`, `assistant.jsonl` or `agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
 Integration caches use a sibling temporary file and rename; they store facts, not
@@ -75,6 +83,15 @@ run it again with `--remove` afterwards.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
   `Host` before any route runs; keep every route behind it and every `GET` free of
   side effects, or any page open in the browser can act through the dashboard.
+- Setup's sessions only read: no drafts, and Claude Code gets read tools by name
+  (`ONBOARDING_TOOLS`). Nothing runs on the user's behalf until the screen asks: it
+  posts `/api/onboarding/detect` when it opens, which looks for the CLIs
+  (`src/clis.ts`), and the sessions, `gh` and the calendar helper wait for the
+  first answer. A new store's state is read before anyone is there, tests included.
+  Setup picks the CLI itself when one is ready, Codex first (`CLI_PREFERENCE`), and
+  asks only when none is. The dashboard owns
+  the questions (`src/questions.ts`); a session only fills one in, in the JSON its
+  schema fixes, and never decides what is asked or writes anything.
 - The assistant may read anything and create or revise a Gmail draft; it must never
   send, post, or edit. It runs in an empty directory, so keep that a property of the
   process: no checkout, no worktree, no repository path setting. Work that needs one
@@ -90,7 +107,9 @@ run it again with `--remove` afterwards.
 - `src/agent.ts` starts the briefing agent on the dashboard's clock, 07:00 unless
   `DAILY_FOCUS_AGENT_AT` says otherwise, once a day, and after a user click. Nothing
   else starts it, so the run log is the whole record of its runs; do not add a
-  second scheduling path. The agent still writes `items.json` itself, from the
+  second scheduling path. The setup screen's finish is a click whose settings
+  restart the dashboard, so the first brief starts on the start after it, once
+  (`takeBriefRequest`). The agent still writes `items.json` itself, from the
   store as its working directory, on the short wrapper in `agentPrompt`, which
   names `prompt.md` and nothing more. Do not hand it extra instructions, a
   checkout, or a copy of the prompt. A follow-up question resumes the run's session

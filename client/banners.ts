@@ -13,8 +13,8 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
   const agent = state.agentRun;
   const running = agent?.last?.status === 'running';
 
-  // Before the first brief, the missing brief is the setup steps' business, not
-  // an alarm: a new store has none, and the page says how to get one.
+  // Before the first brief, the missing brief is the first-brief card's business,
+  // not an alarm: a new store has none, and the page says how to get one.
   if (state.problem && !state.setup?.needed) {
     banners.push(banner('critical', '!', state.problem));
   }

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig } from '../src/config.ts';
-import { fillIdentity, findExecutable, firstBriefPending, placeholdersIn, setupState } from '../src/setup.ts';
+import { fillIdentity, findExecutable, firstBriefPending, ghLogins, placeholdersIn, setupState } from '../src/setup.ts';
 import { sourcesTemplate } from '../src/templates.ts';
 
 const dirs: string[] = [];
@@ -27,12 +27,12 @@ test('both templates are full of placeholders, and a filled-in list has none', (
 });
 
 test('what gh and git know replaces the identity placeholders, and nothing else', () => {
-  const filled = fillIdentity(sourcesTemplate('work'), { name: 'Alex Example', login: 'alex-example', email: 'alex@example.org' });
+  const filled = fillIdentity(sourcesTemplate('work'), { name: 'Alex Example', login: 'alex-example', logins: ['alex-example'], email: 'alex@example.org' });
   assert.match(filled, /`Alex Example`/);
   assert.match(filled, /`alex@example.org`/);
   assert.match(filled, /`alex-example`/);
   assert.match(filled, /Some Shared Calendar/, 'the calendars are still for the user to name');
-  assert.equal(fillIdentity('`Your Name`', { name: null, login: null, email: null }), '`Your Name`', 'an unknown stays a placeholder');
+  assert.equal(fillIdentity('`Your Name`', { name: null, login: null, logins: [], email: null }), '`Your Name`', 'an unknown stays a placeholder');
 });
 
 test('a program is found where a shell would find it, and only if it can run', async () => {
@@ -63,7 +63,7 @@ test('the setup state counts placeholders without carrying the text', async () =
   const dir = await temp();
   const config = loadConfig({ DAILY_FOCUS_DATA: dir });
   await writeFile(config.sourcesFile, sourcesTemplate('work'));
-  const setup = await setupState(config, { profileChosen: true });
+  const setup = await setupState(config);
   assert.equal(setup.needed, true);
   assert.equal(setup.profile, 'work');
   assert.equal(setup.sources.exists, true);
@@ -75,7 +75,7 @@ test('a brief that is there but broken is not a new store', async () => {
   const dir = await temp();
   const config = loadConfig({ DAILY_FOCUS_DATA: dir });
   await writeFile(config.itemsFile, '{ not json');
-  assert.equal((await setupState(config, { profileChosen: true })).needed, false, 'its banner reports it instead');
+  assert.equal((await setupState(config)).needed, false, 'its banner reports it instead');
 });
 
 test('a CLI path set for the agent is used whatever the file is called, and a wrong one falls back to PATH', async () => {
@@ -84,7 +84,7 @@ test('a CLI path set for the agent is used whatever the file is called, and a wr
   await writeFile(wrapper, '#!/bin/sh\n');
   await chmod(wrapper, 0o755);
   const named = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: wrapper });
-  assert.equal((await setupState(named, { profileChosen: true })).clis.claude, wrapper);
+  assert.equal((await setupState(named)).clis.claude, wrapper);
 
   const bin = join(dir, 'bin');
   await mkdir(bin);
@@ -94,8 +94,23 @@ test('a CLI path set for the agent is used whatever the file is called, and a wr
   process.env.PATH = bin;
   try {
     const wrong = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: join(dir, 'gone') });
-    assert.equal((await setupState(wrong, { profileChosen: true })).clis.claude, join(bin, 'claude'));
+    assert.equal((await setupState(wrong)).clis.claude, join(bin, 'claude'));
   } finally {
     process.env.PATH = path;
   }
+});
+
+test("every github.com account gh holds is read from its status, the active one first", () => {
+  const status = JSON.stringify({
+    hosts: {
+      'github.com': [
+        { login: 'alex-work', active: false, state: 'success', host: 'github.com' },
+        { login: 'alex-example', active: true, state: 'success', host: 'github.com' },
+        { login: 'alex-old', active: false, state: 'error', host: 'github.com' },
+      ],
+      'github.example.org': [{ login: 'alex', active: true, state: 'success' }],
+    },
+  });
+  assert.deepEqual(ghLogins(status), ['alex-example', 'alex-work']);
+  assert.deepEqual(ghLogins('unknown flag: --json'), []);
 });

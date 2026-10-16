@@ -4,7 +4,8 @@ import { stat } from 'node:fs/promises';
 import { basename, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig, type Config } from './config.ts';
+import { detectClis, probeCli } from './clis.ts';
+import { loadConfig, type CliName, type Config } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
 import { envSources, layerEnv, readDotEnv, type EnvSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
@@ -21,6 +22,7 @@ import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
 import { refusal } from './guard.ts';
+import { Onboarding } from './onboarding.ts';
 import { describeLink, linkStore, storeLinkWarning } from './links.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
 import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
@@ -321,6 +323,49 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     },
   });
 
+  // The setup screen, while a new store is being set up. Its sessions only
+  // read; it saves nothing until the finish, which saves everything at once.
+  const onboarding = new Onboarding(config, {
+    onChange: () => {
+      void broadcast();
+      restartWhenIdle();
+    },
+    // A path already set for either CLI is looked at before PATH.
+    detectClis: () => {
+      const configured: Partial<Record<CliName, string>> = {};
+      if (config.agent.cli && config.agent.binPath !== config.agent.cli) configured[config.agent.cli] = config.agent.binPath;
+      if (config.assistant.agent && config.assistant.binPath !== config.assistant.agent) configured[config.assistant.agent] = config.assistant.binPath;
+      return detectClis(configured);
+    },
+    probeCli: (path) => probeCli(path, null, false),
+    readSources,
+    setup: () => setupState(config),
+    identity: () => detectIdentity(config),
+    boards: async () => {
+      const actions = await store.readActions();
+      const now = new Date();
+      const health = (view: { enabled: boolean; fetchedAt: string | null; reason: { message: string } | null }) => ({
+        enabled: view.enabled,
+        fetchedAt: view.fetchedAt,
+        reason: view.reason?.message ?? null,
+      });
+      return { github: health(board.view(actions, now)), jira: health(tickets.view(actions, now)) };
+    },
+    listCalendars: async () => {
+      const facts = await runHelper(config.calendar.appPath, []);
+      const today = new Map<string, number>();
+      for (const event of facts.events) {
+        if (typeof event.calendarId === 'string') today.set(event.calendarId, (today.get(event.calendarId) ?? 0) + 1);
+      }
+      return facts.calendars.map(({ id, title, source }) => ({ title, source, eventsToday: today.get(id) ?? 0 }));
+    },
+    checkSettings: (values) => {
+      const applied = applySettingsChange(readSources(), values);
+      return 'error' in applied ? applied.error : null;
+    },
+    saveSettings: (values) => saveSettingsValues(values),
+  });
+
   // A Codex older than the oldest the dashboard's limits on it work with ignores
   // some of them. Asked once, without holding up the start; the page shows the
   // warning when the answer lands.
@@ -334,6 +379,40 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (codexWarnings.length > 0) void broadcast();
   });
 
+  /**
+   * The first brief, when the setup screen's finish asked for it. Its settings
+   * restart the dashboard, so it is usually the start after the click that
+   * begins the run; when nothing needed saving, it is the click itself.
+   */
+  async function startRequestedBrief(): Promise<void> {
+    if (!agent.enabled || !(await firstBriefPending(config)) || !(await onboarding.takeBriefRequest())) return;
+    await agent.run('hand').catch((err: unknown) => {
+      console.error(`[daily-focus] could not start the first brief: ${(err as Error).message}`);
+    });
+  }
+
+  /**
+   * Save settings, for the settings page and the setup screen's finish, and ask
+   * for the restart that applies them when anything changed. Resolves with why
+   * not, or null. One save at a time, each reading the file afresh: two tabs
+   * saving different settings at once must both land, not the later over the first.
+   */
+  function saveSettingsValues(values: SettingsChange): Promise<string | null> {
+    const saved = settingsWrites.then(async (): Promise<string | null> => {
+      const sources = readSources();
+      const applied = applySettingsChange(sources, values);
+      if ('error' in applied) return applied.error;
+      const changed = JSON.stringify(Object.entries(applied.settings).sort()) !== JSON.stringify(Object.entries(sources.settings).sort());
+      if (changed) {
+        await saveSettings(sources.settingsPath, applied.settings);
+        requestRestart();
+      }
+      return null;
+    });
+    settingsWrites = saved.catch(() => {});
+    return saved;
+  }
+
   /** Ask for a restart to apply saved settings: now if nothing is running, otherwise once nothing is. */
   function requestRestart(): void {
     restart = options.onRestart ? 'waiting' : 'manual';
@@ -341,7 +420,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   }
 
   function restartWhenIdle(): void {
-    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy) return;
+    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy || onboarding.busy) return;
     restarting = true;
     // After the reply that asked for it has gone out.
     setImmediate(() => options.onRestart?.());
@@ -362,11 +441,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       // A link that can't be read is no reason to withhold the page.
       storeLinkWarning(config).catch(() => null),
     ]);
-    const sources = readSources();
-    const setup = await setupState(config, {
-      profileChosen: Boolean(layerEnv(sources).DAILY_FOCUS_PROFILE?.trim()),
-    });
+    const setup = await setupState(config);
     const pulls = board.view(actions, now);
+    const onboardingState = await onboarding.view(setup);
     return {
       ...state,
       board: pulls,
@@ -376,6 +453,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
       restart,
       setup,
+      onboarding: onboardingState,
       assetVersion,
       storeId,
     };
@@ -433,6 +511,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         // Appended by this process, which broadcasts on its own.
         basename(config.assistantLogFile),
         basename(config.agentLogFile),
+        // Rewritten by the setup screen, which broadcasts on its own.
+        basename(config.onboardingFile),
+        basename(tempPathFor(config.onboardingFile)),
       ],
     },
   );
@@ -452,12 +533,14 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // closed as aborted now, rather than shown as a spinner that never stops.
   await assistant.start();
   await agent.start();
+  await onboarding.start(await firstBriefPending(config));
+  await startRequestedBrief();
 
   // The morning agent's clock. Once now, so a dashboard opened after the hour
   // catches up on a brief it missed while closed, and then every half minute:
   // a timer set for six-thirty doesn't fire at six-thirty on a machine that was
   // asleep, but a check each time it is awake does. A new store's first brief
-  // comes from the setup steps' button instead; see `firstBriefPending`.
+  // comes from the setup screen's finish instead; see `firstBriefPending`.
   // One tick at a time: a browser moving the zone asks for one between the
   // clock's, and two side by side could both find a run due.
   let ticks: Promise<void> = Promise.resolve();
@@ -831,6 +914,49 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
+    // The setup screen. Each answers with fresh state; what a session finds
+    // streams in over SSE like everything else.
+    if (path.startsWith('/api/onboarding/') && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      const step = typeof body.step === 'string' ? body.step : '';
+      let refused: string | null = null;
+      if (path === '/api/onboarding/answer') {
+        refused = await onboarding.answer(step, body.answer);
+      } else if (path === '/api/onboarding/revise') {
+        refused =
+          typeof body.text === 'string' && body.text.trim() !== ''
+            ? await onboarding.revise(step, body.text, body.draft)
+            : '"text" is required: what to change';
+      } else if (path === '/api/onboarding/retry') {
+        refused = await onboarding.retry(step);
+      } else if (path === '/api/onboarding/detect') {
+        await onboarding.detect();
+      } else if (path === '/api/onboarding/finish') {
+        const finished = await onboarding.finish();
+        if ('error' in finished) refused = finished.error;
+        else if (!finished.restart) await startRequestedBrief();
+      } else {
+        sendJSON(res, 404, { error: `no such setup action: ${path}` });
+        return;
+      }
+      if (refused) {
+        sendJSON(res, 409, { error: refused });
+        return;
+      }
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
+    // What the finish would write as the source list, for the screen to show
+    // before it does. Not in the state, as the file itself never is.
+    if (path === '/api/onboarding/sources' && req.method === 'GET') {
+      sendJSON(res, 200, await onboarding.previewSources());
+      return;
+    }
+
     if (path === '/api/settings' && req.method === 'GET') {
       sendJSON(res, 200, { ...describeSettings(readSources()), restart });
       return;
@@ -844,21 +970,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         sendJSON(res, 400, { error: '"values" must be an object of settings' });
         return;
       }
-      // One save at a time, each reading the file afresh: two tabs saving
-      // different settings at once must both land, not the later over the first.
-      const saved = settingsWrites.then(async (): Promise<string | null> => {
-        const sources = readSources();
-        const applied = applySettingsChange(sources, values as SettingsChange);
-        if ('error' in applied) return applied.error;
-        const changed = JSON.stringify(Object.entries(applied.settings).sort()) !== JSON.stringify(Object.entries(sources.settings).sort());
-        if (changed) {
-          await saveSettings(sources.settingsPath, applied.settings);
-          requestRestart();
-        }
-        return null;
-      });
-      settingsWrites = saved.catch(() => {});
-      const refused = await saved;
+      const refused = await saveSettingsValues(values as SettingsChange);
       if (refused) {
         sendJSON(res, 400, { error: refused });
         return;
@@ -994,6 +1106,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     tickets.stop();
     await assistant.close();
     await agent.close();
+    await onboarding.close();
     stopWatching();
     stopWatchingAssets();
     for (const res of subscribers) res.end();

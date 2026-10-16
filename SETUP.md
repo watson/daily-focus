@@ -27,18 +27,56 @@ and `npm start` runs it in the terminal. Each `daily-focus <command>` below is
 `npm run <command>` in a checkout, with two differences: `build-calendar` is
 `build:calendar`, and flags go after `--`, as in `npm run audit -- --against <file>`.
 
-Until the first brief exists, the Today tab walks you through setting it up:
+A new store opens on the setup screen. It first looks for Codex and Claude Code:
+on your login shell's PATH, then where their installers put them, and checks that
+the one it finds is logged in. With one ready it doesn't ask: it uses Codex if
+that is ready, otherwise Claude Code, and says so in a line you can **Change**.
+With neither ready, it says what is wrong with each and the command that fixes it
+(`codex login`, `claude auth login`), links to the installers, and takes the path
+to one it couldn't find.
 
-1. **What it briefs**: your work, or your personal life. See
+Then it asks a few questions, one at a time, and each comes with the answer you
+most likely want already ticked: confirm it or change it. A list can be left
+unticked and a field empty. Two questions can be left, by a button that says what
+that does: **Decide later** for the agent, and **Leave this out** for who you are.
+**Change** reopens an earlier answer.
+
+1. **Who writes the brief**, only when it couldn't pick for you.
+2. **What it briefs**: your work, or your personal life. See
    [A personal instance](#a-personal-instance) for running both.
-2. **Your objective**: the one thing you're trying to achieve, which the agent
-   ranks the day against.
-3. **Who writes the brief**: Claude Code or Codex, whichever it finds installed.
-4. **Where it should look**: your source list, which starts from a template with
-   what `gh` and `git` know about you filled in.
-5. **What else to show**: the pull request board, the Jira board and the live
-   agenda, each with its status and a button to turn it off.
-6. **Write my first brief**, which runs the agent once while you watch.
+3. **When it runs**, and on which days.
+4. **Who you are**: your name as meeting notes write it, your email, and each
+   GitHub account `gh` is logged in to, with what it's for.
+5. **What else to show**: the pull request board and the Jira board, each with
+   its status.
+6. **Which calendars** the brief reads, which the live agenda follows too.
+7. **Your objective**, which the agent ranks the day against, and what's in the
+   way. It suggests a few from what you've been doing, when something stands
+   out, and writes one up from whatever you tell it, however rough.
+
+The [assistant](#ask-the-assistant) isn't asked about: it comes on with the CLI
+that writes the brief, unless you've set it already.
+
+Once you've said what it briefs, the CLI looks into the others in the background,
+one short session each, so the slow ones are ready when you get to them. It reads
+`gh`, your mail and your calendars to tell work from personal, and says in a
+sentence why it ticked what it did. Reply under that sentence with what to change,
+such as "also the on-call rota", and it tries again, answering in the same place.
+Continue before it has finished and it asks first, then stops and keeps what the
+card holds.
+
+The sessions run on the newest flagship model at low effort (Opus for Claude Code,
+the first model in Codex's own list for Codex), which measured as fast as the
+lighter models and, unlike them, told your calendars from other people's. They
+only read, in an empty directory. Claude Code is given read tools by name, and
+under Codex every connector write is refused, drafts included; `gh` and `acli` are
+held to reading by their instructions, as
+[the assistant's](#what-the-assistant-can-do) are.
+
+Nothing is saved until the last step, **Write my first brief**. It saves the
+settings, writes your source list from the answers (unless you already have one,
+which it leaves alone) and your objective, restarts the dashboard to apply them,
+and runs the agent once while you watch.
 
 Everything in it stays on the settings page afterwards: the gear in the header, or
 <kbd>,</kbd>. The dashboard keeps its files in `~/.daily-focus/`, and links the
@@ -52,6 +90,8 @@ terminal open while you use the dashboard. `daily-focus --help` lists the rest.
 
 If you'd rather write the files by hand, `daily-focus init` creates the store with
 templates for both. It preserves existing files, so you can safely run it again.
+A setting given in the environment, such as `DAILY_FOCUS_PROFILE`, is shown on the
+setup screen as answered and isn't asked.
 
 ## Set your objective and sources
 
@@ -91,7 +131,7 @@ Keep real names, account handles, and work details in this private store, outsid
 
 The dashboard runs the agent through a coding-agent CLI you already have. Install
 and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
-[Claude Code](https://code.claude.com/docs), and choose it in the setup steps or
+[Claude Code](https://code.claude.com/docs), and choose it on the setup screen or
 under **Morning agent** in the settings. In `.env` or the environment that is:
 
 ```dotenv
@@ -108,7 +148,8 @@ half minute. The days are Monday to Friday unless `DAILY_FOCUS_AGENT_DAYS` says
 otherwise; see [Match your working week](#match-your-working-week).
 `DAILY_FOCUS_AGENT_AT=off` means the dashboard never starts a run on its own; the
 refresh icon still does. A new store's first brief always comes from the setup
-steps' button, so the clock never runs the agent before you've told it where to look.
+screen's last button, so the clock never runs the agent before you've told it where
+to look.
 
 "Your time" is the time zone of the browser you last looked at the dashboard
 in. The page tells the dashboard when it loads, reconnects or comes back into view,
@@ -470,8 +511,8 @@ daily-focus service --remove
 
 Daily Focus can brief your personal life as well as your work: email, family
 calendars, Apple Reminders, Apple Messages, e-Boks and your own GitHub projects. Run it as a second instance
-with its own store, server and morning agent, and choose **Personal life** in its
-setup steps, or set:
+with its own store, server and morning agent, and choose **Personal life** on its
+setup screen, or set:
 
 ```dotenv
 DAILY_FOCUS_PROFILE=personal
@@ -580,9 +621,10 @@ matters when `DAILY_FOCUS_FREE_WINDOWS` is off.
   which it ends with. Run `daily-focus service` to keep it running. If the
   service is installed and the page still doesn't load, read
   `~/Library/Logs/local.daily-focus.log`.
-- Before the first brief, the Today tab shows the setup steps. Once a brief has
-  existed, an empty Today tab means the agent hasn't written a new `items.json`:
-  start a run from the refresh icon beside the brief's age.
+- After setup and before the first brief, the Today tab says where the first brief
+  is, and offers to run it again if it didn't finish. Once a brief has existed, an
+  empty Today tab means the agent hasn't written a new `items.json`: start a run
+  from the refresh icon beside the brief's age.
 - A stale brief needs an agent run. Refreshing a board doesn't regenerate the brief;
   the icon beside the brief's age does. Click "updated … ago" to see what the last
   run said, or whether there was one: the dashboard has to be running at

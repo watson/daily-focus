@@ -6,7 +6,7 @@
 
 import type { Signal } from '@preact/signals';
 import type { SettingsView } from '../src/settings.ts';
-import type { ActionType, DashboardState } from '../src/types.ts';
+import type { ActionType, DashboardState, OnboardingAnswer } from '../src/types.ts';
 
 export type View = 'today' | 'board' | 'tickets' | 'settings';
 
@@ -38,6 +38,19 @@ export interface CalendarName {
   title: string;
   source: string;
 }
+/**
+ * A setup card as the user has changed it, kept until it is answered. `version`
+ * is the card's when the edit began: a proposal landing after it doesn't
+ * overwrite the edit, it is offered instead.
+ */
+export interface SetupDraft {
+  version: number;
+  answer: Extract<OnboardingAnswer, { choices: unknown }>;
+}
+
+/** What the setup finish would write as the source list, once asked; see `previewSources`. */
+export type SetupSources = { text: string | null; kept: boolean } | 'loading' | { error: string };
+
 export type TicketMode = 'sync' | 'working';
 export type FocusField = 'note' | 'assistant';
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -146,6 +159,20 @@ export interface UiState {
   texts: Signal<Partial<Record<TextName, TextEditor>>>;
   /** The calendars Calendar.app has, once asked for; a string is why they couldn't be listed. */
   calendars: Signal<readonly CalendarName[] | string | null>;
+  /** Setup cards the user has changed and not answered yet, by step. In memory only. */
+  setupDrafts: Signal<ReadonlyMap<string, SetupDraft>>;
+  /** The answered setup step reopened with Change, while it is. */
+  setupEditing: Signal<string | null>;
+  /** The setup step whose Continue was pressed while its CLI was still looking, which asks first. */
+  setupConfirm: Signal<string | null>;
+  /** The setup step with a request on its way, which its buttons wait for. */
+  setupBusy: Signal<string | null>;
+  /** Why the server refused the last answer, until the next one. */
+  setupError: Signal<{ step: string; message: string } | null>;
+  /** Text typed for the CLI looking into a setup step, by step, until it is sent. */
+  setupTell: Signal<ReadonlyMap<string, string>>;
+  /** What the finish would write as the source list, once looked at. */
+  setupSources: Signal<SetupSources | null>;
 }
 
 /** The same facts as plain values, which is how a test says what it wants. */
@@ -200,10 +227,8 @@ export interface Handlers {
   /** Change a field on the settings page without saving it; null means back to the default. */
   editSetting(key: string, value: string | null): void;
   discardSettings(): void;
-  /** Save what has been changed on the settings page, or only the named settings of it. */
-  saveSettings(keys?: readonly string[]): void;
-  /** Save these values at once, for a setup step's buttons. */
-  chooseSettings(values: Record<string, string | null>): void;
+  /** Save what has been changed on the settings page. */
+  saveSettings(): void;
   loadText(name: TextName): void;
   editText(name: TextName, text: string): void;
   /** Save an editor: over the version it was loaded at, or over the newer one when `overwrite` says so. */
@@ -212,4 +237,23 @@ export interface Handlers {
   reloadText(name: TextName): void;
   saveObjective(objective: string, blocker: string): void;
   listCalendars(): void;
+  /** Answer a setup step, or put it off with `{ later: true }`. */
+  answerSetup(step: string, answer: OnboardingAnswer): void;
+  /** Change a setup card without answering it; null throws the change away. */
+  editSetupDraft(step: string, answer: SetupDraft['answer'] | null, version: number): void;
+  /** Reopen an answered setup step, or close it again with null. */
+  editSetupStep(step: string | null): void;
+  /** Ask whether to continue without what the CLI is still looking for, or stop asking with null. */
+  confirmSetup(step: string | null): void;
+  /** What has been typed for the CLI looking into a step. */
+  editSetupTell(step: string, text: string): void;
+  /** Tell the CLI looking into a step what to change. */
+  reviseSetup(step: string, text: string, draft: SetupDraft['answer']): void;
+  /** Look for the CLIs, when the setup screen opens. */
+  detectSetup(): void;
+  /** Look again: ask a step's CLI again, or check again what it needs. */
+  retrySetup(step: string): void;
+  /** Save everything setup has, and start the first brief. */
+  finishSetup(): void;
+  loadSetupSources(): void;
 }

@@ -1,6 +1,6 @@
 /** Everything that talks to the server. */
 
-import type { DashboardState } from '../src/types.ts';
+import type { DashboardState, OnboardingAnswer } from '../src/types.ts';
 import type { CalendarName, SettingsPage, TextName } from './types.ts';
 
 async function stateFrom(res: Response, what: string): Promise<DashboardState> {
@@ -174,4 +174,34 @@ export function postObjective(objective: string, blocker: string): Promise<Dashb
 /** The calendars Calendar.app has. Launches the helper, which may ask for access the first time. */
 export function postListCalendars(): Promise<{ calendars: CalendarName[] }> {
   return postJson<{ calendars: CalendarName[] }>('/api/calendars/list', {});
+}
+
+/** Answer a setup step, or put it off. Rejects with the server's reason when the answer can't be saved. */
+export function postSetupAnswer(step: string, answer: OnboardingAnswer): Promise<DashboardState> {
+  return post('/api/onboarding/answer', { step, answer });
+}
+
+/** Tell the CLI looking into a setup step what to change. Its new proposal streams in over SSE. */
+export function postSetupRevise(step: string, text: string, draft: OnboardingAnswer): Promise<DashboardState> {
+  return post('/api/onboarding/revise', { step, text, draft });
+}
+
+/** Look for Codex and Claude Code, which the setup screen asks for when it opens. */
+export function postSetupDetect(): Promise<DashboardState> {
+  return post('/api/onboarding/detect');
+}
+
+/** Look into a setup step again. */
+export function postSetupRetry(step: string): Promise<DashboardState> {
+  return post('/api/onboarding/retry', { step });
+}
+
+/** Save everything setup has and start the first brief. The dashboard restarts to apply the settings. */
+export function postSetupFinish(): Promise<DashboardState> {
+  return post('/api/onboarding/finish');
+}
+
+/** What the setup finish would write as the source list. */
+export async function fetchSetupSources(): Promise<{ text: string | null; kept: boolean }> {
+  return jsonFrom(await fetch('/api/onboarding/sources'), 'GET /api/onboarding/sources');
 }
