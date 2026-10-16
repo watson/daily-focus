@@ -446,13 +446,20 @@ test('a question is left only where it offers to be, and the thread says what le
 test('answering while it is still looking stops it, and keeps what the user answered', async () => {
   const h = await harness();
   const slow = join(h.dataDir, 'slow-claude');
-  await writeFile(slow, '#!/bin/sh\nsleep 30\n', 'utf8');
+  // A command after the sleep, so no shell hands itself over to it: the shell
+  // dies when stopped and the sleep goes on holding the output, as a CLI's own
+  // children can. Stopping must not wait for it. Each says when it is asleep.
+  await writeFile(slow, `#!/bin/sh\ntouch "${h.dataDir}/asleep-$$"\nsleep 30\necho never\n`, 'utf8');
   await chmod(slow, 0o755);
   h.report = { ...h.report, claude: { ...h.report.claude, path: slow } };
   await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
   await h.onboarding.started();
   assert.equal((await view(h)).steps.find((step) => step.id === 'objective')!.proposal?.status, 'working');
+  // Stopped once it is really asleep, not before its shell has got that far.
+  const asleep = async () => (await readdir(h.dataDir)).filter((name) => name.startsWith('asleep-')).length;
+  for (let i = 0; i < 200 && (await asleep()) < 3; i++) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(await asleep(), 3);
   assert.equal(await h.onboarding.answer('objective', pick({}, { objective: 'Ship the reliability fix', blocker: '' })), null);
   for (let i = 0; i < 100; i++) {
     if ((await view(h)).steps.find((step) => step.id === 'objective')!.proposal?.status !== 'working') break;

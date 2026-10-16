@@ -54,6 +54,9 @@ import type { AssistantStep, OnboardingAnswer, OnboardingState, OnboardingStep, 
 /** A session that takes longer than this is stopped: someone is waiting on the screen. */
 const TURN_TIMEOUT_MS = 4 * 60_000;
 
+/** How long a stopped session gets to exit before it is killed outright. */
+const KILL_AFTER_MS = 5_000;
+
 /** How many steps a session keeps, the newest. */
 const STEPS_KEPT = 40;
 
@@ -726,6 +729,14 @@ export class Onboarding {
     child.on('error', (err) => {
       done = { ok: false, error: `could not run ${bin}: ${err.message}` };
     });
+    // Stopped, it is over when it exits, whoever still holds its output: a
+    // shell's child, or a CLI's MCP server, can keep the pipes open long after,
+    // and 'close' waits for them. Nothing it says from here on is wanted.
+    child.on('exit', () => {
+      if (run.abortReason === null) return;
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    });
     child.on('close', (code) => {
       clearTimeout(timer);
       this.running.delete(question.id);
@@ -767,11 +778,17 @@ export class Onboarding {
     this.deps.onChange();
   }
 
+  /** Stop a session: asked to, then made to if it hasn't gone within a few seconds. */
   private async stop(id: string, reason: string): Promise<void> {
     const run = this.running.get(id);
-    if (!run) return;
+    if (!run || run.abortReason !== null) return;
     run.abortReason = reason;
     run.child.kill('SIGTERM');
+    const kill = setTimeout(() => {
+      if (run.child.exitCode === null && run.child.signalCode === null) run.child.kill('SIGKILL');
+    }, KILL_AFTER_MS);
+    kill.unref();
+    void run.over.then(() => clearTimeout(kill));
   }
 
   /** Forget a question's proposal, stopping its session first. */
