@@ -13,7 +13,7 @@
  * gathered by the caller.
  */
 
-import { CLI_LABEL, CLI_PREFERENCE, type CliReport } from './clis.ts';
+import { CLI_LABEL, CLI_PREFERENCE, LOGIN, type CliReport } from './clis.ts';
 import type { CliName, Profile } from './config.ts';
 import type { Identity } from './setup.ts';
 import type { OnboardingCard, OnboardingChoice, OnboardingField, OnboardingOption } from './types.ts';
@@ -105,9 +105,13 @@ export interface Question {
 
 export { CLI_LABEL };
 
-const INSTALL: Record<CliName, { label: string; url: string }> = {
-  codex: { label: 'Install Codex', url: 'https://developers.openai.com/codex/cli' },
-  claude: { label: 'Install Claude Code', url: 'https://code.claude.com/docs' },
+/**
+ * Where to get each CLI, and the plan it runs on: ChatGPT Free and Go have
+ * Codex only in the desktop app, and the free Claude plan has no Claude Code.
+ */
+const INSTALL: Record<CliName, { label: string; url: string; needs: string }> = {
+  codex: { label: 'Install Codex', url: 'https://developers.openai.com/codex/cli', needs: 'Codex needs ChatGPT Plus or higher' },
+  claude: { label: 'Install Claude Code', url: 'https://code.claude.com/docs', needs: 'Claude Code needs a paid Claude plan' },
 };
 
 function option(value: string, label: string, detail: string | null = null, group: string | null = null): OnboardingOption {
@@ -176,14 +180,22 @@ const cli: Question = {
     const report = ctx.clis;
     const ready = CLI_PREFERENCE.filter((name) => report[name].ready);
     if (ready.length === 0) {
-      const lines = CLI_PREFERENCE.map((name) => `${report[name].problem ?? `${CLI_LABEL[name]} can't be used`}.`);
+      // What is wrong with both is said once, not once for each.
+      const labels = CLI_PREFERENCE.map((name) => CLI_LABEL[name]);
+      const wrong = CLI_PREFERENCE.every((name) => !report[name].path)
+        ? `Neither ${labels.join(' nor ')} is installed.`
+        : CLI_PREFERENCE.every((name) => report[name].fix === LOGIN[name].fix)
+          ? `${labels.join(' and ')} are installed, but neither is logged in.`
+          : CLI_PREFERENCE.map((name) => `${report[name].problem ?? `${CLI_LABEL[name]} can't be used`}.`).join(' ');
       const fix = CLI_PREFERENCE.map((name) => report[name].fix).find((command) => command) ?? null;
+      const missing = CLI_PREFERENCE.filter((name) => !report[name].path);
+      const needs = missing.length ? `${missing.map((name) => INSTALL[name].needs).join('; ')}. ` : '';
       return card({
         problem: {
-          message: `${lines.join(' ')} ${fix ? 'Run this in a terminal, then check again.' : 'Install one, log in once in a terminal, then check again.'}`,
+          message: `${wrong} ${needs}${fix ? 'Run this in a terminal, then check again.' : 'Install one, log in once in a terminal, then check again.'}`,
           command: fix,
           blocking: true,
-          links: CLI_PREFERENCE.filter((name) => !report[name].path).map((name) => INSTALL[name]),
+          links: missing.map((name) => ({ label: INSTALL[name].label, url: INSTALL[name].url })),
         },
         fields: [
           field('path', 'Installed somewhere setup didn’t look? Its path', '', {

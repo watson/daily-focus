@@ -405,6 +405,84 @@ test('an answer that is not JSON fails the question, which falls back and can be
   assert.equal((await h.calls()).length, 4, 'one more, for the question asked again');
 });
 
+/**
+ * A fake `codex` beside the fake `claude`, made the ready one. It answers on
+ * the model `accepts`, and refuses any other the way the server does.
+ */
+async function withCodex(h: Harness, accepts: string | null): Promise<void> {
+  const bin = join(h.dataDir, 'fake-codex');
+  const refusal = JSON.stringify({
+    type: 'error',
+    status: 400,
+    error: { type: 'invalid_request_error', message: "The 'MODEL' model is not supported when using Codex with a ChatGPT account." },
+  });
+  const lines = (events: unknown[]) => `${events.map((event) => JSON.stringify(event)).join('\n')}\n`;
+  await writeFile(
+    join(h.dataDir, 'codex-ok.jsonl'),
+    lines([
+      { type: 'thread.started', thread_id: 'th-1' },
+      { type: 'item.completed', item: { id: 'i1', type: 'agent_message', text: JSON.stringify(PROPOSAL) } },
+      { type: 'turn.completed' },
+    ]),
+  );
+  await writeFile(
+    join(h.dataDir, 'codex-refused.jsonl'),
+    lines([{ type: 'thread.started', thread_id: 'th-1' }, { type: 'error', message: refusal }, { type: 'turn.failed', error: { message: refusal } }]),
+  );
+  const script = [
+    '#!/bin/sh',
+    `printf '%s\\n' "$@" > "${h.dataDir}/argv-$$"`,
+    `model=$(printf '%s\\n' "$@" | sed -n 's/^model="\\(.*\\)"$/\\1/p')`,
+    `if [ "$model" = "${accepts ?? ''}" ]; then cat "${h.dataDir}/codex-ok.jsonl"; exit 0; fi`,
+    `sed "s/MODEL/$model/g" "${h.dataDir}/codex-refused.jsonl"`,
+    'exit 1',
+  ].join('\n');
+  await writeFile(bin, `${script}\n`, 'utf8');
+  await chmod(bin, 0o755);
+  h.report = { claude: h.report.claude, codex: { path: bin, version: '0.162.1', onPath: true, ready: true, problem: null, fix: null } };
+  h.deps.execFn = async (_file, args) => {
+    if (args[0] === '--version') return 'codex-cli 0.162.1';
+    if (args[0] === 'mcp') return '[]';
+    if (args[0] === 'debug') {
+      return JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', priority: 1, visibility: 'list' }, { slug: 'gpt-6-sol', priority: 3, visibility: 'list' }] });
+    }
+    throw new Error(`the fake codex was not asked for ${args.join(' ')}`);
+  };
+}
+
+const modelOf = (argv: string[]) => argv.find((arg) => arg.startsWith('model='));
+
+test("a Codex model the account can't use is asked again on GPT-6 Sol, once, and every session after keeps to it", async () => {
+  const h = await harness();
+  await withCodex(h, 'gpt-6-sol');
+  assert.equal(await h.onboarding.answer('cli', pick({ cli: ['codex'] })), null);
+  assert.equal(await h.onboarding.answer('profile', pick({ profile: ['work'] })), null);
+  const state = await settled(h);
+  const identity = state.steps.find((step) => step.id === 'identity')!;
+  assert.equal(identity.proposal?.status, 'ready');
+  assert.equal(identity.card.why, 'From your sent mail.');
+
+  const models = (await h.calls()).map(modelOf);
+  assert.equal(models.filter((model) => model === 'model="gpt-6-sol"').length, 3, 'each question answered on the fallback');
+  assert.ok(models.every((model) => model === 'model="gpt-6.1-sol"' || model === 'model="gpt-6-sol"'), 'nothing lighter');
+
+  assert.equal(await h.onboarding.revise('identity', 'Leave out the short form', null), null);
+  await settled(h);
+  assert.equal(modelOf((await h.calls()).at(-1)!), 'model="gpt-6-sol"', 'the catalog is not asked again');
+});
+
+test('when the fallback is refused too, the card says which model the plan lacks', async () => {
+  const h = await harness();
+  await withCodex(h, null);
+  await h.onboarding.answer('cli', pick({ cli: ['codex'] }));
+  await h.onboarding.answer('profile', pick({ profile: ['work'] }));
+  const state = await settled(h);
+  const identity = state.steps.find((step) => step.id === 'identity')!;
+  assert.equal(identity.proposal?.status, 'failed');
+  assert.equal(identity.proposal?.error, "your ChatGPT plan or workspace doesn't include the model “gpt-6-sol”");
+  assert.equal((await h.calls()).length, 6, 'two tries for each of the three questions, and no more');
+});
+
 test('nothing reaches outside the dashboard until the user answers something, even with the CLI and profile saved', async () => {
   const h = await harness({ DAILY_FOCUS_PROFILE: 'work', DAILY_FOCUS_AGENT: 'claude' });
   let identities = 0;

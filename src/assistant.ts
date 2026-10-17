@@ -299,8 +299,12 @@ export interface ParsedEvent {
    * call that handed it the work. What it says is then not the answer.
    */
   by?: string;
-  /** The turn is over. `reply` replaces whatever was accumulated when given. */
-  done?: { ok: boolean; reply?: string; error?: string };
+  /**
+   * The turn is over. `reply` replaces whatever was accumulated when given. A
+   * failure the dashboard recognises carries its `cause`, and its `error` is then
+   * the plain sentence `explainFailure` made of what the CLI said.
+   */
+  done?: { ok: boolean; reply?: string; error?: string; cause?: FailureCause };
 }
 
 /**
@@ -363,6 +367,57 @@ export interface SpawnOptions {
 export interface Adapter {
   args(opts: SpawnOptions): string[];
   parse(line: string): ParsedEvent | null;
+}
+
+/**
+ * Why a turn failed, for the few failures someone can act on without reading
+ * the CLI's own words: the service is busy, which passes; the account can't use
+ * the model asked for; the plan doesn't include the CLI at all.
+ */
+export type FailureCause = 'busy' | 'model' | 'plan';
+
+/**
+ * A failure the dashboard recognises, as a plain sentence and its cause, or
+ * null for any other, which is shown as the CLI said it. Matched on what each
+ * CLI says: Claude Code 2.1.300 and Codex 0.162.1, read from the programs and
+ * from a session asked for a model nobody can use. Codex's own message is
+ * often a JSON error object inside the event; `codexAdapter` unwraps it first.
+ */
+export function explainFailure(cli: AssistantAgent, error: string): { cause: FailureCause; message: string } | null {
+  if (cli === 'claude') {
+    // "Repeated 529 Overloaded errors", "Opus is experiencing high load, please use /model to switch to Sonnet"
+    if (/\b529\b|overloaded|experiencing high load/i.test(error)) return { cause: 'busy', message: 'Claude is busy right now' };
+    // "There's an issue with the selected model (x). It may not exist or you may not have access to it."
+    const model = /issue with the selected model \((.+?)\)/.exec(error)?.[1];
+    if (model) return { cause: 'model', message: `your Claude account can't use the model “${model}”` };
+    return null;
+  }
+  // From the server: "The 'x' model is not supported when using Codex with a ChatGPT account."
+  const model = /The '(.+?)' model is not supported when using Codex/.exec(error)?.[1];
+  if (model) return { cause: 'model', message: `your ChatGPT plan or workspace doesn't include the model “${model}”` };
+  // Free and Go: "To use Codex with your ChatGPT plan, upgrade to Plus: …"
+  if (/To use Codex with your ChatGPT plan/.test(error)) {
+    return { cause: 'plan', message: "your ChatGPT plan doesn't include the Codex CLI, which needs Plus or higher" };
+  }
+  // "Selected model is at capacity. Please try a different model.", "We're currently experiencing high demand, …"
+  if (/at capacity|high demand|server_overloaded/i.test(error)) return { cause: 'busy', message: 'Codex is busy right now' };
+  return null;
+}
+
+/** A failed turn's `done`: plain when `explainFailure` knows the failure, as the CLI said it when not. */
+function failed(cli: AssistantAgent, error: string): NonNullable<ParsedEvent['done']> {
+  const explained = explainFailure(cli, error);
+  return explained ? { ok: false, error: explained.message, cause: explained.cause } : { ok: false, error };
+}
+
+/** The message inside a Codex error that carries the server's JSON error object as its message, or the message as it was. */
+function unwrapCodexError(message: string): string {
+  try {
+    const inner = (JSON.parse(message) as { error?: { message?: unknown } } | null)?.error?.message;
+    return typeof inner === 'string' && inner.trim() ? inner : message;
+  } catch {
+    return message;
+  }
 }
 
 function parseLine(line: string): Record<string, unknown> | null {
@@ -440,7 +495,7 @@ export const claudeAdapter: Adapter = {
     if (type === 'result') {
       const ok = event.is_error !== true && event.subtype === 'success';
       const reply = typeof event.result === 'string' ? event.result : undefined;
-      const parsed: ParsedEvent = { done: ok ? { ok, reply } : { ok, error: reply ?? String(event.subtype ?? 'failed') } };
+      const parsed: ParsedEvent = { done: ok ? { ok, reply } : failed('claude', reply ?? String(event.subtype ?? 'failed')) };
       if (typeof event.session_id === 'string') parsed.sessionId = event.session_id;
       return parsed;
     }
@@ -495,7 +550,7 @@ export const codexAdapter: Adapter = {
     if (type === 'turn.failed' || type === 'error') {
       const error = event.error as { message?: string } | undefined;
       const message = typeof event.message === 'string' ? event.message : error?.message;
-      return { done: { ok: false, error: message ?? String(type) } };
+      return { done: failed('codex', message ? unwrapCodexError(message) : String(type)) };
     }
     return null;
   },

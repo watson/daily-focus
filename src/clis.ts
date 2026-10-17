@@ -99,7 +99,8 @@ function loggedIn(cli: CliName, result: ProbeResult): boolean | null {
   return result.code !== null && result.code !== 0 ? false : null;
 }
 
-const LOGIN: Record<CliName, { args: string[]; fix: string }> = {
+/** How each CLI says whether it is logged in, and the command that logs it in. */
+export const LOGIN: Record<CliName, { args: string[]; fix: string }> = {
   claude: { args: ['auth', 'status'], fix: 'claude auth login' },
   codex: { args: ['login', 'status'], fix: 'codex login' },
 };
