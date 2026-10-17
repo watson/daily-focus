@@ -371,6 +371,32 @@ func runSelfTest() -> Bool {
     let current2 = try? JSONDecoder().decode(DashboardStatus.self, from: Data(#"{"version":"0.3.0","busy":true}"#.utf8))
     equal(current2?.version, "0.3.0", "status says its version")
     equal(current2?.busy, true, "and whether it is busy")
+
+    // What a busy dashboard is busy with, for "once … is done" and "stops …".
+    equal(busyWith(agentBusy), "the morning agent", "a dashboard from before busyWith, running the agent")
+    equal(busyWith(assistantBusy), "the assistant", "and busy otherwise")
+    var setupBusy = assistantBusy
+    setupBusy.busyWith = ["setup"]
+    equal(busyWith(setupBusy), "the setup screen", "the setup screen's sessions")
+    setupBusy.busyWith = ["assistant", "setup"]
+    equal(busyWith(setupBusy), "the assistant", "the assistant beside them")
+    setupBusy.busyWith = ["agent"]
+    equal(busyWith(setupBusy), "the morning agent", "the agent, by the list")
+
+    // Updates that go in on their own: half an hour after anyone last used the
+    // dashboard, and never while it is at work.
+    let used = try? JSONDecoder().decode(DashboardStatus.self, from: Data(#"{"busy":false,"busyWith":[],"usedAt":"2026-10-04T07:40:00.000Z"}"#.utf8))
+    equal(used?.usedAt, "2026-10-04T07:40:00.000Z", "status says when the dashboard was last used")
+    equal(used?.busyWith, [], "and what it is busy with")
+    check(!mayUpdateUnattended(base, now: now), "not with a dashboard that can't say when it was last used")
+    var quiet = base
+    quiet.usedAt = "2026-10-04T07:40:00.000Z"
+    check(mayUpdateUnattended(quiet, now: now), "half an hour after it was last used")
+    quiet.usedAt = "2026-10-04T07:41:00Z"
+    check(!mayUpdateUnattended(quiet, now: now), "not a minute sooner")
+    quiet.usedAt = "2026-10-04T06:00:00Z"
+    quiet.busy = true
+    check(!mayUpdateUnattended(quiet, now: now), "not while something is at work, however long ago it was used")
     equal(noticeText(.updateAvailable(version: "0.3.0")).title, "Daily Focus 0.3.0 is available", "update notice")
     equal(noticeText(.downloadAvailable(version: "0.3.0", reason: "it runs from the disk image it came in")).body,
           "Daily Focus can't replace itself, since it runs from the disk image it came in. Download it from the Daily Focus menu.",

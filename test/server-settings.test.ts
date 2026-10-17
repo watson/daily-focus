@@ -162,7 +162,8 @@ test('the objective can be changed on its own, and the rest of the file is kept'
 test('the status the menu bar app reads is small and says what it needs', async () => {
   const status = await json(await fetch(`${url}/api/status`));
   assert.equal(status.version, '0.0.0-development', "a checkout's placeholder version");
-  assert.equal(status.busy, false, 'neither the agent nor the assistant is at work');
+  assert.equal(status.busy, false, 'neither the agent, the assistant nor the setup screen is at work');
+  assert.deepEqual(status.busyWith, []);
   assert.equal(status.dataDir, dataDir);
   assert.equal(status.profile, 'work');
   assert.equal(status.setupNeeded, true);
@@ -171,6 +172,18 @@ test('the status the menu bar app reads is small and says what it needs', async 
   assert.equal(status.agent.enabled, false);
   assert.equal(status.agent.last, null);
   assert.equal(status.waitingOnYou, 0);
+  assert.ok(!Number.isNaN(Date.parse(status.usedAt)), 'when a page was last used, or the dashboard started');
+});
+
+test('a page that says it is in use moves the time the menu bar app waits from', async () => {
+  const before = Date.parse((await json(await fetch(`${url}/api/status`))).usedAt);
+  await new Promise((done) => setTimeout(done, 5));
+  const res = await post('/api/presence', {});
+  assert.equal(res.status, 204);
+  const after = Date.parse((await json(await fetch(`${url}/api/status`))).usedAt);
+  assert.ok(after > before, `${new Date(after).toISOString()} is after ${new Date(before).toISOString()}`);
+  const form = await fetch(`${url}/api/presence`, { method: 'POST', body: 'x=1' });
+  assert.equal(form.status, 415, 'only as JSON, like every other POST');
 });
 
 test("the morning agent's clock waits for the first brief, which comes from the setup screen", async () => {

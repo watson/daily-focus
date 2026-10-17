@@ -160,10 +160,19 @@ function configure(sources: SettingSources): { config: Config; warnings: string[
 
 /**
  * The few facts the menu bar app shows, without the whole state. `busy` is whether
- * the morning agent or the assistant is at work, which a restart would cut short:
- * the app waits for it to clear before restarting into an update.
+ * the morning agent, the assistant or the setup screen's sessions are at work,
+ * which a restart would cut short, and `busyWith` which: the app waits for them
+ * before restarting into an update, or says what updating now would stop.
+ * `usedAt` is when a page last said someone was using it, or when this dashboard
+ * started if none has since: the app installs an update on its own only after a
+ * quiet spell. See `client/presence.ts`.
  */
-function statusOf(state: DashboardState, config: Config, busy: boolean): Record<string, unknown> {
+function statusOf(
+  state: DashboardState,
+  config: Config,
+  busyWith: ('agent' | 'assistant' | 'setup')[],
+  usedAt: Date,
+): Record<string, unknown> {
   const last = state.agentRun.last;
   return {
     version: VERSION,
@@ -171,7 +180,9 @@ function statusOf(state: DashboardState, config: Config, busy: boolean): Record<
     profile: config.profile,
     setupNeeded: state.setup.needed,
     restartPending: state.restart !== null,
-    busy,
+    busy: busyWith.length > 0,
+    busyWith,
+    usedAt: usedAt.toISOString(),
     brief: {
       generatedAt: state.brief.generatedAt,
       ageHours: state.brief.ageHours,
@@ -325,6 +336,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       restartWhenIdle();
     },
   });
+
+  // When a page last said someone was using it; see `statusOf`.
+  let usedAt = new Date();
 
   // The setup screen, while a new store is being set up. Its sessions only
   // read; it saves nothing until the finish, which saves everything at once.
@@ -1072,7 +1086,21 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     }
 
     if (path === '/api/status' && req.method === 'GET') {
-      sendJSON(res, 200, statusOf(await buildState(), config, agent.busy || assistant.busy));
+      const busyWith = [
+        ...(agent.busy ? (['agent'] as const) : []),
+        ...(assistant.busy ? (['assistant'] as const) : []),
+        ...(onboarding.busy ? (['setup'] as const) : []),
+      ];
+      sendJSON(res, 200, statusOf(await buildState(), config, busyWith, usedAt));
+      return;
+    }
+
+    if (path === '/api/presence' && req.method === 'POST') {
+      // Someone is using a page; see `client/presence.ts`. Kept in memory: a
+      // restart counts as use anyway.
+      usedAt = new Date();
+      res.writeHead(204, { 'cache-control': 'no-store' });
+      res.end();
       return;
     }
 

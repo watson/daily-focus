@@ -64,6 +64,16 @@ export function postTimeZone(timeZone: string): Promise<DashboardState> {
   return post('/api/timezone', { timeZone });
 }
 
+/** Say that someone is using this page. See `presence.ts`. */
+export async function postPresence(): Promise<void> {
+  const res = await fetch('/api/presence', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) throw new Error(`POST /api/presence returned ${res.status}`);
+}
+
 /** Ask the server to poll GitHub now. Resolves once it has. */
 export function postBoardRefresh(): Promise<DashboardState> {
   return post('/api/board/refresh');

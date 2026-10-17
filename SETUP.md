@@ -442,11 +442,18 @@ doesn't start, the app goes back to the one it had and says so. When a release
 changes the app itself, the app downloads the new app, about 40 MB, puts it in its
 own place and opens it again, and the new app carries the new dashboard. Either
 way it installs nothing that isn't signed by the same developer as the app, with
-nothing in it changed, and waits until the morning agent and the assistant aren't
-busy. An app that can't change the folder it is in, such as one opened straight
-from the disk image, links to the new disk image instead, and still updates its
-dashboard on its own. A dashboard that `daily-focus service` or a terminal runs is
-updated the way it was installed, not by the app.
+nothing in it changed. It waits until the morning agent, the assistant and the
+setup screen aren't at work; pressing **Update** while one is asks whether to wait
+for it or stop it. An app that can't change the folder it is in, such as one
+opened straight from the disk image, links to the new disk image instead, and
+still updates its dashboard on its own. A dashboard that `daily-focus service` or
+a terminal runs is updated the way it was installed, not by the app.
+
+Updates install only when you ask, unless you turn on **Update Automatically**
+under **Updates**; the app asks once, when setup is finished. Then an update goes
+in on its own once nobody has used the dashboard for half an hour, never while
+anything in it is at work. Using it means clicking, typing or scrolling in a tab
+you can see, from whichever computer you read it on.
 
 To build it yourself from a checkout:
 

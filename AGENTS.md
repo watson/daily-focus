@@ -106,6 +106,11 @@ run it again with `--remove` afterwards.
   `DAILY_FOCUS_ASSISTANT_AUTO`, off by default, for pull requests waiting on the
   user, with `AUTO_ACTIONS` alone, each key once and within the daily limit. Never
   add a quick action that creates something, a draft included, to `AUTO_ACTIONS`.
+- The menu bar app installs an update on its own only behind **Update
+  Automatically**, off by default, and only when `/api/status` says nothing is
+  busy and no page has reported use (`client/presence.ts`) for half an hour. An
+  update the user starts while something is busy waits for it unless they choose
+  to stop it.
 - `src/agent.ts` starts the briefing agent on the dashboard's clock, 07:00 unless
   `DAILY_FOCUS_AGENT_AT` says otherwise, once a day, and after a user click. Nothing
   else starts it, so the run log is the whole record of its runs; do not add a

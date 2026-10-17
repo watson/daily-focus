@@ -20,6 +20,17 @@ private func fromRunLoop(_ body: @escaping () -> Void) {
     RunLoop.main.perform(inModes: [.common], block: body)
 }
 
+/// When a downloaded update may go in.
+private enum Consent {
+    /// Once nothing in the dashboard is at work: an update the user asked for.
+    case whenIdle
+    /// Once nothing is at work and nobody has used the dashboard for a while: an
+    /// update that started on its own.
+    case whenQuiet
+    /// Now, whatever it stops: the user said so.
+    case now
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
     private enum Reading {
@@ -54,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let checkItem = NSMenuItem(title: "Check for Updates", action: nil, keyEquivalent: "")
     private let stableItem = NSMenuItem(title: "Stable Releases", action: nil, keyEquivalent: "")
     private let developmentItem = NSMenuItem(title: "Development Builds", action: nil, keyEquivalent: "")
+    private let automaticItem = NSMenuItem(title: "Update Automatically", action: nil, keyEquivalent: "")
 
     private var reading: Reading = .nothing
     private var readingFrom: URL?
@@ -64,6 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private var updateTimer: DispatchSourceTimer?
     /// The downloaded dashboard the app restarted the dashboard to run, until it runs.
     private var restartingInto: String?
+    /// When the update being installed may go in.
+    private var consent: Consent = .whenIdle
+    /// The version last tried on its own, which isn't tried on its own again: one
+    /// that went in isn't offered any more, and one that failed is offered by hand.
+    private var triedUnattended: String?
     private var signalSources: [DispatchSourceSignal] = []
     private var activity: NSObjectProtocol?
 
@@ -178,13 +195,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             (downloadItem, #selector(downloadApp)),
             (stableItem, #selector(chooseTrack(_:))),
             (developmentItem, #selector(chooseTrack(_:))),
+            (automaticItem, #selector(toggleAutomatic)),
         ] {
             menuItem.target = self
             menuItem.action = action
         }
         stableItem.toolTip = "Releases cut by hand, every so often."
         developmentItem.toolTip = "A build of every change, as soon as it is merged. Newer, and less tried."
-        for item in [appVersionItem, dashboardVersionItem, checkedItem, checkItem, downloadItem, NSMenuItem.separator(), stableItem, developmentItem] {
+        automaticItem.toolTip = "Installs updates on its own once nobody has used the dashboard for half an hour, "
+            + "and never while the morning agent, the assistant or the setup screen is at work."
+        for item in [appVersionItem, dashboardVersionItem, checkedItem, checkItem, downloadItem, NSMenuItem.separator(),
+                     automaticItem, NSMenuItem.separator(), stableItem, developmentItem] {
             submenu.addItem(item)
         }
         updatesItem.submenu = submenu
@@ -292,8 +313,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     /// Whichever the newest release holds for this app: a new app, or a new dashboard.
+    /// What updating would stop in the dashboard is the user's to stop or wait for.
     @objc private func installUpdate() {
         guard let update = currentOffer()?.update else { return }
+        if let busy = wouldStop(update) {
+            askToInterrupt(update, busy, title: "Stop \(busy) to update?")
+        } else {
+            install(update, consent: .whenIdle)
+        }
+    }
+
+    private func install(_ update: Update, consent: Consent) {
+        guard updater.phase == .idle else { return }
+        self.consent = consent
         updater.install(update) { [weak self] problem in
             guard let self else { return }
             if let problem {
@@ -321,8 +353,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         NSWorkspace.shared.open(releasesURL.appendingPathComponent("tag").appendingPathComponent("v\(version)"))
     }
 
+    /// Asks what to do about an update that would stop `busy`: wait for it, stop it,
+    /// or neither.
+    private func askToInterrupt(_ update: Update, _ busy: String, title: String) {
+        fromRunLoop {
+            self.comeForward()
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = "Updating now stops \(busy) and restarts Daily Focus. Or Daily Focus can update as soon as \(busy) is done."
+            alert.addButton(withTitle: "Update When Done")
+            alert.addButton(withTitle: "Update Now")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: self.install(update, consent: .whenIdle)
+            case .alertSecondButtonReturn: self.install(update, consent: .now)
+            default: break
+            }
+        }
+    }
+
     /// An update that didn't go in. A new app can still be had from its release page.
+    /// One that started on its own says nothing here: it is offered by notification
+    /// instead, as if it hadn't been tried.
     private func updateFailed(_ update: Update, _ problem: String) {
+        if consent == .whenQuiet {
+            announceOffer()
+            return
+        }
         guard case .app(let version) = update else {
             alert("Daily Focus couldn't install the update", problem)
             return
@@ -367,9 +424,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             }
             let offer = self.currentOffer()
             if let update = offer?.update {
-                self.confirm("Daily Focus \(update.version) is available",
-                             "Updating restarts Daily Focus, once the morning agent and the assistant aren't busy.",
-                             button: "Update") { self.installUpdate() }
+                if let busy = self.wouldStop(update) {
+                    self.askToInterrupt(update, busy, title: "Daily Focus \(update.version) is available")
+                } else {
+                    self.confirm("Daily Focus \(update.version) is available", "Updating restarts Daily Focus.",
+                                 button: "Update") { self.install(update, consent: .whenIdle) }
+                }
             } else if let version = offer?.download {
                 self.confirm("Daily Focus \(version) is available", "\(cantReplace(self.ownReplacementProblem())) Its release page has the disk image.",
                              button: "Download") { self.downloadApp() }
@@ -382,6 +442,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     @objc private func chooseTrack(_ sender: NSMenuItem) {
         updater.track = sender === developmentItem ? .development : .stable
+    }
+
+    @objc private func toggleAutomatic() {
+        updater.automatic.toggle()
     }
 
     @objc private func downloadNode() {
@@ -419,11 +483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     /// An alert with a button that does something, and one that doesn't.
     private func confirm(_ title: String, _ text: String, button: String, then action: @escaping () -> Void) {
         fromRunLoop {
-            if #available(macOS 14.0, *) {
-                NSApp.activate()
-            } else {
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            self.comeForward()
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = text
@@ -435,16 +495,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     private func alert(_ title: String, _ text: String) {
         fromRunLoop {
-            // A menu bar app is never the active one, and an alert behind other windows goes unseen.
-            if #available(macOS 14.0, *) {
-                NSApp.activate()
-            } else {
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            self.comeForward()
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = text
             alert.runModal()
+        }
+    }
+
+    /// A menu bar app is never the active one, and an alert behind other windows goes unseen.
+    private func comeForward() {
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
@@ -497,9 +561,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         // An answer from a dashboard that has since stopped or moved says nothing about this one.
         if url == dashboard.url {
             reading = result
-            if case .status(let status) = result { tell(about: status) }
+            if case .status(let status) = result {
+                tell(about: status)
+                askAboutAutomaticUpdates(status)
+            }
             refreshMenu()
             applyUpdate()
+            updateUnattended()
         }
         if pollAgain {
             pollAgain = false
@@ -576,13 +644,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         return replacementProblem(bundle: Bundle.main.bundleURL, team: ownTeam)
     }
 
-    /// What in the dashboard an update waits for, if anything: putting either kind
-    /// in restarts the dashboard, which would cut the morning agent or the assistant short.
-    private func waitingFor(_ update: Update) -> String? {
+    /// What installing `update` now would stop in the dashboard, if anything: either
+    /// kind restarts it.
+    private func wouldStop(_ update: Update) -> String? {
         // A dashboard another process runs carries on through the app's relaunch.
         if case .app = update, dashboard.isAttached { return nil }
         guard case .status(let status) = reading, isBusy(status) else { return nil }
-        return status.agent?.running == true ? "the morning agent" : "the assistant"
+        return busyWith(status)
+    }
+
+    /// What a downloaded update waits for before it goes in, to end "installs once …",
+    /// or nil when it can go in now.
+    private func holdUp(_ update: Update) -> String? {
+        if consent == .now { return nil }
+        if let busy = wouldStop(update) { return "\(busy) is done" }
+        guard consent == .whenQuiet else { return nil }
+        if case .app = update, dashboard.isAttached { return nil }
+        guard case .status(let status) = reading, !mayUpdateUnattended(status, now: Date()) else { return nil }
+        return "nobody has used the dashboard for half an hour"
     }
 
     private func trackName(_ track: Track) -> String {
@@ -599,7 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         case .downloading(let update):
             updateItem.title = "Downloading Daily Focus \(update.version)…"
         case .ready(let update):
-            updateItem.title = waitingFor(update).map { "Daily Focus \(update.version) installs once \($0) is done" }
+            updateItem.title = holdUp(update).map { "Daily Focus \(update.version) installs once \($0)" }
                 ?? "Installing Daily Focus \(update.version)…"
         case .idle:
             if let update = offer?.update {
@@ -649,6 +728,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
         stableItem.state = updater.track == .stable ? .on : .off
         developmentItem.state = updater.track == .development ? .on : .off
+        automaticItem.state = updater.automatic ? .on : .off
+        // A copy that can't check a download can't install one, on its own or not.
+        automaticItem.isEnabled = ownTeam != nil
     }
 
     private func dashboardVersionLine() -> String {
@@ -664,21 +746,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private func updaterChanged() {
         refreshMenu()
         announceOffer()
+        updateUnattended()
     }
 
-    /// A notification for each new version found, once.
+    /// Asks once, the first time the dashboard says setup is finished, whether updates
+    /// should go in on their own. A copy that can't check a download can't install one.
+    private func askAboutAutomaticUpdates(_ status: DashboardStatus) {
+        guard !updater.askedAboutAutomatic, status.setupNeeded == false, ownTeam != nil else { return }
+        updater.askedAboutAutomatic = true
+        confirm("Keep Daily Focus up to date automatically?",
+                "Daily Focus can install updates on its own once nobody has used the dashboard for half an hour, and never "
+                    + "while the morning agent, the assistant or the setup screen is at work. You can change this under Updates in the menu.",
+                button: "Turn On") { self.updater.automatic = true }
+    }
+
+    /// Starts an update on its own, when the user has turned that on, the newest
+    /// release holds one this copy can install, and nobody has used the dashboard
+    /// for a while.
+    private func updateUnattended() {
+        guard updater.automatic, updater.phase == .idle, restartingInto == nil,
+              let update = currentOffer()?.update, update.version != triedUnattended,
+              case .status(let status) = reading, mayUpdateUnattended(status, now: Date())
+        else { return }
+        // Before it starts, since the updater is idle again before it says why it failed.
+        triedUnattended = update.version
+        install(update, consent: .whenQuiet)
+    }
+
+    /// A notification for each new version found, once. One that will go in on its
+    /// own needs none, unless it failed to.
     private func announceOffer() {
         guard updater.phase == .idle, let offer = currentOffer(), let version = offer.update?.version ?? offer.download else { return }
+        if updater.automatic, let update = offer.update, update.version != triedUnattended { return }
         let defaults = UserDefaults.standard
         guard defaults.string(forKey: notifiedUpdateKey) != version else { return }
         defaults.set(version, forKey: notifiedUpdateKey)
         post(offer.update != nil ? .updateAvailable(version: version) : .downloadAvailable(version: version, reason: ownReplacementProblem()))
     }
 
-    /// Puts a downloaded update in, on a fresh answer that says nothing in the
-    /// dashboard is busy: a dashboard by restarting it into the update, which
-    /// anything else that restarts it does too, and an app by swapping it in for
-    /// this one and relaunching.
+    /// Puts a downloaded update in, on a fresh answer that says it may go in: nothing
+    /// in the dashboard is busy, and for one that started on its own, nobody has used
+    /// it for a while; or the user said to go ahead anyway. A dashboard goes in by
+    /// restarting it into the update, which anything else that restarts it does too,
+    /// and an app by swapping it in for this one and relaunching.
     private func applyUpdate() {
         guard case .ready(let update) = updater.phase, restartingInto == nil else { return }
         if case .dashboard(let version) = update {
@@ -689,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             }
         }
         if case .running = dashboard.state {
-            if waitingFor(update) != nil { return }
+            if holdUp(update) != nil { return }
             if case .nothing = reading { return }
         }
         switch update {
