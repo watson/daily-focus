@@ -1,6 +1,7 @@
-// The menu bar icon. Template images throughout, so the menu bar colours them for
-// light, dark and tinted menu bars alike; that is also why "needs a look" is a cut-out
-// dot rather than a red one.
+// The menu bar icon: the app icon's bullseye (macos/Artwork/main.swift), as SF
+// Symbols' `target`. Not `scope`, a gun sight. Template images throughout, so the
+// menu bar colours them for light, dark and tinted menu bars alike; that is also why
+// "needs a look" is a cut-out dot rather than a red one.
 
 import AppKit
 
@@ -16,11 +17,11 @@ func menuBarIcon(_ look: IconLook) -> NSImage {
     let size = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
     switch look {
     case .normal:
-        return symbol("scope", size, "Daily Focus")
+        return symbol("target", size, "Daily Focus")
     case .working:
         return symbol("rays", size, "Daily Focus, the morning agent is writing a brief")
     case .attention:
-        let base = symbol("scope", size, "Daily Focus")
+        let base = symbol("target", size, "Daily Focus")
         let image = NSImage(size: base.size, flipped: false) { rect in
             base.draw(in: rect)
             let diameter = rect.width * 0.34
