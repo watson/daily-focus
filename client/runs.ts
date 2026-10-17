@@ -301,31 +301,95 @@ function waitingLine(begun: boolean): JSX.Element {
 /** How deep subagents of subagents are drawn. Codex lets a subagent start its own. */
 const NESTING = 4;
 
+/** A step and where it sits in the run's list, which is what names a fold of calls and keeps the name as the list grows. */
+interface Placed {
+  step: AgentStep;
+  index: number;
+}
+
+/** How many calls in a row it takes to fold them: one alone is shorter than the line that would stand for it. */
+const CALLS_FOLD = 2;
+
 /**
  * The steps taken by one agent, `by`: the run's own when null, else a
  * subagent's. `active` says the agent is still at work, which is what earns it
  * a waiting line when none of its calls is in flight.
+ *
+ * What it said stands as it was said; a run of calls between two things it
+ * said folds to one line that counts them, as a coding agent folds its own;
+ * and a call still in flight stays out of any fold, since it is what is
+ * happening now.
  */
 function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null, active: boolean, ui: UiState, handlers: Handlers, depth = 0): JSX.Element {
-  const own = steps.filter((step) => step.by === by);
-  const inFlight = own.some((step) => step.state === 'running');
+  const own: Placed[] = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.by === by);
+  const inFlight = own.some(({ step }) => step.state === 'running');
+  const items: ComponentChild[] = [];
+  let calls: Placed[] = [];
+  const flush = (): void => {
+    if (calls.length >= CALLS_FOLD) items.push(callsFold(run, by, calls, ui, handlers));
+    else for (const placed of calls) items.push(callLine(placed));
+    calls = [];
+  };
+  for (const placed of own) {
+    const { step, index } = placed;
+    const folds = step.subagent && depth < NESTING;
+    if (step.kind === 'tool' && !folds && step.state !== 'running') {
+      calls.push(placed);
+      continue;
+    }
+    flush();
+    if (step.kind === 'message') items.push(el('li', { key: index, class: 'agent-run__said' }, renderMarkdownBlocks(step.text)));
+    else if (folds) items.push(runHandoff(run, steps, step, ui, handlers, depth, index));
+    else items.push(callLine(placed));
+  }
+  flush();
   return el(
     'ol',
     { class: 'assistant__steps agent-run__steps' },
     own.length || active ? null : el('li', { class: 'assistant__step assistant__step--message' }, 'Nothing yet.'),
-    own.map((step, index) => {
-      if (step.kind === 'message') {
-        return el('li', { key: index, class: 'agent-run__said' }, renderMarkdownBlocks(step.text));
-      }
-      if (step.subagent && depth < NESTING) return runHandoff(run, steps, step, ui, handlers, depth, index);
-      return el(
-        'li',
-        { key: index, class: 'assistant__step', 'data-state': step.state },
-        el('span', { class: 'assistant__step-text' }, step.text),
-        step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
-      );
-    }),
+    items,
     active && !inFlight ? waitingLine(own.length > 0) : null,
+  );
+}
+
+/** One call, as its name and what it was called with. */
+function callLine({ step, index }: Placed): JSX.Element {
+  return el(
+    'li',
+    { key: index, class: 'assistant__step', 'data-state': step.state },
+    el('span', { class: 'assistant__step-text' }, step.text),
+    step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
+  );
+}
+
+/**
+ * A run of calls, folded to one line: how many, what they were, and how many
+ * failed, with the calls themselves beneath for whoever wants them. Named by
+ * the first call's place in the run's list, so the name holds while calls are
+ * still being added to it, and the reader's toggle is kept as the other folds'
+ * are. The mark it carries is the group's: a cross if any call failed.
+ */
+function callsFold(run: AgentRun, by: string | null, calls: readonly Placed[], ui: UiState, handlers: Handlers): JSX.Element {
+  const key = `${run.id}:${by ?? 'run'}:calls@${calls[0]!.index}`;
+  const failed = calls.filter(({ step }) => step.state === 'failed').length;
+  const names = [...new Set(calls.map(({ step }) => step.text))];
+  const named = names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
+  const summary = `${calls.length} calls${failed ? `, ${failed} failed` : ''} · ${named}`;
+  return el(
+    'li',
+    { key, class: 'assistant__step agent-run__calls', 'data-state': failed ? 'failed' : 'done' },
+    el(
+      'details',
+      {
+        open: ui.messageOpen.value.get(key) ?? false,
+        onToggle: (event: Event) => {
+          const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+          handlers.toggleMessage(key, isOpen ? true : null);
+        },
+      },
+      el('summary', null, summary),
+      el('ol', { class: 'assistant__steps agent-run__steps' }, calls.map((placed) => callLine(placed))),
+    ),
   );
 }
 

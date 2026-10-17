@@ -41,6 +41,7 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
 }
 
 const calls: string[] = [];
+const calls_ = () => calls;
 const HANDLERS = new Proxy(
   {},
   { get: (_, name: string) => (...args: unknown[]) => calls.push(`${name} ${args.join(' ')}`.trim()) },
@@ -286,6 +287,41 @@ test('an agent with no call in flight is composing, and its list says so rather 
 
   // Finished, nothing waits.
   assert.equal(byClass(panel(run({ steps: [step('Run a command')] })), 'assistant__step--waiting').length, 0);
+});
+
+test('a run of calls between two things the agent said folds to one line, and a call in flight stays out of it', () => {
+  const steps = [
+    step('Reading the prompt.', { kind: 'message' }),
+    step('Run a command', { detail: 'cat prompt.md' }),
+    step('Run a command', { detail: 'rg -n brief' }),
+    step('Gmail search emails', { detail: '{"q":"newer_than:2d"}', state: 'failed' }),
+    step('Three threads need you.', { kind: 'message' }),
+    step('Run a command', { detail: 'python3 - <<PY', state: 'running' }),
+  ];
+  const going = run({ status: 'running', endedAt: null, report: '', messages: [], steps, resumable: false });
+  const container = panel(going, [going], null, { messageOpen: new Map([['r1:work', true]]) });
+  const own = [...byClass(container, 'agent-run__steps')[0]!.children].map((item) => item.textContent);
+  assert.equal(own.length, 4, 'what it said, the three calls as one, what it said, and the call in flight');
+  const calls = byClass(container, 'agent-run__calls')[0]!;
+  const fold = byTag(calls, 'details')[0] as HTMLDetailsElement;
+  assert.equal(fold.open, false);
+  assert.equal(byTag(fold, 'summary')[0]!.textContent, '3 calls, 1 failed · Run a command, Gmail search emails');
+  assert.equal(calls.getAttribute('data-state'), 'failed', 'the fold wears the cross one of its calls earned');
+  assert.match(fold.textContent!, /cat prompt\.md[\s\S]*rg -n brief[\s\S]*newer_than/);
+  assert.match(own[3]!, /python3/);
+  assert.equal(byClass(container, 'assistant__step--waiting').length, 0, 'a call in flight: not thinking');
+
+  // Opened by the reader, it stays open through the next push; closing it is forgotten.
+  const opened = panel(going, [going], null, { messageOpen: new Map([['r1:work', true], ['r1:run:calls@1', true]]) });
+  const openFold = byTag(byClass(opened, 'agent-run__calls')[0]!, 'details')[0] as HTMLDetailsElement;
+  assert.equal(openFold.open, true);
+  openFold.open = false;
+  assert.deepEqual(calls_(), ['toggleMessage r1:run:calls@1']);
+
+  // One call alone is shorter than the line that would stand for it.
+  const single = panel(run({ ...going, steps: [step('Run a command', { detail: 'cat prompt.md' })] }));
+  assert.equal(byClass(single, 'agent-run__calls').length, 0);
+  assert.match(single.textContent!, /cat prompt\.md/);
 });
 
 test('finished, a run that kept its steps folds them under its report, less the report itself', () => {

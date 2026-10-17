@@ -2471,6 +2471,25 @@ a.button {
   font-size: 11.5px;
   color: var(--ink-3);
 }
+/* A run of calls between two things the agent said, folded to the one line that counts them. */
+.agent-run__calls > details {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-run__calls summary {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.agent-run__calls summary:hover {
+  color: var(--ink-1);
+}
+.agent-run__calls .agent-run__steps {
+  margin-top: 4px;
+}
+
 /* Between calls: composing, which no call records. Quieter than a call, since nothing has happened yet. */
 .assistant__step--waiting .assistant__step-text {
   font-style: italic;
