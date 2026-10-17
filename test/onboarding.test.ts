@@ -480,7 +480,13 @@ test('when the fallback is refused too, the card says which model the plan lacks
   const identity = state.steps.find((step) => step.id === 'identity')!;
   assert.equal(identity.proposal?.status, 'failed');
   assert.equal(identity.proposal?.error, "your ChatGPT plan or workspace doesn't include the model “gpt-6-sol”");
-  assert.equal((await h.calls()).length, 6, 'two tries for each of the three questions, and no more');
+  // A question whose session starts after another's has failed goes straight to
+  // the fallback, so how many tried the first model first depends on timing.
+  const models = (await h.calls()).map(modelOf);
+  assert.equal(models.filter((model) => model === 'model="gpt-6-sol"').length, 3, 'each question tried the fallback once, and no more');
+  const first = models.filter((model) => model === 'model="gpt-6.1-sol"').length;
+  assert.ok(first >= 1 && first <= 3, 'the first model, at most once a question');
+  assert.equal(models.length, 3 + first);
 });
 
 test('nothing reaches outside the dashboard until the user answers something, even with the CLI and profile saved', async () => {
