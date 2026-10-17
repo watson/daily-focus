@@ -299,6 +299,8 @@ private let updateSession: URLSession = {
 }()
 
 private let trackKey = "updateTrack"
+private let automaticKey = "updateAutomatically"
+private let askedAutomaticKey = "askedAboutAutomaticUpdates"
 
 @MainActor
 final class Updater {
@@ -347,6 +349,24 @@ final class Updater {
             onChange?()
             check()
         }
+    }
+
+    /// Whether updates go in on their own, once the dashboard has been quiet a while.
+    /// Off until the user turns it on.
+    var automatic: Bool {
+        get { UserDefaults.standard.bool(forKey: automaticKey) }
+        set {
+            guard newValue != automatic else { return }
+            UserDefaults.standard.set(newValue, forKey: automaticKey)
+            askedAboutAutomatic = true
+            onChange?()
+        }
+    }
+
+    /// Whether the user has been asked whether updates should go in on their own.
+    var askedAboutAutomatic: Bool {
+        get { UserDefaults.standard.bool(forKey: askedAutomaticKey) }
+        set { UserDefaults.standard.set(newValue, forKey: askedAutomaticKey) }
     }
 
     /// Looks up the newest release on the track; `done` gets why that failed, if it did.

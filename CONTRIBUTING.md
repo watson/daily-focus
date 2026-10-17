@@ -267,6 +267,15 @@ it, give two copies another `CFBundleIdentifier` and two versions, re-sign them,
 and serve the newer one's zip: the identifier keeps them out of the installed
 app's settings, where the dashboard's process id is kept.
 
+**Update Automatically**, off until the user turns it on, lets an update start on
+its own (`updateUnattended`) once `GET /api/status` says nothing is busy and its
+`usedAt` is half an hour old (`mayUpdateUnattended`). `usedAt` is when a page last
+said someone used it, kept in memory and starting at the dashboard's start: a
+visible tab posts `/api/presence` on a click, key, scroll or touch, at most once
+a minute (`client/presence.ts`), because the Mac the app runs on is often not the
+one the dashboard is read from. A dashboard without `usedAt` never updates on its
+own. One that fails isn't tried on its own again; it is offered by notification.
+
 ## Releases
 
 `.github/workflows/release.yml` makes every release, from main, and main only

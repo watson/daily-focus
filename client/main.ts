@@ -7,10 +7,11 @@ import { effect } from '@preact/signals';
 import { h, render } from 'preact';
 
 import { adoptState, followLocation, handlers, refresh } from './actions.ts';
-import { postTimeZone, subscribe } from './api.ts';
+import { postPresence, postTimeZone, subscribe } from './api.ts';
 import { App } from './app.ts';
 import { setCalendarZone } from './format.ts';
 import { installKeyboard } from './keyboard.ts';
+import { watchPresence } from './presence.ts';
 import { RUN_PREFIX, availableViews, detailRow, detailRun, setDetailFor, state, ui } from './state.ts';
 import { stampedTheme } from './theme.ts';
 import { ZONE_CHECK_MS, browserZone, watchZone } from './zone.ts';
@@ -94,6 +95,19 @@ zone.look();
 document.addEventListener('visibilitychange', () => zone.look());
 window.addEventListener('focus', () => zone.look());
 setInterval(() => zone.check(), ZONE_CHECK_MS);
+
+// Someone is using the page; see `presence.ts`. Capturing, so that a handler that
+// stops an event doesn't hide it.
+const presence = watchPresence({
+  visible: () => document.visibilityState === 'visible',
+  now: Date.now,
+  send: postPresence,
+});
+presence.noticed();
+for (const event of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+  window.addEventListener(event, () => presence.noticed(), { capture: true, passive: true });
+}
+document.addEventListener('visibilitychange', () => presence.noticed());
 
 // Settings lives at `#settings`: a link there opens it, and Back and Forward move
 // in and out of it. See `setView` for how the history entries are kept.

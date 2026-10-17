@@ -36,8 +36,12 @@ struct DashboardStatus: Decodable, Equatable {
     var profile: String?
     var setupNeeded: Bool?
     var restartPending: Bool?
-    /// Whether the morning agent or the assistant is at work, which a restart would stop.
+    /// Whether the morning agent, the assistant or the setup screen is at work, which
+    /// a restart would stop, and which of them: `agent`, `assistant`, `setup`.
     var busy: Bool?
+    var busyWith: [String]?
+    /// When a page last said someone was using it, or when the dashboard started.
+    var usedAt: String?
     var brief: Brief?
     var agent: Agent?
     var waitingOnYou: Int?
@@ -123,6 +127,25 @@ func statusLine(_ status: DashboardStatus, now: Date, calendar: Calendar = .curr
 /// can only say whether the morning agent runs.
 func isBusy(_ status: DashboardStatus) -> Bool {
     status.busy ?? status.agent?.running ?? false
+}
+
+/// What a busy dashboard is busy with, for "once … is done" and "stops …". A
+/// dashboard from before `busyWith` was busy only with the agent or the assistant.
+func busyWith(_ status: DashboardStatus) -> String {
+    if status.agent?.running == true || status.busyWith?.contains("agent") == true { return "the morning agent" }
+    if let what = status.busyWith, what.contains("setup"), !what.contains("assistant") { return "the setup screen" }
+    return "the assistant"
+}
+
+/// How long nobody must have used the dashboard before an update goes in on its own.
+let quietBeforeUpdating: TimeInterval = 30 * 60
+
+/// Whether an update may go in with nobody there to ask: nothing in the dashboard
+/// is at work, and nobody has used it for `quietBeforeUpdating`. A dashboard that
+/// can't say when it was last used never may.
+func mayUpdateUnattended(_ status: DashboardStatus, now: Date) -> Bool {
+    guard !isBusy(status), let used = parseDate(status.usedAt) else { return false }
+    return now.timeIntervalSince(used) >= quietBeforeUpdating
 }
 
 /// Something worth a notification.
