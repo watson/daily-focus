@@ -28,6 +28,7 @@
     "public/index.html",
     "public/style.css",
     "public/app.js",
+    "public/fonts/",
     "prompts/",
     "schema/",
     "tools/dfcal/build.sh",
@@ -65,5 +66,8 @@
     "happy-dom": "20.14.5",
     "preact": "10.29.8",
     "typescript": "7.0.2"
+  },
+  "allowScripts": {
+    "esbuild": true
   }
 }

@@ -95,7 +95,7 @@ versions and release notes come from, so CI checks it.
 | `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
 | `src/sample.ts`, `src/demo.ts` | The sample brief for each profile behind `npm run seed`, and everything the demo puts around it: the store's files, the sample pull requests and tickets, and the settings it runs with |
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
-| `public/` | The page shell, the stylesheet, and the built bundle |
+| `public/` | The page shell, the stylesheet, the two typefaces it serves itself (`fonts/`, so nothing is fetched from a third party), and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper |
 | `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |

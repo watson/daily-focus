@@ -50,7 +50,7 @@ test('the dark palette has exactly one home', async () => {
 
   // Every dark step is the second half of its token's pair, so there is nothing
   // to keep in sync.
-  assert.match(css, /--page:\s*light-dark\(#f9f9f7,\s*#0d0d0d\)/);
+  assert.match(css, /--page:\s*light-dark\(#f2f1ec,\s*#0f1012\)/);
 
   // The second copy is what this guards. The palette used to be restated inside a
   // media query, and a scheme-specific selector anywhere is that copy starting
@@ -62,7 +62,7 @@ test('the dark palette has exactly one home', async () => {
   );
   assert.doesNotMatch(
     css,
-    /--page:\s*#0d0d0d/,
+    /--page:\s*#0f1012/,
     'the dark page colour is reachable without `light-dark()`',
   );
 });
