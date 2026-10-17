@@ -180,7 +180,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3402,
-      title: 'Add trace context to fetch instrumentation',
+      title: 'Show the currency on order confirmation emails',
       createdAt: daysAgo(now, 1),
       reviewDecision: 'REVIEW_REQUIRED',
       checks: 'failure',
@@ -193,7 +193,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3398,
-      title: 'Retry failed beacon sends with backoff',
+      title: 'Retry failed payment webhooks with backoff',
       createdAt: daysAgo(now, 4),
       reviewDecision: 'REVIEW_REQUIRED',
       mergeStateStatus: 'BLOCKED',
@@ -216,7 +216,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3410,
-      title: 'Drop the IE11 shims from the v6 bundles',
+      title: 'Drop the legacy coupon field from checkout',
       createdAt: daysAgo(now, 2),
       reviewDecision: 'APPROVED',
       reviews: [{ login: 'chris', state: 'APPROVED', at: hoursAgo(now, 2) }],
@@ -227,7 +227,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3395,
-      title: 'Bump chrome-launcher to 1.2.0',
+      title: 'Bump date-fns to 4.1.0',
       createdAt: daysAgo(now, 3),
       reviewDecision: 'REVIEW_REQUIRED',
       requestedReviewers: ['bob'],
@@ -236,7 +236,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/docs',
       number: 77,
-      title: 'Document the sampling knobs',
+      title: 'Document the gift card API',
       createdAt: hoursAgo(now, 5),
       reviewDecision: 'REVIEW_REQUIRED',
       requestedReviewers: ['dana', 'eli'],
@@ -245,7 +245,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3405,
-      title: 'Sample session replays by route',
+      title: 'Cache product images at the edge',
       createdAt: daysAgo(now, 2),
       reviewDecision: 'REVIEW_REQUIRED',
       requestedReviewers: ['chris'],
@@ -255,7 +255,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3418,
-      title: 'Instrument long tasks on the main thread',
+      title: 'Lazy-load the reviews widget on product pages',
       createdAt: daysAgo(now, 2),
       reviewDecision: 'APPROVED',
       reviews: [{ login: 'alice', state: 'APPROVED', at: hoursAgo(now, 22) }],
@@ -280,7 +280,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3425,
-      title: 'Stream session replay chunks instead of buffering them',
+      title: 'Stream the order export instead of buffering it',
       createdAt: hoursAgo(now, 26),
       checks: 'pending',
       pendingChecks: [
@@ -295,7 +295,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3430,
-      title: 'Add a per-tab replay buffer cap behind a flag',
+      title: 'Add gift card codes to the order export behind a flag',
       createdAt: hoursAgo(now, 14),
       isDraft: true,
     }),
@@ -310,7 +310,7 @@ export function demoPulls(profile: Profile, now: Date = new Date()): PullRequest
     pull({
       repo: 'acme/webapp',
       number: 3360,
-      title: 'Experiment: WASM decoder for replay payloads',
+      title: 'Experiment: server-rendered product pages',
       createdAt: daysAgo(now, 12),
       isDraft: true,
       lastActivityByYou: daysAgo(now, 9),
@@ -421,15 +421,15 @@ export function demoTickets(now = new Date()): { tickets: Ticket[]; statuses: Re
   return {
     tickets: [
       // Every pull request closed, and the ticket not Done.
-      ticket('PROJ-8842', 'Add trace context to outgoing fetches', 'In Review', 'Task', 'closed'),
+      ticket('PROJ-8842', 'Show the gift card balance at checkout', 'In Review', 'Task', 'closed'),
       // The same, known only from GitHub: Jira still has the pull request open.
       {
-        ...ticket('PLAT-311', 'Remove the legacy beacon endpoint', 'In Progress', 'Task', 'closed'),
+        ...ticket('PLAT-311', 'Remove the legacy cart API', 'In Progress', 'Task', 'closed'),
         pulls: [
           {
             repo: 'acme/infra',
             number: 514,
-            title: 'PLAT-311: drop the /v1/beacon route',
+            title: 'PLAT-311: drop the /v1/cart routes',
             url: 'https://github.com/acme/infra/pull/514',
             state: 'merged',
             closedAt: hoursAgo(now, 5),
@@ -438,19 +438,19 @@ export function demoTickets(now = new Date()): { tickets: Ticket[]; statuses: Re
         fromGitHub: true,
       },
       // A pull request open while the status says the work has not begun.
-      ticket('PROJ-8871', 'Instrument long tasks on the main thread', 'To Do', 'Story', 'open'),
-      ticket('PROJ-8877', 'Document the sampling knobs', 'To Do', 'Task', 'open'),
+      ticket('PROJ-8871', 'Lazy-load the reviews widget on product pages', 'To Do', 'Story', 'open'),
+      ticket('PROJ-8877', 'Document the gift card API', 'To Do', 'Task', 'open'),
       // In progress with no code linked to it.
-      ticket('PROJ-8865', 'Write the SDK dogfooding guide', 'In Progress', 'Task', 'none'),
+      ticket('PROJ-8865', 'Write the gift card support guide', 'In Progress', 'Task', 'none'),
       ticket('PLAT-298', 'Audit third-party script load order', 'In Progress', 'Bug', 'none'),
-      ticket('PLAT-305', 'Deprecate the v5 snippet', 'In Progress', 'Task', 'none'),
+      ticket('PLAT-305', 'Retire the old newsletter signup form', 'In Progress', 'Task', 'none'),
       // A deliberate hold: in the configured hold status, so not flagged.
-      ticket('PROJ-8850', 'Migrate to the new consent API', 'Blocked', 'Story', 'none'),
+      ticket('PROJ-8850', 'Migrate to the new tax rates API', 'Blocked', 'Story', 'none'),
       // Going as they should.
-      ticket('PROJ-8858', 'Cap the session replay buffer on long-lived tabs', 'In Progress', 'Bug', 'open'),
-      ticket('PROJ-8869', 'Update the replay fixtures for the new chunk format', 'In Progress', 'Sub-task', 'open'),
-      ticket('PROJ-8860', 'Drop the IE11 shims from the v6 bundles', 'In Review', 'Task', 'open'),
-      ticket('PLAT-320', 'Evaluate the OpenTelemetry browser SDK', 'Backlog', 'Story', 'none'),
+      ticket('PROJ-8858', 'Fix rounding in gift card balances', 'In Progress', 'Bug', 'open'),
+      ticket('PROJ-8869', 'Update the order fixtures for the new export format', 'In Progress', 'Sub-task', 'open'),
+      ticket('PROJ-8860', 'Drop the legacy coupon field from checkout', 'In Review', 'Task', 'open'),
+      ticket('PLAT-320', 'Evaluate a second payment provider', 'Backlog', 'Story', 'none'),
     ],
     statuses: Object.fromEntries(Object.entries(TICKET_STATUSES).map(([project, names]) => [project, [...names]])),
   };
@@ -517,16 +517,16 @@ export function demoIntegrations(profile: Profile, now: Date = new Date()): Demo
 /** The standing objective, with the private half the editor shows and the page never does. */
 const FOCUS: Readonly<Record<Profile, string>> = {
   work: `---
-objective: Get the staging checkout path working again, so the browser SDK can be dogfooded
-blocker: The session replay fix in webapp#3421 is still waiting on review
+objective: Launch gift cards in the storefront before the holiday sale starts
+blocker: The balance rounding fix in webapp#3421 is still waiting on review
 ---
 
-Restore the staging path first; everything downstream of it is blocked on dogfooding.
+Get the balance rounding right first; nothing downstream can launch until it is.
 
 <!-- agent-only -->
-The SDK launch is on the Q4 roadmap review on the 24th, and Dana presents it. If
-staging isn't usable by then the date slips a quarter. Weigh the day against that,
-but don't put it on screen.
+The gift card launch is on the Q4 roadmap review on the 24th, and Dana presents it.
+If gift cards can't be bought in staging by then, the launch misses the holiday
+sale. Weigh the day against that, but don't put it on screen.
 `,
   personal: `---
 objective: Get the house ready for winter — gutters cleared, boiler serviced, loft insulation booked
@@ -575,8 +575,8 @@ Never query or include: \`Lunch roulette\`.
 
 - https://docs.google.com/document/d/1xK9sampleP1atf0rmTeamN0tes/edit?tab=t.0 — Platform
   team weekly; only the newest dated section is current
-- https://docs.google.com/document/d/1xK9sampleSdkLaunchP1an/edit?tab=t.3 — SDK launch
-  plan, the "Open questions" tab
+- https://docs.google.com/document/d/1xK9sampleGiftCardP1an/edit?tab=t.3 — Gift card
+  launch plan, the "Open questions" tab
 
 ## Jira and GitHub
 
@@ -650,7 +650,7 @@ function finishedObjectiveItem(profile: Profile, now: Date): Item {
         id: 'github:pr:acme/webapp#3388',
         source: 'github',
         kind: 'task',
-        title: 'Land the checkout fix behind a feature flag',
+        title: 'Put gift card checkout behind a feature flag',
         url: 'https://github.com/acme/webapp/pull/3388',
         firstSeen: dateFromNow(now, -7),
         advancesObjective: true,
@@ -712,12 +712,12 @@ function demoActions(profile: Profile, now: Date): Action[] {
           { id: 'jira:PLAT-305', action: 'note', text: 'Waiting on the comms plan from marketing', at: daysAgo(now, 3) },
           { id: 'jira:PLAT-305', action: 'snooze', until: until(30), at: daysAgo(now, 3) },
           { id: 'github:pr:acme/webapp#3395', action: 'note', text: 'Asked Bob in #webapp-dev', at: daysAgo(now, 2) },
-          { id: 'github:pr:acme/webapp#3360', action: 'note', text: 'Revisit after the v6 cut', at: daysAgo(now, 1) },
+          { id: 'github:pr:acme/webapp#3360', action: 'note', text: 'Revisit after the holiday freeze', at: daysAgo(now, 1) },
           { id: 'github:pr:acme/webapp#3360', action: 'snooze', until: until(30), at: daysAgo(now, 1) },
           { id: 'jira:PROJ-8865', action: 'note', text: 'Docs only — no pull request expected', at: daysAgo(now, 1) },
           { id: 'github:pr:acme/webapp#3405', action: 'nudge', at: hoursAgo(now, 3) },
           { id: 'github:pr:acme/webapp#3430', action: 'done', at: minutesAgo(now, 140) },
-          { id: 'email:thread:18f31c0d9e', action: 'note', text: 'Registration runs to the 28th; no rush', at: minutesAgo(now, 131) },
+          { id: 'email:thread:18f31c0d9e', action: 'note', text: 'Membership runs to the 28th; no rush', at: minutesAgo(now, 131) },
           { id: 'email:thread:18f31c0d9e', action: 'snooze', until: until(7), at: minutesAgo(now, 130) },
           { id: 'slack:msg:C04ABCDE/1757480412.118', action: 'done', at: minutesAgo(now, 55) },
           {
@@ -802,7 +802,7 @@ function demoAgentLog(profile: Profile, now: Date): Record<string, unknown>[] {
               'A rerun: the previous brief is from 06:30 today. Keeping every `firstSeen` from it.',
               'Calendar: the all-hands moved to tomorrow, which frees 14:00–17:00 today. Rewriting the headline around that.',
               'Wrote **16 items** for today, 3 with a priority. The afternoon is now free from 14:00; the headline says so, and the ' +
-                'checkout repro write-up is the thing to spend it on. Dropped 2 as handled since this morning. Could not reach: nothing.',
+                'gift card repro write-up is the thing to spend it on. Dropped 2 as handled since this morning. Could not reach: nothing.',
             ],
           },
           {
@@ -814,7 +814,7 @@ function demoAgentLog(profile: Profile, now: Date): Record<string, unknown>[] {
               'Reading `focus.md`, the action log and the previous brief. Not a first run.',
               'Calendar: 3 events, no clashes. Day ends at 17:00.',
               'Wrote **17 items** for today, 3 with a priority: the compliance training, the review request on `webapp#3421`, and ' +
-                'the Dublin travel approval. Dropped 2 as handled. Could not reach: nothing.',
+                'the Lisbon travel approval. Dropped 2 as handled. Could not reach: nothing.',
             ],
           },
           {
@@ -823,7 +823,7 @@ function demoAgentLog(profile: Profile, now: Date): Record<string, unknown>[] {
             seconds: todaySeconds,
             trigger: 'schedule',
             messages: [
-              'Reading `focus.md`, the action log and the previous brief. The objective is the staging checkout path; the log has ' +
+              'Reading `focus.md`, the action log and the previous brief. The objective is the gift card launch; the log has ' +
                 '4 done, 1 dismissed and a snooze that has not arrived yet.',
               'Calendar: 5 events today, one clash at 11:00 — your 1:1 with Alice overlaps the design review. The lunch & learn is ' +
                 'marked free. Day ends at 17:00.',
@@ -835,10 +835,10 @@ function demoAgentLog(profile: Profile, now: Date): Record<string, unknown>[] {
                 'Wrote **20 items** for today, 3 with a priority. Not a first run.',
                 '',
                 '- **#1** the compliance training in Workday, due tonight — the third reminder, and it escalates after today.',
-                '- **#2** Alice’s review request on `webapp#3421`; merging it unblocks the staging checkout path, so it carries `advancesObjective`.',
+                '- **#2** Alice’s review request on `webapp#3421`; merging it lets gift cards go live in staging, so it carries `advancesObjective`.',
                 '- **#3** the Q4 headcount thread, where Bob followed up again yesterday.',
                 '',
-                'Dropped as handled: 3 — the Dublin hotel thread and the on-call swap you marked done, and the vendor security ' +
+                'Dropped as handled: 3 — the Lisbon hotel thread and the on-call swap you marked done, and the vendor security ' +
                   'questionnaire you dismissed. Carried forward with their original `firstSeen`: 11, the Berlin expense report now at 8 days.',
                 '',
                 'Left out on purpose: the 12 open pull requests already on the board, and PROJ-8871’s status, which the ticket board flags itself.',
@@ -1057,22 +1057,22 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             steps: [
               call('View the pull request', 'gh pr view 3421 --repo acme/webapp --json title,body,files,reviews'),
               call('Read the diff', 'gh pr diff 3421 --repo acme/webapp'),
-              said('Four files. The recorder change is the substance; the rest is its tests and a type.'),
+              said('Four files. The balance change is the substance; the rest is its tests and a type.'),
               call('Read the issue it closes', 'gh issue view 3388 --repo acme/webapp --comments'),
             ],
             reply: [
-              '**What it changes.** Session replay keeps every recorded mutation batch in an array on the recorder for the life of ' +
-                'the tab, and only ever appends; on a tab left open for a day that is hundreds of megabytes. The change caps the ' +
-                'buffer per tab, drops batches once the ingest endpoint has acknowledged them, and holds DOM node references ' +
-                'through a `WeakRef` so a detached subtree can be collected.',
+              '**What it changes.** Gift card balances are stored as floating-point amounts and rounded only for display, so a ' +
+                'card spent across several orders can drift by a cent, and checkout then refuses its last cent. The change ' +
+                'stores balances as whole minor units (cents), does the arithmetic there, and rounds once, when an amount is ' +
+                'shown, to the currency’s own number of decimals.',
               '',
-              '**Why.** The leak is the top crash signature on long-lived checkout tabs in staging, and it is what blocks dogfooding the SDK there.',
+              '**Why.** It is the most reported gift card bug in staging, and the launch can’t go ahead while a customer can be left with a cent they can’t spend.',
               '',
               '**Likely pushback**',
               '',
-              '1. The flush-on-acknowledge path has no test for a lost acknowledgement: a batch the network dropped is now gone rather than retried.',
-              '2. `WeakRef` is fine in every supported browser, but the fallback branch for older Safari is untested and dead in CI.',
-              '3. The cap is a constant, `MAX_BATCHES = 200`. A reviewer will ask for it to be configurable, or at least justified in a comment.',
+              '1. The migration converts existing balances with `Math.round`, which rounds halves away from zero. Finance may want banker’s rounding, and nothing records the choice.',
+              '2. A currency with no minor unit, such as the yen, goes through the same path, but no test covers one.',
+              '3. The old floating-point column is kept for a release, just in case. A reviewer will ask when it goes, or for a ticket that says so.',
               '',
               'The first two paragraphs are paste-ready as a description; the three points are what I would raise if I were reviewing.',
             ].join('\n'),
@@ -1081,17 +1081,17 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             id: 'turn-a2',
             item: 'github:pr:acme/webapp#3421',
             action: null,
-            text: 'Is the Safari fallback actually reachable?',
+            text: 'Is the yen case actually reachable?',
             at: minutesAgo(now, 44),
             seconds: 31,
             steps: [
-              call('Find where the fallback is chosen', 'gh search code "WeakRef" --repo acme/webapp'),
-              call('Read the SDK docs on browser support', 'gh api repos/acme/sdk-docs/contents/support.md', 'failed'),
-              call("Read the webapp's copy of the support matrix", 'gh api repos/acme/webapp/contents/docs/browser-support.md'),
+              call('Find where the minor units are worked out', 'gh search code "minorUnits" --repo acme/webapp'),
+              call('Read the payments docs on supported currencies', 'gh api repos/acme/payments-docs/contents/currencies.md', 'failed'),
+              call("Read the webapp's list of currencies", 'gh api repos/acme/webapp/contents/docs/currencies.md'),
             ],
             reply:
-              'Only on Safari 14.0 and below, which the SDK’s support matrix dropped in v5. Under the current matrix the branch is ' +
-              'dead code. I would ask Alice to remove it rather than test it.',
+              'Not yet: the storefront sells in euros, pounds and dollars, and its currency list has nothing without a minor unit. ' +
+              'It becomes reachable the day the yen is added, so I would ask Alice for the one test now rather than a fix later.',
           },
           {
             id: 'turn-b1',
@@ -1110,7 +1110,7 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
                 'Platform and how many to Webapp, with a line of justification each, by the end of the week so it lands in the planning deck.',
               '',
               'I have created a Gmail draft on the thread, from you, proposing four Platform and two Webapp with the reasons from the ' +
-                'planning doc, and asking whether the deck can carry a footnote that the SDK hire depends on the Q3 numbers. It is ' +
+                'planning doc, and asking whether the deck can carry a footnote that the payments hire depends on the Q3 numbers. It is ' +
                 '**not sent**; it is waiting on the thread when you open it.',
               '',
               'Created: [Gmail draft](https://mail.google.com/mail/u/0/#drafts?compose=18f2a9c4b7)',
@@ -1128,14 +1128,14 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
               call('Read the diff', 'gh pr diff 3398 --repo acme/webapp'),
             ],
             reply: [
-              'Dana is right: the backoff never resets after a send succeeds.',
+              'Dana is right: the backoff never resets after a delivery succeeds.',
               '',
-              'She commented on `beacon.ts:41` that `attempt` is only zeroed on page load. The diff bears her out: after one ' +
-                'failed send, every later failure waits longer, for the life of the tab. Reset `attempt` in the success branch ' +
-                'of `sendBeacon` and add a test where a success between two failures starts the delay over.',
+              'She commented on `webhooks.ts:41` that `attempt` is only zeroed when the worker starts. The diff bears her out: after ' +
+                'one failed delivery, every later failure waits longer, for as long as the worker runs. Reset `attempt` in the ' +
+                'success branch of `deliverWebhook` and add a test where a success between two failures starts the delay over.',
               '',
               'Her second point, capping the delay at 30 seconds rather than 60, is a preference. Sixty is defensible for a ' +
-                'beacon nobody waits on; say so and leave it.',
+                'webhook the payment provider retries anyway; say so and leave it.',
             ].join('\n'),
           },
           {
@@ -1148,23 +1148,23 @@ function demoAssistantLog(profile: Profile, now: Date): Record<string, unknown>[
             steps: [
               call('List the checks', 'gh pr checks 3402 --repo acme/webapp'),
               call('Read the failing job’s log', 'gh run view 9182734 --repo acme/webapp --log-failed'),
-              said('One failure, in tracing/fetch.spec.ts. Reading the retry path it exercises.'),
-              call('Read the retry code', 'gh api repos/acme/webapp/contents/src/tracing/fetch.ts'),
+              said('One failure, in emails/confirmation.spec.ts. Reading the refund path it exercises.'),
+              call('Read the email code', 'gh api repos/acme/webapp/contents/src/emails/confirmation.ts'),
             ],
             reply: [
-              'Yours, not flaky: the retry path drops the trace headers.',
+              'Yours, not flaky: refunds skip the new currency field.',
               '',
-              'The failing check is `unit-tests (node-20)`, in `tracing/fetch.spec.ts`:',
+              'The failing check is `unit-tests (node-20)`, in `emails/confirmation.spec.ts`:',
               '',
               fence,
-              'expected traceparent header on the retried request',
-              '  Expected: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"',
-              '  Received: undefined',
+              'expected the currency on the refund confirmation',
+              '  Expected: "€12.50"',
+              '  Received: "12.50"',
               fence,
               '',
-              'Your change attaches the trace context when a fetch is first issued, but the retry path in `fetch.ts` builds a fresh ' +
-                '`Request` from the original URL and loses the headers. The smallest fix is to copy the original request’s headers ' +
-                'onto the retry — one line in `retryFetch`. The other three jobs are green, so this is yours rather than flaky infrastructure.',
+              'Your change adds the currency when an order confirmation is built, but refunds build theirs in `refundConfirmation`, ' +
+                'which formats the amount on its own and never sees the new field. The smallest fix is to pass the order’s currency ' +
+                'through — one line in `refundConfirmation`. The other three jobs are green, so this is yours rather than flaky infrastructure.',
             ].join('\n'),
           },
         ]

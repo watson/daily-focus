@@ -485,7 +485,7 @@ Then the general editorial bar:
   escalates if ignored. If everything is a priority, nothing is. It is fine to set
   fewer than three, and fine to set none on a quiet day.
 - **Titles lead with what is needed of the user**, not with the source. "Review requested:
-  fix session replay memory leak" beats "GitHub PR #3421". Keep them to one line.
+  fix rounding in gift card balances" beats "GitHub PR #3421". Keep them to one line.
 - **`detail` earns its place or is omitted.** Say what the user can't infer from the title:
   who is waiting, how long, what specifically is failing, what happens if the user ignores
   it. Don't restate the title.

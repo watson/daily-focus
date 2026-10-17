@@ -35,7 +35,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     account: 'alice',
     repo: 'acme/webapp',
     number: 3421,
-    title: 'Fix session replay memory leak',
+    title: 'Fix rounding in gift card balances',
     url: 'https://github.com/acme/webapp/pull/3421',
     isDraft: false,
     createdAt: hoursAgo(72),

@@ -12,11 +12,11 @@
  * Format — frontmatter for the machine-readable bits, prose for nuance:
  *
  *     ---
- *     objective: Ship the Langdbroker browser SDK
- *     blocker: Functionality is broken after the staging changes
+ *     objective: Launch gift cards before the holiday sale
+ *     blocker: Balances round wrong after the staging changes
  *     ---
  *
- *     Restore functionality first; dogfooding is blocked until it works.
+ *     Fix the rounding first; checkout can't take a gift card until it's right.
  *
  *     <!-- agent-only -->
  *     Anything below this marker never reaches the browser.
