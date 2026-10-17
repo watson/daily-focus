@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daily Focus: a morning brief of what to work on today</title>
+  <meta name="description" content="Every morning, Daily Focus has Claude Code or Codex read your calendar, mail, pull requests and tickets, and write a short brief ranked against the one thing you're trying to finish. Free, open source, and it runs on your own computer.">
+  <link rel="canonical" href="https://dailyfocus.dev/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dailyfocus.dev/">
+  <meta property="og:title" content="Daily Focus">
+  <meta property="og:description" content="A morning brief of what to work on today, written by the AI coding tool you already use, ranked against your objective.">
+  <meta property="og:image" content="https://dailyfocus.dev/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#1c2541">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/IBMPlexSerif-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/IBMPlexSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<div class="day">
+  <!--
+    The now line: the agenda's red line, run down the page's own timeline. It
+    sits in the rail, sticks to the viewport, and main.js tells it what time it
+    is from where it has got to between two hours. Without script it stays hidden.
+  -->
+  <div class="now" aria-hidden="true" hidden><span class="now__time"><span class="now__label">07:00</span></span></div>
+
+  <header class="band">
+    <nav class="nav" aria-label="Site">
+      <a class="brand" href="./" aria-label="Daily Focus, home">
+        <svg class="brand__mark" viewBox="-50 -50 100 100" aria-hidden="true">
+          <circle r="38" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="9"/>
+          <circle r="22" fill="none" stroke="currentColor" stroke-opacity=".8" stroke-width="9"/>
+          <circle r="10" fill="var(--accent)"/>
+        </svg>
+        <span>Daily Focus</span>
+      </a>
+      <ul class="nav__links">
+        <li><a href="#priorities">How it works</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="https://github.com/watson/daily-focus">GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      </ul>
+    </nav>
+
+    <section class="hour hour--first" id="today" data-at="07:00" aria-labelledby="title">
+      <div class="hour__inner">
+        <p class="hour__time"><time datetime="07:00">07:00</time></p>
+        <div class="hour__body hero">
+          <div class="hero__pitch">
+            <h1 id="title">Start the day knowing what comes first.</h1>
+            <p class="lede">Every morning, Daily Focus has Claude Code or Codex read your calendar, mail, pull requests and tickets, then write a short brief that ranks the day against the one thing you’re trying to finish. It runs on your own computer, in a tab you keep pinned.</p>
+            <div class="cta">
+              <div class="command">
+                <code id="demo-command">npx daily-focus --demo</code>
+                <button class="button button--primary" type="button" data-copy="demo-command">Copy</button>
+              </div>
+              <a class="button button--band" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
+            </div>
+            <p class="cta__note">The demo runs on invented data and connects to nothing.</p>
+          </div>
+
+          <article class="run ui" aria-label="This morning’s run, with sample data">
+            <header class="run__head">
+              <p class="run__meta">Morning agent <span class="muted">· scheduled</span> <span class="muted run__state">· finished</span></p>
+              <p class="run__title">Run today at 07:00</p>
+            </header>
+            <div class="run__live" aria-hidden="true">
+              <p class="run__phase"><span class="spinner"></span><span class="run__phase-text">Writing a new brief</span></p>
+              <ul class="run__steps"></ul>
+            </div>
+            <div class="run__report">
+              <p>Wrote <strong>16 items</strong> for today, 3 with a priority. Alice’s review on <code>webapp#3421</code> is the one that moves the objective, and 12:00–15:00 is the only block long enough for it.</p>
+              <p>Dropped as handled: 3, including the Lisbon hotel thread you marked done yesterday.</p>
+              <p>Could not reach: the Platform team meeting notes, which returned 403 to the connector. If Tuesday’s meeting left you action items, they are not here.</p>
+              <details class="run__trail">
+                <summary>How it got there, in 29 steps, with 5 subagents</summary>
+                <ul class="run__steps run__steps--done">
+                  <li><span class="step__check" aria-hidden="true"></span><span class="step__name">Calendar</span> <span class="step__result">6 events today, 2 that clash</span></li>
+                  <li><span class="step__check" aria-hidden="true"></span><span class="step__name">Gmail</span> <span class="step__result">14 new threads, 3 waiting on you</span></li>
+                  <li><span class="step__check" aria-hidden="true"></span><span class="step__name">GitHub</span> <span class="step__result">12 open pull requests, 3 waiting on you</span></li>
+                  <li><span class="step__check" aria-hidden="true"></span><span class="step__name">Jira</span> <span class="step__result">6 tickets in flight, 1 out of step</span></li>
+                  <li><span class="step__check" aria-hidden="true"></span><span class="step__name">Slack</span> <span class="step__result">1 direct question, unanswered</span></li>
+                </ul>
+              </details>
+            </div>
+          </article>
+
+          <figure class="masthead">
+            <div class="masthead__objective">
+              <p class="masthead__label">Current objective</p>
+              <p class="masthead__headline">Launch gift cards in the storefront before the holiday sale starts</p>
+              <p class="masthead__blocked"><strong>Blocked on:</strong> the balance rounding fix in webapp#3421 is still waiting on review</p>
+            </div>
+            <dl class="stats">
+              <div><dt>Since objective progress</dt><dd>2 days</dd></div>
+              <div><dt>Focus time left</dt><dd>2 h 20 min</dd></div>
+              <div><dt>Needs action</dt><dd>12</dd></div>
+              <div><dt>Overdue</dt><dd>0</dd></div>
+              <div><dt>Cleared today</dt><dd class="good">2</dd></div>
+            </dl>
+            <blockquote class="note">
+              <p>Two things are genuinely time-boxed today: the <b>compliance training</b>, due tonight, and the Lisbon fare that expires at 17:00. Alice’s review request on <code>webapp#3421</code> is the one thing here that moves the objective, and 12:00–15:00 is your only real focus block for it.</p>
+            </blockquote>
+            <figcaption>Sample data throughout this page: the objective, the people and the pull requests are invented.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+  </header>
+
+  <main id="main">
+    <section class="hour" id="priorities" data-at="08:45" aria-labelledby="priorities-title">
+      <div class="hour__inner">
+        <p class="hour__time"><time datetime="08:45">08:45</time></p>
+        <div class="hour__body">
+          <div class="copy">
+            <h2 id="priorities-title">Pick the first thing.</h2>
+            <p>Your top priorities sit beside the day’s agenda. Meetings that clash are flagged, free time for focused work is counted, and the brief says why each item made the list and how long it has been waiting.</p>
+          </div>
+          <div class="today ui" aria-label="The Today tab, with sample data">
+            <div class="today__list">
+              <p class="ui-heading">Top priorities <span class="count">3</span></p>
+              <ol class="rows">
+                <li class="row">
+                  <span class="row__rank">1</span>
+                  <div>
+                    <p class="row__title">Complete annual security &amp; compliance training</p>
+                    <p class="row__meta"><span class="src" style="--src: var(--src-workday)">Workday</span><span class="pill pill--critical">due today</span><span class="pill pill--warning">6 days on the list</span><span class="pill pill--tag">deadline</span></p>
+                    <p class="row__detail">Workday has sent three reminders. Due end of day; after that it escalates to your manager.</p>
+                  </div>
+                </li>
+                <li class="row">
+                  <span class="row__rank">2</span>
+                  <div>
+                    <p class="row__title"><span class="row__repo">acme/webapp</span> Review requested: Fix rounding in gift card balances</p>
+                    <p class="row__meta"><span class="src" style="--src: var(--src-github)">GitHub</span><span class="muted">@alice</span><span class="pill pill--accent">objective</span><span class="pill pill--warning">2 days on the list</span><span class="pill pill--tag">review-requested</span></p>
+                    <p class="row__detail">Alice asked you directly 2 days ago; nobody else has looked. Merging this is what lets gift cards go live in staging.</p>
+                  </div>
+                </li>
+                <li class="row">
+                  <span class="row__rank">3</span>
+                  <div>
+                    <p class="row__title">Re: Q4 headcount plan — Bob is waiting on your input</p>
+                    <p class="row__meta"><span class="src" style="--src: var(--src-email)">Email</span><span class="muted">bob@acme.example</span><span class="pill pill--warning">3 days on the list</span></p>
+                    <p class="row__detail">They asked for the team split on Monday and followed up yesterday. Nothing sent back yet.</p>
+                  </div>
+                </li>
+              </ol>
+            </div>
+            <div class="agenda">
+              <p class="ui-heading">Agenda</p>
+              <ol class="agenda__card">
+                <li class="slot"><time>09:30</time><span class="slot__what">Webapp standup<small>until 09:45</small></span></li>
+                <li class="slot slot--free"><time>09:45</time><span class="slot__what">Free, 1 h 15 min<small>until 11:00</small></span></li>
+                <li class="slot"><time>11:00</time><span class="slot__what">1:1 with Alice<small class="clash">clashes with another event</small></span></li>
+                <li class="slot"><time>11:15</time><span class="slot__what">Design review: order history v2<small class="clash">clashes with another event</small></span></li>
+                <li class="slot slot--free"><time>12:00</time><span class="slot__what">Free, 3 h<small>until 15:00</small></span></li>
+                <li class="slot slot--optional"><time>12:30</time><span class="slot__what">Lunch &amp; learn: accessibility testing<small>optional, marked free</small></span></li>
+                <li class="slot"><time>15:00</time><span class="slot__what">Platform ↔ Infra sync<small>until 16:00</small></span></li>
+                <li class="slot slot--free"><time>16:00</time><span class="slot__what">Free, 1 h<small>until 17:00</small></span></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hour" id="pull-requests" data-at="10:20" aria-labelledby="prs-title">
+      <div class="hour__inner">
+        <p class="hour__time"><time datetime="10:20">10:20</time></p>
+        <div class="hour__body hour__body--split">
+          <div class="copy">
+            <h2 id="prs-title">A review comes in, and the card already says what it means.</h2>
+            <div class="copy__text">
+              <p>The pull request board sorts what you have open into seven buckets, from Waiting on you to Drafts, and keeps them current through the day. Turn on Answer ahead and the assistant reads each new review or failed check first, then puts its verdict on the card: is the reviewer right, is the failure yours.</p>
+            </div>
+          </div>
+          <div class="board ui" aria-label="The pull request board, with sample data">
+            <p class="ui-heading">Waiting on you <span class="count">2</span></p>
+            <ul class="rows">
+              <li class="row row--pr">
+                <span class="row__dot" style="--src: var(--src-github)"></span>
+                <div>
+                  <p class="row__title"><span class="row__repo">acme/webapp#3398</span> Retry failed payment webhooks with backoff</p>
+                  <p class="row__meta"><span class="row__strong">opened 4 days ago</span><span class="muted">last touched by @dana, 4 h ago</span></p>
+                  <p class="row__reason">@dana commented 4 h ago</p>
+                  <p class="ahead"><span aria-hidden="true">✦</span> Dana is right: the backoff never resets after a delivery succeeds.</p>
+                </div>
+              </li>
+              <li class="row row--pr">
+                <span class="row__dot" style="--src: var(--src-github)"></span>
+                <div>
+                  <p class="row__title"><span class="row__repo">acme/webapp#3402</span> Show the currency on order confirmation emails</p>
+                  <p class="row__meta"><span class="row__strong">opened 25 h ago</span><span class="muted">last touched by you, 4 h ago</span><span class="pill pill--critical">CI failing</span></p>
+                  <p class="row__reason">CI failing: unit-tests (node-20)</p>
+                  <p class="ahead"><span aria-hidden="true">✦</span> Yours, not flaky: refunds skip the new currency field.</p>
+                </div>
+              </li>
+            </ul>
+            <ul class="buckets" aria-label="The other buckets">
+              <li>Ready to merge <span class="count">1</span></li>
+              <li>Waiting on reviewers <span class="count">2</span></li>
+              <li>Waiting on merge gate <span class="count">1</span></li>
+              <li>Merge blocked by GitHub <span class="count">1</span></li>
+              <li>Waiting on checks <span class="count">1</span></li>
+              <li>Drafts <span class="count">2</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hour" id="assistant" data-at="11:30" aria-labelledby="assistant-title">
+      <div class="hour__inner">
+        <p class="hour__time"><time datetime="11:30">11:30</time></p>
+        <div class="hour__body hour__body--split">
+          <div class="copy">
+            <h2 id="assistant-title">Ask, instead of opening six tabs.</h2>
+            <div class="copy__text">
+              <p>Open any item and ask about it. The assistant runs your AI coding tool against that one item, shows each thread it reads and each command it runs, then folds that trail away under its answer.</p>
+              <p>It reads, and it drafts. A reply to an email waits as a Gmail draft on the thread, for you to send. It never sends, posts, or edits anything itself.</p>
+            </div>
+          </div>
+          <div class="panel ui" aria-label="The assistant on an email, with sample data">
+            <div class="panel__head">
+              <p class="src" style="--src: var(--src-email)">Email</p>
+              <p class="panel__title">Re: Q4 headcount plan — Bob is waiting on your input</p>
+            </div>
+            <div class="panel__body">
+              <p class="ui-heading ui-heading--ruled">Assistant</p>
+              <p class="quick" aria-label="Quick actions">
+                <span class="chip chip--on">Draft a reply</span>
+                <span class="chip">Summarise the thread</span>
+                <span class="chip">What do they need from me?</span>
+              </p>
+              <p class="turn__head"><b>Draft a reply</b> <span class="muted">· 38 min ago</span></p>
+              <details class="turn__trail">
+                <summary>Worked for 64 s · 4 steps</summary>
+                <ul>
+                  <li>Gmail: get thread</li>
+                  <li>Gmail: search threads <code>Q4 planning doc headcount</code></li>
+                  <li class="said">Bob wants numbers per team with a reason each. The planning doc has both.</li>
+                  <li>Gmail: create draft</li>
+                </ul>
+              </details>
+              <div class="answer">
+                <p>He wants the Q4 team split: how many of the six open roles go to Platform and how many to Webapp, with a line of justification each, by the end of the week.</p>
+                <p>I have created a Gmail draft on the thread proposing four Platform and two Webapp, with the reasons from the planning doc. It is <b>not sent</b>; it is waiting on the thread when you open it.</p>
+              </div>
+              <p class="panel__actions"><span class="button button--ui">Copy reply</span><span class="button button--ui">Open draft</span></p>
+              <p class="field">Ask a follow-up…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hour" id="tickets" data-at="14:10" aria-labelledby="tickets-title">
+      <div class="hour__inner">
+        <p class="hour__time"><time datetime="14:10">14:10</time></p>
+        <div class="hour__body hour__body--split">
+          <div class="copy">
+            <h2 id="tickets-title">Catch tickets that fell out of step with the code.</h2>
+            <div class="copy__text">
+              <p>The Jira board sets each ticket’s status beside its pull requests and flags the ones that disagree: merged work on a ticket still open, started work on a ticket that says it hasn’t begun. It checks GitHub too, because Jira can take days to hear about a merge.</p>
+              <p>Click a status to move the ticket. Nothing moves in Jira without that click.</p>
+            </div>
+          </div>
+          <div class="board ui" aria-label="The Jira board, with sample data">
+            <p class="ui-heading">No open pull requests left <span class="count">2</span></p>
+            <ul class="rows">
+              <li class="row row--ticket">
+                <span class="row__dot" style="--src: var(--src-jira)"></span>
+                <div>
+                  <p class="row__title"><span class="row__repo">PROJ-8842</span> Show the gift card balance at checkout</p>
+                  <p class="row__meta"><span class="status">In Review</span><span class="muted">Task</span><span class="muted">2 pull requests, both merged</span></p>
+                </div>
+              </li>
+              <li class="row row--ticket">
+                <span class="row__dot" style="--src: var(--src-jira)"></span>
+                <div>
+                  <p class="row__title"><span class="row__repo">PLAT-311</span> Remove the legacy cart API</p>
+                  <p class="row__meta"><span class="status">In Progress</span><span class="muted">Task</span></p>
+                  <p class="row__aside"><b>GitHub, ahead of Jira:</b> acme/infra#514 PLAT-311: drop the /v1/cart routes, merged 5 h ago</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hour hour--last" id="tomorrow" data-at="17:00" aria-labelledby="tomorrow-title">
+      <div class="hour__inner">
+        <p class="hour__time"><time datetime="17:00">17:00</time></p>
+        <div class="hour__body hour__body--split">
+          <div class="copy">
+            <h2 id="tomorrow-title">Tell tomorrow’s brief what happened.</h2>
+            <div class="copy__text">
+              <p>Mark an item done, snooze it to a date, dismiss it, or leave a note like “already replied on Slack”. The next brief reads all of it, so tomorrow starts where today stopped.</p>
+            </div>
+          </div>
+          <div class="handle ui" data-handle>
+            <div class="row row--handle">
+              <span class="row__dot" style="--src: var(--src-tasks)"></span>
+              <div>
+                <p class="row__title">Write up the repro steps for the gift card rounding bug</p>
+                <p class="row__meta"><span class="src" style="--src: var(--src-tasks)">Tasks</span><span class="pill pill--accent">objective</span><span class="pill pill--warning">4 days on the list</span></p>
+                <p class="handle__actions">
+                  <button class="button button--ui" type="button" data-act="Marked done">Done</button>
+                  <button class="button button--ui" type="button" data-act="Snoozed until tomorrow">Snooze</button>
+                  <button class="button button--ui" type="button" data-act="Dismissed">Dismiss</button>
+                </p>
+              </div>
+            </div>
+            <form class="handle__note" data-note>
+              <label for="note">Note for the next brief</label>
+              <div class="handle__field">
+                <input id="note" type="text" value="Sent the repro to Alice; she is taking it from here" autocomplete="off">
+                <button class="button button--primary" type="submit">Save</button>
+              </div>
+            </form>
+            <p class="toast" role="status" hidden><span class="toast__text"></span> <button class="toast__undo" type="button">Undo</button></p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<section class="evening" aria-labelledby="private-title">
+  <div class="evening__inner">
+    <h2 id="private-title">What it does with your day.</h2>
+    <dl class="facts">
+      <div>
+        <dt>It runs on your computer</dt>
+        <dd>Daily Focus is an app on your own computer. Your day leaves it only through the AI coding tool you chose, Claude Code or Codex.</dd>
+      </div>
+      <div>
+        <dt>It uses the AI subscription you already pay for</dt>
+        <dd>Daily Focus runs Claude Code or Codex, signed in as you on your own Claude or ChatGPT plan. It has no account or subscription of its own.</dd>
+      </div>
+      <div>
+        <dt>It reads, and it drafts</dt>
+        <dd>The morning agent and the assistant read what they need and hand you the result: a ranked brief, an answer, or a Gmail draft waiting for you to send.</dd>
+      </div>
+      <div>
+        <dt>You can read every instruction</dt>
+        <dd>It’s MIT licensed, and if you’re curious what the agents are told to do, their prompts are in the <a href="https://github.com/watson/daily-focus/tree/main/prompts">repository</a>.</dd>
+      </div>
+    </dl>
+
+    <h2 class="evening__second" id="install">Try it on sample data first.</h2>
+    <ul class="ways" aria-labelledby="install">
+      <li class="way">
+        <h3>Look around</h3>
+        <div class="command command--band">
+          <code id="cmd-demo">npx daily-focus --demo</code>
+          <button class="button button--primary" type="button" data-copy="cmd-demo">Copy</button>
+        </div>
+        <p>A morning’s brief, boards and assistant answers, all invented, in a store that goes away when you press Ctrl+C. Add <code>--profile personal</code> to see the version that briefs home, family and paperwork.</p>
+      </li>
+      <li class="way">
+        <h3>Use your own day</h3>
+        <div class="command command--band">
+          <code id="cmd-real">npx daily-focus</code>
+          <button class="button button--primary" type="button" data-copy="cmd-real">Copy</button>
+        </div>
+        <p>Opens a setup screen that asks a few questions, one at a time, with the likely answer already ticked. Your AI coding tool looks into the rest, like which calendars are work ones.</p>
+      </li>
+      <li class="way">
+        <h3>Keep it in the menu bar</h3>
+        <a class="button button--band button--wide" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
+        <p>Starts the dashboard at login, shows how old the brief is, and tells you when a new one arrives. Node.js comes with it. Needs Apple silicon and macOS 13.5 or newer.</p>
+      </li>
+    </ul>
+    <p class="needs">The commands need Node.js 22.18 or newer. Every way needs Claude Code or Codex, signed in. GitHub, Jira and the macOS calendar are optional. The <a href="https://github.com/watson/daily-focus/blob/main/SETUP.md">setup guide</a> covers each step.</p>
+
+    <div class="maker">
+      <img class="maker__photo" src="thomas-watson.jpg" width="88" height="88" alt="Thomas Watson">
+      <div class="maker__words">
+        <h2 id="maker">Made by one person.</h2>
+        <p>I’m <a href="https://wa.tson.dk/">Thomas Watson</a>. I build Daily Focus on my own, in the open, and I use it every day. There’s no company behind it, no investors, and nothing to sign up for.</p>
+        <p>If it earns a place in your mornings, you can sponsor the work on GitHub.</p>
+        <a class="button button--band" href="https://github.com/sponsors/watson">Sponsor on GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <p>Free and open source, MIT licensed.</p>
+    <ul class="footer__links">
+      <li><a href="https://github.com/watson/daily-focus">GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://www.npmjs.com/package/daily-focus">npm<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://github.com/watson/daily-focus/releases">Releases<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://github.com/sponsors/watson">Sponsor<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+    </ul>
+  </footer>
+</section>
+</body>
+</html>

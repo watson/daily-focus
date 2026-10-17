@@ -101,6 +101,7 @@ versions and release notes come from, so CI checks it.
 | `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
 | `prompts/` | The briefing agent's instructions, the assistant's, and setup's |
 | `apps-script/` | Optional Google Tasks export |
+| `site/` | The marketing page for dailyfocus.dev: static HTML, CSS and script with no build step, in the dashboard's own fonts and colours, on its sample data |
 
 ## Keep the contracts in sync
 

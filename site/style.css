@@ -1,0 +1,1480 @@
+/*
+ * The page is one day with Daily Focus, read top to bottom. A time rail runs
+ * down its left edge, the same ruled timeline as the dashboard's agenda, and
+ * each part of the product sits at the hour you would meet it: the brief at
+ * 07:00, the pull request board when a review lands, the ticket board in the
+ * afternoon, the notes for tomorrow at 17:00. The now line rides the rail as
+ * you scroll.
+ *
+ * It wears the dashboard's own materials (public/style.css), so the page and
+ * the product are one thing: the navy band for the morning masthead and again
+ * for the evening, the paper for the day, white cards for rows, amber for
+ * what can be pressed, Plex Serif for words the brief is made of and Plex Sans
+ * for everything operational. The recreated pieces of the product use the
+ * dashboard's sample data, the same invented people and pull requests.
+ */
+
+@font-face {
+  font-family: 'Plex Sans';
+  src: url('fonts/IBMPlexSans-Variable.woff2') format('woff2');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('fonts/IBMPlexSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('fonts/IBMPlexSerif-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('fonts/IBMPlexSerif-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('fonts/IBMPlexSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* The dashboard's tokens, both modes, as public/style.css names them. */
+  --page: light-dark(#f2f1ec, #0f1012);
+  --surface: light-dark(#ffffff, #1e2025);
+  --surface-sunken: light-dark(#eceae4, #2a2c32);
+  --ink-1: light-dark(#1b1f2a, #e9ebef);
+  --ink-2: light-dark(#4d5362, #aeb4c0);
+  --ink-3: light-dark(#6e7484, #868c9a);
+  --rule: light-dark(#e6e5df, #2e3037);
+  --hairline: light-dark(#d7d6ce, #33353c);
+  --border: light-dark(rgba(27, 31, 42, 0.16), rgba(233, 235, 239, 0.16));
+
+  --band: light-dark(#1c2541, #1a2140);
+  --band-ink: #ffffff;
+  --band-muted: light-dark(#a9b3cc, #9aa4c3);
+  --band-rule: rgba(255, 255, 255, 0.18);
+  --band-sheet: rgba(255, 255, 255, 0.07);
+  --band-critical: #ffb3b3;
+  --band-good: #7ee2a8;
+
+  --shadow: 0 1px 2px light-dark(rgba(27, 31, 42, 0.05), transparent),
+    0 6px 20px light-dark(rgba(27, 31, 42, 0.06), transparent);
+  --shadow-float: 0 1px 2px light-dark(rgba(27, 31, 42, 0.06), transparent),
+    0 14px 40px light-dark(rgba(27, 31, 42, 0.14), rgba(0, 0, 0, 0.5));
+
+  --good-ink: light-dark(#006300, #3fbf3f);
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-ink: light-dark(#c42f2f, #f07070);
+
+  --src-github: light-dark(#2a78d6, #3987e5);
+  --src-email: light-dark(#eb6834, #d95926);
+  --src-jira: light-dark(#eda100, #c98500);
+  --src-workday: #008300;
+  --src-tasks: light-dark(#0b8ea8, #2ba8c4);
+
+  --accent: #e0962a;
+  --accent-ink: light-dark(#a86a14, #e8a743);
+  --on-accent: #1b1f2a;
+  --accent-wash: light-dark(#fbefd9, #3a3220);
+
+  /* The agenda's now line. */
+  --now: #e5484d;
+
+  --font-sans: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Plex Serif', 'Iowan Old Style', Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --page-width: 1240px;
+  --gutter: clamp(20px, 4vw, 48px);
+  /* The rail: times in the first 64px, the line at 80px, content from 112px. */
+  --rail: 112px;
+  --rail-times: 64px;
+  --rail-line: 80px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink-1);
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--accent-wash);
+}
+
+:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.skip {
+  position: absolute;
+  left: var(--gutter);
+  top: 12px;
+  z-index: 10;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 600 15px/1.4 var(--font-sans);
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip:focus-visible {
+  transform: none;
+}
+
+.muted {
+  color: var(--ink-3);
+}
+
+/* Marks a link that leaves this site. */
+.ext {
+  flex: none;
+  width: 0.72em;
+  height: 0.72em;
+  margin-left: 0.3em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: 0.02em;
+}
+
+/* ---------- buttons ---------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: 600 15px/1 var(--font-sans);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.button--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.button--primary:hover {
+  background: #eaa53f;
+}
+.button--band {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--band-ink);
+}
+.button--band:hover {
+  background: var(--band-sheet);
+  border-color: var(--band-ink);
+}
+.button--wide {
+  width: 100%;
+}
+/* A button inside a recreated piece of the dashboard, sized as it is there. */
+.button--ui {
+  min-height: 32px;
+  padding: 0 12px;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-1);
+  font-weight: 500;
+  font-size: 13.5px;
+}
+button.button--ui:hover {
+  border-color: var(--ink-3);
+}
+
+/* A command to paste, with its Copy button. */
+.command {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 5px 5px 5px 18px;
+  border: 1px solid var(--band-rule);
+  border-radius: 10px;
+  background: var(--band-sheet);
+  color: var(--band-ink);
+}
+.command code {
+  font-size: 15.5px;
+  white-space: nowrap;
+}
+.command .button {
+  min-height: 36px;
+  min-width: 76px;
+  padding: 0 14px;
+}
+.command--band {
+  display: flex;
+  width: 100%;
+}
+.command--band code {
+  flex: 1;
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- the day and its rail ---------- */
+
+.day {
+  position: relative;
+}
+
+.band {
+  background: var(--band);
+  color: var(--band-ink);
+}
+
+.nav,
+.hour__inner,
+.evening__inner,
+.footer {
+  max-width: var(--page-width);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-block: 22px;
+  font-family: var(--font-sans);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--band-ink);
+  font-weight: 600;
+  font-size: 16px;
+  text-decoration: none;
+}
+.brand__mark {
+  width: 26px;
+  height: 26px;
+}
+.nav__links {
+  display: flex;
+  gap: 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+.nav__links a {
+  display: inline-flex;
+  align-items: center;
+  color: var(--band-muted);
+  text-decoration: none;
+}
+.nav__links a:hover {
+  color: var(--band-ink);
+}
+
+.hour__inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  padding-block: 104px;
+  --dot-y: 24px;
+}
+/* The rail's line, drawn per hour so it takes the colour of the ground it crosses. */
+.hour__inner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--gutter) + var(--rail-line));
+  width: 1px;
+  background: var(--hairline);
+}
+.band .hour__inner::before {
+  background: var(--band-rule);
+}
+.hour--first .hour__inner {
+  padding-block: 64px 104px;
+}
+.hour--first .hour__inner::before {
+  top: calc(64px + var(--dot-y));
+}
+.hour--last .hour__inner::before {
+  bottom: auto;
+  height: calc(104px + var(--dot-y));
+}
+
+.hour__time {
+  position: relative;
+  width: var(--rail-times);
+  margin: 0;
+  /* Centred on the heading's first line. */
+  padding-top: calc(var(--dot-y) - 0.5lh);
+  color: var(--ink-2);
+  font: 500 15px/1.5 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.band .hour__time {
+  color: var(--band-muted);
+}
+.hour__time time {
+  transition: opacity 0.15s;
+}
+.hour__time.is-passing time {
+  opacity: 0;
+}
+.hour__time::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--dot-y) - 6px);
+  left: calc(var(--rail-line) - 6px);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ink-1);
+  border-radius: 50%;
+  background: var(--page);
+}
+.band .hour__time::after {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.hour__body {
+  min-width: 0;
+}
+/* The heading spans the hour; the words and the piece of the product sit side by side under it. */
+.hour__body--split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 0 72px;
+  align-items: start;
+}
+.hour__body--split .copy {
+  display: contents;
+}
+.hour__body--split h2 {
+  grid-column: 1 / -1;
+  max-width: 22ch;
+  margin-bottom: 40px;
+}
+
+/* The now line rides the rail at a fixed height in the viewport. */
+.now {
+  position: sticky;
+  top: 46vh;
+  z-index: 5;
+  height: 0;
+  max-width: var(--page-width);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.now::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: calc(var(--gutter) + var(--rail-times) + 4px);
+  width: calc(var(--rail-line) + 16px - var(--rail-times) - 4px);
+  height: 2px;
+  background: var(--now);
+}
+.now__time {
+  position: absolute;
+  top: -11px;
+  left: var(--gutter);
+  width: calc(var(--rail-times) + 4px);
+  color: #fff;
+  font: 600 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.now__label {
+  display: inline-block;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: var(--now);
+}
+.now.is-gone {
+  opacity: 0;
+}
+
+/* ---------- 07:00, the hero ---------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 56px 64px;
+  align-items: start;
+}
+
+h1 {
+  margin: 0 0 28px;
+  max-width: 11ch;
+  font-weight: 400;
+  font-size: clamp(2.75rem, 1.5rem + 4.4vw, 5rem);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.lede {
+  max-width: 33em;
+  margin: 0 0 36px;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 20px;
+  line-height: 1.6;
+}
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.cta__note {
+  margin: 16px 0 0;
+  color: var(--band-muted);
+  font: 14px/1.5 var(--font-sans);
+}
+
+/* The morning agent's run, as the dashboard's run panel shows it. */
+.run {
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink-1);
+  box-shadow: var(--shadow-float);
+}
+.run__head {
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.run__meta {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.run__meta .muted {
+  font-weight: 400;
+}
+.run__title {
+  margin: 4px 0 0;
+  font-weight: 600;
+  font-size: 18px;
+}
+.run__live {
+  padding: 16px 22px 20px;
+}
+.run__phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.run__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.run__steps li {
+  display: grid;
+  grid-template-columns: 16px 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+}
+.step__name {
+  font-weight: 500;
+}
+.step__result {
+  color: var(--ink-2);
+}
+.step__check {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--good-ink);
+}
+.step__check::after {
+  content: '';
+  position: absolute;
+  left: 5.5px;
+  top: 3px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--surface);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.run__steps .is-running .step__check {
+  background: none;
+}
+.run__steps .is-running .step__check::after {
+  display: none;
+}
+.run__steps .is-running .step__result {
+  color: var(--ink-3);
+}
+
+.spinner,
+.run__steps .is-running .step__check::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent-ink);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.run__report {
+  padding: 16px 22px 18px;
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  line-height: 1.58;
+}
+.run__report p {
+  margin: 0 0 10px;
+}
+.run__report strong {
+  font-weight: 600;
+}
+.run__trail summary,
+.turn__trail summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font: 13.5px/1.5 var(--font-sans);
+  list-style: none;
+  cursor: pointer;
+}
+.run__trail summary::-webkit-details-marker,
+.turn__trail summary::-webkit-details-marker {
+  display: none;
+}
+.run__trail summary::before,
+.turn__trail summary::before {
+  content: '';
+  border-left: 6px solid currentColor;
+  border-block: 4px solid transparent;
+  transition: transform 0.15s;
+}
+.run__trail[open] summary::before,
+.turn__trail[open] summary::before {
+  transform: rotate(90deg);
+}
+.run__trail summary:hover,
+.turn__trail summary:hover {
+  color: var(--ink-1);
+}
+.run__trail .run__steps {
+  margin-top: 10px;
+  font-family: var(--font-sans);
+}
+
+/* While the run plays, its report waits; once it has played, the steps fold away. */
+.run:not(.is-playing) .run__live {
+  display: none;
+}
+.run.is-playing .run__report {
+  display: none;
+}
+.run.is-landed .run__report {
+  animation: land 0.5s ease-out;
+}
+@keyframes land {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* The brief it wrote: Today's masthead, on the band. */
+.masthead {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 32px 64px;
+  margin: 0;
+  padding-top: 48px;
+  border-top: 1px solid var(--band-rule);
+}
+.masthead__label {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font: 600 14px/1.5 var(--font-sans);
+}
+.masthead__headline {
+  margin: 0 0 12px;
+  font-weight: 500;
+  font-size: clamp(1.5rem, 1.1rem + 1vw, 1.875rem);
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+.masthead__blocked {
+  margin: 0;
+  color: var(--band-muted);
+  font: 15px/1.5 var(--font-sans);
+}
+.masthead__blocked strong {
+  color: var(--band-critical);
+  font-weight: 600;
+}
+.note {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  margin: 0;
+  padding: 2px 0 2px 22px;
+  border-left: 3px solid var(--accent);
+  color: rgba(255, 255, 255, 0.9);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.62;
+}
+.note p {
+  margin: 0;
+}
+.note b {
+  color: var(--band-ink);
+  font-weight: 500;
+  font-style: normal;
+}
+.note code {
+  font-style: normal;
+}
+.stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+  padding: 20px 0;
+  border: 1px solid var(--band-rule);
+  border-radius: 12px;
+  background: var(--band-sheet);
+  font-family: var(--font-sans);
+}
+.stats > div {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  padding: 0 22px;
+}
+.stats > div + div {
+  border-left: 1px solid var(--band-rule);
+}
+.stats dt {
+  color: var(--band-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.stats dd {
+  margin: 0 0 2px;
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.2;
+}
+.stats .good {
+  color: var(--band-good);
+}
+.masthead figcaption {
+  grid-column: 1 / -1;
+  color: var(--band-muted);
+  font: 13.5px/1.5 var(--font-sans);
+}
+
+/* ---------- the day's hours, on the paper ---------- */
+
+.copy h2,
+.evening h2 {
+  margin: 0 0 22px;
+  font-weight: 400;
+  font-size: clamp(2rem, 1.35rem + 2vw, 2.875rem);
+  line-height: 1.1;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+}
+.copy h2 {
+  max-width: 18ch;
+}
+.copy p {
+  max-width: 32em;
+  margin: 0 0 16px;
+  color: var(--ink-2);
+}
+.copy p:last-child {
+  margin-bottom: 0;
+}
+
+/* The recreated pieces of the dashboard. */
+.ui {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+:where(.ui) p {
+  margin: 0;
+}
+.ui-heading {
+  margin: 0 0 10px;
+  font-weight: 600;
+  font-size: 15px;
+}
+.count {
+  margin-left: 6px;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.rows {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 0 12px;
+  padding: 16px 20px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.row__rank {
+  color: var(--accent-ink);
+  font: 400 22px/1.05 var(--font-serif);
+  text-align: center;
+}
+.row__dot {
+  width: 8px;
+  height: 8px;
+  margin: 7px auto 0;
+  border-radius: 50%;
+  background: var(--src);
+}
+.row__title {
+  font-weight: 600;
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+.row__repo {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 7px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.row__strong {
+  color: var(--ink-1);
+  font-weight: 500;
+}
+.row__detail {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.row__reason {
+  margin-top: 7px;
+  color: var(--critical-ink);
+  font-size: 14px;
+}
+.row__aside {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.row__aside b {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+
+.src {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-1);
+  font-weight: 500;
+}
+.src::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--src);
+}
+
+.pill {
+  padding: 1px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.pill--critical {
+  color: var(--critical-ink);
+}
+.pill--warning {
+  border-color: var(--warning);
+  color: var(--ink-2);
+}
+.pill--accent {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.pill--tag {
+  border-color: transparent;
+  background: var(--surface-sunken);
+  color: var(--ink-3);
+}
+
+.ahead {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--accent-wash);
+  font-size: 14px;
+}
+.ahead span {
+  color: var(--accent-ink);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink-1);
+  font-weight: 500;
+  font-size: 13px;
+}
+.status::after {
+  content: '';
+  border-top: 4px solid var(--ink-3);
+  border-inline: 4px solid transparent;
+}
+
+/* 08:45: Today's priorities beside the agenda. */
+.today {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 40px;
+  margin-top: 56px;
+}
+.agenda__card {
+  position: relative;
+  margin: 0;
+  padding: 16px 18px 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  list-style: none;
+}
+.agenda__card::before {
+  content: '';
+  position: absolute;
+  top: 22px;
+  bottom: 22px;
+  left: 75px;
+  width: 1px;
+  background: var(--rule);
+}
+.slot {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 0 26px;
+  padding: 6px 0;
+}
+.slot time {
+  color: var(--ink-3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  line-height: 1.6;
+}
+.slot__what {
+  position: relative;
+  font-size: 14px;
+}
+.slot__what::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: -18.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hairline);
+}
+.slot small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.slot--free .slot__what {
+  color: var(--good-ink);
+  font-weight: 600;
+}
+.slot--free .slot__what::before {
+  border: 1.5px solid var(--good-ink);
+  background: var(--surface);
+}
+.slot--free small {
+  color: var(--ink-1);
+  font-weight: 500;
+}
+.slot--optional .slot__what {
+  color: var(--ink-2);
+}
+.clash::before {
+  content: '⚠ ';
+  color: var(--serious);
+}
+
+/* 10:20 and 14:10: a board's buckets. */
+.buckets {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.buckets li {
+  padding: 10px 2px;
+  border-top: 1px solid var(--hairline);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+/* 11:30: the item panel, with the assistant. */
+.panel {
+  overflow: hidden;
+  max-width: 540px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+.panel__head {
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.panel__head .src {
+  font-size: 13.5px;
+}
+.panel__title {
+  margin-top: 6px;
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.35;
+}
+.panel__body {
+  padding: 18px 22px 22px;
+}
+.ui-heading--ruled {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 14px;
+}
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.chip {
+  padding: 3px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+}
+.chip--on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.turn__head {
+  font-size: 14px;
+}
+.turn__head b {
+  font-weight: 600;
+}
+.turn__trail {
+  margin: 4px 0 0;
+}
+.turn__trail ul {
+  margin: 6px 0 4px;
+  padding-left: 22px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.turn__trail li {
+  padding: 2px 0;
+}
+.turn__trail .said {
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+.answer {
+  margin: 12px 0 16px;
+  padding-left: 16px;
+  border-left: 2px solid var(--hairline);
+  font: 15.5px/1.6 var(--font-serif);
+}
+.answer p + p {
+  margin-top: 10px;
+}
+.answer b {
+  font-weight: 600;
+}
+.panel__actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.field {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+
+/* 17:00: handling an item, for real on this page. */
+.handle {
+  max-width: 580px;
+}
+.handle__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.row__title {
+  transition: color 0.2s;
+}
+.handle.is-handled .row--handle .row__title {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-3);
+}
+.handle.is-handled .handle__actions .button {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.handle__note {
+  margin-top: 10px;
+  padding: 14px 18px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.handle__note label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.handle__field {
+  display: flex;
+  gap: 8px;
+}
+.handle__field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-1);
+  font: 14.5px var(--font-sans);
+}
+.handle__field input:focus-visible {
+  outline-offset: 0;
+  border-color: var(--ink-1);
+}
+.handle__field .button {
+  min-height: 40px;
+}
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 8px;
+  background: var(--ink-1);
+  color: var(--page);
+  font-size: 14px;
+}
+.toast:not([hidden]) {
+  animation: land 0.25s ease-out;
+}
+.toast__undo {
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  /* The toast is ink on the page, so in dark mode it is light and wants the dark amber. */
+  color: light-dark(var(--accent), #8a5410);
+  font: 600 14px var(--font-sans);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+/* ---------- the evening: what it does, and how to start ---------- */
+
+.evening {
+  background: var(--band);
+  color: var(--band-ink);
+}
+.evening__inner {
+  padding-block: 120px 96px;
+}
+.evening__inner,
+.footer {
+  padding-left: calc(var(--gutter) + var(--rail));
+}
+.evening h2 {
+  max-width: 20ch;
+}
+.evening a {
+  color: var(--band-ink);
+}
+.evening .evening__second {
+  margin-top: 112px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px 72px;
+  margin-block: 44px 0;
+}
+.facts dt {
+  font: 600 17px/1.4 var(--font-sans);
+}
+.facts dd {
+  max-width: 30em;
+  margin: 8px 0 0;
+  color: var(--band-muted);
+  font-size: 17.5px;
+  line-height: 1.62;
+}
+
+.ways {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin: 44px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.way {
+  padding-top: 22px;
+  border-top: 1px solid var(--band-rule);
+}
+.way h3 {
+  margin: 0 0 16px;
+  font: 600 17px/1.4 var(--font-sans);
+}
+.way p {
+  margin: 16px 0 0;
+  color: var(--band-muted);
+  font-size: 16.5px;
+  line-height: 1.6;
+}
+.way p code {
+  color: var(--band-ink);
+  white-space: nowrap;
+}
+.needs {
+  max-width: 46em;
+  margin-block: 44px 0;
+  color: var(--band-muted);
+  font: 15px/1.6 var(--font-sans);
+}
+
+/* The maker's note: who makes it, and how to back them. */
+.maker {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 0 32px;
+  align-items: start;
+  margin-top: 112px;
+}
+.maker__photo {
+  display: block;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 2px solid var(--band-rule);
+  object-fit: cover;
+  /* The photo's warm cast fights the navy; in black and white it sits on it. */
+  filter: grayscale(1) contrast(1.05);
+}
+.evening .maker h2 {
+  margin-bottom: 18px;
+}
+.maker p {
+  max-width: 34em;
+  margin: 0 0 14px;
+  color: var(--band-muted);
+  font-size: 17.5px;
+  line-height: 1.62;
+}
+.maker .button {
+  margin-top: 10px;
+}
+/* A button already spaces its contents. */
+.button .ext {
+  margin-left: 0;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px 32px;
+  padding-block: 28px 40px;
+  background: linear-gradient(var(--band-rule), var(--band-rule)) no-repeat
+    calc(var(--gutter) + var(--rail)) 0 / calc(100% - 2 * var(--gutter) - var(--rail)) 1px;
+  color: var(--band-muted);
+  font: 14px/1.5 var(--font-sans);
+}
+.footer > * {
+  margin: 0;
+}
+.footer a {
+  color: var(--band-ink);
+}
+.footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- narrower screens ---------- */
+
+@media (max-width: 1080px) {
+  .hero,
+  .hour__body--split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hour__body--split {
+    row-gap: 36px;
+  }
+  .hour__body--split h2 {
+    margin-bottom: 0;
+  }
+  .run {
+    max-width: 560px;
+  }
+  .masthead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .note {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .today {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agenda {
+    max-width: 420px;
+  }
+  .ways {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    font-size: 18px;
+  }
+  .nav__links li:first-child {
+    display: none;
+  }
+  .nav__links {
+    gap: 20px;
+  }
+  /* The rail folds into each hour's heading: a time with its dot, then the hour. */
+  .hour__inner {
+    grid-template-columns: minmax(0, 1fr);
+    padding-block: 80px;
+  }
+  .hour--first .hour__inner {
+    padding-block: 40px 72px;
+  }
+  .hour__inner::before,
+  .now {
+    display: none;
+  }
+  .hour__time {
+    width: auto;
+    margin-bottom: 18px;
+    padding: 0 0 0 22px;
+    text-align: left;
+  }
+  .hour__time::after {
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+  .stats > div + div {
+    border-left: 0;
+  }
+  .stats > div:nth-child(even) {
+    border-left: 1px solid var(--band-rule);
+  }
+  .stats > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .lede {
+    font-size: 18.5px;
+  }
+  .cta {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .command {
+    justify-content: space-between;
+  }
+  .evening__inner {
+    padding-block: 88px 72px;
+  }
+  .evening__inner,
+  .footer {
+    padding-left: var(--gutter);
+  }
+  .footer {
+    background-position: var(--gutter) 0;
+    background-size: calc(100% - 2 * var(--gutter)) 1px;
+  }
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .maker {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 24px;
+    margin-top: 80px;
+  }
+  .maker__photo {
+    width: 72px;
+    height: 72px;
+  }
+  .evening .evening__second {
+    margin-top: 80px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none;
+    transition: none;
+  }
+}
