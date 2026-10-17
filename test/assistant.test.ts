@@ -524,6 +524,46 @@ test('the Codex adapter turns commands, connector calls and searches into steps'
   assert.equal(codexAdapter.parse(item('item.started', { id: 'f', type: 'file_change', changes: [] })), null);
 });
 
+test('a busy service, a model the account lacks and a plan without the CLI each fail in a sentence that says so', () => {
+  const claudeFailed = (result: string) =>
+    claudeAdapter.parse(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result }))!.done;
+  assert.deepEqual(claudeFailed('API Error: Repeated 529 Overloaded errors'), { ok: false, error: 'Claude is busy right now', cause: 'busy' });
+  assert.deepEqual(claudeFailed('Opus is experiencing high load, please use /model to switch to Sonnet'), {
+    ok: false,
+    error: 'Claude is busy right now',
+    cause: 'busy',
+  });
+  assert.deepEqual(claudeFailed("There's an issue with the selected model (claude-opus-0). It may not exist or you may not have access to it."), {
+    ok: false,
+    error: "your Claude account can't use the model “claude-opus-0”",
+    cause: 'model',
+  });
+
+  // Codex puts the server's JSON error object in the event's message, on both the error and the failed turn.
+  const server = (message: string) => JSON.stringify({ type: 'error', status: 400, error: { type: 'invalid_request_error', message } });
+  const notSupported = server("The 'gpt-0' model is not supported when using Codex with a ChatGPT account.");
+  const expected = { ok: false, error: "your ChatGPT plan or workspace doesn't include the model “gpt-0”", cause: 'model' };
+  assert.deepEqual(codexAdapter.parse(JSON.stringify({ type: 'error', message: notSupported }))!.done, expected);
+  assert.deepEqual(codexAdapter.parse(JSON.stringify({ type: 'turn.failed', error: { message: notSupported } }))!.done, expected);
+  assert.deepEqual(
+    codexAdapter.parse(JSON.stringify({ type: 'error', message: 'To use Codex with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus.' }))!.done,
+    { ok: false, error: "your ChatGPT plan doesn't include the Codex CLI, which needs Plus or higher", cause: 'plan' },
+  );
+  assert.deepEqual(codexAdapter.parse(JSON.stringify({ type: 'error', message: 'Selected model is at capacity. Please try a different model.' }))!.done, {
+    ok: false,
+    error: 'Codex is busy right now',
+    cause: 'busy',
+  });
+
+  // Anything else is as the CLI said it, out of its wrapping.
+  assert.deepEqual(codexAdapter.parse(JSON.stringify({ type: 'error', message: server('Your input exceeds the context window.') }))!.done, {
+    ok: false,
+    error: 'Your input exceeds the context window.',
+  });
+  assert.deepEqual(codexAdapter.parse(JSON.stringify({ type: 'error', message: 'stream disconnected' }))!.done, { ok: false, error: 'stream disconnected' });
+  assert.deepEqual(claudeFailed('Rate limited'), { ok: false, error: 'Rate limited' });
+});
+
 test("the Claude adapter tells a subagent's lines from the agent's, and a handoff waits for word of how it ended", () => {
   // The call that hands the work over, then the subagent's own lines, under the call's id.
   assert.deepEqual(claudeAdapter.parse(CALLED('toolu_a', 'Agent', { description: 'Read the inbox', prompt: '…', subagent_type: 'general-purpose' })), {

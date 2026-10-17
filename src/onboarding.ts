@@ -79,6 +79,22 @@ export const SESSION_MODEL: Record<CliName, { model: string | null; effort: stri
 };
 
 /**
+ * Codex's model when the account can't use the one its catalog put first. An
+ * Enterprise or Edu workspace keeps GPT-6.1 Sol off until an admin turns it
+ * on, and Luna too; GPT-6 Sol is listed for every plan with the CLI, with no
+ * such step, though no page says outright that it is on. Measured on 2026-10-17
+ * against GPT-6.1 Sol on the identity and calendar questions: the same answers,
+ * twice, as quickly. Nothing lighter: GPT-6 Luna called someone else's
+ * calendar the user's own, and a wrong answer on the card is worse than none.
+ *
+ * Claude Code has no such fallback: every plan that includes it includes Opus,
+ * and a workspace whose admin turned Opus off gets an allowed model from Claude
+ * Code itself. A busy service is no reason to drop a model either: it passes,
+ * and the card says so and offers to try again.
+ */
+export const CODEX_FALLBACK_MODEL = 'gpt-6-sol';
+
+/**
  * What a Claude Code session may call: reads by name, and nothing that writes
  * but what `gh` and `acli` can, which the prompt holds to reading as the
  * assistant's does. Connectors the user hasn't connected are simply absent.
@@ -250,6 +266,7 @@ export class Onboarding {
   private readonly spawnFn: typeof spawn;
   private readonly gates = new Map<string, CodexGate>();
   private codexOff: Promise<string[]> | null = null;
+  /** The model Codex's sessions run on: the catalog's first until one fails for the account, then `CODEX_FALLBACK_MODEL`. */
   private codexModel: Promise<string | null> | null = null;
   /** What looking for the CLIs found, once the screen has asked. Not kept: what is installed changes. */
   private detected: CliReport | null = null;
@@ -726,6 +743,16 @@ export class Onboarding {
             ok: false,
             error: `${cli} exited with code ${code}${stderr.length ? `: ${stderr.join('').trim().split('\n').slice(-3).join(' ')}` : ''}`,
           });
+      // A model the account can't use: ask again on the one it can, once, and
+      // keep to it for every session after. Started before this one is over, so
+      // the card goes on looking rather than failing in between.
+      if (cli === 'codex' && outcome.cause === 'model' && model !== CODEX_FALLBACK_MODEL && this.file?.proposals[question.id] === record) {
+        this.codexModel = Promise.resolve(CODEX_FALLBACK_MODEL);
+        void this.ask(question, ctx, prompt, resume, conversation)
+          .catch((err: unknown) => console.error(`[daily-focus] setup could not ask again: ${(err as Error).message}`))
+          .finally(ended);
+        return;
+      }
       void this.settle(question.id, record, outcome.ok ? { ok: true, reply: outcome.reply ?? said } : outcome)
         .catch((err: unknown) => console.error(`[daily-focus] setup could not keep what it found: ${(err as Error).message}`))
         .finally(ended);

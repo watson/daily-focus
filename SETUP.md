@@ -32,8 +32,8 @@ on your login shell's PATH, then where their installers put them, and checks tha
 the one it finds is logged in. With one ready it doesn't ask: it uses Codex if
 that is ready, otherwise Claude Code, and says so in a line you can **Change**.
 With neither ready, it says what is wrong with each and the command that fixes it
-(`codex login`, `claude auth login`), links to the installers, and takes the path
-to one it couldn't find.
+(`codex login`, `claude auth login`), links to the installers with the plan each
+needs, and takes the path to one it couldn't find.
 
 Then it asks a few questions, one at a time, and each comes with the answer you
 most likely want already ticked: confirm it or change it. A list can be left
@@ -67,11 +67,14 @@ card holds.
 
 The sessions run on the newest flagship model at low effort (Opus for Claude Code,
 the first model in Codex's own list for Codex), which measured as fast as the
-lighter models and, unlike them, told your calendars from other people's. They
-only read, in an empty directory. Claude Code is given read tools by name, and
-under Codex every connector write is refused, drafts included; `gh` and `acli` are
-held to reading by their instructions, as
-[the assistant's](#what-the-assistant-can-do) are.
+lighter models and, unlike them, told your calendars from other people's. When
+your ChatGPT plan or workspace can't use Codex's first model, as an Enterprise or
+Edu workspace can't until an admin turns GPT-6.1 Sol on, they run on GPT-6 Sol,
+which answered the same; never on anything lighter. When Claude or Codex is busy,
+the card says so and offers to try again. They only read, in an empty directory.
+Claude Code is given read tools by name, and under Codex every connector write is
+refused, drafts included; `gh` and `acli` are held to reading by their
+instructions, as [the assistant's](#what-the-assistant-can-do) are.
 
 Nothing is saved until the last step, **Write my first brief**. It saves the
 settings, writes your source list from the answers (unless you already have one,
@@ -134,7 +137,9 @@ The dashboard runs the agent through a coding-agent CLI you already have. Instal
 and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
 [Claude Code](https://code.claude.com/docs), and choose it on the setup screen or
 as **Write the brief with** under **Morning agent** in the settings
-(`DAILY_FOCUS_AGENT`).
+(`DAILY_FOCUS_AGENT`). Each needs a paid plan: ChatGPT Plus or higher for Codex,
+whose Free and Go plans have it only in the desktop app, and any paid Claude plan
+for Claude Code.
 
 Each scheduled morning at 07:00 your time the dashboard starts the agent through
 that CLI, headless, in the store, and the brief appears when it finishes. Set

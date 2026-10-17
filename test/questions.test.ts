@@ -58,9 +58,20 @@ test('the CLI card offers the ready ones, Codex first, and says what is wrong wi
   assert.equal(none.choices.length, 0);
   assert.equal(none.problem?.blocking, true);
   assert.equal(none.problem?.command, 'codex login');
-  assert.match(none.problem!.message, /Codex is installed but not logged in\. Claude Code isn't installed\./);
+  assert.equal(none.problem!.message, "Codex is installed but not logged in. Claude Code isn't installed. Claude Code needs a paid Claude plan. Run this in a terminal, then check again.");
   assert.deepEqual(none.problem!.links!.map((l) => l.label), ['Install Claude Code'], 'only for the one missing');
   assert.deepEqual(none.fields.map((f) => f.id), ['path']);
+
+  const missing = question('cli').card(ctx({ clis: report(MISSING('Claude Code'), MISSING('Codex')) }));
+  assert.equal(
+    missing.problem!.message,
+    'Neither Codex nor Claude Code is installed. Codex needs ChatGPT Plus or higher; Claude Code needs a paid Claude plan. Install one, log in once in a terminal, then check again.',
+  );
+  assert.deepEqual(missing.problem!.links!.map((l) => l.label), ['Install Codex', 'Install Claude Code']);
+  const claudeOut: CliFound = { path: '/a/claude', version: '2.1.0', onPath: true, ready: false, problem: 'Claude Code is installed but not logged in', fix: 'claude auth login' };
+  const out = question('cli').card(ctx({ clis: report(claudeOut, loggedOut) }));
+  assert.equal(out.problem!.message, 'Codex and Claude Code are installed, but neither is logged in. Run this in a terminal, then check again.');
+  assert.equal(out.problem!.command, 'codex login');
 
   assert.deepEqual(question('cli').card(ctx({ clis: null })), question('cli').card(ctx({ clis: null })), 'nothing to show until it has looked');
   assert.equal(question('cli').summary(chosen({ cli: ['claude'] }), ctx()), 'Claude Code writes your brief.');

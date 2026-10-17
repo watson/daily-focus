@@ -304,7 +304,8 @@ test('with no CLI ready, the card links to the installers and takes a path', () 
     card: {
       ...step('x').card,
       problem: {
-        message: "Codex isn't installed. Claude Code isn't installed. Install one, log in once in a terminal, then check again.",
+        message:
+          'Neither Codex nor Claude Code is installed. Codex needs ChatGPT Plus or higher; Claude Code needs a paid Claude plan. Install one, log in once in a terminal, then check again.',
         command: null,
         blocking: true,
         links: [
