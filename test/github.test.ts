@@ -44,7 +44,7 @@ test('SAML refusals are recognised by extension or by message', () => {
 function node(overrides: Partial<RawPullRequest> = {}): RawPullRequest {
   return {
     number: 3421,
-    title: 'Fix session replay memory leak',
+    title: 'Fix rounding in gift card balances',
     url: 'https://github.com/acme/webapp/pull/3421',
     isDraft: false,
     createdAt: '2026-09-10T09:00:00Z',

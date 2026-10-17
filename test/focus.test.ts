@@ -7,18 +7,18 @@ test('parses frontmatter and prose', () => {
   const focus = parseFocus(
     [
       '---',
-      'objective: Ship the Langdbroker browser SDK',
-      'blocker: Functionality is broken after the staging changes',
+      'objective: Launch gift cards before the holiday sale',
+      'blocker: Balances round wrong after the staging changes',
       '---',
       '',
-      'Restore functionality first; dogfooding is blocked until it works.',
+      'Fix the rounding first; checkout can’t take a gift card until it’s right.',
       '',
     ].join('\n'),
   );
 
-  assert.equal(focus.objective, 'Ship the Langdbroker browser SDK');
-  assert.equal(focus.blocker, 'Functionality is broken after the staging changes');
-  assert.equal(focus.note, 'Restore functionality first; dogfooding is blocked until it works.');
+  assert.equal(focus.objective, 'Launch gift cards before the holiday sale');
+  assert.equal(focus.blocker, 'Balances round wrong after the staging changes');
+  assert.equal(focus.note, 'Fix the rounding first; checkout can’t take a gift card until it’s right.');
   assert.equal(focus.agentOnly, null);
 });
 
@@ -58,9 +58,9 @@ test('the marker is recognised regardless of case and spacing', () => {
 });
 
 test('a prose-only file still yields an objective', () => {
-  const focus = parseFocus('Ship the Langdbroker browser SDK\n\nRestore it first.');
-  assert.equal(focus.objective, 'Ship the Langdbroker browser SDK');
-  assert.equal(focus.note, 'Restore it first.');
+  const focus = parseFocus('Launch gift cards before the holiday sale\n\nFix the rounding first.');
+  assert.equal(focus.objective, 'Launch gift cards before the holiday sale');
+  assert.equal(focus.note, 'Fix the rounding first.');
 });
 
 test('tolerates quotes, unknown keys and a missing blocker', () => {

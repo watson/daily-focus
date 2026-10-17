@@ -26,7 +26,7 @@ function render(overrides: Partial<ResolvedItem> = {}): HTMLElement {
     id: 'github:pr:acme/webapp#3421',
     source: 'github',
     kind: 'task',
-    title: 'Land the session replay fix',
+    title: 'Land the gift card rounding fix',
     url: 'https://github.com/acme/webapp/pull/3421',
     status: 'open',
     notes: [],
@@ -48,7 +48,7 @@ test('a GitHub row names its organisation and repository ahead of the title', ()
   // Inside the link, so the address and the title are one target.
   const title = byClass(node, 'item__title')[0];
   assert.ok(title);
-  assert.equal(title.textContent, 'acme/webapp Land the session replay fix');
+  assert.equal(title.textContent, 'acme/webapp Land the gift card rounding fix');
 });
 
 test('the repository comes off the URL, not the id', () => {

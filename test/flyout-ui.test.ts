@@ -71,7 +71,7 @@ test('a pull request: repo#number ahead of the title, linked', () => {
     account: 'alice',
     repo: 'acme/webapp',
     number: 3421,
-    title: 'Fix session replay memory leak',
+    title: 'Fix rounding in gift card balances',
     url: 'https://github.com/acme/webapp/pull/3421',
     isDraft: false,
     createdAt: NOW,
