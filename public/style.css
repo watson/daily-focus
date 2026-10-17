@@ -239,9 +239,10 @@ a:hover {
  * viewport past each edge, since the page's own margins keep the content in.
  * Behind the content at `z-index: -1`, which in the root stacking context is
  * above the page colour and below everything in flow — so a sheet that sits on
- * it, like the agenda's, is simply drawn on top. On Today it runs on for a
- * while below the tabs and the masthead's own band runs up to meet it, so
- * nothing shows at the seam whatever sits between them.
+ * it, like the agenda's, is simply drawn on top. On Today the morning's
+ * masthead paints its own band all the way up to the top of the page, so the
+ * banners between the tabs and the objective sit on navy however many there
+ * are, and there is no seam for them to fall through.
  */
 .band {
   position: relative;
@@ -257,10 +258,6 @@ a:hover {
   right: -100vw;
   background: var(--band);
   z-index: -1;
-}
-/* Only while Today has a masthead to meet: before the first brief there is none, and the band ends at the tabs. */
-body[data-view='today']:has(.today__masthead) .band::before {
-  bottom: -56px;
 }
 .band :focus-visible,
 .today__masthead :focus-visible {
@@ -842,9 +839,9 @@ body[data-view='tickets'] #brief-refresh {
 
 /*
  * The rest of the morning's masthead, on the band with the date. Its band is
- * its own pseudo-element (see `.band`), run upward to meet the tabs' so the
- * join is seamless, and it keeps a clear margin under the agent's note so the
- * last line never sits on the edge.
+ * its own pseudo-element (see `.band`), run up past the top of the page so it
+ * and the tabs' are one navy whatever sits between them, and it keeps a clear
+ * margin under the agent's note so the last line never sits on the edge.
  */
 .today__masthead {
   position: relative;
@@ -852,7 +849,54 @@ body[data-view='tickets'] #brief-refresh {
   color: var(--band-ink);
 }
 .today__masthead::before {
-  top: -56px;
+  top: -9999px;
+}
+
+/*
+ * A notice about the morning — the agent at work, a brief gone stale, a run
+ * that failed — is part of its masthead, so on Today it is drawn in the band's
+ * materials: the stats sheet's translucent white, the band's rule, its light
+ * ink. A sheet of paper laid on the band read as something from another page.
+ * The tone keeps its bar; the icons take the band's steps of red and amber.
+ */
+body[data-view='today']:has(.today__masthead) .banner {
+  background: var(--band-sheet);
+  border-color: var(--band-rule);
+  color: #d9deea;
+}
+body[data-view='today']:has(.today__masthead) .banner--critical {
+  border-left-color: var(--band-critical);
+}
+body[data-view='today']:has(.today__masthead) .banner--critical .banner__icon {
+  color: var(--band-critical);
+}
+body[data-view='today']:has(.today__masthead) .banner--warning {
+  border-left-color: var(--warning);
+}
+body[data-view='today']:has(.today__masthead) .banner--info {
+  border-left-color: var(--accent);
+}
+body[data-view='today']:has(.today__masthead) .banner--link:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+body[data-view='today']:has(.today__masthead) .banner .button {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: transparent;
+  color: var(--band-ink);
+}
+body[data-view='today']:has(.today__masthead) .banner .button:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+body[data-view='today']:has(.today__masthead) .banner a {
+  color: var(--band-ink);
+}
+body[data-view='today']:has(.today__masthead) .failure__facts {
+  color: var(--band-muted);
+}
+body[data-view='today']:has(.today__masthead) .failure__detail {
+  background: rgba(0, 0, 0, 0.28);
+  color: #d9deea;
 }
 .today__masthead + #sections {
   margin-top: 30px;
