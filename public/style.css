@@ -516,11 +516,15 @@ body[data-view='tickets'] #brief-refresh {
   margin: 0 auto;
 }
 
-/* A sheet of its own, one line tall, with a bar in the tone's colour. */
+/*
+ * A sheet of its own, one line tall, with a bar in the tone's colour. Its
+ * button is taller than its line, so the line is centred on the button rather
+ * than left at the top with the button's extra height beneath it.
+ */
 .banner {
   display: flex;
   gap: 10px;
-  align-items: flex-start;
+  align-items: center;
   padding: 10px 14px 10px 12px;
   margin-bottom: 10px;
   border: 1px solid var(--border);
@@ -536,6 +540,10 @@ body[data-view='tickets'] #brief-refresh {
   text-align: center;
   font-weight: 600;
   line-height: 1.5;
+}
+/* The fold's own line keeps the icon on its first line, since the facts open beneath it. */
+.failure__summary .banner__icon {
+  align-self: flex-start;
 }
 .banner--critical {
   border-left-color: var(--critical);
