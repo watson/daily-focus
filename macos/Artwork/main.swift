@@ -60,13 +60,16 @@ func run(_ tool: String, _ arguments: [String]) throws {
 
 // MARK: The icon
 
-// The dashboard's own blue, from public/style.css, darkening towards the bottom the
-// way light falls on a macOS icon.
-let iconTop = color(0x3B8EF0)
-let iconBottom = color(0x1D5DB4)
+// The dashboard's navy band, from public/style.css, lighter at the top the way light
+// falls on a macOS icon: dark enough at the bottom to be the band, light enough at
+// the top to keep an edge in a dark Dock. The bull is its amber accent.
+let iconTop = color(0x34437A)
+let iconBottom = color(0x1A2140)
+let iconBull = color(0xE0962A)
 
-/// A target: the thing a day is aimed at. Drawn on Apple's icon grid, a rounded
-/// square inset from the canvas with room for its shadow.
+/// A target: the thing a day is aimed at. The menu bar shows the same rings, as
+/// SF Symbols' `target`, in DailyFocus/Icon.swift. Drawn on Apple's icon grid, a
+/// rounded square inset from the canvas with room for its shadow.
 func drawIcon(_ canvas: NSRect) {
     let side = canvas.width
     let unit = side / 1024
@@ -95,7 +98,7 @@ func drawIcon(_ canvas: NSRect) {
     ring(290 * unit, 46, 0.38)
     ring(185 * unit, 46, 0.7)
     let dot = 78 * unit
-    NSColor.white.setFill()
+    iconBull.setFill()
     NSBezierPath(ovalIn: NSRect(x: center.x - dot, y: center.y - dot, width: dot * 2, height: dot * 2)).fill()
 }
 
