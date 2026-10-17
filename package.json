@@ -66,5 +66,8 @@
     "happy-dom": "20.14.5",
     "preact": "10.29.8",
     "typescript": "7.0.2"
+  },
+  "allowScripts": {
+    "esbuild": true
   }
 }
