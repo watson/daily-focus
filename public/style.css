@@ -684,6 +684,19 @@ body[data-view='tickets'] #brief-refresh {
   color: var(--ink-2);
   white-space: normal;
 }
+/* That line and Stop on one row; opened, the steps grow under the line and Stop stays put at the top. */
+.agent-run__live {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.agent-run__live > details {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-run__live > .button {
+  flex: none;
+}
 /* What the agent said along the way, one fold per message, under its first line. */
 .agent-run__messages {
   display: flex;

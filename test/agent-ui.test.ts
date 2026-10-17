@@ -137,10 +137,14 @@ test('a run still going offers Stop, shows its latest message open and the earli
   });
   const container = panel(going);
   assert.match(container.textContent!, /Writing a new brief, started/);
-  assert.ok(byClass(container, 'assistant__status--working').length > 0, 'the status line spins');
+  assert.equal(byClass(container, 'assistant__status--working').length, 0, 'one spinner on the panel, and it is the fold line\'s');
   assert.ok(buttonLabels(container).includes('Stop'));
   assert.equal(byClass(container, 'assistant__input').length, 0);
-  assert.match(container.textContent!, /What it is doing/);
+  // One section while it goes: the phase as its heading, and one row of the fold line with Stop beside it.
+  assert.doesNotMatch(container.textContent!, /What it is doing/);
+  assert.equal(byClass(container, 'agent-run__status').length, 0, 'no status line of its own: the heading is it');
+  assert.equal(byClass(container, 'flyout__label')[0]!.textContent, 'Writing a new brief, started 8 h ago');
+  assert.deepEqual(buttonLabels(byClass(container, 'agent-run__live')[0]!), ['Stop']);
   // All of it folds under one line that says what it is on, closed until opened.
   const work = byClass(container, 'agent-run__list--working')[0] as HTMLDetailsElement;
   assert.equal(work.open, false);
@@ -219,7 +223,7 @@ const WORKING: AgentStep[] = [
 test('a run that keeps its steps shows them as it works, with each subagent under the step that handed it work', () => {
   const going = run({ status: 'running', endedAt: null, report: 'Reading the prompt.', messages: ['Reading the prompt.'], steps: WORKING, resumable: false });
   const container = panel(going);
-  assert.match(container.textContent!, /What it is doing/);
+  assert.match(container.textContent!, /Writing a new brief, started/);
   assert.equal(byClass(container, 'agent-run__message').length, 0, 'the steps take the place of the message folds');
   const work = byClass(container, 'agent-run__list--working')[0] as HTMLDetailsElement;
   assert.equal(work.open, false, 'folded by default, as a coding agent folds its own transcript');
@@ -233,10 +237,10 @@ test('a run that keeps its steps shows them as it works, with each subagent unde
   assert.match(own[1]!, /Run a command.*cat prompt\.md/);
   assert.match(own[4]!, /Wait for its subagents/);
 
-  // A subagent at work is open on what it is doing; one that is done is folded, on what it did.
+  // Each subagent folds, at work on what it is doing and done on what it did, closed until opened.
   assert.deepEqual(handoffs(container), [
     ['Subagent: inbox1 step', false],
-    ['Subagent: calendarCalendar: list events', true],
+    ['Subagent: calendarCalendar: list events', false],
   ]);
   const inbox = byClass(container, 'agent-run__handoff')[0]!;
   assert.match(inbox.textContent!, /Gmail: search threads.*Three threads need you\./);
@@ -249,7 +253,7 @@ test('a run that keeps its steps shows them as it works, with each subagent unde
   assert.deepEqual(calls, ['toggleMessage r1:a1'], 'a toggle back to the default is forgotten');
 
   const empty = panel(run({ ...going, steps: [step('Hand part of it to a subagent', { detail: 'inbox', subagent: 'a1', state: 'running' })] }));
-  assert.deepEqual(handoffs(empty), [['Subagent: inboxstarting', true]]);
+  assert.deepEqual(handoffs(empty), [['Subagent: inboxstarting', false]]);
   assert.match(empty.textContent!, /Starting…/);
   assert.doesNotMatch(empty.textContent!, /Nothing yet/);
 });

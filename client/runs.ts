@@ -47,8 +47,8 @@ export function RunPanel({ run, state, ui, handlers }: { run: AgentRun; state: D
     el(
       'div',
       { class: 'flyout__body', ref: body, onScroll },
-      runStatus(run, now, briefLanded(run, state.brief?.generatedAt), handlers),
-      runReport(run, ui, handlers),
+      run.status === 'running' ? null : runStatus(run, now, handlers),
+      runReport(run, { landed: briefLanded(run, state.brief?.generatedAt), now }, ui, handlers),
       run.status === 'running' ? null : runConversation(run, busy, answering, enabled, ui, handlers, askInput),
       runList(run, runs, now, agent, handlers),
     ),
@@ -89,6 +89,13 @@ function describeWhen(value: string, now: Date): string {
   return `${named ? day : date && date.getFullYear() === now.getFullYear() ? formatShortDay(value) : formatDay(value)} at ${formatTime(value)}`;
 }
 
+/** What a running run's section needs to say besides its steps: the phase it is in, and how long it has been going. */
+interface Live {
+  /** The brief on the page landed during this run, so it is checking it and writing its report. */
+  landed: boolean;
+  now: Date;
+}
+
 /**
  * The report, and how the agent got there.
  *
@@ -98,8 +105,8 @@ function describeWhen(value: string, now: Date): string {
  * earlier ones fold away the same way. The reader's own folding wins over the
  * default, and survives the re-render every new message brings.
  */
-function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
-  if (run.steps?.length) return runWork(run, ui, handlers);
+function runReport(run: AgentRun, live: Live, ui: UiState, handlers: Handlers): JSX.Element {
+  if (run.steps?.length) return runWork(run, live, ui, handlers);
   const messages = run.messages ?? (run.report ? [run.report] : []);
   const running = run.status === 'running';
   // The report is the last message when the CLI has no final result of its own;
@@ -147,12 +154,7 @@ function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element 
     // Only its words are kept, so between them it is always composing the next.
     const latest = earlier.at(-1);
     const summary = `${latest ? firstLine(latest) : 'Starting'} · ${earlier.length} ${earlier.length === 1 ? 'message' : 'messages'}`;
-    return el(
-      'section',
-      { class: 'flyout__section' },
-      el('h3', { class: 'flyout__label' }, 'What it is doing'),
-      workFold(run, summary, [list, el('ol', { class: 'assistant__steps agent-run__steps' }, waitingLine(earlier.length > 0))], ui, handlers),
-    );
+    return liveSection(run, live, summary, [list, el('ol', { class: 'assistant__steps agent-run__steps' }, waitingLine(earlier.length > 0))], ui, handlers);
   }
   return el(
     'section',
@@ -180,16 +182,9 @@ function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element 
  * the report stands on its own and the way there folds away beneath it, less
  * the report itself.
  */
-function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
+function runWork(run: AgentRun, live: Live, ui: UiState, handlers: Handlers): JSX.Element {
   const running = run.status === 'running';
-  if (running) {
-    return el(
-      'section',
-      { class: 'flyout__section' },
-      el('h3', { class: 'flyout__label' }, 'What it is doing'),
-      workFold(run, workSummary(run), runSteps(run, run.steps, null, true, ui, handlers), ui, handlers),
-    );
-  }
+  if (running) return liveSection(run, live, workSummary(run), runSteps(run, run.steps, null, true, ui, handlers), ui, handlers);
   const last = run.steps.findLast((step) => step.by === null && step.kind === 'message');
   const steps = last && sameWords(last.text, run.report) ? run.steps.filter((step) => step !== last) : run.steps;
   const handoffs = steps.filter((step) => step.subagent).length;
@@ -213,6 +208,31 @@ function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
           runSteps(run, steps, null, false, ui, handlers),
         )
       : null,
+  );
+}
+
+/**
+ * The section a running run has in place of its report: the phase it is in as
+ * the heading, and one row under it with the fold of its work and Stop. One
+ * section rather than a status line above a section, since the header already
+ * says the run is going and when it started, and the heading and the fold line
+ * between them say the rest. Once the brief has landed the run is past writing
+ * it: what is left is the prompt's check of the file and the report, and the
+ * heading says so rather than claim a brief already on the page is still being
+ * written.
+ */
+function liveSection(run: AgentRun, live: Live, summary: string, content: ComponentChild, ui: UiState, handlers: Handlers): JSX.Element {
+  const phase = live.landed ? 'The brief is in; checking it and writing its report' : 'Writing a new brief';
+  return el(
+    'section',
+    { class: 'flyout__section' },
+    el('h3', { class: 'flyout__label' }, `${phase}, started ${relativeTime(run.startedAt, live.now)}`),
+    el(
+      'div',
+      { class: 'agent-run__live' },
+      workFold(run, summary, content, ui, handlers),
+      el('button', { type: 'button', class: 'button', onClick: () => handlers.stopAgent() }, 'Stop'),
+    ),
   );
 }
 
@@ -311,8 +331,9 @@ function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null,
 
 /**
  * A part of the work handed to a subagent: its name, and what it is doing now
- * or how much it did, over a fold of its own steps. Open while it works, unless
- * the reader closed it; the reader's choice survives each new step.
+ * or how much it did, over a fold of its own steps. Closed until the reader
+ * opens it, as the run's own work is; the reader's choice survives each new
+ * step, and closing it again is forgotten.
  */
 function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep, ui: UiState, handlers: Handlers, depth: number, index: number): JSX.Element {
   const id = step.subagent!;
@@ -328,8 +349,7 @@ function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep,
         : 'starting'
       : `${calls} ${calls === 1 ? 'step' : 'steps'}`;
   const key = `${run.id}:${id}`;
-  const fallback = step.state === 'running';
-  const open = ui.messageOpen.value.has(key) ? ui.messageOpen.value.get(key) : fallback;
+  const open = ui.messageOpen.value.get(key) ?? false;
   return el(
     'li',
     { key: index, class: 'assistant__step agent-run__handoff', 'data-state': step.state },
@@ -340,7 +360,7 @@ function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep,
         // As the message folds do: a toggle back to the default is forgotten.
         onToggle: (event: Event) => {
           const isOpen = (event.currentTarget as HTMLDetailsElement).open;
-          handlers.toggleMessage(key, isOpen === fallback ? null : isOpen);
+          handlers.toggleMessage(key, isOpen ? true : null);
         },
       },
       el(
@@ -359,26 +379,8 @@ function sameWords(a: string, b: string): boolean {
   return a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
 }
 
-/**
- * The one line under the header that says how the run went, and Stop while it
- * goes. Once the brief has landed the run is past writing it: what is left is
- * the prompt's check of the file and the report, and the line says so rather
- * than claim a brief that is already on the page is still being written.
- */
-function runStatus(run: AgentRun, now: Date, landed: boolean, handlers: Handlers): JSX.Element {
-  if (run.status === 'running') {
-    return el(
-      'p',
-      { class: 'agent-run__status' },
-      el(
-        'span',
-        { class: 'assistant__status--working' },
-        `${landed ? 'The brief is in; checking it and writing its report' : 'Writing a new brief'}, started ${relativeTime(run.startedAt, now)}.`,
-      ),
-      ' ',
-      el('button', { type: 'button', class: 'button', onClick: () => handlers.stopAgent() }, 'Stop'),
-    );
-  }
+/** The one line under the header that says how a finished run went. A running one has `liveSection` instead. */
+function runStatus(run: AgentRun, now: Date, handlers: Handlers): JSX.Element {
   const took = runDuration(run);
   if (run.status === 'done') {
     return el('p', { class: 'agent-run__status' }, `Finished at ${formatTime(run.endedAt)}${took ? `, in ${took}` : ''}.`);
