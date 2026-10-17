@@ -29,29 +29,21 @@ moves it there. Add `--profile personal` to see the other profile, which briefs
 home, family and paperwork instead of work. Stop it with Ctrl+C, and the store goes
 with it.
 
-To use your own data:
+To use your own data on a Mac, download `Daily-Focus.dmg` from the
+[latest release](https://github.com/watson/daily-focus/releases/latest) and drag the
+app to Applications. It lives in the menu bar, keeps the dashboard running, tells
+you when a new brief arrives, and updates itself. It carries everything it needs,
+Node.js included. On any other computer, or to run it from a terminal:
 
 ```sh
 npx daily-focus
 ```
 
-A new store opens on the setup screen: a few questions, one at a time, each with
-the likely answer already ticked. Once you've chosen the coding-agent CLI that writes
-the brief (Claude Code or Codex), it looks into the rest for you, such as which of
-your calendars are work ones, so most answers are a click. Everything stays on the
-settings page afterwards.
-To keep it running in the background on macOS, install it and run it as a service:
-
-```sh
-npm install -g daily-focus
-daily-focus service
-```
-
-Or, on a Mac, let the menu bar app keep it running: it starts the dashboard at login,
-shows the brief's age at a glance, and tells you when a new brief arrives. It carries
-everything it needs, Node.js included, and installs a newer dashboard from its menu
-without a new download of the app. See
-[SETUP.md](SETUP.md#keep-the-dashboard-running).
+Either way, a new store opens on the setup screen: a few questions, one at a time,
+each with the likely answer already ticked. Once you've chosen the coding-agent CLI
+that writes the brief (Claude Code or Codex), it looks into the rest for you, such
+as which of your calendars are work ones, so most answers are a click. Everything
+stays on the settings page afterwards.
 
 [SETUP.md](SETUP.md) covers each step, the integrations and every setting. The
 dashboard runs locally; nothing about your day leaves your machine except through
@@ -153,7 +145,7 @@ reviewer is handed back as text for you to post. It is told never to send, post,
 edit a file, and it has no checkout: fixing conflicts or a build is work for a real
 coding session, and this is for the questions you would otherwise answer by opening
 six tabs. How much of that the CLI itself enforces differs between Claude Code and
-Codex; see [What the assistant can do](SETUP.md#what-the-assistant-can-do).
+Codex; see [What the assistant can do](SETUP.md#what-the-agent-and-the-assistant-can-do).
 
 ## The morning agent
 
@@ -171,7 +163,7 @@ open while it works.
 Every run is recorded. Click "updated … ago" to open the latest: its report says what
 it wrote and what it could not reach, how it got there is folded away beneath,
 and you can ask it why it did what it did, or to look again, in the same session. Earlier runs are folded away below. See
-[SETUP.md](SETUP.md#connect-your-morning-agent).
+[SETUP.md](SETUP.md#the-morning-brief).
 
 ## Keyboard shortcuts
 

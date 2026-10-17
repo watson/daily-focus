@@ -2,112 +2,135 @@
 
 [Back to the README](README.md)
 
-Daily Focus needs Node.js 22.18 or newer; Node 24 is recommended. The Mac app is
-the exception: it carries its own. GitHub, Jira,
-and the live macOS calendar are optional. The morning brief is written by an agent
-the dashboard runs for you through a coding-agent CLI.
+Daily Focus runs on your own computer. Each morning it has Claude Code or Codex,
+whichever you already use, write a brief of your day, and it keeps the brief beside
+live boards for your pull requests and Jira tickets. This guide goes from installing
+it to your first brief, then covers each integration and every setting.
 
-## Start the dashboard
+You need:
+
+- **Claude Code or Codex**, installed and logged in: [Claude Code](https://code.claude.com/docs)
+  or the [Codex CLI](https://developers.openai.com/codex/cli). It writes the brief,
+  and answers when you ask about an item. Each needs a paid plan: any paid Claude
+  plan for Claude Code, and ChatGPT Plus or higher for Codex, whose Free and Go
+  plans have it only in the desktop app.
+- **A Mac with Apple silicon** for the menu bar app, or **Node.js 22.18 or newer**
+  (Node 24 is recommended) on any other computer.
+- Optionally, the GitHub CLI (`gh`) for the pull request board, and the Atlassian
+  CLI (`acli`) for the Jira board.
+
+## Install
+
+### On a Mac: the menu bar app
+
+The app is the simplest way on a Mac. It carries everything it runs, Node.js and
+the calendar helper included, keeps the dashboard running, and updates itself. It
+needs Apple silicon and macOS 13.5 or newer.
+
+1. Download `Daily-Focus.dmg` from the
+   [latest release](https://github.com/watson/daily-focus/releases/latest).
+2. Open it, drag **Daily Focus** to Applications, and open it from there.
+3. The app has no window and no Dock icon. Click the bullseye in the menu bar and
+   choose **Open Daily Focus**: the dashboard opens in your browser, on the setup
+   screen.
+4. Tick **Open at Login** in the same menu, so the dashboard is running when the
+   morning brief is due.
+
+See [The menu bar app](#the-menu-bar-app) for the rest of its menu and how it
+updates.
+
+### With Node.js
+
+On any computer with Node.js 22.18 or newer:
 
 ```sh
 npx daily-focus
 ```
 
 That starts the dashboard and opens [localhost:4321](http://127.0.0.1:4321) in your
-browser. To keep it running in the background on macOS, install it and run it as a
-service instead:
+browser, on the setup screen. It runs only as long as that terminal does, and the
+morning brief is written only while it runs. On a Mac without the app, install it
+and run it in the background instead:
 
 ```sh
 npm install -g daily-focus
 daily-focus service
 ```
 
-From a checkout of this repo, `npm install` and then `npm run service` does the same,
-and `npm start` runs it in the terminal. Each `daily-focus <command>` below is
-`npm run <command>` in a checkout, with two differences: `build-calendar` is
-`build:calendar`, and flags go after `--`, as in `npm run audit -- --against <file>`.
+See [A LaunchAgent](#a-launchagent). [Commands](#commands) lists the rest.
 
-A new store opens on the setup screen. It first looks for Codex and Claude Code:
-on your login shell's PATH, then where their installers put them, and checks that
-the one it finds is logged in. With one ready it doesn't ask: it uses Codex if
-that is ready, otherwise Claude Code, and says so in a line you can **Change**.
-With neither ready, it says what is wrong with each and the command that fixes it
-(`codex login`, `claude auth login`), links to the installers with the plan each
-needs, and takes the path to one it couldn't find.
+### Just looking
 
-Then it asks a few questions, one at a time, and each comes with the answer you
-most likely want already ticked: confirm it or change it. A list can be left
-unticked and a field empty. Two questions can be left, by a button that says what
-that does: **Decide later** for the agent, and **Leave this out** for who you are.
-**Change** reopens an earlier answer.
+To look around on invented sample data first, without connecting anything:
+
+```sh
+npx daily-focus --demo
+```
+
+See [Try it](README.md#try-it) in the README.
+
+## The setup screen
+
+A new dashboard opens on the setup screen. It first looks for Codex and Claude
+Code, on your login shell's `PATH` and where their installers put them, and checks
+that each is logged in. If one is ready, it uses it, Codex first, and says so in a
+line you can **Change**. If neither is, it says what is wrong with each and the
+command that fixes it, such as `codex login` or `claude auth login`, links to the
+installers with the plan each needs, and takes the path to one it couldn't find.
+
+Then it asks a few questions, one at a time, each with the answer you most likely
+want already ticked:
 
 1. **Who writes the brief**, only when it couldn't pick for you.
 2. **What it briefs**: your work, or your personal life. See
-   [A personal instance](#a-personal-instance) for running both.
+   [A personal instance](#a-personal-instance) to run both.
 3. **When it runs**, and on which days.
 4. **Who you are**: your name as meeting notes write it, your email, and each
    GitHub account `gh` is logged in to, with what it's for.
-5. **What else to show**: the pull request board and the Jira board, each with
-   its status.
-6. **Which calendars** the brief reads, which the live agenda follows too.
-7. **Your objective**, which the agent ranks the day against, and what's in the
-   way. It suggests a few from what you've been doing, when something stands
-   out, and writes one up from whatever you tell it, however rough.
+5. **What else to show**: the pull request board and the Jira board.
+6. **Which calendars** the brief reads. The live agenda follows them too.
+7. **Your objective**, which the brief ranks your day against, and what's in the
+   way. It suggests a few from what you've been doing, and writes one up from
+   whatever you tell it, however rough.
 
-The [assistant](#ask-the-assistant) isn't asked about: it comes on with the CLI
-that writes the brief, unless you've set it already.
+While you answer, Claude Code or Codex works on the questions ahead in the
+background. It reads `gh`, your mail and your calendars to tell work from personal,
+so most answers are a click. Each card says in a sentence why it ticked what it did;
+reply under it with what to change, such as "also the on-call rota", and it tries
+again. **Change** reopens an earlier answer. Two questions can be skipped: **Decide
+later** leaves the brief without an agent for now, and **Leave this out** leaves out
+who you are.
 
-Once you've said what it briefs, the CLI looks into the others in the background,
-one short session each, so the slow ones are ready when you get to them. It reads
-`gh`, your mail and your calendars to tell work from personal, and says in a
-sentence why it ticked what it did. Reply under that sentence with what to change,
-such as "also the on-call rota", and it tries again, answering in the same place.
-Continue before it has finished and it asks first, then stops and keeps what the
-card holds.
+These sessions only read, in an empty directory. They run on the newest flagship
+model at low effort, which measured as fast as the lighter models and, unlike them,
+told your calendars from other people's. When your ChatGPT plan or workspace can't
+use Codex's first model, as an Enterprise or Edu workspace can't until an admin
+turns GPT-6.1 Sol on, they run on GPT-6 Sol, which answered the same; never on
+anything lighter. When Claude or Codex is busy, the card says so and offers to try
+again.
 
-The sessions run on the newest flagship model at low effort (Opus for Claude Code,
-the first model in Codex's own list for Codex), which measured as fast as the
-lighter models and, unlike them, told your calendars from other people's. When
-your ChatGPT plan or workspace can't use Codex's first model, as an Enterprise or
-Edu workspace can't until an admin turns GPT-6.1 Sol on, they run on GPT-6 Sol,
-which answered the same; never on anything lighter. When Claude or Codex is busy,
-the card says so and offers to try again. They only read, in an empty directory.
-Claude Code is given read tools by name, and under Codex every connector write is
-refused, drafts included; `gh` and `acli` are held to reading by their
-instructions, as [the assistant's](#what-the-assistant-can-do) are.
+Nothing is saved until the last step. It shows the source list your answers add up
+to, which the agent will read each morning, and its button, **Write my first
+brief**, saves your settings, the source list (unless you already have one, which
+it leaves alone) and your objective, and runs the morning agent once while you
+watch. If you left the agent for later, the button is **Finish setup**, and no
+brief is written yet. The [assistant](#the-assistant) comes on with the same tool
+as the agent, unless you had already set it.
 
-Nothing is saved until the last step, **Write my first brief**. It saves the
-settings, writes your source list from the answers (unless you already have one,
-which it leaves alone) and your objective, restarts the dashboard to apply them,
-and runs the agent once while you watch.
+Every answer can be changed afterwards on the settings page: the gear in the
+header, or <kbd>,</kbd>.
 
-Everything in it stays on the settings page afterwards: the gear in the header, or
-<kbd>,</kbd>. The dashboard keeps its files in `~/.daily-focus/`, and links the
-prompt and schema there each time it starts.
+## Your objective and sources
 
-`daily-focus service` runs the dashboard in the background on macOS. It starts it
-now, at every login, and again if it crashes, so the dashboard is up when the morning
-agent is due. See [Keep the dashboard running](#keep-the-dashboard-running). On
-another system, or to watch the server in a terminal, run `daily-focus` and keep that
-terminal open while you use the dashboard. `daily-focus --help` lists the rest.
-
-If you'd rather write the files by hand, `daily-focus init` creates the store with
-templates for both. It preserves existing files, so you can safely run it again.
-For a personal store, run `daily-focus init --profile personal`: it saves the
-profile in the store's settings, so the templates, the prompt and the dashboard
-agree.
-
-## Set your objective and sources
-
-Both are on the settings page: **Your objective**, and **Where the agent looks**.
-They are kept as two files in the store, which you can also edit by hand:
+Both are on the settings page, as **Your objective** and **Where the agent looks**.
+They are two files in the store, `~/.daily-focus`, which you can also edit by hand:
 
 | File | What to put in it |
 |---|---|
-| `~/.daily-focus/focus.md` | Your current objective, blockers, and context that should guide priorities. |
-| `~/.daily-focus/sources.md` | Your accounts, calendars, and the places your agent should look for updates. |
+| `focus.md` | Your current objective, what's blocking it, and context that should guide priorities. |
+| `sources.md` | Your accounts, calendars, and the places the agent should look for updates. |
 
-For example, `focus.md` might start with:
+`focus.md` might start like this:
 
 ```markdown
 ---
@@ -117,108 +140,88 @@ blocker: Reproduce the staging failure
 Start with the staging repro before picking up new work.
 ```
 
-Leave the objective blank between objectives; the dashboard shows a quiet reminder
-and the agent ranks by urgency alone. To turn the feature off entirely, delete
-`focus.md`.
+Leave the objective blank between objectives: the dashboard shows a quiet reminder,
+and the brief is ranked by urgency alone. Delete `focus.md` to turn objectives off.
 
-Add `<!-- agent-only -->` on its own line before context you don't want displayed.
-The agent reads that section, and the board never shows it; only the editor on the
-settings page does. The source list is likewise shown only in its editor.
+Put `<!-- agent-only -->` on a line of its own before context you want the agent to
+read but the board not to show: only the editor on the settings page shows what
+follows it. The source list, likewise, is shown only in its editor.
 
-The dashboard saves a file only if it hasn't changed since the editor opened it, so
-an edit made by hand meanwhile is never overwritten: the editor says so, and offers
-to load the new version.
+The dashboard saves a file only if it hasn't changed since the editor opened it.
+If you edited it by hand in the meantime, the editor says so and offers to load
+your version.
 
-Keep real names, account handles, and work details in this private store, outside git.
+To write both files by hand from the start, `daily-focus init` creates the store
+with a template for each, and `daily-focus init --profile personal` the personal
+ones. It never replaces a file that exists.
 
-## Connect your morning agent
+## The morning brief
 
-The dashboard runs the agent through a coding-agent CLI you already have. Install
-and log in to the [Codex CLI](https://developers.openai.com/codex/cli) or
-[Claude Code](https://code.claude.com/docs), and choose it on the setup screen or
-as **Write the brief with** under **Morning agent** in the settings
-(`DAILY_FOCUS_AGENT`). Each needs a paid plan: ChatGPT Plus or higher for Codex,
-whose Free and Go plans have it only in the desktop app, and any paid Claude plan
-for Claude Code.
+### When it runs
 
-Each scheduled morning at 07:00 your time the dashboard starts the agent through
-that CLI, headless, in the store, and the brief appears when it finishes. Set
-**Run it at** (`DAILY_FOCUS_AGENT_AT`) to another time, such as `06:30`. The dashboard has to be
-running at the time; if it wasn't, it runs the agent as soon as it is started that
-day, provided nothing has produced a brief for the day yet. It runs once a day,
-whatever became of the run: a failed morning is reported once, not retried every
-half minute. The days are Monday to Friday unless `DAILY_FOCUS_AGENT_DAYS` says
-otherwise; see [Match your working week](#match-your-working-week).
-**Run it at** set to `off` means the dashboard never starts a run on its own; the
-refresh icon still does. A new store's first brief always comes from the setup
-screen's last button, so the clock never runs the agent before you've told it where
-to look.
+The dashboard runs the agent at 07:00 your time, Monday to Friday. Change that under
+**Morning agent** in the settings: **Run it at** (`DAILY_FOCUS_AGENT_AT`), such as
+`06:30`, and **On these days** (`DAILY_FOCUS_AGENT_DAYS`), in cron weekday numbers:
+`1-5` for Monday to Friday, `0-4` for Sunday to Thursday, or `0,6` for weekends.
+With **Run it at** set to `off`, it runs only when you ask.
 
-"Your time" is the time zone of the browser you last looked at the dashboard
-in. The page tells the dashboard when it loads, reconnects or comes back into view,
-and when the browser's own zone changes, so a dashboard on a Mac at home follows
-you abroad as soon as you open it there. The dashboard also follows the Mac it runs
-on when that Mac changes time zones, which covers the morning after a flight before
-you have opened it. Whichever changed last wins, and the dashboard remembers it
-across restarts. Every date and time on the page is shown in that zone; a browser
-somewhere else says so under the page title.
+The dashboard has to be running. If it wasn't at that time, it runs the agent as
+soon as it starts that day. It runs once a day: the first run of the day, by the
+clock or by you and whatever became of it, is the day's run. So a run you start
+before the set time is the morning's, and a failed morning is reported once, not
+retried. The first brief always comes from the setup screen's last button, so the
+clock never runs the agent before you've told it where to look.
 
-Whichever way it starts, every run lands in the same place: the report it gives when
-it finishes, and a chat where you can ask it why it did what it did. See
-[The morning agent's runs](#the-morning-agents-runs).
+"Your time" is the time zone of the browser you last opened the dashboard in, or
+the Mac's, when the Mac it runs on changes zone; whichever changed last wins. So a
+dashboard on a Mac at home follows you abroad as soon as you open it there, and
+the Mac covers the morning after a flight before you have. Every time on the page
+is in that zone, and a browser somewhere else says so under the page title.
 
-The agent reaches your sources the way the CLI does:
+### Its runs
 
-- **Codex** runs in its workspace-write sandbox with network access, confined to the
-  store. Connectors from the Codex app are found through its plugin catalogue, and
-  every write through one is refused: a connector tool counts as a write unless it
-  is marked read-only. A command that needs to leave the sandbox, such as `gh`
-  switching accounts, is decided by your own Codex approval settings, as it would be
-  in your Codex. With nobody set to approve, the agent reports that restriction; with
-  Codex's automatic reviewer, the reviewer decides. The dashboard won't start a run
-  on a Codex older than 0.144.0, which would ignore the refusal of connector writes;
-  update Codex if a run fails saying so.
-- **Claude Code** may write `items.json` and nothing else in the store, and reach
-  its sources with only what `DAILY_FOCUS_AGENT_TOOLS` allows. The default covers
-  GitHub, Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat
-  and document connectors to the list by name, or the brief will report them as
-  unreachable. The default allows every Gmail tool, sending included, and `gh` and
-  `acli` can write as well as read; the agent's instructions forbid changing
-  anything. To narrow Gmail to reading, name its tools instead of the connector, as
-  [What the assistant can do](#what-the-assistant-can-do) shows, without the two
-  draft tools.
+The refresh icon beside "updated … ago" on the Today tab starts a run now, such as
+when the morning's brief is out of date by lunch. A run rewrites the brief from
+scratch. What you've marked done, snoozed or noted is kept, and the brief it
+replaces goes to the archive. While it runs, a banner says so and offers **Stop**;
+click the banner to watch. A run that fails that day stays as a warning until you
+dismiss it.
 
-Set `DAILY_FOCUS_AGENT_MODEL` and `DAILY_FOCUS_AGENT_EFFORT` if the CLI's own
-defaults are not what you want for a brief; a brief is worth a high effort. If the
-server can't find the CLI, set `DAILY_FOCUS_AGENT_BIN`.
+The agent reads your sources in parallel, each through a subagent of its own. While
+it runs, the panel says in one line what it is on and how many steps it has taken,
+beside a **Stop** button. Open that line to follow along: what it says, each
+command it runs and each thing it reads, with each subagent under the step that
+started it. Claude Code reports its subagents itself. Codex doesn't, so for a
+Codex run the dashboard reads them from Codex's own session files, under
+`~/.codex/sessions` or `$CODEX_HOME`, and only ever reads them.
 
-The agent writes `items.json`. The dashboard records your actions for the next run
-to read.
+Click "updated … ago" to open the latest run. Its report says what it wrote, what
+it dropped as handled, and which sources it couldn't reach, with everything it did
+on the way folded away beneath. Read it after your first run. Below it is a field
+to ask the agent about the run, in the same session, so it answers from what it
+actually did: why it dropped an item, or whether it can find something now. A
+question can't change the brief; if something should change, it says what, and you
+run it again. Earlier runs are folded away at the foot of the panel.
 
-After the first run, read its report (click "updated … ago"): it says which sources
-it couldn't reach. To check the brief against the payload contract, run:
+The dashboard does one thing at a time: a run, or a question about one.
 
-```sh
-daily-focus audit
-```
+### Model and effort
 
-The audit checks the brief for duplicate or drifting IDs, missing history, handled
-items raised again, and other contract problems. To compare with a particular brief:
+**Model** (`DAILY_FOCUS_AGENT_MODEL`) and **Effort** (`DAILY_FOCUS_AGENT_EFFORT`) are
+passed to Claude Code or Codex as they are, and left to its own defaults when
+empty. A brief is worth a high effort. **Search deleted mail**
+(`DAILY_FOCUS_AGENT_SEARCH_TRASH`) lets the agent look in your mail's Trash as well.
+If the dashboard can't find the tool, set **Path to the CLI** (`DAILY_FOCUS_AGENT_BIN`).
 
-```sh
-daily-focus audit --against /path/to/earlier-items.json
-```
+For Google Tasks, an optional [Apps Script export](apps-script/README.md) puts a
+JSON file in Drive for the agent to read.
 
-For Google Tasks, this repo includes an optional
-[Apps Script export](apps-script/README.md) that puts a JSON file in Drive for the
-agent to read.
+## Connect your tools
 
-## Configure integrations
-
-Settings are saved in the store, in `settings.json`, by the dashboard's settings
-page; saving one restarts the dashboard to apply it once nothing is running. Each
-is named below by its label on the page, and by its key in `settings.json`, in case
-you edit the file by hand; restart the dashboard after doing that.
+Settings are saved in the store's `settings.json` by the settings page, and saving
+one restarts the dashboard once nothing is running. Each is named here by its
+label on the page and its key in the file. If you edit the file by hand, restart
+the dashboard afterwards.
 
 ### GitHub
 
@@ -228,20 +231,19 @@ Sign in with the GitHub CLI:
 gh auth login
 ```
 
-The board uses the active account by default. To choose accounts and repositories,
-set **Accounts** (`DAILY_FOCUS_GITHUB_ACCOUNTS`), such as `alice, alice_corp`, and
-**Only these organisations or repositories** (`DAILY_FOCUS_GITHUB_SCOPE`), such as
-`acme, acme-labs/webapp`, under **Pull requests**.
+The pull request board uses `gh`'s active account. Under **Pull requests**, set
+**Accounts** (`DAILY_FOCUS_GITHUB_ACCOUNTS`), such as `alice, alice_corp`, to read
+as particular accounts, and **Only these organisations or repositories**
+(`DAILY_FOCUS_GITHUB_SCOPE`), such as `acme, acme-labs/webapp`, to narrow the board.
+Named accounts stay fixed when you switch the active one in a terminal. For an
+organisation that uses SAML, make sure the account's token is authorised for it:
+the board reports a refused read rather than showing no pull requests.
 
-Named accounts stay fixed even if you switch the active account in another terminal.
-For organisations using SAML, make sure the account's token has access. The board
-reports access problems instead of silently showing no pull requests.
-
-If your repository has a check that represents its merge policy, list its exact,
+If a repository has a check that stands for its whole merge policy, put its exact,
 case-sensitive name in **Merge gate checks** (`DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS`).
-Separate names with commas. Pending matches appear under *Waiting on merge gate*.
+Pull requests waiting on it get the *Waiting on merge gate* bucket.
 
-Turn **Pull request board** (`DAILY_FOCUS_GITHUB`) off to disable the board.
+Turn **Pull request board** (`DAILY_FOCUS_GITHUB`) off to hide the board.
 
 ### Jira
 
@@ -251,259 +253,225 @@ Sign in with the Atlassian CLI:
 acli jira auth login
 ```
 
-The board uses that session. Under **Jira tickets** you can limit the projects with
-**Only these projects** (`DAILY_FOCUS_JIRA_PROJECTS`), such as `PROJ, OTHER`, and
-adjust which statuses need attention with **Statuses that mean on hold**
-(`DAILY_FOCUS_JIRA_HOLD_STATUSES`), such as `Blocked, On Hold`, and **Statuses that
-mean working on it** (`DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES`), such as `In Progress`.
+Under **Jira tickets**, **Only these projects** (`DAILY_FOCUS_JIRA_PROJECTS`), such
+as `PROJ, OTHER`, narrows the board. **Statuses that mean on hold**
+(`DAILY_FOCUS_JIRA_HOLD_STATUSES`), such as `Blocked, On Hold`, stops tickets in them
+showing as *In flight with nothing linked*, and changes nothing else. **Statuses
+that mean working on it** (`DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES`), such as
+`In Progress`, is what the *Working on* view shows; without it, the view shows every
+status Jira counts as in progress, which may include In Review.
 
-Hold statuses suppress *In flight with nothing linked* reminders. They don't hide
-other status mismatches. The in-progress list filters the *Working on* view;
-without it, that view includes every status Jira puts in its in-progress category,
-which may include In Review.
+Clicking a ticket's status on the board moves the ticket in Jira. That is the only
+change the dashboard makes there. See the
+[ticket board](README.md#the-jira-ticket-board) for what Jira may refuse and how undo
+works.
 
-Clicking a status in the dashboard writes one transition to Jira. All other Jira
-access is read-only. See the [ticket board guide](README.md#the-jira-ticket-board)
-for workflow limits and undo behavior.
-
-The board also asks GitHub about your pull requests, because Jira can learn of
-them days late. It uses the pull request board's accounts and scope, and nothing
-else needs to be configured. With the pull request board off, the ticket board uses
+Jira can hear of a pull request days late, so the board also asks GitHub, with the
+pull request board's accounts and scope. With the pull request board off, it uses
 Jira alone.
 
-Turn **Jira ticket board** (`DAILY_FOCUS_JIRA`) off to disable the board.
+Turn **Jira ticket board** (`DAILY_FOCUS_JIRA`) off to hide the board.
 
-### Live calendar on macOS
+### Calendar on a Mac
 
-The live agenda reads Calendar.app, so meeting changes appear during the day.
-It requires the Xcode command line tools with `swiftc`. Build the helper once; it
-goes in `~/Library/Application Support/Daily Focus/`, where every copy finds it:
+The live agenda reads Calendar.app through a small helper, so a meeting moved or
+declined during the day shows at once. Under **Calendar**, tick the calendars to
+show (`DAILY_FOCUS_CALENDARS`) and list your own addresses in **Your email
+addresses** (`DAILY_FOCUS_CALENDAR_ADDRESSES`), so the dashboard can tell which
+meetings you've declined. The first read asks for calendar access.
+
+The menu bar app carries the helper. With `npx` or `npm`, build it once; it needs
+the Xcode command line tools, and goes in `~/Library/Application Support/Daily Focus/`,
+where every copy of the dashboard finds it:
 
 ```sh
 daily-focus build-calendar
 ```
 
-Tick the calendars under **Calendar** in the settings (`DAILY_FOCUS_CALENDARS`,
-spelled exactly as Calendar.app shows them), and list your own email addresses in
-**Your email addresses** (`DAILY_FOCUS_CALENDAR_ADDRESSES`) so the dashboard can
-recognize meetings you've declined.
+Rebuilding it may ask for access again. Without the helper, or with **Live agenda**
+(`DAILY_FOCUS_CALENDAR`) off, the agenda shows the events in the morning brief.
 
-Start the dashboard and allow the helper's calendar access when macOS asks.
-Rebuilding the helper may prompt again.
+## The assistant
 
-Without live calendar access, the agenda uses events from the morning brief.
-Turn **Live agenda** (`DAILY_FOCUS_CALENDAR`) off to use those events explicitly.
+Every item's panel has an assistant that runs Claude Code or Codex against that one
+item. Click a card, pick a quick action or type a request, and the answer streams
+into the panel, where you can follow up. The quick actions cover the common asks:
+whether a review comment is right, why CI is failing, what a thread is asking of
+you, and a reply to an email, drafted straight into Gmail.
 
-## Ask the assistant
-
-Every item's panel can have an assistant that runs a coding-agent CLI you already
-have, headless, against that one item. Click the card, pick a quick action or type a
-request, and the answer streams into the panel; you can follow up in the same
-conversation.
-The quick actions cover the common asks: whether a review comment is right, why CI
-is failing, what a thread is asking of you, a reply to an email drafted straight into
-Gmail as a draft on the thread.
-
-Install and log in to [Claude Code](https://code.claude.com/docs) or the
-[Codex CLI](https://developers.openai.com/codex/cli), then choose it as **Answer
-questions with** under **Assistant** in the settings (`DAILY_FOCUS_ASSISTANT`).
-
-Once the dashboard has restarted, the assistant appears in the panel. Model and effort default to whatever
-the CLI is configured with; `DAILY_FOCUS_ASSISTANT_MODEL` and
-`DAILY_FOCUS_ASSISTANT_EFFORT` override them. If the server can't find the CLI,
-set `DAILY_FOCUS_ASSISTANT_BIN` to its path.
+Setup turns it on with the tool that writes the brief. To change that, set **Answer
+questions with** under **Assistant** (`DAILY_FOCUS_ASSISTANT`). **Model**
+(`DAILY_FOCUS_ASSISTANT_MODEL`) and **Effort** (`DAILY_FOCUS_ASSISTANT_EFFORT`) are
+passed on as they are, and **Path to the CLI** (`DAILY_FOCUS_ASSISTANT_BIN`) helps
+the dashboard find the tool.
 
 The assistant is told to read and draft, and never to send, post or edit anything,
-and it has no checkout to work in. That is deliberate. Fixing merge conflicts or a
-failing build belongs in a real coding session; this panel is for the questions you'd
-otherwise answer by opening six tabs. The Gmail draft is the one thing it creates,
-and revises when you ask, through the Gmail tool the CLI has: with Claude Code that
-is the claude.ai Gmail connector, which `DAILY_FOCUS_ASSISTANT_TOOLS` allows by
-default; with Codex it is the Gmail app linked to your ChatGPT account, which the CLI
-finds through its plugin catalogue. Without either, the assistant hands you the text
-instead and says so.
+and it has no checkout to work in. Fixing a merge conflict or a failing build
+belongs in a real coding session; the panel is for the questions you'd otherwise
+answer by opening six tabs. A Gmail draft is the one thing it creates, and revises
+when you ask. With Claude Code it uses the claude.ai Gmail connector; with Codex,
+the Gmail app linked to your ChatGPT account. Without either, it hands you the text
+instead and says so. What it says stays in the panel: it never leaves notes on the
+item or marks it handled.
 
-### What the assistant can do
-
-The assistant runs the CLI you already use, with the access that CLI already has.
-The dashboard narrows some of that, and leaves the rest to the assistant's
-instructions. What the CLI itself enforces:
-
-- **Claude Code** may use only the tools in `DAILY_FOCUS_ASSISTANT_TOOLS`, and never
-  its file-editing tools, whatever the list says; anything else is refused rather
-  than asked about. Rules in your own Claude Code settings that allow a tool still
-  apply. The default list is broader than the assistant needs:
-  `mcp__claude_ai_Gmail` allows every tool on the Gmail connector, sending and
-  deleting included, and `gh` and `acli` can comment, merge and move tickets as well
-  as read. Only the instructions keep it from doing those. To hold it to reading
-  mail and drafting replies, name the Gmail tools instead of the connector, in
-  **Tools Claude Code may use** under **Assistant** (`DAILY_FOCUS_ASSISTANT_TOOLS`):
-
-  ```text
-  Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail__search_threads,mcp__claude_ai_Gmail__get_thread,mcp__claude_ai_Gmail__get_message,mcp__claude_ai_Gmail__list_labels,mcp__claude_ai_Gmail__list_drafts,mcp__claude_ai_Gmail__get_draft,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__update_draft
-  ```
-
-  A tool left off the list is refused, so if the connector renames one, the
-  assistant reports that it can't reach your mail rather than working around it.
-- **Codex** refuses every write through a connector (Gmail, Calendar, Drive, GitHub
-  and the other apps your ChatGPT account links) except creating and revising a
-  Gmail draft. A connector tool counts as a write unless it is marked read-only. A
-  tool you have told Codex to always allow, or an app given approval settings of its
-  own in your Codex config, keeps them. Computer use, the plugins that act in your
-  apps and browser with your sign-ins, is off unless you turn on
-  `DAILY_FOCUS_ASSISTANT_COMPUTER_USE`; the dashboard checks with Codex that it is
-  off before each session, and refuses to start one it can't confirm. Shell
-  commands follow your own Codex config: the sandbox keeps writes in the
-  assistant's working directory, and a command that needs to leave it is decided
-  by your Codex approval settings, as it would be in your own Codex. That keeps
-  `gh` working, and means it can write. All of this needs Codex 0.149.0 or
-  newer, and the page warns when yours is older. Before 0.144.0 Codex silently
-  ignores the refusal of connector writes, so the dashboard won't start the
-  assistant or the morning agent on it at all; before 0.149.0 it can't switch
-  computer use off, so the assistant won't answer while that setting is off.
+If you're curious, its instructions are `prompts/assistant.md` in this repository,
+linked into the store as `assistant.md` each time the dashboard starts.
 
 ### Answer ahead
 
 With **Answer ahead on pull requests** (`DAILY_FOCUS_ASSISTANT_AUTO`) on, the
-dashboard asks the assistant before you do. When a pull request lands in *Waiting on
-you* because someone reviewed or commented, it asks the assistant to assess the
-review. When a check fails, it asks for an explanation of the failure. The first
-line of the answer appears on the row,
-on the board and on the brief item for the same pull request, while it still
-matches the pull request's state. The whole answer is in the panel, as a turn you
-can follow up on.
+assistant answers before you ask. When a pull request starts waiting on you
+because someone reviewed or commented, it assesses the review; when a check fails,
+it explains the failure. The answer's first line appears on the row, and on the
+brief's item for the same pull request, while it still matches the pull request's
+state. The whole answer is in the panel, to follow up on.
 
-It asks about each state once. A new comment or a new failure is a new question;
-the same checks failing again on the same commit are not. It runs one question at a
-time and never on a row you're asking about, and it starts no more than
-`DAILY_FOCUS_ASSISTANT_AUTO_LIMIT` a day (10 by default). It uses only those two
-quick actions, which read and answer, and never one that drafts. It follows the
-board, which reads only while a tab is open, so it asks while you have the
-dashboard open. It is off by default because it spends the CLI's usage without
-you pressing anything.
+It asks about each state once: a new comment or a new failure is a new question,
+and the same checks failing again on the same commit are not. It asks one question
+at a time, only while a dashboard tab is open, never about a row you're asking
+about, and no more than **Answer ahead at most** (`DAILY_FOCUS_ASSISTANT_AUTO_LIMIT`)
+times a day, 10 by default. It only reads, and never drafts. It is off by default
+because it spends your Claude or ChatGPT usage without you pressing anything.
 
-Its instructions live in `prompts/assistant.md`, linked into the store as
-`assistant.md` each time the dashboard starts. What it says stays in the chat in the panel: it
-never leaves notes on the item or marks it handled. That is yours to do once you have
-read the reply.
+## What the agent and the assistant can do
 
-## The morning agent's runs
+Both run the Claude Code or Codex you already use, with the access it already has.
+The dashboard narrows some of that, as below, and leaves the rest to their
+instructions: the morning agent's forbid it to change anything, and the
+assistant's forbid it anything but a Gmail draft.
 
-Every run the dashboard starts, on its clock or by hand, is recorded in the store.
-The refresh icon beside "updated … ago" on the Today tab starts one now, for the
-day that has moved on from the morning's brief. It rewrites the brief from scratch;
-what you have marked done, snoozed or noted is kept, and the brief it replaces is
-in the archive. While it runs, a banner says so and offers Stop; click the banner
-to watch the run. When it finishes the banner goes, since the brief it wrote is the
-page. A run that fails stays as a warning until you dismiss it.
+### Under Claude Code
 
-The agent reads your sources in parallel, each handed to a subagent of its own, and
-the panel shows what it is doing as it goes: what it says, each command it runs and
-each thing it reads, and each subagent under the step that started it, open while
-it works. Claude Code reports its subagents itself. Codex doesn't, so for a Codex
-run the dashboard reads them from Codex's own session files, under `~/.codex/sessions`
-or `$CODEX_HOME`. It only ever reads them.
+The morning agent may write `items.json` and nothing else in the store. The
+assistant may never use the file-editing tools. Beyond that, each may use only the
+tools in its list, **Tools Claude Code may use**, under **Morning agent**
+(`DAILY_FOCUS_AGENT_TOOLS`) and **Assistant** (`DAILY_FOCUS_ASSISTANT_TOOLS`).
+Anything else is refused rather than asked about, though rules in your own Claude
+Code settings that allow a tool still apply.
 
-Click "updated … ago" to open the latest run in the panel. It holds the agent's
-report — what it wrote, what it dropped as handled, and any source it could not
-reach — with everything it said and did on the way there folded away beneath, and a
-field to ask it about the run. The question goes to the agent in the
-same session, so it answers from what it actually did: why it dropped an item, what
-it could not find, whether it can find it now. A follow-up is given nothing to
-write; if something in the brief should change, it says what, and you run it again.
-Earlier runs are folded away at the foot of the panel, newest first, and any of
-them opens the same way.
+Both lists start as `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail`: GitHub,
+Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat and
+document connectors to the agent's list by name, or the brief will report them as
+unreachable.
 
-The dashboard runs one thing at a time: a run, or a question about one.
+The defaults are broader than reading needs. `mcp__claude_ai_Gmail` allows every
+Gmail tool, sending and deleting included, and `gh` and `acli` can comment, merge
+and move tickets as well as read. To hold the assistant to reading mail and
+drafting replies, name the Gmail tools instead of the connector:
+
+```text
+Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail__search_threads,mcp__claude_ai_Gmail__get_thread,mcp__claude_ai_Gmail__get_message,mcp__claude_ai_Gmail__list_labels,mcp__claude_ai_Gmail__list_drafts,mcp__claude_ai_Gmail__get_draft,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__update_draft
+```
+
+For the morning agent, leave out the last two, which draft. A tool left off the
+list is refused, so if the connector renames one, you'll be told your mail is out of
+reach rather than have it worked around.
+
+### Under Codex
+
+Every write through a connector (Gmail, Calendar, Drive, GitHub and the other apps
+your ChatGPT account links) is refused, except that the assistant may create and
+revise a Gmail draft. A connector tool counts as a write unless it is marked
+read-only. A tool you have told Codex to always allow, or an app with approval
+settings of its own in your Codex config, keeps them.
+
+The morning agent runs in Codex's workspace-write sandbox, with network access,
+confined to the store. The assistant's sandbox keeps writes to its own empty
+directory. A shell command that needs to leave the sandbox, such as `gh` switching
+accounts, is decided by your own Codex approval settings, as it would be in Codex
+itself. That keeps `gh` working, and means it can write. With nobody set to approve,
+it reports the restriction; with Codex's automatic reviewer, the reviewer
+decides.
+
+Computer use, the plugins that act in your apps and browser with your sign-ins, is
+off for the assistant unless you turn on **Computer use**
+(`DAILY_FOCUS_ASSISTANT_COMPUTER_USE`). The dashboard checks with Codex that it is
+off before each question, and won't start one it can't confirm.
+
+This needs a recent Codex. Before 0.144.0, Codex silently ignores the refusal of
+connector writes, so the dashboard won't run the agent or the assistant on it at
+all. Before 0.149.0 it can't switch computer use off, so the assistant won't answer
+while **Computer use** is off. The page warns when yours is too old.
 
 ## Keep the dashboard running
 
-There are two ways on macOS: the menu bar app, or a LaunchAgent. Use one, not both;
-the app notices a dashboard that is already running and only watches it.
+The morning agent runs only while the dashboard does. On a Mac, let the menu bar
+app or a LaunchAgent keep it running; use one, not both. Elsewhere, run
+`daily-focus` in a terminal you keep open.
 
 ### The menu bar app
 
-Daily Focus as a Mac app lives in the menu bar. It starts the dashboard, again if it
-stops, and at login once you tick **Open at Login**. Its menu says how old the brief
-is and how many items are open, opens the dashboard or its settings, and starts a
-fresh brief; it posts a notification when a new brief arrives or the morning agent
-fails. It carries everything it runs: its own copy of the dashboard, the Node.js
-that runs it, and the calendar helper, so there is nothing else to install, and the
-calendar permission is asked for once, by an app you recognise. It needs a Mac with
-Apple silicon and macOS 13.5 or newer.
+The app starts the dashboard, starts it again if it stops, and, with **Open at
+Login** ticked, starts it when you log in. Its menu shows how old the brief is, how
+many items are open and how many pull requests wait on you, and has:
 
-Download `Daily-Focus.dmg` from the [latest release](https://github.com/watson/daily-focus/releases/latest),
-open it and drag the app to Applications, then open it from there.
-It has no window and no Dock icon: look for it in the menu bar.
+- **Open Daily Focus** and **Settings…**, which open the dashboard in your browser.
+- **Write a Fresh Brief**, which runs the morning agent now.
+- **Open at Login**.
+- **Updates**, below.
+- **Restart Dashboard** and **Show Log**, for when something is wrong. The log is
+  `~/Library/Logs/Daily Focus.log`.
+- **About Daily Focus**, with the app's version and the dashboard's.
 
-The app keeps itself up to date without a new disk image. **About Daily Focus** in
-the menu shows two versions, the app's and the dashboard's, and **Updates** which
-releases to take: **Stable Releases**, or **Development Builds**, a build of every
-change as soon as it is merged. A few times a day the app asks npm for the newest
-release, and when it finds one, it posts a notification and the menu offers
-**Update Daily Focus**. Updating fetches only what the release changed. Most
-releases change only the dashboard, a few hundred kilobytes, and the dashboard
-restarts into it; if it
-doesn't start, the app goes back to the one it had and says so. When a release
-changes the app itself, the app downloads the new app, about 40 MB, puts it in its
-own place and opens it again, and the new app carries the new dashboard. Either
-way it installs nothing that isn't signed by the same developer as the app, with
-nothing in it changed. It waits until the morning agent, the assistant and the
-setup screen aren't at work; pressing **Update** while one is asks whether to wait
-for it or stop it. An app that can't change the folder it is in, such as one
-opened straight from the disk image, links to the new disk image instead, and
-still updates its dashboard on its own. A dashboard that `daily-focus service` or
-a terminal runs is updated the way it was installed, not by the app.
+It posts a notification when a new brief arrives, when the morning agent fails, and
+when an update is ready. As far as macOS is concerned, everything the dashboard
+starts runs inside the app. So a permission prompt from the morning agent, for
+Reminders, Messages or your calendars, names Daily Focus, and Full Disk Access, if a
+source needs it, is granted to the app.
 
-Updates install only when you ask, unless you turn on **Update Automatically**
-under **Updates**; the app asks once, when setup is finished. Then an update goes
-in on its own once nobody has used the dashboard for half an hour, never while
-anything in it is at work. Using it means clicking, typing or scrolling in a tab
-you can see, from whichever computer you read it on.
+If something else already runs a dashboard on the port, such as
+`daily-focus service` or a terminal, the app only watches it, and its menu says
+**Run by another process**. To hand it to the app, stop the other one, then quit and
+reopen Daily Focus.
 
-To build it yourself from a checkout:
+**Updates.** A few times a day the app looks for a new release. When it finds one,
+it posts a notification and the menu offers **Update Daily Focus to** that version.
+Most releases change only the dashboard, a few hundred kilobytes, and the dashboard
+restarts into it; if the new one doesn't start, the app goes back to the old one
+and says so. A release that changes the app itself replaces the app, about 40 MB,
+and opens it again. Either way it installs only what is signed by the same
+developer as the app, with nothing in it changed. It waits until the morning agent,
+the assistant and the setup screen aren't at work; choosing the update while one
+is asks whether to wait for it or stop it.
 
-```sh
-npm run app
-```
-
-That leaves `Daily-Focus.dmg` and the app itself in `macos/build/`. Its log is
-`~/Library/Logs/Daily Focus.log`. Everything the dashboard starts runs inside the
-app as far as macOS is concerned, so a permission prompt from the morning agent's
-CLI, for Reminders, Messages or your calendars, names Daily Focus, and Full Disk
-Access, if a source needs it, is granted to the app.
+Under **Updates**, choose **Stable Releases**, or **Development Builds** for a build
+of every change as soon as it is merged. Updates install only when you choose them,
+unless you tick **Update Automatically**, which the app offers once, when setup is
+finished. Then an update goes in on its own, without a notification unless it
+fails, once nobody has used the dashboard for half an hour on whichever computer
+you read it, and never while anything in it is at work. An app opened straight
+from the disk image can't replace itself, so it links to the new disk image
+instead, and still updates its dashboard.
 
 ### A LaunchAgent
 
-On macOS, `daily-focus service` installs a LaunchAgent for your user that runs this
-copy of the dashboard: the global install, or the checkout it was run from. It
-starts at login and again after a crash. If you stop the
+Without the app, `daily-focus service` installs a LaunchAgent for your user that
+runs the dashboard now, at every login, and again after a crash. If you stop the
 dashboard yourself, it stays stopped until the next login. The command waits until
-the dashboard answers and prints its address, or prints the end of its log if it
-doesn't.
+the dashboard answers and prints its address, or the end of its log if it doesn't.
 
-Run `daily-focus service` again to restart it after updating (`npm install -g
-daily-focus`), pulling changes into a checkout, or switching Node versions. From a
-checkout it rebuilds the page each time the dashboard starts. It won't install from
-`npx`, whose copy npm replaces with the next version: install it globally first.
+```sh
+npm install -g daily-focus
+daily-focus service
+```
 
-The LaunchAgent is written for this machine and isn't tracked in git, so each
-machine runs the command once. It uses the Node.js that ran it and keeps two things
-from your shell: `PATH`, so the dashboard finds `gh`, `acli` and your agent's CLI,
-and the store, port and host, whether given as `--data`, `--port` and `--host` or set
-as `DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_HOST`. Each time it starts,
-the dashboard also asks your login shell for its `PATH`, so a CLI installed since is
-found without reinstalling the service. Everything else comes from the store's
-settings, which are read each time the dashboard starts. A CLI that relies on a token
-exported in your shell profile, rather than its own login, won't find it.
+It won't install from `npx`, whose copy npm replaces with the next version: install
+it globally first. Run `daily-focus service` again after updating
+(`npm install -g daily-focus`) or switching Node.js versions, to restart it on the
+new one. Each Mac runs the command once.
 
-Each store gets one service. Running the command again for the same store replaces
-the service, and another store gets a service of its own. It refuses to install if
-something already has the port, such as a dashboard you started in a terminal;
-stop that one first.
+The service keeps two things from the shell you run it in: the Node.js that ran it,
+and the store, port and host, whether given as `--data`, `--port` and `--host` or
+set as `DAILY_FOCUS_DATA`, `DAILY_FOCUS_PORT` and `DAILY_FOCUS_HOST`. Each time it
+starts, the dashboard asks your login shell for its `PATH`, so it finds `gh`, `acli`
+and Claude Code or Codex, including one installed since. A tool that relies on a
+token exported in your shell profile, rather than its own login, won't find it.
 
-The dashboard's output goes to `~/Library/Logs/local.daily-focus.log`, or a log
-named after the store if you use another one. To stop the service and uninstall it:
+Each store gets one service: running the command again for the same store replaces
+it, and another store gets its own. It refuses to install while something else has
+the port, such as a dashboard started in a terminal; stop that one first. Its log is
+`~/Library/Logs/local.daily-focus.log`, or a log named after the store if you use
+another one. To stop and uninstall it:
 
 ```sh
 daily-focus service --remove
@@ -511,57 +479,65 @@ daily-focus service --remove
 
 ## A personal instance
 
-Daily Focus can brief your personal life as well as your work: email, family
-calendars, Apple Reminders, Apple Messages, e-Boks and your own GitHub projects. Run it as a second instance
-with its own store, server and morning agent, and choose **Personal life** on its
-setup screen (`DAILY_FOCUS_PROFILE`).
+Daily Focus can brief your personal life as well as your work: mail, family
+calendars, Apple Reminders, Apple Messages, e-Boks and your own GitHub projects.
+Run it as a second instance, with its own store, and answer **Your personal life**
+when its setup screen asks what to brief. The settings page has it as **What this
+dashboard briefs** (`DAILY_FOCUS_PROFILE`).
 
-The dashboard then links the personal prompt, `prompts/morning-brief-personal.md`,
-into the store as `prompt.md`, and the source list starts from a template with
-sections for those sources. The profile also switches off
-the Jira board, and gives the tab a green house icon instead of the blue briefcase. The pull request
-board stays on for side projects; point it at your personal account with
-**Accounts**, or turn the board off.
+A personal instance uses the personal prompt, `prompts/morning-brief-personal.md`,
+and has no Jira board and no free time in the agenda. Its browser tab shows a green
+house where a work one shows a blue briefcase. The pull request board stays, for
+side projects: point it at your personal account with **Accounts**, or turn it off.
 
-The personal sources often live on another machine, such as a home Mac with access
-to Messages and Reminders. Run the instance there, keep `DAILY_FOCUS_HOST` on
-loopback, and share it with your other devices through
+To run both on one Mac, give the second its own store and port. The menu bar app
+runs one dashboard, on the default store, so run the other as a service beside it,
+with the same flags each time:
+
+```sh
+daily-focus service --data ~/.daily-focus-personal --port 4322
+```
+
+Personal sources often live on another computer, such as a home Mac with access to
+Messages and Reminders. Run the instance there, keep it listening on loopback, and
+reach it from your other devices through
 [Tailscale Serve](https://tailscale.com/kb/1312/serve):
 
 ```sh
 tailscale serve --bg http://127.0.0.1:4321
 ```
 
-Only your tailnet can reach it, over HTTPS. Don't bind the server to your LAN
-instead: it has no login, and a personal brief holds your mail and messages.
+Only your tailnet can reach it, over HTTPS. Don't listen on your local network
+instead: the dashboard has no login, and a personal brief holds your mail and
+messages. It answers only when reached as localhost, by IP address, by a Tailscale
+`ts.net` name, or by the name in `DAILY_FOCUS_HOST`, so a web page can't point a
+name of its own at your dashboard and read your brief. Reached any other way, it
+replies `403` and names the host it was reached as.
 
-The dashboard answers only when it is reached as localhost, by IP address, by a
-Tailscale `ts.net` name, or by the name in `DAILY_FOCUS_HOST`. That stops a web page
-from pointing its own name at your dashboard and reading your brief. Reached any
-other way, it replies `403` and names the host it was reached as.
+## Commands
 
-To run both instances on one machine, give the second its own store and port.
-`daily-focus service` keeps them, so this installs the second service beside the
-first, and its setup screen asks what it briefs. Use the same flags each time you
-run it for that instance:
+| Command | What it does |
+|---|---|
+| `daily-focus` | Start the dashboard and open it in your browser |
+| `daily-focus --demo` | Look around on sample data, in a throwaway store; add `--profile personal` for the personal profile |
+| `daily-focus service` | Keep the dashboard running in the background on macOS; `--remove` uninstalls it |
+| `daily-focus init` | Create the store with templates to edit by hand; `--profile personal` for a personal one |
+| `daily-focus audit` | Check the current brief against the brief's contract; `--against <items.json>` compares it with another |
+| `daily-focus seed` | Write a sample brief into the store. It refuses to replace a brief unless given `--force`; to look at sample data, use the demo |
+| `daily-focus build-calendar` | Build the calendar helper for the live agenda, when you don't use the app |
 
-```sh
-daily-focus service --data ~/.daily-focus-personal --port 4322
-```
+Each takes `--data`, `--port` and `--host`, below, and `daily-focus --help` lists
+them all. To run Daily Focus from a checkout of this repository, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Match your working week
-
-Set **On these days** under **Morning agent** (`DAILY_FOCUS_AGENT_DAYS`) to the days
-the dashboard runs the agent. It uses cron weekday numbers: `1-5` for Monday to
-Friday, `0-4` for Sunday to Thursday, or `0,6` for weekends. Unset means Monday to
-Friday. `daily-focus audit` shows the schedule in use. Days without scheduled runs
-don't make a brief overdue. Once a refresh is due, the dashboard allows 45 minutes
-before showing a warning.
+The audit checks the brief for duplicate or drifting IDs, missing history, handled
+items raised again, and other contract problems. It also shows the agent's
+schedule.
 
 ## Settings reference
 
-Three settings say where the store is and how the dashboard listens, so they are
-never kept in the store. Give them as flags, or set them in the environment the
+Three settings say where the store is and how the dashboard listens, so they can't
+be kept in the store. Give them as flags, or set them in the environment the
 dashboard starts in; a flag wins. Their defaults suit almost everyone.
 
 | Flag | Variable | Default | Purpose |
@@ -581,7 +557,7 @@ by hand. Nothing else is read from the environment. The brief's `dayStart` and
 | `DAILY_FOCUS_PROFILE` | `work` | `work` or `personal`. Picks the prompt the dashboard links and the defaults marked below |
 | `DAILY_FOCUS_FREE_WINDOWS` | `on`; `off` for personal | `off` shows events only: no free windows in the agenda, and the next event in place of focus time left |
 | `DAILY_FOCUS_WORK_START` | `9` | Local hour the working day starts, when the brief doesn't say |
-| `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends when the brief does not specify it |
+| `DAILY_FOCUS_WORK_END` | `17` | Local hour the working day ends, when the brief doesn't say |
 | `DAILY_FOCUS_MIN_FREE_WINDOW` | `45` | Minutes before a gap counts as a focus window |
 | `DAILY_FOCUS_STALE_AFTER_HOURS` | `24` | When to expect a refresh. Shows an informational message for 45 minutes before warning that the agent may not have run. Counted only in hours a run was due, so days off never trip it |
 | `DAILY_FOCUS_AGENT_DAYS` | `1-5` | Weekdays the dashboard runs the agent on, cron-style and cron-numbered: `1-5` for Monday to Friday, `0-4` for Sunday to Thursday, `0,6` for a weekend-only run |
@@ -590,30 +566,30 @@ by hand. Nothing else is read from the environment. The brief's `dayStart` and
 | `DAILY_FOCUS_GITHUB_SCOPE` | *everything* | Organisations or `owner/repo` entries to limit the board to, comma-separated |
 | `DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS` | *none* | Check names that stand for a repository's whole merge policy, comma-separated and matched exactly. Their rows get the *Waiting on merge gate* bucket |
 | `DAILY_FOCUS_GITHUB_POLL_MINUTES` | `5` | Minutes between polls while a tab is open |
-| `DAILY_FOCUS_GH` | `gh` | Path to the GitHub CLI, for when the server's PATH lacks it. `~` is expanded |
+| `DAILY_FOCUS_GH` | `gh` | Path to the GitHub CLI, for when the dashboard can't find it. `~` is expanded |
 | `DAILY_FOCUS_CALENDAR` | `on` | `off` disables the live agenda; the brief's own events are used instead |
 | `DAILY_FOCUS_CALENDARS` | *none* | Calendar names to show, comma-separated and spelled as Calendar.app spells them. Empty means nothing is read |
 | `DAILY_FOCUS_CALENDAR_ADDRESSES` | *none* | Your own email addresses, comma-separated, used to find your reply among an event's attendees |
 | `DAILY_FOCUS_CALENDAR_POLL_MINUTES` | `5` | Minutes between calendar reads while a tab is open |
-| `DAILY_FOCUS_CALENDAR_APP` | *built copy* | Path to the calendar helper bundle, if it isn't the one `daily-focus build-calendar` installs |
+| `DAILY_FOCUS_CALENDAR_APP` | *the app's, or the built copy* | Path to the calendar helper bundle, if it isn't the one the menu bar app carries or `daily-focus build-calendar` installs |
 | `DAILY_FOCUS_JIRA` | `on`; `off` for personal | `off` disables the Jira ticket board; nothing is read |
 | `DAILY_FOCUS_JIRA_PROJECTS` | *everything* | Project keys to limit the search to, comma-separated |
 | `DAILY_FOCUS_JIRA_HOLD_STATUSES` | *none* | Statuses where standing still is deliberate, comma-separated and spelled as your Jira spells them. Their rows are exempt from *In flight with nothing linked*, and from nothing else |
 | `DAILY_FOCUS_JIRA_IN_PROGRESS_STATUSES` | *all of them* | The statuses the ticket board's *Working on* view shows, comma-separated and case-insensitive. Use `In Progress` to leave out In Review |
 | `DAILY_FOCUS_JIRA_POLL_MINUTES` | `15` | Minutes between reads while a tab is open |
 | `DAILY_FOCUS_JIRA_SITE` | *acli's own* | Atlassian site host the browse links are built from. A pasted URL is fine |
-| `DAILY_FOCUS_ACLI` | `acli` | Path to the Atlassian CLI, for when the server's PATH lacks it. `~` is expanded |
-| `DAILY_FOCUS_ASSISTANT` | `off` | `claude` or `codex` puts an assistant in every item's panel that runs that CLI headless against the item. `off` hides it |
-| `DAILY_FOCUS_ASSISTANT_BIN` | *the CLI's name* | Path to the assistant's CLI, for when the server's PATH lacks it. `~` is expanded |
+| `DAILY_FOCUS_ACLI` | `acli` | Path to the Atlassian CLI, for when the dashboard can't find it. `~` is expanded |
+| `DAILY_FOCUS_ASSISTANT` | `off` | `claude` or `codex` puts an assistant in every item's panel that runs that CLI headless against the item. `off` hides it. Setup sets it to the agent's CLI |
+| `DAILY_FOCUS_ASSISTANT_BIN` | *the CLI's name* | Path to the assistant's CLI, for when the dashboard can't find it. `~` is expanded |
 | `DAILY_FOCUS_ASSISTANT_MODEL` | *the CLI's own* | Model passed to the CLI untouched: an alias like `opus`, or a full id. Unset passes no flag |
 | `DAILY_FOCUS_ASSISTANT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched: `low`, `medium`, `high`, `xhigh` or `max`. Unset passes no flag |
-| `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. The default allows every Gmail tool, sending included; see [What the assistant can do](#what-the-assistant-can-do) to narrow it. Ignored by Codex |
+| `DAILY_FOCUS_ASSISTANT_TOOLS` | `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail` | What Claude Code may use without asking, in its permission syntax, comma-separated. Editing tools are denied regardless. The default allows every Gmail tool, sending included; see [Under Claude Code](#under-claude-code) to narrow it. Ignored by Codex |
 | `DAILY_FOCUS_ASSISTANT_COMPUTER_USE` | `off` | `on` lets the assistant use Codex's computer-use and browser plugins, which act in your apps and browser with your sign-ins. `off` switches them off for its runs. Ignored by Claude Code, which uses only the tools in its list |
 | `DAILY_FOCUS_ASSISTANT_AUTO` | `off` | `on` asks the assistant ahead about pull requests waiting on you, after a review or a failing check, and puts the answer's first line on the row. See [Answer ahead](#answer-ahead) |
 | `DAILY_FOCUS_ASSISTANT_AUTO_LIMIT` | `10` | How many times a day the assistant may start on its own, from 1 to 100 |
 | `DAILY_FOCUS_AGENT` | `off` | `codex` or `claude` lets the dashboard run the morning agent through that CLI: each scheduled morning, and from the refresh icon beside the brief's age. `off` hides it |
 | `DAILY_FOCUS_AGENT_AT` | `07:00` | Local time, `HH:MM`, at which the dashboard starts the agent on each scheduled day, or as soon as it is running after that. `off` means it never starts one on its own; the refresh icon still does. Needs `DAILY_FOCUS_AGENT` |
-| `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the server's PATH lacks it. `~` is expanded |
+| `DAILY_FOCUS_AGENT_BIN` | *the CLI's name* | Path to that CLI, for when the dashboard can't find it. `~` is expanded |
 | `DAILY_FOCUS_AGENT_MODEL` | *the CLI's own* | Model passed to the CLI untouched. Unset passes no flag |
 | `DAILY_FOCUS_AGENT_EFFORT` | *the CLI's own* | Effort passed to the CLI untouched. Unset passes no flag |
 | `DAILY_FOCUS_AGENT_SEARCH_TRASH` | `off` | Whether the agent searches the mail account's Trash as well as the inbox and archive. The dashboard writes it to `agent-settings.json` in the store before each run, where the agent reads it |
@@ -621,24 +597,28 @@ by hand. Nothing else is read from the environment. The brief's `dayStart` and
 
 ## If something looks wrong
 
-- If the dashboard is gone after a restart, it was probably started in a terminal,
-  which it ends with. Run `daily-focus service` to keep it running. If the
-  service is installed and the page still doesn't load, read
+- **The dashboard is gone after a restart.** It was probably started in a terminal,
+  and ended with it. Use the menu bar app or `daily-focus service` to keep it
+  running.
+- **The page doesn't load.** With the app, choose **Restart Dashboard**, or
+  **Show Log** to see why. With the service, read
   `~/Library/Logs/local.daily-focus.log`.
-- After setup and before the first brief, the Today tab says where the first brief
-  is, and offers to run it again if it didn't finish. Once a brief has existed, an
-  empty Today tab means the agent hasn't written a new `items.json`: start a run
-  from the refresh icon beside the brief's age.
-- A stale brief needs an agent run. Refreshing a board doesn't regenerate the brief;
-  the icon beside the brief's age does. Click "updated … ago" to see what the last
-  run said, or whether there was one: the dashboard has to be running at
-  `DAILY_FOCUS_AGENT_AT`, 07:00 by default, or started later that day.
-- A GitHub or Jira warning may mean the CLI session needs authentication. If the
-  server can't find a CLI, set its full path with `DAILY_FOCUS_GH` or `DAILY_FOCUS_ACLI`.
-- The boards keep their last successful results during an outage. Check the status
-  line for the age of the data.
-- If port 4321 is already in use, set `DAILY_FOCUS_PORT` to another port.
-
-`daily-focus seed` refuses to replace an existing brief and prints the path it found.
-Use the [temporary demo](README.md#try-it) for sample data, never your real store.
-`daily-focus seed --force` overwrites the brief anyway.
+- **The menu says "Run by another process".** A service or a terminal runs the
+  dashboard, and the app only watches it. See [The menu bar app](#the-menu-bar-app).
+- **The Today tab is empty.** Before the first brief, it says where that brief is,
+  and offers to run it again if it didn't finish. After that, the agent hasn't
+  written a new brief: start a run from the refresh icon beside the brief's age.
+- **The brief is stale.** Refreshing a board doesn't regenerate the brief; the icon
+  beside the brief's age does. Click "updated … ago" to see what the last run said,
+  or whether there was one: the dashboard has to be running at **Run it at**, or
+  started later that day.
+- **A source is missing from the brief.** The run's report says which sources the
+  agent couldn't reach. Under Claude Code, add the connector to
+  [the agent's tools](#under-claude-code).
+- **A GitHub or Jira warning.** The `gh` or `acli` session may need signing in again.
+  If the dashboard can't find the tool, set its path in **Path to gh**
+  (`DAILY_FOCUS_GH`) or **Path to acli** (`DAILY_FOCUS_ACLI`). During an outage, the
+  boards keep their last good results; the time beside a board's refresh icon says
+  how old they are, and its tooltip why the last read failed.
+- **Port 4321 is in use.** The app's menu says so. Start the
+  dashboard with `--port` and another port, or stop the other program.

@@ -44,6 +44,14 @@ Use invented data for fixtures and screenshots. Never copy a real brief, calenda
 account name, or ticket into a tracked file. If you need a store inside the repo,
 use the gitignored `data/` directory.
 
+To run your own dashboard from a checkout rather than the package, `npm start` runs
+it in the terminal, and `npm run service` keeps it running as a LaunchAgent for
+that checkout, which rebuilds the page each time it starts; run it again after
+pulling. Each `daily-focus <command>` in [SETUP.md](SETUP.md) is `npm run <command>`
+here, with two differences: `build-calendar` is `build:calendar`, and flags go after
+`--`, as in `npm run audit -- --against <file>`. To build the menu bar app, see
+[The menu bar app](#the-menu-bar-app).
+
 ## Check your changes
 
 ```sh
