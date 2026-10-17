@@ -13,7 +13,7 @@
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>LSMinimumSystemVersion</key><string>13.5</string>
   <key>LSUIElement</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Copyright © Thomas Watson. MIT licensed.</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Thomas Watson. MIT licensed.</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>The morning agent and the assistant run inside Daily Focus, and may ask apps such as Reminders, Messages or Mail for what belongs in your brief.</string>
   <key>NSCalendarsUsageDescription</key>

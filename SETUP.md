@@ -431,13 +431,14 @@ Download `Daily-Focus.dmg` from the [latest release](https://github.com/watson/d
 open it and drag the app to Applications, then open it from there.
 It has no window and no Dock icon: look for it in the menu bar.
 
-The app keeps itself up to date without a new disk image. **Updates** in the menu
-shows two versions, the app's and the dashboard's, and which releases to take:
-**Stable Releases**, or **Development Builds**, a build of every change as soon as
-it is merged. A few times a day the app asks npm for the newest release, and when
-it finds one, it posts a notification and the menu offers **Update Daily Focus**.
-Updating fetches only what the release changed. Most releases change only the
-dashboard, a few hundred kilobytes, and the dashboard restarts into it; if it
+The app keeps itself up to date without a new disk image. **About Daily Focus** in
+the menu shows two versions, the app's and the dashboard's, and **Updates** which
+releases to take: **Stable Releases**, or **Development Builds**, a build of every
+change as soon as it is merged. A few times a day the app asks npm for the newest
+release, and when it finds one, it posts a notification and the menu offers
+**Update Daily Focus**. Updating fetches only what the release changed. Most
+releases change only the dashboard, a few hundred kilobytes, and the dashboard
+restarts into it; if it
 doesn't start, the app goes back to the one it had and says so. When a release
 changes the app itself, the app downloads the new app, about 40 MB, puts it in its
 own place and opens it again, and the new app carries the new dashboard. Either
