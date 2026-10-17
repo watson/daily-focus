@@ -119,10 +119,13 @@ function agentRunBanner(run: AgentRun, state: DashboardState, handlers: Handlers
   };
   if (run.status === 'running') {
     const helping = (run.steps ?? []).filter((step) => step.subagent && step.state === 'running').length;
+    const doing = briefLanded(run, state.brief?.generatedAt)
+      ? 'The brief is in. The morning agent is checking it and writing its report'
+      : 'The morning agent is writing a new brief';
     return bannerNode(
       'info',
       'i',
-      `The morning agent is writing a new brief, started ${relativeTime(run.startedAt, now)}` +
+      `${doing}, started ${relativeTime(run.startedAt, now)}` +
         (helping ? `, with ${helping} ${helping === 1 ? 'subagent' : 'subagents'} at work.` : '.'),
       [el('button', { type: 'button', class: 'button banner__action', onClick: () => handlers.stopAgent() }, 'Stop')],
       strip,
@@ -145,6 +148,17 @@ function agentRunBanner(run: AgentRun, state: DashboardState, handlers: Handlers
     ],
     strip,
   );
+}
+
+/**
+ * Whether the brief on the page is this run's: it landed after the run started.
+ * The agent writes the brief, then checks it and writes its report, so from
+ * here to the run's end the page has the brief and the run is still going.
+ */
+export function briefLanded(run: Pick<AgentRun, 'startedAt'>, generatedAt: string | null | undefined): boolean {
+  const started = parseDate(run.startedAt)?.getTime();
+  const landed = generatedAt ? parseDate(generatedAt)?.getTime() : undefined;
+  return started !== undefined && landed !== undefined && landed >= started;
 }
 
 /**

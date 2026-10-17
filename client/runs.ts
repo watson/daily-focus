@@ -10,10 +10,11 @@
  * the rest are there for the day something needs explaining.
  */
 
-import { h, type RefObject, type JSX } from 'preact';
+import { h, type ComponentChild, type RefObject, type JSX } from 'preact';
 import { useRef } from 'preact/hooks';
 
 import type { AgentRun, AgentRunState, AgentStep, DashboardState } from '../src/types.ts';
+import { briefLanded } from './banners.ts';
 import { el } from './el.ts';
 import { durationBetween, firstLine, formatDay, formatShortDay, formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdownBlocks } from './markdown.ts';
@@ -46,7 +47,7 @@ export function RunPanel({ run, state, ui, handlers }: { run: AgentRun; state: D
     el(
       'div',
       { class: 'flyout__body', ref: body, onScroll },
-      runStatus(run, now, handlers),
+      runStatus(run, now, briefLanded(run, state.brief?.generatedAt), handlers),
       runReport(run, ui, handlers),
       run.status === 'running' ? null : runConversation(run, busy, answering, enabled, ui, handlers, askInput),
       runList(run, runs, now, agent, handlers),
@@ -143,11 +144,14 @@ function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element 
     : null;
 
   if (running) {
+    // Only its words are kept, so between them it is always composing the next.
+    const latest = earlier.at(-1);
+    const summary = `${latest ? firstLine(latest) : 'Starting'} · ${earlier.length} ${earlier.length === 1 ? 'message' : 'messages'}`;
     return el(
       'section',
       { class: 'flyout__section' },
       el('h3', { class: 'flyout__label' }, 'What it is doing'),
-      list ?? el('p', { class: 'flyout__empty' }, 'Nothing yet.'),
+      workFold(run, summary, [list, el('ol', { class: 'assistant__steps agent-run__steps' }, waitingLine(earlier.length > 0))], ui, handlers),
     );
   }
   return el(
@@ -183,7 +187,7 @@ function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
       'section',
       { class: 'flyout__section' },
       el('h3', { class: 'flyout__label' }, 'What it is doing'),
-      runSteps(run, run.steps, null, ui, handlers),
+      workFold(run, workSummary(run), runSteps(run, run.steps, null, true, ui, handlers), ui, handlers),
     );
   }
   const last = run.steps.findLast((step) => step.by === null && step.kind === 'message');
@@ -206,22 +210,89 @@ function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
             `How it got there, in ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}` +
               (handoffs ? `, with ${handoffs} ${handoffs === 1 ? 'subagent' : 'subagents'}` : ''),
           ),
-          runSteps(run, steps, null, ui, handlers),
+          runSteps(run, steps, null, false, ui, handlers),
         )
       : null,
+  );
+}
+
+/**
+ * The fold a running run's work sits under, closed until somebody opens it.
+ *
+ * Open, the list ran to the foot of the panel and kept growing, which is what
+ * a transcript does; the panel's job while a run goes is to say what the agent
+ * is on and that it is still at it, which one line does. The line names what it
+ * is doing now and how much it has done, and carries a spinner. The reader's
+ * toggle is kept with the message folds', under `<run>:work`, so it survives
+ * each new step; a toggle back to closed is forgotten, as theirs are.
+ */
+function workFold(run: AgentRun, summary: string, content: ComponentChild, ui: UiState, handlers: Handlers): JSX.Element {
+  const key = `${run.id}:work`;
+  return el(
+    'details',
+    {
+      class: 'agent-run__list agent-run__list--working',
+      open: ui.messageOpen.value.get(key) ?? false,
+      onToggle: (event: Event) => {
+        const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+        handlers.toggleMessage(key, isOpen ? true : null);
+      },
+    },
+    el('summary', null, summary),
+    content,
+  );
+}
+
+/**
+ * The fold's one line while a run that keeps its steps goes: what the run's
+ * own agent is on, and how much the run has done. "Waiting on gmail, calendar
+ * · 29 steps" while its call in flight is a handoff, since the subagents are
+ * then the whole of what is happening; "Run a command · 12 steps, 1 subagent
+ * at work" while it is on a call of its own.
+ */
+function workSummary(run: AgentRun): string {
+  const own = run.steps.filter((step) => step.by === null);
+  const inFlight = own.findLast((step) => step.kind === 'tool' && step.state === 'running');
+  const latest = own.at(-1);
+  const working = run.steps.filter((step) => step.subagent && step.state === 'running');
+  const count = `${run.steps.length} ${run.steps.length === 1 ? 'step' : 'steps'}`;
+  if (inFlight?.subagent) {
+    return `Waiting on ${working.map((step) => step.detail ?? 'a subagent').join(', ') || 'a subagent'} · ${count}`;
+  }
+  const doing = inFlight ? inFlight.text : latest ? (latest.kind === 'message' ? firstLine(latest.text) : latest.text) : 'Starting';
+  const helping = working.length;
+  return `${doing} · ${count}${helping ? `, ${helping} ${helping === 1 ? 'subagent' : 'subagents'} at work` : ''}`;
+}
+
+/**
+ * The line under an agent's steps while it is at work and no call is in
+ * flight: between calls it is composing, which no step records, and a list
+ * that ends on a tick reads as stuck. The last such gap is the longest, when
+ * the brief is written and checked.
+ */
+function waitingLine(begun: boolean): JSX.Element {
+  return el(
+    'li',
+    { class: 'assistant__step assistant__step--waiting', 'data-state': 'running' },
+    el('span', { class: 'assistant__step-text' }, begun ? 'Thinking…' : 'Starting…'),
   );
 }
 
 /** How deep subagents of subagents are drawn. Codex lets a subagent start its own. */
 const NESTING = 4;
 
-/** The steps taken by one agent, `by`: the run's own when null, else a subagent's. */
-function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null, ui: UiState, handlers: Handlers, depth = 0): JSX.Element {
+/**
+ * The steps taken by one agent, `by`: the run's own when null, else a
+ * subagent's. `active` says the agent is still at work, which is what earns it
+ * a waiting line when none of its calls is in flight.
+ */
+function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null, active: boolean, ui: UiState, handlers: Handlers, depth = 0): JSX.Element {
   const own = steps.filter((step) => step.by === by);
+  const inFlight = own.some((step) => step.state === 'running');
   return el(
     'ol',
     { class: 'assistant__steps agent-run__steps' },
-    own.length ? null : el('li', { class: 'assistant__step assistant__step--message' }, 'Nothing yet.'),
+    own.length || active ? null : el('li', { class: 'assistant__step assistant__step--message' }, 'Nothing yet.'),
     own.map((step, index) => {
       if (step.kind === 'message') {
         return el('li', { key: index, class: 'agent-run__said' }, renderMarkdownBlocks(step.text));
@@ -234,6 +305,7 @@ function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null,
         step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
       );
     }),
+    active && !inFlight ? waitingLine(own.length > 0) : null,
   );
 }
 
@@ -277,7 +349,7 @@ function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep,
         el('span', { class: 'assistant__step-text' }, `Subagent: ${step.detail ?? 'unnamed'}`),
         el('span', { class: 'assistant__step-detail' }, doing),
       ),
-      runSteps(run, steps, id, ui, handlers, depth + 1),
+      runSteps(run, steps, id, step.state === 'running', ui, handlers, depth + 1),
     ),
   );
 }
@@ -287,13 +359,23 @@ function sameWords(a: string, b: string): boolean {
   return a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
 }
 
-/** The one line under the header that says how the run went, and Stop while it goes. */
-function runStatus(run: AgentRun, now: Date, handlers: Handlers): JSX.Element {
+/**
+ * The one line under the header that says how the run went, and Stop while it
+ * goes. Once the brief has landed the run is past writing it: what is left is
+ * the prompt's check of the file and the report, and the line says so rather
+ * than claim a brief that is already on the page is still being written.
+ */
+function runStatus(run: AgentRun, now: Date, landed: boolean, handlers: Handlers): JSX.Element {
   if (run.status === 'running') {
     return el(
       'p',
       { class: 'agent-run__status' },
-      `Writing a new brief, started ${relativeTime(run.startedAt, now)}. `,
+      el(
+        'span',
+        { class: 'assistant__status--working' },
+        `${landed ? 'The brief is in; checking it and writing its report' : 'Writing a new brief'}, started ${relativeTime(run.startedAt, now)}.`,
+      ),
+      ' ',
       el('button', { type: 'button', class: 'button', onClick: () => handlers.stopAgent() }, 'Stop'),
     );
   }

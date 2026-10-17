@@ -340,7 +340,7 @@ Then the general editorial bar:
 {
   "version": 1,
   "generatedAt": "<ISO 8601 timestamp, with offset>",
-  "generatedBy": "<name yourself — your model or agent id>",
+  "generatedBy": "<your model or agent id, such as codex, and nothing else>",
   "date": "<today, YYYY-MM-DD>",
   "headline": "<one or two sentences, or omit>",
   "items": [ … ]
@@ -418,7 +418,9 @@ Check all of these, and fix anything that fails:
 6. Every `url` starts with `http://` or `https://`, and came from a tool rather than
    being built by you.
 7. Every `start`/`end` has a timezone offset, unless deliberately all-day.
-8. `generatedAt` is now, and `generatedBy` names whoever ran.
+8. `generatedAt` is now, and `generatedBy` names whoever ran — your model or agent
+   id and nothing else: not a working directory, a path or an account. The dashboard
+   prints it after "updated … by" in its header.
 9. **When `focus.md` sets an objective, at least one item offers a concrete path to
    it** — a real one you found, or the synthesised one. With no objective, no item has
    `advancesObjective`.

@@ -3,7 +3,7 @@
 import { h, type JSX } from 'preact';
 
 import type { DashboardState } from '../src/types.ts';
-import { nextRunPhraseFor } from './banners.ts';
+import { briefLanded, nextRunPhraseFor } from './banners.ts';
 import { boardStatus } from './board.ts';
 import { el } from './el.ts';
 import { dayKey, formatDay, formatTime } from './format.ts';
@@ -179,7 +179,9 @@ function briefRefresh(state: DashboardState, handlers: Handlers): JSX.Element | 
   if (!agent?.enabled) return null;
   const running = agent.last?.status === 'running';
   const label = running
-    ? `The morning agent is writing a new brief, started ${formatTime(agent.last?.startedAt)}`
+    ? agent.last && briefLanded(agent.last, state.brief.generatedAt)
+      ? `The brief is in; the morning agent is checking it and writing its report, started ${formatTime(agent.last.startedAt)}`
+      : `The morning agent is writing a new brief, started ${formatTime(agent.last?.startedAt)}`
     : `Run the morning agent now, for a fresh brief${nextRunPhraseFor(agent)}`;
   return el(
     'button',
