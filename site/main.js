@@ -162,6 +162,117 @@ function nowLine() {
 
 nowLine();
 
+/* ---------- 11:30: the assistant, replayed ---------- */
+
+// What the assistant did for Mara on each quick action: its steps, how long the
+// panel says it worked, and its answer. The draft is the demo's own turn on this
+// thread (src/demo.ts); the other two are written to the same thread.
+const ASKS = {
+  draft: {
+    label: 'Draft a reply',
+    seconds: 64,
+    steps: [
+      ['tool', 'Gmail: get thread'],
+      ['tool', 'Gmail: search threads <code>Q4 planning doc headcount</code>'],
+      ['said', 'Bob wants numbers per team with a reason each. The planning doc has both.'],
+      ['tool', 'Gmail: create draft'],
+    ],
+    answer:
+      '<p>He wants the Q4 team split: how many of the six open roles go to Platform and how many to Webapp, with a line of justification each, by the end of the week.</p>' +
+      '<p>I have created a Gmail draft on the thread proposing four Platform and two Webapp, with the reasons from the planning doc. It is <b>not sent</b>; it is waiting on the thread when you open it.</p>',
+    actions: ['Copy reply', 'Open draft'],
+  },
+  summary: {
+    label: 'Summarise the thread',
+    seconds: 21,
+    steps: [
+      ['tool', 'Gmail: get thread'],
+      ['said', 'Four messages. Bob asked twice; Alice added when the deck locks.'],
+    ],
+    answer:
+      '<p>Bob is planning Q4 hiring and needs your team split: how many of the six open roles go to Platform and how many to Webapp, with a line on why for each.</p>' +
+      '<p>He asked on Monday and followed up yesterday. Alice added that the planning deck locks on Friday, so that is the real deadline. Nobody has answered yet.</p>',
+    actions: ['Copy reply'],
+  },
+  need: {
+    label: 'What do they need from me?',
+    seconds: 29,
+    steps: [
+      ['tool', 'Gmail: get thread'],
+      ['tool', 'Gmail: search threads <code>from:bob Q4</code>'],
+    ],
+    answer:
+      '<p><b>The team split, by Friday.</b> Six open roles divided between Platform and Webapp, with one line on why for each, so it can go in the planning deck. The budget and the timing are settled already; that split is all Bob is waiting on.</p>',
+    actions: ['Copy reply'],
+  },
+};
+
+/** How long each step takes to tick by in the replay. */
+const STEP_MS = 650;
+
+function assistantReplay() {
+  const turn = document.querySelector('[data-turn]');
+  const chips = [...document.querySelectorAll('[data-ask]')];
+  if (!turn || chips.length === 0) return;
+  let timers = [];
+
+  const head = (ask) => `<p class="turn__head"><b>${ask.label}</b> <span class="muted">· just now</span></p>`;
+  const item = ([kind, text]) => `<li${kind === 'said' ? ' class="said"' : ''}>${text}</li>`;
+  const steps = (n) => `${n} ${n === 1 ? 'step' : 'steps'}`;
+
+  // The turn as the panel leaves it: the trail folded under its answer.
+  const finished = (ask) => {
+    turn.innerHTML =
+      head(ask) +
+      `<details class="turn__trail"><summary>Worked for ${ask.seconds} s · ${steps(ask.steps.length)}</summary><ul>${ask.steps.map(item).join('')}</ul></details>` +
+      `<div class="answer">${ask.answer}</div>` +
+      `<p class="panel__actions">${ask.actions.map((label) => `<span class="button button--ui">${label}</span>`).join('')}</p>`;
+  };
+
+  const play = (key) => {
+    const ask = ASKS[key];
+    if (!ask) return;
+    timers.forEach(clearTimeout);
+    timers = [];
+    for (const chip of chips) {
+      const on = chip.dataset.ask === key;
+      chip.classList.toggle('chip--on', on);
+      chip.setAttribute('aria-pressed', String(on));
+    }
+    turn.classList.remove('is-landed');
+    if (reduceMotion.matches) {
+      finished(ask);
+      return;
+    }
+
+    // While it works: what it is doing, a clock, and each step as it goes.
+    for (const chip of chips) chip.disabled = true;
+    turn.innerHTML = `${head(ask)}<p class="turn__working"><span class="spinner"></span><span>Working</span></p><ul class="turn__steps"></ul>`;
+    const list = turn.querySelector('.turn__steps');
+    const status = turn.querySelector('.turn__working span:last-child');
+    const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+    const total = ask.steps.length;
+    ask.steps.forEach((step, index) => {
+      later(200 + index * STEP_MS, () => {
+        list.lastElementChild?.classList.remove('is-running');
+        list.insertAdjacentHTML('beforeend', item(step));
+        list.lastElementChild.classList.add('is-running');
+        status.textContent = `Working · ${Math.round((ask.seconds * (index + 1)) / (total + 1))} s · ${steps(index + 1)}`;
+      });
+    });
+    later(200 + total * STEP_MS, () => list.lastElementChild?.classList.remove('is-running'));
+    later(200 + total * STEP_MS + 400, () => {
+      finished(ask);
+      turn.classList.add('is-landed');
+      for (const chip of chips) chip.disabled = false;
+    });
+  };
+
+  for (const chip of chips) chip.addEventListener('click', () => play(chip.dataset.ask));
+}
+
+assistantReplay();
+
 /* ---------- 17:00: handle an item ---------- */
 
 function handleCard() {

@@ -1078,13 +1078,96 @@ h1 {
   padding: 3px 11px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink-1);
+  font: 13px/1.5 var(--font-sans);
+  cursor: pointer;
 }
-.chip--on {
+.chip:hover {
+  border-color: var(--ink-3);
+}
+.chip--on,
+.chip--on:hover {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
+}
+.chip:disabled {
+  cursor: default;
+}
+.chip:disabled:not(.chip--on) {
+  opacity: 0.5;
+}
+
+/* The replay: a turn working, then folded under its answer as the panel does it. */
+.turn__working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.turn__working .spinner {
+  width: 12px;
+  height: 12px;
+}
+.turn__steps {
+  margin: 8px 0 4px;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.turn__steps li {
+  position: relative;
+  padding: 3px 0 3px 22px;
+}
+.turn__steps li::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--good-ink);
+}
+.turn__steps li::after {
+  content: '';
+  position: absolute;
+  top: 9px;
+  left: 4.5px;
+  width: 3px;
+  height: 6px;
+  border: solid var(--surface);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+.turn__steps li.is-running::before {
+  box-sizing: border-box;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent-ink);
+  background: none;
+  animation: spin 0.8s linear infinite;
+}
+.turn__steps li.is-running::after {
+  display: none;
+}
+.turn__steps .said {
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+.turn.is-landed .answer,
+.turn.is-landed .panel__actions {
+  animation: land 0.4s ease-out;
+}
+.assist__caption {
+  max-width: 540px;
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font: 13.5px/1.5 var(--font-sans);
 }
 .turn__head {
   font-size: 14px;
@@ -1285,9 +1368,207 @@ h1 {
 }
 .needs {
   max-width: 46em;
-  margin-block: 44px 0;
+  margin-block: 32px 0;
   color: var(--band-muted);
   font: 15px/1.6 var(--font-sans);
+}
+.needs code {
+  color: var(--band-ink);
+  white-space: nowrap;
+}
+
+/* Installing: the two ways beside what setup looks like. */
+.install {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: 40px 64px;
+  align-items: start;
+  margin-top: 44px;
+}
+.install .ways {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  margin: 0;
+}
+.setup {
+  margin: 0;
+}
+.setup__screen {
+  overflow: hidden;
+  border: 1px solid var(--band-rule);
+  border-radius: 12px;
+  background: var(--page);
+  color: var(--ink-1);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+.setup__bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 18px;
+  background: var(--band);
+  border-bottom: 1px solid var(--band-rule);
+  color: var(--band-muted);
+  font-size: 12.5px;
+}
+.setup__name,
+.setup__left {
+  white-space: nowrap;
+}
+.setup__name {
+  color: var(--band-ink);
+  font-weight: 600;
+  font-size: 13px;
+}
+.setup__track {
+  flex: 0 1 110px;
+  min-width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--band-rule);
+}
+.setup__track span {
+  display: block;
+  width: 78%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--band-muted);
+}
+.setup__steps {
+  position: relative;
+  margin: 0;
+  padding: 20px 24px 24px;
+  list-style: none;
+}
+.setup__steps::before {
+  content: '';
+  position: absolute;
+  top: 28px;
+  bottom: 30px;
+  left: 28px;
+  width: 1px;
+  background: var(--hairline);
+}
+.setup__steps > li {
+  position: relative;
+  padding-left: 24px;
+}
+.setup__steps > li::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+.setup__done {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 4px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.setup__change {
+  flex: none;
+  color: var(--ink-1);
+  font-weight: 500;
+  font-size: 13px;
+}
+.setup__steps > .setup__card {
+  margin-block: 14px 12px;
+}
+.setup__steps > .setup__card::before {
+  top: 6px;
+  left: -1px;
+  width: 11px;
+  height: 11px;
+  background: var(--accent);
+}
+.setup__question {
+  margin-bottom: 8px;
+  font: 500 19px/1.3 var(--font-serif);
+}
+.setup__why {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.setup__why svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  fill: var(--accent-ink);
+}
+.setup__choices {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.setup__choices li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 14px;
+}
+.setup__choices small {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.setup__box {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 4px;
+}
+.setup__box[data-on='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.setup__box[data-on='true']::after {
+  content: '';
+  position: absolute;
+  top: 1.5px;
+  left: 4.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.setup__continue {
+  min-height: 34px;
+  padding: 0 16px;
+  font-size: 13.5px;
+}
+.setup__then {
+  padding-block: 2px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+.setup__steps > .setup__then::before {
+  background: var(--page);
+  border: 1.5px solid var(--hairline);
+  box-sizing: border-box;
+}
+.setup figcaption {
+  margin-top: 14px;
+  color: var(--band-muted);
+  font: 13.5px/1.5 var(--font-sans);
 }
 
 /* The maker's note: who makes it, and how to back them. */
@@ -1382,6 +1663,12 @@ h1 {
   }
   .ways {
     grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+  .install {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .setup {
     max-width: 560px;
   }
 }
