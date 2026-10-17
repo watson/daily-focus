@@ -99,6 +99,15 @@ test('a running agent replaces the guesses about when the brief comes, in one li
   assert.deepEqual(calls, ['open r1', 'stop']);
 });
 
+test('once the brief has landed, a running agent is checking it, and the strip says so', () => {
+  const landed = renderWithRun({ ...RUN, status: 'running', report: '', messages: [] }, { generatedAt: '2026-09-24T11:58:00Z', ageHours: 0 });
+  assert.match(landed.container.textContent!, /The brief is in\. The morning agent is checking it and writing its report, started/);
+  assert.doesNotMatch(landed.container.textContent!, /writing a new brief/);
+  // The brief from before the run started is not this run's.
+  const earlier = renderWithRun({ ...RUN, status: 'running', report: '', messages: [] }, { generatedAt: '2026-09-24T11:00:00Z', ageHours: 1 });
+  assert.match(earlier.container.textContent!, /writing a new brief/);
+});
+
 test('a running agent says how many subagents are at work, when it has any', () => {
   const handoff = (state: string) => ({ kind: 'tool', text: 'Hand part of it to a subagent', detail: 'inbox', state, by: null, subagent: state });
   const going = { ...RUN, status: 'running', report: '', messages: [] };

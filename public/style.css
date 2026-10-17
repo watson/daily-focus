@@ -679,6 +679,24 @@ body[data-view='tickets'] #brief-refresh {
 .agent-run__list summary:hover {
   color: var(--ink-1);
 }
+/* The one line of a run still going: what it is on now, so it reads a step darker than a finished run's fold. */
+.agent-run__list--working > summary {
+  color: var(--ink-2);
+  white-space: normal;
+}
+/* That line and Stop on one row; opened, the steps grow under the line and Stop stays put at the top. */
+.agent-run__live {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.agent-run__live > details {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-run__live > .button {
+  flex: none;
+}
 /* What the agent said along the way, one fold per message, under its first line. */
 .agent-run__messages {
   display: flex;
@@ -2347,8 +2365,12 @@ a.button {
   font-variant-numeric: tabular-nums;
 }
 
-/* A spinner, for the turn while it works and for each call it is waiting on. */
+/*
+ * A spinner, for the turn while it works and for each call it is waiting on;
+ * and on the line a running run folds under, which is all of it that shows.
+ */
 .assistant__status--working::after,
+.agent-run__list--working > summary::after,
 .assistant__step[data-state='running']::before {
   content: '';
   display: inline-block;
@@ -2360,7 +2382,8 @@ a.button {
   border-top-color: transparent;
   animation: assistant-spin 0.9s linear infinite;
 }
-.assistant__status--working::after {
+.assistant__status--working::after,
+.agent-run__list--working > summary::after {
   margin-left: 6px;
   vertical-align: -1px;
 }
@@ -2371,6 +2394,7 @@ a.button {
 }
 @media (prefers-reduced-motion: reduce) {
   .assistant__status--working::after,
+  .agent-run__list--working > summary::after,
   .assistant__step[data-state='running']::before {
     animation: none;
   }
@@ -2447,6 +2471,31 @@ a.button {
   font-size: 11.5px;
   color: var(--ink-3);
 }
+/* A run of calls between two things the agent said, folded to the one line that counts them. */
+.agent-run__calls > details {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-run__calls summary {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.agent-run__calls summary:hover {
+  color: var(--ink-1);
+}
+.agent-run__calls .agent-run__steps {
+  margin-top: 4px;
+}
+
+/* Between calls: composing, which no call records. Quieter than a call, since nothing has happened yet. */
+.assistant__step--waiting .assistant__step-text {
+  font-style: italic;
+  color: var(--ink-3);
+}
+
 /* What it said on the way: its own words, in the reading face, set apart from the calls by having no mark. */
 .assistant__step--message {
   display: block;

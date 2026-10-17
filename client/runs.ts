@@ -10,10 +10,11 @@
  * the rest are there for the day something needs explaining.
  */
 
-import { h, type RefObject, type JSX } from 'preact';
+import { h, type ComponentChild, type RefObject, type JSX } from 'preact';
 import { useRef } from 'preact/hooks';
 
 import type { AgentRun, AgentRunState, AgentStep, DashboardState } from '../src/types.ts';
+import { briefLanded } from './banners.ts';
 import { el } from './el.ts';
 import { durationBetween, firstLine, formatDay, formatShortDay, formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdownBlocks } from './markdown.ts';
@@ -46,8 +47,8 @@ export function RunPanel({ run, state, ui, handlers }: { run: AgentRun; state: D
     el(
       'div',
       { class: 'flyout__body', ref: body, onScroll },
-      runStatus(run, now, handlers),
-      runReport(run, ui, handlers),
+      run.status === 'running' ? null : runStatus(run, now, handlers),
+      runReport(run, { landed: briefLanded(run, state.brief?.generatedAt), now }, ui, handlers),
       run.status === 'running' ? null : runConversation(run, busy, answering, enabled, ui, handlers, askInput),
       runList(run, runs, now, agent, handlers),
     ),
@@ -88,6 +89,13 @@ function describeWhen(value: string, now: Date): string {
   return `${named ? day : date && date.getFullYear() === now.getFullYear() ? formatShortDay(value) : formatDay(value)} at ${formatTime(value)}`;
 }
 
+/** What a running run's section needs to say besides its steps: the phase it is in, and how long it has been going. */
+interface Live {
+  /** The brief on the page landed during this run, so it is checking it and writing its report. */
+  landed: boolean;
+  now: Date;
+}
+
 /**
  * The report, and how the agent got there.
  *
@@ -97,8 +105,8 @@ function describeWhen(value: string, now: Date): string {
  * earlier ones fold away the same way. The reader's own folding wins over the
  * default, and survives the re-render every new message brings.
  */
-function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
-  if (run.steps?.length) return runWork(run, ui, handlers);
+function runReport(run: AgentRun, live: Live, ui: UiState, handlers: Handlers): JSX.Element {
+  if (run.steps?.length) return runWork(run, live, ui, handlers);
   const messages = run.messages ?? (run.report ? [run.report] : []);
   const running = run.status === 'running';
   // The report is the last message when the CLI has no final result of its own;
@@ -143,12 +151,10 @@ function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element 
     : null;
 
   if (running) {
-    return el(
-      'section',
-      { class: 'flyout__section' },
-      el('h3', { class: 'flyout__label' }, 'What it is doing'),
-      list ?? el('p', { class: 'flyout__empty' }, 'Nothing yet.'),
-    );
+    // Only its words are kept, so between them it is always composing the next.
+    const latest = earlier.at(-1);
+    const summary = `${latest ? firstLine(latest) : 'Starting'} · ${earlier.length} ${earlier.length === 1 ? 'message' : 'messages'}`;
+    return liveSection(run, live, summary, [list, el('ol', { class: 'assistant__steps agent-run__steps' }, waitingLine(earlier.length > 0))], ui, handlers);
   }
   return el(
     'section',
@@ -176,16 +182,9 @@ function runReport(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element 
  * the report stands on its own and the way there folds away beneath it, less
  * the report itself.
  */
-function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
+function runWork(run: AgentRun, live: Live, ui: UiState, handlers: Handlers): JSX.Element {
   const running = run.status === 'running';
-  if (running) {
-    return el(
-      'section',
-      { class: 'flyout__section' },
-      el('h3', { class: 'flyout__label' }, 'What it is doing'),
-      runSteps(run, run.steps, null, ui, handlers),
-    );
-  }
+  if (running) return liveSection(run, live, workSummary(run), runSteps(run, run.steps, null, true, ui, handlers), ui, handlers);
   const last = run.steps.findLast((step) => step.by === null && step.kind === 'message');
   const steps = last && sameWords(last.text, run.report) ? run.steps.filter((step) => step !== last) : run.steps;
   const handoffs = steps.filter((step) => step.subagent).length;
@@ -206,41 +205,199 @@ function runWork(run: AgentRun, ui: UiState, handlers: Handlers): JSX.Element {
             `How it got there, in ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}` +
               (handoffs ? `, with ${handoffs} ${handoffs === 1 ? 'subagent' : 'subagents'}` : ''),
           ),
-          runSteps(run, steps, null, ui, handlers),
+          runSteps(run, steps, null, false, ui, handlers),
         )
       : null,
+  );
+}
+
+/**
+ * The section a running run has in place of its report: the phase it is in as
+ * the heading, and one row under it with the fold of its work and Stop. One
+ * section rather than a status line above a section, since the header already
+ * says the run is going and when it started, and the heading and the fold line
+ * between them say the rest. Once the brief has landed the run is past writing
+ * it: what is left is the prompt's check of the file and the report, and the
+ * heading says so rather than claim a brief already on the page is still being
+ * written.
+ */
+function liveSection(run: AgentRun, live: Live, summary: string, content: ComponentChild, ui: UiState, handlers: Handlers): JSX.Element {
+  const phase = live.landed ? 'The brief is in; checking it and writing its report' : 'Writing a new brief';
+  return el(
+    'section',
+    { class: 'flyout__section' },
+    el('h3', { class: 'flyout__label' }, `${phase}, started ${relativeTime(run.startedAt, live.now)}`),
+    el(
+      'div',
+      { class: 'agent-run__live' },
+      workFold(run, summary, content, ui, handlers),
+      el('button', { type: 'button', class: 'button', onClick: () => handlers.stopAgent() }, 'Stop'),
+    ),
+  );
+}
+
+/**
+ * The fold a running run's work sits under, closed until somebody opens it.
+ *
+ * Open, the list ran to the foot of the panel and kept growing, which is what
+ * a transcript does; the panel's job while a run goes is to say what the agent
+ * is on and that it is still at it, which one line does. The line names what it
+ * is doing now and how much it has done, and carries a spinner. The reader's
+ * toggle is kept with the message folds', under `<run>:work`, so it survives
+ * each new step; a toggle back to closed is forgotten, as theirs are.
+ */
+function workFold(run: AgentRun, summary: string, content: ComponentChild, ui: UiState, handlers: Handlers): JSX.Element {
+  const key = `${run.id}:work`;
+  return el(
+    'details',
+    {
+      class: 'agent-run__list agent-run__list--working',
+      open: ui.messageOpen.value.get(key) ?? false,
+      onToggle: (event: Event) => {
+        const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+        handlers.toggleMessage(key, isOpen ? true : null);
+      },
+    },
+    el('summary', null, summary),
+    content,
+  );
+}
+
+/**
+ * The fold's one line while a run that keeps its steps goes: what the run's
+ * own agent is on, and how much the run has done. "Waiting on gmail, calendar
+ * · 29 steps" while its call in flight is a handoff, since the subagents are
+ * then the whole of what is happening; "Run a command · 12 steps, 1 subagent
+ * at work" while it is on a call of its own.
+ */
+function workSummary(run: AgentRun): string {
+  const own = run.steps.filter((step) => step.by === null);
+  const inFlight = own.findLast((step) => step.kind === 'tool' && step.state === 'running');
+  const latest = own.at(-1);
+  const working = run.steps.filter((step) => step.subagent && step.state === 'running');
+  const count = `${run.steps.length} ${run.steps.length === 1 ? 'step' : 'steps'}`;
+  if (inFlight?.subagent) {
+    return `Waiting on ${working.map((step) => step.detail ?? 'a subagent').join(', ') || 'a subagent'} · ${count}`;
+  }
+  const doing = inFlight ? inFlight.text : latest ? (latest.kind === 'message' ? firstLine(latest.text) : latest.text) : 'Starting';
+  const helping = working.length;
+  return `${doing} · ${count}${helping ? `, ${helping} ${helping === 1 ? 'subagent' : 'subagents'} at work` : ''}`;
+}
+
+/**
+ * The line under an agent's steps while it is at work and no call is in
+ * flight: between calls it is composing, which no step records, and a list
+ * that ends on a tick reads as stuck. The last such gap is the longest, when
+ * the brief is written and checked.
+ */
+function waitingLine(begun: boolean): JSX.Element {
+  return el(
+    'li',
+    { class: 'assistant__step assistant__step--waiting', 'data-state': 'running' },
+    el('span', { class: 'assistant__step-text' }, begun ? 'Thinking…' : 'Starting…'),
   );
 }
 
 /** How deep subagents of subagents are drawn. Codex lets a subagent start its own. */
 const NESTING = 4;
 
-/** The steps taken by one agent, `by`: the run's own when null, else a subagent's. */
-function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null, ui: UiState, handlers: Handlers, depth = 0): JSX.Element {
-  const own = steps.filter((step) => step.by === by);
+/** A step and where it sits in the run's list, which is what names a fold of calls and keeps the name as the list grows. */
+interface Placed {
+  step: AgentStep;
+  index: number;
+}
+
+/** How many calls in a row it takes to fold them: one alone is shorter than the line that would stand for it. */
+const CALLS_FOLD = 2;
+
+/**
+ * The steps taken by one agent, `by`: the run's own when null, else a
+ * subagent's. `active` says the agent is still at work, which is what earns it
+ * a waiting line when none of its calls is in flight.
+ *
+ * What it said stands as it was said; a run of calls between two things it
+ * said folds to one line that counts them, as a coding agent folds its own;
+ * and a call still in flight stays out of any fold, since it is what is
+ * happening now.
+ */
+function runSteps(run: AgentRun, steps: readonly AgentStep[], by: string | null, active: boolean, ui: UiState, handlers: Handlers, depth = 0): JSX.Element {
+  const own: Placed[] = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.by === by);
+  const inFlight = own.some(({ step }) => step.state === 'running');
+  const items: ComponentChild[] = [];
+  let calls: Placed[] = [];
+  const flush = (): void => {
+    if (calls.length >= CALLS_FOLD) items.push(callsFold(run, by, calls, ui, handlers));
+    else for (const placed of calls) items.push(callLine(placed));
+    calls = [];
+  };
+  for (const placed of own) {
+    const { step, index } = placed;
+    const folds = step.subagent && depth < NESTING;
+    if (step.kind === 'tool' && !folds && step.state !== 'running') {
+      calls.push(placed);
+      continue;
+    }
+    flush();
+    if (step.kind === 'message') items.push(el('li', { key: index, class: 'agent-run__said' }, renderMarkdownBlocks(step.text)));
+    else if (folds) items.push(runHandoff(run, steps, step, ui, handlers, depth, index));
+    else items.push(callLine(placed));
+  }
+  flush();
   return el(
     'ol',
     { class: 'assistant__steps agent-run__steps' },
-    own.length ? null : el('li', { class: 'assistant__step assistant__step--message' }, 'Nothing yet.'),
-    own.map((step, index) => {
-      if (step.kind === 'message') {
-        return el('li', { key: index, class: 'agent-run__said' }, renderMarkdownBlocks(step.text));
-      }
-      if (step.subagent && depth < NESTING) return runHandoff(run, steps, step, ui, handlers, depth, index);
-      return el(
-        'li',
-        { key: index, class: 'assistant__step', 'data-state': step.state },
-        el('span', { class: 'assistant__step-text' }, step.text),
-        step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
-      );
-    }),
+    own.length || active ? null : el('li', { class: 'assistant__step assistant__step--message' }, 'Nothing yet.'),
+    items,
+    active && !inFlight ? waitingLine(own.length > 0) : null,
+  );
+}
+
+/** One call, as its name and what it was called with. */
+function callLine({ step, index }: Placed): JSX.Element {
+  return el(
+    'li',
+    { key: index, class: 'assistant__step', 'data-state': step.state },
+    el('span', { class: 'assistant__step-text' }, step.text),
+    step.detail ? el('code', { class: 'assistant__step-detail', title: step.detail }, step.detail) : null,
+  );
+}
+
+/**
+ * A run of calls, folded to one line: how many, what they were, and how many
+ * failed, with the calls themselves beneath for whoever wants them. Named by
+ * the first call's place in the run's list, so the name holds while calls are
+ * still being added to it, and the reader's toggle is kept as the other folds'
+ * are. The mark it carries is the group's: a cross if any call failed.
+ */
+function callsFold(run: AgentRun, by: string | null, calls: readonly Placed[], ui: UiState, handlers: Handlers): JSX.Element {
+  const key = `${run.id}:${by ?? 'run'}:calls@${calls[0]!.index}`;
+  const failed = calls.filter(({ step }) => step.state === 'failed').length;
+  const names = [...new Set(calls.map(({ step }) => step.text))];
+  const named = names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
+  const summary = `${calls.length} calls${failed ? `, ${failed} failed` : ''} · ${named}`;
+  return el(
+    'li',
+    { key, class: 'assistant__step agent-run__calls', 'data-state': failed ? 'failed' : 'done' },
+    el(
+      'details',
+      {
+        open: ui.messageOpen.value.get(key) ?? false,
+        onToggle: (event: Event) => {
+          const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+          handlers.toggleMessage(key, isOpen ? true : null);
+        },
+      },
+      el('summary', null, summary),
+      el('ol', { class: 'assistant__steps agent-run__steps' }, calls.map((placed) => callLine(placed))),
+    ),
   );
 }
 
 /**
  * A part of the work handed to a subagent: its name, and what it is doing now
- * or how much it did, over a fold of its own steps. Open while it works, unless
- * the reader closed it; the reader's choice survives each new step.
+ * or how much it did, over a fold of its own steps. Closed until the reader
+ * opens it, as the run's own work is; the reader's choice survives each new
+ * step, and closing it again is forgotten.
  */
 function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep, ui: UiState, handlers: Handlers, depth: number, index: number): JSX.Element {
   const id = step.subagent!;
@@ -256,8 +413,7 @@ function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep,
         : 'starting'
       : `${calls} ${calls === 1 ? 'step' : 'steps'}`;
   const key = `${run.id}:${id}`;
-  const fallback = step.state === 'running';
-  const open = ui.messageOpen.value.has(key) ? ui.messageOpen.value.get(key) : fallback;
+  const open = ui.messageOpen.value.get(key) ?? false;
   return el(
     'li',
     { key: index, class: 'assistant__step agent-run__handoff', 'data-state': step.state },
@@ -268,7 +424,7 @@ function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep,
         // As the message folds do: a toggle back to the default is forgotten.
         onToggle: (event: Event) => {
           const isOpen = (event.currentTarget as HTMLDetailsElement).open;
-          handlers.toggleMessage(key, isOpen === fallback ? null : isOpen);
+          handlers.toggleMessage(key, isOpen ? true : null);
         },
       },
       el(
@@ -277,7 +433,7 @@ function runHandoff(run: AgentRun, steps: readonly AgentStep[], step: AgentStep,
         el('span', { class: 'assistant__step-text' }, `Subagent: ${step.detail ?? 'unnamed'}`),
         el('span', { class: 'assistant__step-detail' }, doing),
       ),
-      runSteps(run, steps, id, ui, handlers, depth + 1),
+      runSteps(run, steps, id, step.state === 'running', ui, handlers, depth + 1),
     ),
   );
 }
@@ -287,16 +443,8 @@ function sameWords(a: string, b: string): boolean {
   return a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
 }
 
-/** The one line under the header that says how the run went, and Stop while it goes. */
+/** The one line under the header that says how a finished run went. A running one has `liveSection` instead. */
 function runStatus(run: AgentRun, now: Date, handlers: Handlers): JSX.Element {
-  if (run.status === 'running') {
-    return el(
-      'p',
-      { class: 'agent-run__status' },
-      `Writing a new brief, started ${relativeTime(run.startedAt, now)}. `,
-      el('button', { type: 'button', class: 'button', onClick: () => handlers.stopAgent() }, 'Stop'),
-    );
-  }
   const took = runDuration(run);
   if (run.status === 'done') {
     return el('p', { class: 'agent-run__status' }, `Finished at ${formatTime(run.endedAt)}${took ? `, in ${took}` : ''}.`);

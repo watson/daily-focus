@@ -41,14 +41,21 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
 }
 
 const calls: string[] = [];
+const calls_ = () => calls;
 const HANDLERS = new Proxy(
   {},
   { get: (_, name: string) => (...args: unknown[]) => calls.push(`${name} ${args.join(' ')}`.trim()) },
 ) as Handlers;
 
-function panel(current: AgentRun, runs: AgentRun[] = [current], schedule: unknown = null, uiOverrides: Partial<UiValues> = {}): HTMLElement {
+function panel(
+  current: AgentRun,
+  runs: AgentRun[] = [current],
+  schedule: unknown = null,
+  uiOverrides: Partial<UiValues> = {},
+  brief: { generatedAt: string | null } = { generatedAt: null },
+): HTMLElement {
   calls.length = 0;
-  const state = { now: NOW, agentRun: { enabled: true, cli: 'codex', schedule, last: runs[0], runs } } as unknown as DashboardState;
+  const state = { now: NOW, brief, agentRun: { enabled: true, cli: 'codex', schedule, last: runs[0], runs } } as unknown as DashboardState;
   const ui = uiWith({ detailFor: 'run:r1', ...uiOverrides });
   return mountOne(h(Flyout, { row: null, run: current, state, ui, handlers: HANDLERS }));
 }
@@ -131,13 +138,28 @@ test('a run still going offers Stop, shows its latest message open and the earli
   });
   const container = panel(going);
   assert.match(container.textContent!, /Writing a new brief, started/);
+  assert.equal(byClass(container, 'assistant__status--working').length, 0, 'one spinner on the panel, and it is the fold line\'s');
   assert.ok(buttonLabels(container).includes('Stop'));
   assert.equal(byClass(container, 'assistant__input').length, 0);
-  assert.match(container.textContent!, /What it is doing/);
+  // One section while it goes: the phase as its heading, and one row of the fold line with Stop beside it.
+  assert.doesNotMatch(container.textContent!, /What it is doing/);
+  assert.equal(byClass(container, 'agent-run__status').length, 0, 'no status line of its own: the heading is it');
+  assert.equal(byClass(container, 'flyout__label')[0]!.textContent, 'Writing a new brief, started 8 h ago');
+  assert.deepEqual(buttonLabels(byClass(container, 'agent-run__live')[0]!), ['Stop']);
+  // All of it folds under one line that says what it is on, closed until opened.
+  const work = byClass(container, 'agent-run__list--working')[0] as HTMLDetailsElement;
+  assert.equal(work.open, false);
+  assert.equal(byTag(work, 'summary')[0]!.textContent, 'Querying the calendar. · 2 messages');
+  assert.match(work.textContent!, /Thinking…/, 'between its words it is composing, and says so');
   assert.deepEqual(folds(container), [
     ['Reading the prompt.', false],
     ['Querying the calendar.', true],
   ]);
+  // Opened by the reader, it stays open through the next push; closed again, that is forgotten.
+  const opened = panel(going, [going], null, { messageOpen: new Map([['r1:work', true]]) });
+  assert.equal((byClass(opened, 'agent-run__list--working')[0] as HTMLDetailsElement).open, true);
+  (byClass(opened, 'agent-run__list--working')[0] as HTMLDetailsElement).open = false;
+  assert.deepEqual(calls, ['toggleMessage r1:work']);
   // Open, the label stands in for the first line so the message reads once.
   assert.deepEqual(
     byClass(container, 'agent-run__message-index').map((label) => label.textContent),
@@ -154,7 +176,13 @@ test('a run still going offers Stop, shows its latest message open and the earli
     ['Reading the prompt.', true],
     ['Querying the calendar.', false],
   ]);
-  assert.match(panel(run({ ...going, messages: [], report: '' })).textContent!, /Nothing yet\./);
+  const fresh = panel(run({ ...going, messages: [], report: '' }));
+  assert.match(fresh.textContent!, /Starting…/);
+  assert.doesNotMatch(fresh.textContent!, /Nothing yet/, 'a run under way has not got nothing: it has not started');
+  // Once the brief has landed, the run is checking it, and the line says so.
+  const landed = panel(going, [going], null, {}, { generatedAt: '2026-09-24T04:40:00Z' });
+  assert.match(landed.textContent!, /The brief is in; checking it and writing its report, started/);
+  assert.doesNotMatch(panel(going, [going], null, {}, { generatedAt: '2026-09-23T06:30:00Z' }).textContent!, /brief is in/, "yesterday's brief is not this run's");
 });
 
 test('finished, the report stands alone and the way there folds away beneath it', () => {
@@ -196,8 +224,11 @@ const WORKING: AgentStep[] = [
 test('a run that keeps its steps shows them as it works, with each subagent under the step that handed it work', () => {
   const going = run({ status: 'running', endedAt: null, report: 'Reading the prompt.', messages: ['Reading the prompt.'], steps: WORKING, resumable: false });
   const container = panel(going);
-  assert.match(container.textContent!, /What it is doing/);
+  assert.match(container.textContent!, /Writing a new brief, started/);
   assert.equal(byClass(container, 'agent-run__message').length, 0, 'the steps take the place of the message folds');
+  const work = byClass(container, 'agent-run__list--working')[0] as HTMLDetailsElement;
+  assert.equal(work.open, false, 'folded by default, as a coding agent folds its own transcript');
+  assert.equal(byTag(work, 'summary')[0]!.textContent, 'Wait for its subagents · 8 steps, 1 subagent at work');
 
   // The agent's own steps, in order, with its words between the calls.
   const top = byClass(container, 'agent-run__steps')[0]!;
@@ -207,10 +238,10 @@ test('a run that keeps its steps shows them as it works, with each subagent unde
   assert.match(own[1]!, /Run a command.*cat prompt\.md/);
   assert.match(own[4]!, /Wait for its subagents/);
 
-  // A subagent at work is open on what it is doing; one that is done is folded, on what it did.
+  // Each subagent folds, at work on what it is doing and done on what it did, closed until opened.
   assert.deepEqual(handoffs(container), [
     ['Subagent: inbox1 step', false],
-    ['Subagent: calendarCalendar: list events', true],
+    ['Subagent: calendarCalendar: list events', false],
   ]);
   const inbox = byClass(container, 'agent-run__handoff')[0]!;
   assert.match(inbox.textContent!, /Gmail: search threads.*Three threads need you\./);
@@ -223,8 +254,74 @@ test('a run that keeps its steps shows them as it works, with each subagent unde
   assert.deepEqual(calls, ['toggleMessage r1:a1'], 'a toggle back to the default is forgotten');
 
   const empty = panel(run({ ...going, steps: [step('Hand part of it to a subagent', { detail: 'inbox', subagent: 'a1', state: 'running' })] }));
-  assert.deepEqual(handoffs(empty), [['Subagent: inboxstarting', true]]);
-  assert.match(empty.textContent!, /Nothing yet\./);
+  assert.deepEqual(handoffs(empty), [['Subagent: inboxstarting', false]]);
+  assert.match(empty.textContent!, /Starting…/);
+  assert.doesNotMatch(empty.textContent!, /Nothing yet/);
+});
+
+test('an agent with no call in flight is composing, and its list says so rather than end on a tick', () => {
+  // The run's own last call is done and it has handed nothing off: it is thinking.
+  const between = run({ status: 'running', endedAt: null, report: '', messages: [], steps: [step('Run a command', { detail: 'cat prompt.md' })], resumable: false });
+  const container = panel(between);
+  const waiting = byClass(container, 'assistant__step--waiting');
+  assert.equal(waiting.length, 1);
+  assert.equal(waiting[0]!.textContent, 'Thinking…');
+  assert.equal(waiting[0]!.getAttribute('data-state'), 'running', 'drawn with the spinner a call in flight gets');
+  assert.equal(byTag(byClass(container, 'agent-run__list--working')[0]!, 'summary')[0]!.textContent, 'Run a command · 1 step');
+
+  // A subagent still at work whose last call is done is composing too; a finished one is not.
+  const inside = run({
+    ...between,
+    steps: [
+      step('Hand part of it to a subagent', { detail: 'inbox', subagent: 'a1', state: 'running' }),
+      step('Gmail: search threads', { by: 'a1' }),
+      step('Hand part of it to a subagent', { detail: 'calendar', subagent: 'a2' }),
+      step('Calendar: list events', { by: 'a2' }),
+    ],
+  });
+  const nested = panel(inside, [inside], null, { messageOpen: new Map([['r1:work', true]]) });
+  const lines = byClass(nested, 'agent-run__handoff').map((item) => byClass(item, 'assistant__step--waiting').length);
+  assert.deepEqual(lines, [1, 0]);
+  assert.equal(byClass(nested, 'assistant__step--waiting').length, 1, 'and the run itself is waiting on the handoff, not composing');
+  assert.equal(byTag(byClass(nested, 'agent-run__list--working')[0]!, 'summary')[0]!.textContent, 'Waiting on inbox · 4 steps', 'named for the subagent it waits on, not the step that handed off');
+
+  // Finished, nothing waits.
+  assert.equal(byClass(panel(run({ steps: [step('Run a command')] })), 'assistant__step--waiting').length, 0);
+});
+
+test('a run of calls between two things the agent said folds to one line, and a call in flight stays out of it', () => {
+  const steps = [
+    step('Reading the prompt.', { kind: 'message' }),
+    step('Run a command', { detail: 'cat prompt.md' }),
+    step('Run a command', { detail: 'rg -n brief' }),
+    step('Gmail search emails', { detail: '{"q":"newer_than:2d"}', state: 'failed' }),
+    step('Three threads need you.', { kind: 'message' }),
+    step('Run a command', { detail: 'python3 - <<PY', state: 'running' }),
+  ];
+  const going = run({ status: 'running', endedAt: null, report: '', messages: [], steps, resumable: false });
+  const container = panel(going, [going], null, { messageOpen: new Map([['r1:work', true]]) });
+  const own = [...byClass(container, 'agent-run__steps')[0]!.children].map((item) => item.textContent);
+  assert.equal(own.length, 4, 'what it said, the three calls as one, what it said, and the call in flight');
+  const calls = byClass(container, 'agent-run__calls')[0]!;
+  const fold = byTag(calls, 'details')[0] as HTMLDetailsElement;
+  assert.equal(fold.open, false);
+  assert.equal(byTag(fold, 'summary')[0]!.textContent, '3 calls, 1 failed · Run a command, Gmail search emails');
+  assert.equal(calls.getAttribute('data-state'), 'failed', 'the fold wears the cross one of its calls earned');
+  assert.match(fold.textContent!, /cat prompt\.md[\s\S]*rg -n brief[\s\S]*newer_than/);
+  assert.match(own[3]!, /python3/);
+  assert.equal(byClass(container, 'assistant__step--waiting').length, 0, 'a call in flight: not thinking');
+
+  // Opened by the reader, it stays open through the next push; closing it is forgotten.
+  const opened = panel(going, [going], null, { messageOpen: new Map([['r1:work', true], ['r1:run:calls@1', true]]) });
+  const openFold = byTag(byClass(opened, 'agent-run__calls')[0]!, 'details')[0] as HTMLDetailsElement;
+  assert.equal(openFold.open, true);
+  openFold.open = false;
+  assert.deepEqual(calls_(), ['toggleMessage r1:run:calls@1']);
+
+  // One call alone is shorter than the line that would stand for it.
+  const single = panel(run({ ...going, steps: [step('Run a command', { detail: 'cat prompt.md' })] }));
+  assert.equal(byClass(single, 'agent-run__calls').length, 0);
+  assert.match(single.textContent!, /cat prompt\.md/);
 });
 
 test('finished, a run that kept its steps folds them under its report, less the report itself', () => {
