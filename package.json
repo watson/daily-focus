@@ -28,6 +28,7 @@
     "public/index.html",
     "public/style.css",
     "public/app.js",
+    "public/fonts/",
     "prompts/",
     "schema/",
     "tools/dfcal/build.sh",

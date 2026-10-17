@@ -86,9 +86,10 @@ test('every setting is a field in its group, with its default as the empty choic
     byClass(root, 'settings-card__title').map((node) => node.textContent),
     ['Your objective', 'Where the agent looks', 'Morning agent', 'Working day'],
   );
-  const agent = root.querySelector<HTMLSelectElement>('#setting-DAILY_FOCUS_AGENT')!;
-  assert.equal(agent.value, 'claude');
-  assert.equal(agent.options[0]!.textContent, 'Default: Off');
+  const agent = root.querySelector<HTMLElement>('#setting-DAILY_FOCUS_AGENT')!;
+  const segments = [...agent.querySelectorAll('[role=radio]')];
+  assert.equal(segments.find((segment) => segment.getAttribute('aria-checked') === 'true')!.textContent, 'Claude Code');
+  assert.equal(segments[0]!.textContent, 'Defaultoff', 'the default is a segment of its own, and says what it is');
   assert.ok(root.querySelector('details #setting-DAILY_FOCUS_AGENT_BIN'), 'a path is folded away under More');
   assert.equal(root.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_AGENT_BIN')!.placeholder, 'Found on PATH');
 });
@@ -99,9 +100,9 @@ test('a fixed value is shown but locked, and says why; a saved one is just its v
   assert.equal(start.disabled, true);
   assert.equal(start.value, '10');
   assert.match(start.closest('.field')!.textContent!, /Fixed in the demo/);
-  const free = root.querySelector<HTMLSelectElement>('#setting-DAILY_FOCUS_FREE_WINDOWS')!;
-  assert.equal(free.disabled, false);
-  assert.equal(free.value, 'off', '"false" saved by hand reads as off');
+  const free = root.querySelector<HTMLElement>('#setting-DAILY_FOCUS_FREE_WINDOWS')!;
+  assert.equal(free.getAttribute('aria-disabled'), 'false');
+  assert.equal(free.querySelector('[aria-checked=true]')!.textContent, 'Off', '"false" saved by hand reads as off');
   assert.equal(free.closest('.field')!.querySelector('.field__note'), null);
 });
 
@@ -109,15 +110,14 @@ test('a change goes to the draft, and the bar offers to save it', () => {
   const edits: [string, string | null][] = [];
   const root = render({}, handlersWith({ editSetting: (key, value) => void edits.push([key, value]) }));
   assert.equal(root.querySelector<HTMLElement>('.settings__bar')!.hidden, true, 'nothing to save yet');
-  const agent = root.querySelector<HTMLSelectElement>('#setting-DAILY_FOCUS_AGENT')!;
-  agent.value = '';
-  agent.dispatchEvent(new Event('change', { bubbles: true }));
-  assert.deepEqual(edits, [['DAILY_FOCUS_AGENT', null]], 'the empty choice means back to the default');
+  const agent = root.querySelector<HTMLElement>('#setting-DAILY_FOCUS_AGENT')!;
+  agent.querySelector<HTMLButtonElement>('[role=radio]')!.click();
+  assert.deepEqual(edits, [['DAILY_FOCUS_AGENT', null]], 'the Default segment means back to the default');
 
   const drafted = render({ settingsDraft: new Map([['DAILY_FOCUS_AGENT', 'off']]) });
   assert.equal(drafted.querySelector<HTMLElement>('.settings__bar')!.hidden, false);
   assert.match(drafted.querySelector('.settings__bar')!.textContent!, /1 unsaved change\. Saving restarts the dashboard to apply it\./);
-  assert.equal(drafted.querySelector('[data-changed="true"] select')?.id, 'setting-DAILY_FOCUS_AGENT');
+  assert.equal(drafted.querySelector('[data-changed="true"] .segmented')?.id, 'setting-DAILY_FOCUS_AGENT');
 
   const refused = render({ settingsDraft: new Map([['DAILY_FOCUS_AGENT', 'off']]), settingsError: 'DAILY_FOCUS_AGENT must be off or one of claude, codex' });
   assert.match(refused.querySelector('.settings__bar-text--error')!.textContent!, /must be off or one of/);

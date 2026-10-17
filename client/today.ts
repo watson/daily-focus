@@ -16,7 +16,11 @@ export function TodayView({ state, ui, handlers }: { state: DashboardState; ui: 
   // Before the first brief there is nothing to rank and nothing to count: the
   // page is the first brief on its way instead.
   if (state.setup?.needed) return [h(FirstBriefCard, { state, handlers })];
-  return [renderObjective(state, handlers), renderStats(state), renderHeadline(state), renderSections(state, ui, handlers)];
+  // The morning's masthead, on the band with the date; the brief itself below, on the paper.
+  return [
+    el('div', { class: 'today__masthead' }, renderObjective(state, handlers), renderStats(state), renderHeadline(state)),
+    renderSections(state, ui, handlers),
+  ];
 }
 
 /* ---------- standing objective ---------- */

@@ -1,17 +1,74 @@
 /*
- * Tokens come from the validated reference palette: the eight categorical hues
- * carry source identity, the four status colours are reserved for state only.
- * Both modes are selected, not flipped — dark has its own steps.
+ * The page is a day-book: one page for one day. The date is its masthead, the
+ * objective its headline, the agenda a ruled timeline in the margin. Prose —
+ * the objective, the agent's headline, a court's hint — is written straight on
+ * the paper. Anything tabular — a list of rows, the day's numbers, the
+ * timeline, a settings group — sits on a white sheet with an edge, and the
+ * rows on a sheet are ruled apart. That edge is what tells one block from the
+ * next; the first cut of this design ruled everything on the paper alone, and
+ * where a row ended was anyone's guess.
+ *
+ * Two faces, each with a job. The words the brief is made of — the date, the
+ * objective, the agent's headline, its reports and the assistant's answers,
+ * setup's questions — are set in Plex Serif, the face for reading. Everything
+ * operational — rows, meta, pills, controls, times — is Plex Sans. Both are
+ * served from `fonts/`, since this dashboard is private and may be offline, and
+ * nothing it shows should fetch from a third party on every open.
+ *
+ * The masthead is a band of navy across the top of every page: the date, the
+ * readout and the tabs, and on Today the objective, the day's numbers and the
+ * agent's note too, since those are the morning's masthead as much as the date
+ * is. Amber is the one accent, for what can be pressed: the selected tab, the
+ * primary button, the pressed gear, the rank of a row. The eight source hues
+ * carry source identity and the four status colours are reserved for state, so
+ * a coloured thing on the paper is a fact about the content or a thing to press.
+ * A blue accent used to compete with GitHub's blue for the same job.
+ *
+ * Both modes are selected, not flipped — dark has its own steps. Each token
+ * names both and `light-dark()` picks one, so the dark palette lives here and
+ * nowhere else; a second hand-kept copy inside a `prefers-color-scheme` block
+ * used to drift from this one with nothing to notice.
  *
  * Source colour is never the only cue: every dot sits beside its source name in
  * text, which is what lets the lighter light-mode hues (aqua, yellow, magenta)
  * sit below 3:1 contrast without losing meaning.
- *
- * Each token names both its steps and `light-dark()` picks one, so the dark
- * palette lives here and nowhere else. It used to be a second, hand-kept copy of
- * this list inside a `prefers-color-scheme` block — twenty-two values one edit
- * away from disagreeing with the ones above them, with nothing to notice.
  */
+
+@font-face {
+  font-family: 'Plex Sans';
+  src: url('/fonts/IBMPlexSans-Variable.woff2') format('woff2');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('/fonts/IBMPlexSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('/fonts/IBMPlexSerif-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('/fonts/IBMPlexSerif-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Serif';
+  src: url('/fonts/IBMPlexSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
 
 :root {
   /*
@@ -21,22 +78,41 @@
    */
   color-scheme: light dark;
 
-  --page: light-dark(#f9f9f7, #0d0d0d);
-  --surface: light-dark(#fcfcfb, #1a1a19);
-  --surface-sunken: light-dark(#f2f1ed, #131312);
-  --ink-1: light-dark(#0b0b0b, #ffffff);
-  --ink-2: light-dark(#52514e, #c3c2b7);
-  --ink-3: #898781; /* Shared deliberately: the muted step clears both pages. */
-  --hairline: light-dark(#e1e0d9, #2c2c2a);
-  --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
+  --page: light-dark(#f2f1ec, #0f1012);
+  --surface: light-dark(#ffffff, #1e2025);
+  --surface-sunken: light-dark(#eceae4, #2a2c32);
+  --ink-1: light-dark(#1b1f2a, #e9ebef);
+  --ink-2: light-dark(#4d5362, #aeb4c0);
+  --ink-3: light-dark(#6e7484, #868c9a);
+  /* A rule between rows on a sheet, and a rule on the paper: the paper's is darker, to show at all. */
+  --rule: light-dark(#e6e5df, #2e3037);
+  --hairline: light-dark(#d7d6ce, #33353c);
+  --border: light-dark(rgba(27, 31, 42, 0.2), rgba(233, 235, 239, 0.16));
+
+  /*
+   * The band. Navy in both modes: in light it is the dark thing on a light
+   * page, in dark the blue thing on a near-black one, so hue carries it where
+   * lightness can't. Its own steps for text and rules, since nothing on it is
+   * the paper's ink.
+   */
+  --band: light-dark(#1c2541, #1a2140);
+  --band-ink: #ffffff;
+  --band-muted: light-dark(#a9b3cc, #9aa4c3);
+  --band-rule: rgba(255, 255, 255, 0.18);
+  --band-sheet: rgba(255, 255, 255, 0.07);
+  --band-critical: #ffb3b3;
+  --band-good: #7ee2a8;
   /*
    * Dark wants no shadow at all. Written as transparent steps rather than as a
    * `none` somewhere else, because anywhere else means a selector that knows
    * which mode it is in — and that is the duplicate copy coming back for one
    * property.
    */
-  --shadow: 0 1px 2px light-dark(rgba(11, 11, 11, 0.05), transparent),
-    0 4px 16px light-dark(rgba(11, 11, 11, 0.04), transparent);
+  --shadow: 0 1px 2px light-dark(rgba(27, 31, 42, 0.05), transparent),
+    0 6px 20px light-dark(rgba(27, 31, 42, 0.06), transparent);
+  /* The panel and the menus float, so they cast more. */
+  --shadow-float: 0 1px 2px light-dark(rgba(27, 31, 42, 0.06), transparent),
+    0 14px 40px light-dark(rgba(27, 31, 42, 0.14), rgba(0, 0, 0, 0.5));
 
   --good: #0ca30c;
   --warning: #fab219;
@@ -55,15 +131,24 @@
   --src-reminders: light-dark(#8a5a2b, #c89058);
   --src-messages: light-dark(#9b3fc0, #c07ae8);
   --src-eboks: light-dark(#c42b3a, #e5535f);
-  --src-other: #898781;
+  --src-other: #7d8392;
 
-  --accent: light-dark(#2a78d6, #3987e5);
-  --accent-wash: light-dark(#e8f1fd, #14263a);
-  --focus-ring: light-dark(#2a78d6, #3987e5);
+  /*
+   * Amber, for what can be pressed. As a fill it carries dark text; as text on
+   * the paper it is darkened until it clears the page, which `--accent-ink` is.
+   */
+  --accent: #e0962a;
+  --accent-ink: light-dark(#a86a14, #e8a743);
+  --on-accent: #1b1f2a;
+  --accent-wash: light-dark(#fbefd9, #3a3220);
+  --focus-ring: var(--ink-1);
 
   --radius: 10px;
   --radius-sm: 6px;
-  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --page-width: 1180px;
+  --font: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Plex Serif', 'Iowan Old Style', Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /*
@@ -86,22 +171,23 @@
 
 /*
  * The UA stylesheet's `[hidden] { display: none }` loses to any class that sets
- * display, so `.toast` rendered as an empty box
- * while "hidden". Assert it once here rather than remembering per component.
+ * display, so `.toast` rendered as an empty box while "hidden". Assert it once
+ * here rather than remembering per component.
  */
 [hidden] {
   display: none !important;
 }
 
 body {
+  --gutter: clamp(16px, 4vw, 48px);
   margin: 0;
-  padding: 0 clamp(16px, 4vw, 40px) 64px;
   background: var(--page);
   color: var(--ink-1);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 :focus-visible {
@@ -110,9 +196,14 @@ body {
   border-radius: 3px;
 }
 
+/* Links are ink, told apart by the underline alone; it darkens under the pointer. */
 a {
-  color: var(--accent);
+  color: var(--ink-1);
+  text-decoration-color: var(--ink-3);
   text-underline-offset: 2px;
+}
+a:hover {
+  text-decoration-color: currentColor;
 }
 
 .skip-link {
@@ -129,50 +220,107 @@ a {
   border-radius: var(--radius-sm);
 }
 
+/*
+ * The page's margins are the root's padding, not the body's, so that the root
+ * spans the viewport: the band paints a viewport past each edge of the page,
+ * and the root clips it at the viewport's. Not on `body`, whose overflow would
+ * be handed to the viewport and clip nothing itself; and `clip` rather than
+ * `hidden`, which would make this a scroll container and unstick the agenda.
+ */
+#app {
+  padding: 0 var(--gutter) 72px;
+  overflow-x: clip;
+}
+
+/* ---------- the band ---------- */
+
+/*
+ * The band behind the masthead, painted by a pseudo-element that runs a
+ * viewport past each edge, since the page's own margins keep the content in.
+ * Behind the content at `z-index: -1`, which in the root stacking context is
+ * above the page colour and below everything in flow — so a sheet that sits on
+ * it, like the agenda's, is simply drawn on top. On Today it runs on for a
+ * while below the tabs and the masthead's own band runs up to meet it, so
+ * nothing shows at the seam whatever sits between them.
+ */
+.band {
+  position: relative;
+  color: var(--band-ink);
+}
+.band::before,
+.today__masthead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -100vw;
+  right: -100vw;
+  background: var(--band);
+  z-index: -1;
+}
+/* Only while Today has a masthead to meet: before the first brief there is none, and the band ends at the tabs. */
+body[data-view='today']:has(.today__masthead) .band::before {
+  bottom: -56px;
+}
+.band :focus-visible,
+.today__masthead :focus-visible {
+  outline-color: var(--band-ink);
+}
+
 /* ---------- header ---------- */
 
+/*
+ * The masthead. The date is the biggest thing on the page, because the day is
+ * the subject; the name above it is a small wordmark, since whoever is reading
+ * already knows which tab this is.
+ */
 .page-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  max-width: 1280px;
+  max-width: var(--page-width);
   margin: 0 auto;
-  padding: 28px 0 20px;
+  padding: 30px 0 18px;
 }
 
 .page-header h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  color: var(--band-muted);
 }
 
 .page-header__date {
   margin: 2px 0 0;
-  color: var(--ink-2);
-  font-size: 14px;
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--band-ink);
 }
 
 .page-header__meta {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-bottom: 4px;
 }
 
 .page-header__zone {
-  margin: 3px 0 0;
-  color: var(--ink-2);
-  font-size: 12px;
+  margin: 8px 0 0;
+  color: var(--band-muted);
+  font-size: 12.5px;
 }
 
 .freshness {
-  color: var(--ink-3);
+  color: var(--band-muted);
   font-size: 13px;
 }
 .freshness[data-stale='true'] {
-  color: var(--critical);
+  color: var(--band-critical);
   font-weight: 500;
 }
 /*
@@ -189,7 +337,7 @@ a {
 }
 .freshness__link:hover {
   text-decoration: underline;
-  text-decoration-color: var(--accent);
+  text-underline-offset: 2px;
 }
 
 .icon-button {
@@ -199,7 +347,7 @@ a {
   place-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: transparent;
   color: var(--ink-2);
   font-size: 14px;
   cursor: pointer;
@@ -207,16 +355,28 @@ a {
 .icon-button:hover {
   color: var(--ink-1);
   border-color: var(--ink-3);
+  background: var(--surface-sunken);
+}
+/* On the band, drawn in its light. */
+.band .icon-button {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #e5e7eb;
+}
+.band .icon-button:hover {
+  color: var(--band-ink);
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.1);
 }
 .icon-button__icon {
   width: 15px;
   height: 15px;
 }
-/* A toggle that is on, such as the gear while Settings is open: drawn as the selected tab is, in the accent. */
-.icon-button[aria-pressed='true'] {
-  color: var(--accent);
+/* A toggle that is on, such as the gear while Settings is open: filled in amber, as the selected tab is underlined in it. */
+.icon-button[aria-pressed='true'],
+.band .icon-button[aria-pressed='true'] {
+  color: var(--on-accent);
   border-color: var(--accent);
-  background: var(--accent-wash);
+  background: var(--accent);
 }
 
 /*
@@ -231,10 +391,10 @@ a {
   gap: 6px;
   height: 30px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--band-ink);
   font-size: 13px;
   white-space: nowrap;
   cursor: help;
@@ -306,12 +466,12 @@ body[data-view='tickets'] #brief-refresh {
 }
 /* Reads as the Today tab's "updated … ago" does, so the three tabs match. */
 .refresh-label {
-  color: var(--ink-3);
+  color: var(--band-muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .refresh-label[data-stale='true'] {
-  color: var(--critical);
+  color: var(--band-critical);
   font-weight: 500;
 }
 /*
@@ -334,9 +494,10 @@ body[data-view='tickets'] #brief-refresh {
 .refresh-button[data-fetching='true'] .refresh-button__icon {
   animation: refresh-spin 0.9s linear infinite;
 }
-.refresh-button[data-stale='true'] {
-  color: var(--critical);
-  border-color: var(--critical);
+.refresh-button[data-stale='true'],
+.band .refresh-button[data-stale='true'] {
+  color: var(--band-critical);
+  border-color: var(--band-critical);
 }
 @keyframes refresh-spin {
   to {
@@ -354,34 +515,39 @@ body[data-view='tickets'] #brief-refresh {
 /* ---------- banners ---------- */
 
 .banners {
-  max-width: 1280px;
+  max-width: var(--page-width);
   margin: 0 auto;
 }
 
+/* A sheet of its own, one line tall, with a bar in the tone's colour. */
 .banner {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 10px 14px;
+  padding: 10px 14px 10px 12px;
   margin-bottom: 10px;
-  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--ink-3);
+  border-radius: var(--radius-sm);
   background: var(--surface);
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--ink-2);
 }
 .banner__icon {
   flex: none;
+  width: 14px;
+  text-align: center;
+  font-weight: 600;
   line-height: 1.5;
 }
 .banner--critical {
-  border-left: 3px solid var(--critical);
+  border-left-color: var(--critical);
 }
 .banner--critical .banner__icon {
   color: var(--critical);
 }
 .banner--warning {
-  border-left: 3px solid var(--warning);
+  border-left-color: var(--warning);
 }
 .banner--warning .banner__icon {
   color: var(--serious);
@@ -430,7 +596,7 @@ body[data-view='tickets'] #brief-refresh {
 }
 /* Under the message, not under the icon. */
 .banner .failure__body {
-  margin-left: 20px;
+  margin-left: 24px;
 }
 .failure__facts {
   display: flex;
@@ -453,9 +619,9 @@ body[data-view='tickets'] #brief-refresh {
   padding: 8px 10px;
   max-height: 16em;
   overflow: auto;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface-sunken);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
   color: var(--ink-2);
@@ -479,15 +645,15 @@ body[data-view='tickets'] #brief-refresh {
   white-space: nowrap;
 }
 
-/* A banner that is a way in, as a card is: the whole strip is the target. */
+/* A banner that is a way in, as a row is: the whole strip is the target. */
 .banner--link {
   cursor: pointer;
 }
 .banner--link:hover {
-  border-color: var(--ink-3);
+  background: var(--accent-wash);
 }
 .banner--link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -505,6 +671,9 @@ body[data-view='tickets'] #brief-refresh {
   font-size: 13px;
   color: var(--ink-3);
 }
+.agent-run__list summary:hover {
+  color: var(--ink-1);
+}
 /* What the agent said along the way, one fold per message, under its first line. */
 .agent-run__messages {
   display: flex;
@@ -517,7 +686,7 @@ body[data-view='tickets'] #brief-refresh {
 .agent-run__message {
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
+  background: var(--page);
 }
 .agent-run__message summary {
   padding: 6px 10px;
@@ -539,7 +708,9 @@ body[data-view='tickets'] #brief-refresh {
   display: inline;
 }
 .agent-run__message .assistant__reply {
+  margin: 0;
   padding: 0 10px 8px;
+  border-left: 0;
 }
 /*
  * A run's steps, the assistant's look: what it said in its own words between
@@ -550,8 +721,9 @@ body[data-view='tickets'] #brief-refresh {
 }
 .agent-run__said {
   margin: 6px 0;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-family: var(--font-serif);
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--ink-1);
   overflow-wrap: anywhere;
 }
@@ -613,7 +785,7 @@ body[data-view='tickets'] #brief-refresh {
   padding: 7px 10px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
+  background: var(--page);
   text-align: left;
   font: inherit;
   color: var(--ink-2);
@@ -639,7 +811,7 @@ body[data-view='tickets'] #brief-refresh {
 
 /* Explanation, not status — so it borrows the accent, not one of the four state hues. */
 .banner--info {
-  border-left: 3px solid var(--accent);
+  border-left-color: var(--accent);
 }
 .banner--info .banner__icon {
   color: var(--accent);
@@ -649,147 +821,228 @@ body[data-view='tickets'] #brief-refresh {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 48px;
   align-items: start;
-  max-width: 1280px;
+  max-width: var(--page-width);
   margin: 0 auto;
 }
 
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
   }
   .layout__side {
     order: -1;
   }
 }
 
-/* ---------- standing objective ---------- */
+/* ---------- Today's masthead: the objective, the numbers, the note ---------- */
 
 /*
- * Deliberately heavier than the agent's headline below it. The headline changes
- * daily; this doesn't, and it should be the first thing read on the page.
+ * The rest of the morning's masthead, on the band with the date. Its band is
+ * its own pseudo-element (see `.band`), run upward to meet the tabs' so the
+ * join is seamless, and it keeps a clear margin under the agent's note so the
+ * last line never sits on the edge.
+ */
+.today__masthead {
+  position: relative;
+  padding: 2px 0 40px;
+  color: var(--band-ink);
+}
+.today__masthead::before {
+  top: -56px;
+}
+.today__masthead + #sections {
+  margin-top: 30px;
+}
+
+/*
+ * The headline of the day-book: set in the serif, large, and without a box.
+ * Deliberately heavier than the agent's note below it. That one changes daily;
+ * this doesn't, and it should be the first thing read on the page.
  */
 .objective {
-  margin-bottom: 20px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  margin: 4px 0 26px;
 }
 
 .objective__label {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
 }
 
 .objective__text {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
-  color: var(--ink-1);
+  max-width: 38ch;
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  color: var(--band-ink);
+  text-wrap: pretty;
 }
 
 .objective__blocker {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
+  max-width: 70ch;
   font-size: 13.5px;
-  color: var(--ink-2);
+  color: var(--band-muted);
 }
 .objective__blocker-label {
-  color: var(--critical);
-  font-weight: 500;
+  color: var(--band-critical);
+  font-weight: 600;
 }
 
 .objective__note {
   margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--ink-3);
+  max-width: 70ch;
+  font-size: 13.5px;
+  color: var(--band-muted);
 }
 
-/* A reminder, not a headline: no accent, no shadow, nothing competing with the brief. */
+/* A reminder, not a headline: nothing competing with the brief. */
 .objective--empty {
-  padding: 10px 16px;
-  background: transparent;
-  border-style: dashed;
-  border-left-width: 1px;
-  box-shadow: none;
+  padding: 6px 0 6px 14px;
+  border-left: 2px dashed var(--band-rule);
+}
+.objective--empty .objective__label {
+  margin: 0;
+  font-size: 14px;
+  color: var(--band-ink);
 }
 .objective--empty .objective__note {
   margin-top: 2px;
 }
+.objective--empty .link-button {
+  color: var(--band-ink);
+}
+.objective--empty code {
+  color: var(--band-ink);
+}
 
 /* ---------- stat row ---------- */
 
+/*
+ * The day's numbers on one sheet, each a figure with its name beneath and a
+ * rule between them, the way a planner's margin keeps its counts. One sheet
+ * rather than five tiles: the figures are read as a line, not compared as boxes.
+ */
 .stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 0;
+  margin: 0;
+  padding: 14px 20px;
+  background: var(--band-sheet);
+  border: 1px solid var(--band-rule);
+  border-radius: var(--radius);
 }
 
 .stat {
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 0 20px;
+  border-left: 1px solid var(--band-rule);
+}
+.stat:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 .stat__label {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 12px;
+  order: 2;
+  margin: 2px 0 0;
+  color: var(--band-muted);
+  font-size: 12.5px;
+  line-height: 1.35;
 }
 .stat__value {
-  margin: 2px 0 0;
-  font-size: 26px;
+  order: 1;
+  margin: 0;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; /* "5 h 15 min" is one figure, however narrow the column. */
+  color: var(--band-ink);
 }
 .stat__value[data-tone='critical'] {
-  color: var(--critical);
+  color: var(--band-critical);
 }
 .stat__value[data-tone='good'] {
-  color: var(--good-ink);
+  color: var(--band-good);
 }
 .stat__footnote {
-  margin: 3px 0 0;
-  color: var(--ink-3);
-  font-size: 11.5px;
+  order: 3;
+  margin: 4px 0 0;
+  color: var(--band-muted);
+  font-size: 12px;
   line-height: 1.35;
-  /* The last thing completed can be a full title; keep the tile from growing. */
+  /* The last thing completed can be a full title; keep the line from growing. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+/* Two to a line on a phone, the pairs ruled apart, rather than a ragged wrap. */
+@media (max-width: 600px) {
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 0;
+  }
+  .stat:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/*
+ * The agent's one-line reading of the day, set as a note in the margin: the
+ * serif's italic, against a rule. Yours above it is roman and heavy; this is
+ * what it made of it. Anything bold in it steps back to roman, which is how
+ * emphasis inside italic is made.
+ */
 .headline {
-  margin: 0 0 20px;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  color: var(--ink-2);
-  font-size: 14px;
+  margin: 28px 0 0;
+  padding: 2px 0 2px 16px;
+  max-width: 64ch;
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #c9d0e2;
+}
+.headline strong {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--band-ink);
+}
+.headline code {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.9em;
+  color: var(--band-ink);
 }
 
 /* ---------- sections ---------- */
 
 .section {
-  margin-bottom: 22px;
+  margin-bottom: 30px;
 }
 
+/* The heading stands on the paper above its sheet, naming what the sheet holds. */
 .section__header {
   display: flex;
   align-items: baseline;
@@ -799,15 +1052,13 @@ body[data-view='tickets'] #brief-refresh {
 }
 .section__title {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-2);
+  color: var(--ink-1);
 }
 .section__count {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 .section__dot {
@@ -818,40 +1069,52 @@ body[data-view='tickets'] #brief-refresh {
   align-self: center;
 }
 
+/* A stack of cards with air between them; the heading stands on the paper above. */
 .list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px; /* the surface gap doing the separating, not a border */
+  gap: 8px;
 }
 
 /* ---------- item ---------- */
 
+/*
+ * A row is a card: its own sheet, with an edge, so where one ends and the next
+ * begins is never in doubt. The one under the pointer darkens its edge, the
+ * keyboard's cursor wears a ring, and the one the panel is open on carries a
+ * bar on the edge the panel sits past.
+ */
 .item {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  padding: 11px 13px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 0 8px;
+  padding: 12px 14px 12px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  cursor: pointer; /* A click anywhere on the row opens the panel, and the cursor says so. */
   scroll-margin: 90px;
+}
+.item:hover {
+  border-color: var(--ink-3);
 }
 /*
  * Two states used to share one look: selected and priority were both "accent
  * border", so the ranked rows were indistinguishable from a keyboard cursor.
- * Selected is the quieter of the two.
+ * The cursor is a ring; a rank is the numeral in the margin.
  */
 .item[data-selected='true'] {
-  border-color: var(--ink-3);
-  box-shadow: 0 0 0 1px var(--ink-3);
+  border-color: var(--ink-2);
+  box-shadow: 0 0 0 1px var(--ink-2);
 }
-.item[data-priority='true'] {
-  border-left: 3px solid var(--accent);
+.item[data-detail='true'] {
+  border-color: var(--accent);
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 .item[data-status='done'] .item__title,
 .item[data-status='dismissed'] .item__title {
@@ -863,18 +1126,44 @@ body[data-view='tickets'] #brief-refresh {
 }
 
 .item__mark {
-  padding-top: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 6px;
 }
 
 .item__dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: block;
 }
 
+/*
+ * A ranked row's number, in the margin where the dot would be. Drawn in the
+ * serif at the title's cap height, so the three ranks read as a column down
+ * the top of the page. The dot gives way: the source is named in text on the
+ * line beneath, and the rank is what this row is for.
+ */
+.item__mark[data-rank] {
+  padding-top: 0;
+}
+.item__mark[data-rank]::before {
+  content: attr(data-rank);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+.item__mark[data-rank] .item__dot {
+  display: none;
+}
+
 .item__body {
   min-width: 0;
+  max-width: 72ch;
 }
 
 .item__title {
@@ -891,7 +1180,7 @@ body[data-view='tickets'] #brief-refresh {
 }
 .item__title a:hover {
   text-decoration: underline;
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--ink-3);
 }
 
 /*
@@ -909,9 +1198,9 @@ body[data-view='tickets'] #brief-refresh {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
   margin-top: 5px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 
@@ -922,21 +1211,22 @@ body[data-view='tickets'] #brief-refresh {
 
 .item__detail {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--ink-2);
   overflow-wrap: anywhere;
 }
 /*
  * The assistant's answer, asked ahead, in a line: the verdict on the row, so
- * the card says what to do about the pull request before it is opened.
+ * the row says what to do about the pull request before it is opened.
  */
 .item__ahead {
   display: -webkit-box;
-  margin: 6px 0 0;
+  margin: 7px 0 0;
   padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: var(--accent-wash);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-1);
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -950,7 +1240,7 @@ body[data-view='tickets'] #brief-refresh {
 }
 .item__ahead-mark {
   margin-right: 6px;
-  color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 .item__ahead[data-status='running'] .item__ahead-mark {
@@ -971,16 +1261,8 @@ body[data-view='tickets'] #brief-refresh {
   padding: 1px 4px;
   background: var(--surface-sunken);
   border-radius: 3px;
-  font-size: 0.92em;
-}
-
-/* A click anywhere on the card opens the panel, and the cursor says so. */
-.item {
-  cursor: pointer;
-}
-/* The row the panel is open on: a bar on the edge the panel sits past. */
-.item[data-detail='true'] {
-  border-right: 3px solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
 }
 
 /* pills */
@@ -997,16 +1279,9 @@ body[data-view='tickets'] #brief-refresh {
   color: var(--ink-2);
   white-space: nowrap;
 }
-.pill--priority {
-  border-color: transparent;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
 .pill--objective {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-ink);
+  color: var(--accent-ink);
   font-weight: 500;
 }
 .pill--overdue {
@@ -1034,10 +1309,14 @@ body[data-view='tickets'] #brief-refresh {
 
 /* actions */
 
+/*
+ * The strip sits over the card's top right on the card's own white, so the
+ * tail of a long title is covered rather than shown through it.
+ */
 .item__actions {
   position: absolute;
-  top: 8px;
-  right: 10px;
+  top: 9px;
+  right: 12px;
   display: flex;
   gap: 4px;
   opacity: 0;
@@ -1053,43 +1332,69 @@ body[data-view='tickets'] #brief-refresh {
 @media (hover: none) {
   .item__actions {
     opacity: 1;
+    background: transparent;
+  }
+}
+/*
+ * On a phone the title runs the whole width, so a strip laid over its end
+ * covers the words. There it takes a line of its own under the row instead.
+ */
+@media (max-width: 600px) {
+  .item__actions,
+  .item:hover .item__actions,
+  .item[data-selected='true'] .item__actions,
+  .item[data-detail='true'] .item__actions {
+    position: static;
+    grid-column: 2;
+    margin-top: 8px;
+    padding-left: 0;
+    opacity: 1;
+    background: transparent;
   }
 }
 
 .button {
-  padding: 3px 9px;
+  padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  color: var(--ink-2);
+  color: var(--ink-1);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
   cursor: pointer;
   white-space: nowrap;
 }
 .button:hover {
-  color: var(--ink-1);
-  border-color: var(--ink-3);
+  border-color: var(--ink-2);
+  background: var(--surface-sunken);
 }
 .button--primary {
-  border-color: transparent;
+  border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .button--primary:hover {
-  color: #fff;
-  filter: brightness(1.08);
+  border-color: #c9841f;
+  background: #c9841f;
+  color: var(--on-accent);
 }
 /* Not yet: it reads as waiting, not as the next thing to press. */
 .button:disabled,
 .button:disabled:hover {
   opacity: 0.45;
   cursor: not-allowed;
-  filter: none;
+  background: var(--surface);
   border-color: var(--border);
+  color: var(--ink-1);
 }
-
-/* note composer */
+.button--primary:disabled,
+.button--primary:disabled:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
 
 /* snooze menu */
 
@@ -1119,12 +1424,12 @@ body[data-view='tickets'] #brief-refresh {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  box-shadow: 0 6px 24px rgba(11, 11, 11, 0.14);
+  box-shadow: var(--shadow-float);
 }
 .menu button {
   display: block;
   width: 100%;
-  padding: 5px 9px;
+  padding: 6px 9px;
   border: 0;
   border-radius: 4px;
   background: none;
@@ -1177,23 +1482,27 @@ body[data-view='tickets'] #brief-refresh {
 
 /* ---------- agenda ---------- */
 
+/*
+ * The day's timeline, in the margin: a column of times, a rule running down
+ * the day, a mark on it per event, and the red line of now crossing it. The
+ * list is a sheet like the brief's, under a heading on the paper like theirs,
+ * and sticky so the morning's meetings stay beside the afternoon's rows.
+ */
 .agenda {
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
   position: sticky;
   top: 16px;
 }
 
 .agenda__title {
-  margin: 0 0 10px;
-  font-size: 12px;
+  margin: 0 0 8px;
+  padding: 0 2px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-2);
+  color: var(--ink-1);
+}
+/* Level with the masthead, the agenda's heading stands on the band. */
+body:has(.today__masthead) .agenda__title {
+  color: var(--band-ink);
 }
 
 /*
@@ -1203,12 +1512,13 @@ body[data-view='tickets'] #brief-refresh {
 .agenda__note {
   margin: 0 0 10px;
   padding: 6px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--ink-3);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
   line-height: 1.4;
   color: var(--ink-2);
-  background: var(--surface-sunken);
-  border-left: 2px solid var(--ink-3);
+  background: var(--surface);
 }
 
 /* Falling back to the brief is a louder thing than a merely stale read. */
@@ -1217,22 +1527,46 @@ body[data-view='tickets'] #brief-refresh {
 }
 
 .agenda__list {
+  position: relative;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+/* The rule the day runs down, between the times and the names. */
+.agenda__list::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 77px;
+  width: 1px;
+  background: var(--hairline);
 }
 
 .agenda__row {
+  position: relative;
   display: grid;
   /* Wide enough for a 12-hour "09:30 AM" without wrapping. */
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 10px;
-  padding: 6px 0;
-  border-top: 1px solid var(--hairline);
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 16px;
+  padding: 7px 0;
   font-size: 13px;
 }
-.agenda__row:first-child {
-  border-top: 0;
+/* The event's mark on the rule, ringed in the sheet so the rule doesn't run through it. */
+.agenda__row::before {
+  content: '';
+  position: absolute;
+  left: 60px;
+  top: 13px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .agenda__time {
@@ -1240,11 +1574,13 @@ body[data-view='tickets'] #brief-refresh {
   font-size: 12px;
   font-variant-numeric: tabular-nums; /* a column of times, so tabular is right here */
   white-space: nowrap;
+  text-align: right;
   padding-top: 1px;
 }
 
 .agenda__name {
   color: var(--ink-1);
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 /* Event links take the row's ink so past events actually read as past. */
@@ -1254,11 +1590,14 @@ body[data-view='tickets'] #brief-refresh {
 }
 .agenda__name a:hover {
   text-decoration: underline;
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--ink-3);
 }
 .agenda__row[data-past='true'] .agenda__name,
 .agenda__row[data-past='true'] .agenda__time {
   color: var(--ink-3);
+}
+.agenda__row[data-past='true']::before {
+  background: var(--rule);
 }
 
 /*
@@ -1267,10 +1606,14 @@ body[data-view='tickets'] #brief-refresh {
  * dimming, because being home for the delivery is the entire point of it being
  * on the agenda — a 14:30 slot that reads as already over is a worse mistake
  * than one that reads as a meeting. The row also says "marked free" in text,
- * since ink is never the only cue here.
+ * since ink is never the only cue here; its mark is hollow for the same reason.
  */
 .agenda__row[data-blocking='false'] .agenda__name {
   color: var(--ink-2);
+}
+.agenda__row[data-blocking='false']::before {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface), inset 0 0 0 1.5px var(--ink-3);
 }
 .agenda__sub {
   display: block;
@@ -1282,10 +1625,16 @@ body[data-view='tickets'] #brief-refresh {
   color: var(--good-ink);
   font-weight: 500;
 }
+.agenda__row--free::before {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface), inset 0 0 0 1.5px var(--good-ink);
+}
 .agenda__row--now {
   align-items: center;
   padding: 2px 0;
-  border-top: 0;
+}
+.agenda__row--now::before {
+  display: none;
 }
 .agenda__now-label {
   color: var(--critical);
@@ -1293,35 +1642,39 @@ body[data-view='tickets'] #brief-refresh {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
 }
+/* Starts back across the rule, so now is seen to cut the day. */
 .agenda__now-line {
   height: 2px;
+  margin-left: -14px;
   background: var(--critical);
   border-radius: 1px;
 }
 
 .empty {
   margin: 0;
-  padding: 18px 4px;
+  padding: 16px 0;
   color: var(--ink-3);
-  font-size: 13.5px;
-  text-align: center;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14.5px;
 }
 
 /* ---------- done drawer ---------- */
 
 .drawer {
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  margin-top: 12px;
 }
 .drawer > summary {
-  padding: 9px 13px;
+  padding: 10px 8px;
   cursor: pointer;
   color: var(--ink-2);
   font-size: 13px;
   list-style: none;
+}
+.drawer > summary:hover {
+  color: var(--ink-1);
 }
 .drawer > summary::-webkit-details-marker {
   display: none;
@@ -1334,10 +1687,7 @@ body[data-view='tickets'] #brief-refresh {
   content: '▾ ';
 }
 .drawer .list {
-  padding: 0 8px 8px;
-}
-.drawer .item {
-  box-shadow: none;
+  padding: 0 0 8px;
 }
 
 /* ---------- toast ---------- */
@@ -1351,12 +1701,12 @@ body[data-view='tickets'] #brief-refresh {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 9px 14px;
+  padding: 9px 16px;
   background: var(--ink-1);
   color: var(--page);
   border-radius: 999px;
   font-size: 13px;
-  box-shadow: 0 6px 24px rgba(11, 11, 11, 0.25);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
 }
 .toast button {
   border: 0;
@@ -1365,6 +1715,7 @@ body[data-view='tickets'] #brief-refresh {
   font: inherit;
   font-weight: 600;
   text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
   padding: 0;
 }
@@ -1372,24 +1723,27 @@ body[data-view='tickets'] #brief-refresh {
 /* ---------- help dialog ---------- */
 
 .help {
-  max-width: 420px;
-  padding: 22px;
+  max-width: 440px;
+  padding: 24px 26px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   background: var(--surface);
   color: var(--ink-1);
+  box-shadow: var(--shadow-float);
 }
 .help::backdrop {
-  background: rgba(11, 11, 11, 0.4);
+  background: rgba(10, 12, 20, 0.55);
 }
 .help h2 {
-  margin: 0 0 14px;
-  font-size: 16px;
+  margin: 0 0 16px;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 500;
 }
 .help dl {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
 .help dl > div {
   display: grid;
@@ -1405,8 +1759,9 @@ body[data-view='tickets'] #brief-refresh {
   color: var(--ink-2);
 }
 .help__note {
-  margin: 0 0 16px;
+  margin: 0 0 18px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--ink-3);
 }
 kbd {
@@ -1415,7 +1770,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 4px;
   background: var(--surface-sunken);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-1);
 }
@@ -1429,38 +1784,38 @@ kbd {
 /* ---------- tabs ---------- */
 
 /*
- * Two views, one page. Today is the brief; the board is the live list of pull
- * requests. They're tabs rather than one long page because the brief is edited
- * down to a short list on purpose, and a wall of PRs beneath it would undo that.
+ * Three views, one page. Today is the brief; the boards are the live lists.
+ * They're tabs rather than one long page because the brief is edited down to
+ * a short list on purpose, and a wall of PRs beneath it would undo that.
  */
 .tabs {
   display: flex;
-  gap: 4px;
-  max-width: 1280px;
-  margin: -6px auto 14px;
-  border-bottom: 1px solid var(--hairline);
+  gap: 2px;
+  max-width: var(--page-width);
+  margin: 0 auto 24px;
+  border-bottom: 1px solid var(--band-rule);
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 12px 9px;
+  padding: 8px 12px 10px;
   margin-bottom: -1px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
-  color: var(--ink-2);
+  color: var(--band-muted);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
 .tab:hover {
-  color: var(--ink-1);
+  color: var(--band-ink);
 }
 .tab[aria-selected='true'] {
-  color: var(--ink-1);
+  color: var(--band-ink);
   border-bottom-color: var(--accent);
 }
 
@@ -1534,7 +1889,6 @@ body[data-view='settings'] .layout {
 
 /* ---------- the pull request board ---------- */
 
-
 /* The line under a waiting-on-you row that says why. Reads as the row's detail. */
 .item__reason {
   margin: 6px 0 0;
@@ -1574,29 +1928,27 @@ body[data-view='settings'] .layout {
 /*
  * Two columns, by measurement rather than by taste: the rows were
  * 1200px wide for a summary that runs 520px at the median and 683px at the
- * longest, so half of every card was empty and thirty of them came to 2527px of
+ * longest, so half of every row was empty and thirty of them came to 2527px of
  * scrolling. At 460px a column the same thirty fit in half that.
  *
  * Multicol rather than a grid, which is what this was and which was wrong for a
- * board whose cards disagree about height. A grid lays out in *rows*, so a
- * one-line card beside a card carrying a note gets the note's height reserved
+ * board whose rows disagree about height. A grid lays out in *rows*, so a
+ * one-line row beside a row carrying a note gets the note's height reserved
  * next to it and left empty — `align-items: start` stops it stretching but
- * cannot reclaim the row, and one noted card on a real board cost about a
+ * cannot reclaim the row, and one noted row on a real board cost about a
  * hundred pixels of nothing. A column flow has no rows to align against: each
- * card starts where the one above it ended.
+ * row starts where the one above it ended.
  *
- * `break-inside: avoid` so a card is never split down the middle of a column,
- * and the vertical rhythm is a margin rather than `gap`, which a multicol
- * container does not have.
+ * `break-inside: avoid` so a row is never split down the middle of a column.
  *
  * Never more than two, so the board keeps the shared page width and its edges
  * line up with the other tabs' however wide the display is. The 460px floor is
  * what drops it to one column on a narrow window rather than squeezing two.
  *
  * An absolutely positioned child is still fragmented by the columns, and counts
- * toward balancing them. `.item__actions` stays inside its card, so it travels
- * with the card into its column and nothing notices. Anything that hangs below a
- * card must not be in here at all: the row menus once were, and were split
+ * toward balancing them. `.item__actions` stays inside its row, so it travels
+ * with the row into its column and nothing notices. Anything that hangs below a
+ * row must not be in here at all: the row menus once were, and were split
  * across both columns and pushed the next section down. They are popovers now.
  */
 #tickets .list {
@@ -1606,7 +1958,7 @@ body[data-view='settings'] .layout {
 }
 #tickets .list > .item {
   break-inside: avoid;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 /*
@@ -1617,13 +1969,14 @@ body[data-view='settings'] .layout {
  * column.
  */
 #tickets .item--ticket {
-  padding: 8px 11px;
+  padding: 9px 14px 9px 8px;
 }
 #tickets .item__body {
   display: grid;
   grid-template-columns: 6rem minmax(0, 1fr);
   align-items: baseline;
   gap: 4px 9px;
+  max-width: none;
 }
 #tickets .item__meta--status {
   grid-column: 1;
@@ -1633,7 +1986,7 @@ body[data-view='settings'] .layout {
 }
 /*
  * The reserve on the right is the action strip's width. `.item__actions` is
- * absolutely positioned over the card's top right and opaque, so without this it
+ * absolutely positioned over the row's top right and opaque, so without this it
  * covers the tail of any summary long enough to reach it — on hover, and
  * permanently on the selected row, which is the row being read. Measured rather
  * than guessed: reserving the pull request board's three buttons cost 142px of
@@ -1662,10 +2015,8 @@ body[data-view='settings'] .layout {
  * The switch between the ticket tab's two views: what is out of sync, and what
  * you are working on. A segmented control rather than a second row of tabs, so it
  * reads as a way of looking at this tab and not as more places to go — the tabs
- * above are underlined words, the status line below is a bordered bar, and this
- * is neither.
- */
-/*
+ * above are underlined words, and this is a pair of pills with one filled in.
+ *
  * The switch and the key to the dots share a line: both describe the view
  * below rather than being part of it, and stacked they made a third tier under
  * the tabs, with the key hanging off the switch like a caption. The key goes
@@ -1677,7 +2028,7 @@ body[data-view='settings'] .layout {
   align-items: center;
   justify-content: space-between;
   gap: 8px 24px;
-  margin: 0 0 18px;
+  margin: 0 0 22px;
 }
 .mode-switch {
   display: inline-flex;
@@ -1705,14 +2056,17 @@ body[data-view='settings'] .layout {
   color: var(--ink-1);
 }
 .mode-switch__option[aria-selected='true'] {
-  background: var(--surface);
-  color: var(--ink-1);
-  box-shadow: var(--shadow);
+  background: var(--band);
+  color: var(--band-ink);
 }
 .mode-switch__count {
   color: var(--ink-3);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.mode-switch__option[aria-selected='true'] .mode-switch__count {
+  color: inherit;
+  opacity: 0.7;
 }
 
 /*
@@ -1737,7 +2091,7 @@ body[data-view='settings'] .layout {
   gap: 4px 14px;
   /* A <p>, and its default margins made the switch's line taller whenever the key was on it. */
   margin: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 .legend__entry {
@@ -1746,8 +2100,8 @@ body[data-view='settings'] .layout {
   gap: 6px;
 }
 .legend__dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: block;
 }
@@ -1758,10 +2112,8 @@ body[data-view='settings'] .layout {
  * every single morning is one you stop reading by the end of the week.
  */
 .tab__badge--quiet {
-  background: var(--surface-sunken);
-  /* A shadow, not a border, so it adds nothing to the padding that centres the digits. */
-  box-shadow: inset 0 0 0 1px var(--hairline);
-  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--band-ink);
 }
 
 /*
@@ -1773,8 +2125,8 @@ body[data-view='settings'] .layout {
  * here" is actually worth knowing.
  */
 .court-hint {
-  margin: -6px 0 18px;
-  padding-left: 26px;
+  margin: -10px 0 26px;
+  padding: 0 8px;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--ink-3);
@@ -1800,8 +2152,8 @@ body[data-view='settings'] .layout {
 
 /*
  * Hung from the pill's left edge, where the park menu hangs from its button's
- * right: the pill sits in the card's left gutter, so each menu opens toward the
- * middle of its own card.
+ * right: the pill sits in the row's left gutter, so each menu opens toward the
+ * middle of its own row.
  */
 .menu--status {
   right: auto;
@@ -1811,7 +2163,7 @@ body[data-view='settings'] .layout {
 
 /* The status the ticket claims — the row's own subject, so it carries weight. */
 .pill--status {
-  border-color: var(--hairline);
+  border-color: var(--border);
   background: var(--surface-sunken);
   color: var(--ink-1);
   font-weight: 500;
@@ -1827,28 +2179,28 @@ a.button {
 /* ---------- the assistant ---------- */
 
 .pill--assistant {
-  color: var(--accent);
+  color: var(--ink-1);
   background: var(--accent-wash);
+  border-color: transparent;
 }
 
 /*
- * ---------- the assistant ----------
- *
  * A section of the item panel, so the transcript scrolls with the panel's body;
- * the field is pinned in the panel's foot. It used to be a box under the card
- * with its own scroll region; now the panel is the box.
+ * the field is pinned in the panel's foot. What was asked is set in the sans,
+ * as a row is; what came back is set in the serif, as the brief is — it is the
+ * part written to be read.
  */
 
 .assistant__turns {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 14px;
 }
 
 .assistant__request {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-2);
 }
 .assistant__request strong {
@@ -1856,17 +2208,16 @@ a.button {
   font-weight: 600;
 }
 .assistant__auto {
-  color: var(--accent);
+  color: var(--ink-3);
 }
 
 .assistant__reply {
-  margin-top: 5px;
-  padding: 7px 10px;
-  border-left: 2px solid var(--accent);
-  background: var(--surface);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-size: 13px;
-  line-height: 1.45;
+  margin-top: 6px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--hairline);
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--ink-1);
   overflow-wrap: anywhere;
 }
@@ -1874,7 +2225,7 @@ a.button {
   margin: 0;
 }
 .assistant__reply > * + * {
-  margin-top: 7px;
+  margin-top: 8px;
 }
 .assistant__reply ul,
 .assistant__reply ol {
@@ -1884,14 +2235,17 @@ a.button {
   margin-top: 3px;
 }
 .assistant__reply pre {
-  padding: 7px 9px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
+  font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.5;
   overflow-x: auto;
   white-space: pre-wrap;
 }
 .assistant__reply code {
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 .assistant__reply blockquote {
@@ -1920,6 +2274,7 @@ a.button {
   background: var(--surface);
   color: var(--ink-3);
   font: inherit;
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
 }
@@ -1930,7 +2285,7 @@ a.button {
 
 .assistant__status {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 .assistant__status--bad {
@@ -1949,7 +2304,7 @@ a.button {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  border: 1.5px solid var(--accent);
+  border: 1.5px solid var(--ink-1);
   border-top-color: transparent;
   animation: assistant-spin 0.9s linear infinite;
 }
@@ -1977,24 +2332,24 @@ a.button {
   margin-top: 4px;
 }
 .assistant__work > summary {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   cursor: pointer;
 }
 .assistant__work > summary:hover {
-  color: var(--ink-2);
+  color: var(--ink-1);
 }
 .assistant__took {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 .assistant__steps {
-  margin: 5px 0 0;
+  margin: 6px 0 0;
   padding: 0 0 0 10px;
   border-left: 2px solid var(--hairline);
   list-style: none;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.45;
   color: var(--ink-2);
 }
@@ -2036,14 +2391,17 @@ a.button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-3);
 }
-/* What it said on the way: its own words, set apart from the calls by having no mark. */
+/* What it said on the way: its own words, in the reading face, set apart from the calls by having no mark. */
 .assistant__step--message {
   display: block;
   padding-left: 15px;
+  font-family: var(--font-serif);
   font-style: italic;
+  font-size: 13px;
   color: var(--ink-3);
   white-space: pre-line;
   overflow-wrap: anywhere;
@@ -2054,7 +2412,7 @@ a.button {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .assistant__quick {
@@ -2075,10 +2433,10 @@ a.button {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--page);
+  background: var(--surface);
   color: var(--ink-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.4;
   resize: vertical;
 }
@@ -2092,12 +2450,15 @@ a.button {
  * The panel takes the side column: on Today it stands in for the agenda while it
  * is open, and on the boards it brings the column back. In the grid rather than
  * over it, so the list is never covered, and sticky like the agenda so a long
- * list scrolls past a panel that stays put. Placed after the view rules above
- * on purpose: they and these share a specificity, and the panel being open has
+ * list scrolls past a panel that stays put. It is the one surface on the page
+ * with an edge of its own, because it is the one thing that floats over the
+ * sheet rather than being written on it. Placed after the view rules above on
+ * purpose: they and these share a specificity, and the panel being open has
  * to win.
  */
 body[data-flyout='open'] .layout {
   grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 40px;
 }
 body[data-flyout='open'] .layout__side {
   display: none;
@@ -2112,8 +2473,8 @@ body[data-flyout='open'] .layout__side {
   max-height: calc(100vh - 32px);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: 12px;
+  box-shadow: var(--shadow-float);
 }
 .flyout[hidden] {
   display: none;
@@ -2123,7 +2484,7 @@ body[data-flyout='open'] .layout__side {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 5px 10px;
-  padding: 14px 16px 13px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid var(--hairline);
 }
 .flyout__where {
@@ -2131,7 +2492,7 @@ body[data-flyout='open'] .layout__side {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 .flyout__close {
@@ -2142,7 +2503,7 @@ body[data-flyout='open'] .layout__side {
 .flyout__title {
   grid-column: 1;
   margin: 0;
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 500;
   line-height: 1.4;
   color: var(--ink-1);
@@ -2154,11 +2515,11 @@ body[data-flyout='open'] .layout__side {
 }
 .flyout__title a:hover {
   text-decoration: underline;
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--ink-3);
 }
 
 /*
- * A ticket's status and park, laid out as on its card: the status at the left,
+ * A ticket's status and park, laid out as on its row: the status at the left,
  * the park at the right, so each menu opens into the panel rather than out over
  * the list. Under the close button too, so the park lines up with it. A child
  * combinator, because the park menu's own Set button is a `.button` in here.
@@ -2178,17 +2539,20 @@ body[data-flyout='open'] .layout__side {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 16px 20px;
+  padding: 18px 18px 22px;
 }
 /* The assistant's field and its canned asks, pinned under the body that scrolls. */
 .flyout__footer {
   flex: none;
-  padding: 12px 16px 14px;
+  padding: 12px 18px 16px;
   border-top: 1px solid var(--hairline);
 }
+/* What the agent wrote under the row: the brief's own words, so the reading face. */
 .flyout__detail {
-  margin: 0 0 22px;
-  font-size: 13px;
+  margin: 0 0 24px;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--ink-2);
   overflow-wrap: anywhere;
 }
@@ -2196,28 +2560,29 @@ body[data-flyout='open'] .layout__side {
   padding: 1px 4px;
   background: var(--surface-sunken);
   border-radius: 3px;
-  font-size: 0.92em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
 }
 
 .flyout__section + .flyout__section {
-  margin-top: 26px;
+  margin-top: 28px;
 }
 .flyout__label {
   margin: 0 0 10px;
-  font-size: 11.5px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 
 .flyout__notes {
   margin: 0 0 12px;
-  padding: 7px 10px;
+  padding: 2px 0 2px 12px;
   border-left: 2px solid var(--hairline);
-  background: var(--surface-sunken);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-size: 12.5px;
+  font-family: var(--font-serif);
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--ink-2);
 }
 .flyout__note {
@@ -2228,12 +2593,13 @@ body[data-flyout='open'] .layout__side {
 }
 .flyout__when {
   color: var(--ink-3);
+  font-family: var(--font);
   font-size: 11.5px;
   white-space: nowrap;
 }
 .flyout__empty {
   margin: 0 0 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-3);
 }
 
@@ -2255,10 +2621,10 @@ body[data-flyout='open'] .layout__side {
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--page);
+  background: var(--surface);
   color: var(--ink-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 .flyout__submit {
   flex: none;
@@ -2277,7 +2643,7 @@ body[data-flyout='open'] .layout__side {
     z-index: 15;
     max-height: 80vh;
     border-bottom: 0;
-    border-radius: var(--radius) var(--radius) 0 0;
+    border-radius: 12px 12px 0 0;
   }
   /* The sheet has the bottom, so a toast goes to the top rather than over its field. */
   body[data-flyout='open'] .toast {
@@ -2292,52 +2658,62 @@ body[data-flyout='open'] .layout__side {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--ink-1);
   font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ink-3);
+  text-underline-offset: 2px;
   cursor: pointer;
 }
 .link-button:hover {
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 .objective__edit {
-  margin-left: 8px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.objective__edit:hover {
+  color: var(--ink-1);
+  text-decoration: underline;
 }
 
 /* ---------- the first brief, after setup ---------- */
 
 /*
- * Today between the setup screen and the first brief. Built from the
- * objective's card, since it does the same job in its place: the first thing
- * read, before anything else exists.
+ * Today between the setup screen and the first brief. Set as the objective is,
+ * since it does the same job in its place: the first thing read, before
+ * anything else exists. On the paper, not the band: the band holds a morning's
+ * masthead, and there is no morning yet.
  */
 .first-brief {
-  padding: 18px 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  max-width: 60ch;
+  padding: 10px 0 0;
 }
 .first-brief__title {
-  margin: 0 0 6px;
-  font-size: 18px;
-  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
 }
 .first-brief__text {
   margin: 0;
   color: var(--ink-2);
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: 14.5px;
+  line-height: 1.55;
 }
 .first-brief__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 18px;
+}
+.first-brief .button {
+  padding: 7px 14px;
+  font-size: 13.5px;
 }
 
 /* ---------- the setup screen ---------- */
@@ -2345,11 +2721,12 @@ body[data-flyout='open'] .layout__side {
 /*
  * The whole page while a new store is set up: one column, one question open at
  * a time, on a thread whose dots are the questions. Answered ones fold into a
- * sentence; the open one is the only card. The buttons here are larger than the
- * dashboard's: this page is read once, slowly, and each one is a decision.
+ * sentence; the open one is the only card. The questions are set in the serif,
+ * since they are read once and slowly, and the buttons here are larger than the
+ * dashboard's: each one is a decision.
  */
 /* The page's own margins are the dashboard's; this one runs edge to edge. */
-body[data-onboarding='true'] {
+body[data-onboarding='true'] #app {
   padding: 0;
 }
 .onboarding {
@@ -2363,14 +2740,13 @@ body[data-onboarding='true'] {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 14px 24px;
-  background: var(--page);
-  border-bottom: 1px solid var(--hairline);
+  padding: 14px 28px;
+  background: var(--band);
   font-size: 13px;
-  color: var(--ink-2);
+  color: var(--band-muted);
 }
 .onboarding__name {
-  color: var(--ink-1);
+  color: var(--band-ink);
   font-weight: 600;
   font-size: 14px;
 }
@@ -2385,7 +2761,7 @@ body[data-onboarding='true'] {
   max-width: 220px;
   height: 4px;
   border-radius: 2px;
-  background: var(--hairline);
+  background: rgba(255, 255, 255, 0.2);
   overflow: hidden;
 }
 .onboarding__track i {
@@ -2396,15 +2772,16 @@ body[data-onboarding='true'] {
   transition: width 0.3s ease;
 }
 .onboarding__column {
-  max-width: 600px;
+  max-width: 640px;
   margin: 0 auto;
-  padding: 32px 24px 30vh;
+  padding: 40px 24px 30vh;
 }
 .onboarding__lede {
-  margin: 0 0 24px;
+  margin: 0 0 28px;
   padding-left: 30px;
+  font-family: var(--font-serif);
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.55;
 }
 .onboarding__thread {
@@ -2438,7 +2815,7 @@ body[data-onboarding='true'] {
 }
 .onboarding__dot--open {
   left: -30px;
-  top: 11px;
+  top: 13px;
   width: 13px;
   height: 13px;
   background: var(--accent);
@@ -2450,7 +2827,7 @@ body[data-onboarding='true'] {
   width: 8px;
   height: 8px;
   background: var(--page);
-  border: 1.5px solid var(--accent);
+  border: 1.5px solid var(--ink-1);
 }
 .onboarding__dot--later {
   border-color: var(--hairline);
@@ -2462,7 +2839,7 @@ body[data-onboarding='true'] {
   gap: 12px;
   padding: 5px 0;
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.5;
 }
 .onboarding__done[data-status='later'] {
@@ -2488,22 +2865,24 @@ body[data-onboarding='true'] {
   cursor: pointer;
 }
 .onboarding__change:hover {
-  color: var(--accent);
+  color: var(--ink-1);
+  text-decoration: underline;
 }
 .onboarding__change:disabled {
   visibility: hidden;
 }
 
 .onboarding__card {
-  margin: 22px 0 28px;
+  margin: 24px 0 30px;
   scroll-margin: 90px 0 120px;
 }
 .onboarding__card h2 {
-  margin: 0 0 10px;
-  font-size: 24px;
+  margin: 0 0 12px;
+  font-family: var(--font-serif);
+  font-size: 27px;
   line-height: 1.2;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: -0.005em;
   text-wrap: balance;
 }
 .onboarding__card h2:focus {
@@ -2544,7 +2923,7 @@ body[data-onboarding='true'] {
 .onboarding__sparkle {
   flex: none;
   margin-top: 3px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .onboarding__looking {
   margin: 0 0 16px;
@@ -2622,9 +3001,6 @@ body[data-onboarding='true'] {
   flex-wrap: wrap;
   gap: 16px;
 }
-.onboarding__links a {
-  color: var(--accent);
-}
 .onboarding__problem[data-blocking='false'] {
   margin: 0;
   border-left-color: var(--hairline);
@@ -2632,9 +3008,10 @@ body[data-onboarding='true'] {
 }
 .onboarding__problem pre {
   margin: 0 0 10px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   background: var(--surface-sunken);
   border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
   font-size: 13px;
   overflow-x: auto;
 }
@@ -2651,7 +3028,7 @@ body[data-onboarding='true'] {
 .onboarding__legend {
   margin-bottom: 8px;
   padding: 0;
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 600;
 }
@@ -2664,7 +3041,7 @@ body[data-onboarding='true'] {
   padding: 6px 13px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface);
+  background: transparent;
   color: var(--ink-1);
   font: inherit;
   font-size: 14px;
@@ -2672,18 +3049,18 @@ body[data-onboarding='true'] {
 }
 .onboarding__pill:hover {
   border-color: var(--ink-3);
+  background: var(--surface-sunken);
 }
 .onboarding__pill[aria-checked='true'] {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-  color: var(--accent);
-  font-weight: 600;
+  border-color: var(--band);
+  background: var(--band);
+  color: var(--band-ink);
+  font-weight: 500;
 }
 .onboarding__list {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   overflow: hidden;
 }
 .onboarding__group + .onboarding__group,
@@ -2733,15 +3110,15 @@ body[data-onboarding='true'] {
   border-radius: 50%;
 }
 .onboarding__option input:checked + .onboarding__box {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--band);
+  background: var(--band);
 }
 .onboarding__option input:checked + .onboarding__box[data-kind='check']::after {
   content: '';
   width: 9px;
   height: 5px;
-  border-left: 2px solid #fff;
-  border-bottom: 2px solid #fff;
+  border-left: 2px solid var(--band-ink);
+  border-bottom: 2px solid var(--band-ink);
   transform: translateY(-1px) rotate(-45deg);
 }
 .onboarding__option input:checked + .onboarding__box[data-kind='radio']::after {
@@ -2749,7 +3126,7 @@ body[data-onboarding='true'] {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--band-ink);
 }
 .onboarding__option input:focus-visible + .onboarding__box {
   outline: 2px solid var(--focus-ring);
@@ -2778,10 +3155,16 @@ body[data-onboarding='true'] {
   padding: 8px 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--ink-1);
   font: inherit;
   font-size: 14px;
+  text-decoration: underline;
+  text-decoration-color: var(--ink-3);
+  text-underline-offset: 2px;
   cursor: pointer;
+}
+.onboarding__add-button:hover {
+  text-decoration-color: currentColor;
 }
 .onboarding__pills .onboarding__add-button {
   padding: 6px 4px;
@@ -2796,14 +3179,14 @@ body[data-onboarding='true'] {
 .onboarding__tell input {
   flex: 1;
   min-width: 0;
-  height: 34px;
+  height: 36px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink-1);
   font: inherit;
-  font-size: 14px;
+  font-size: 14.5px;
 }
 .onboarding__fields {
   display: grid;
@@ -2858,7 +3241,7 @@ body[data-onboarding='true'] {
   font-size: 14px;
 }
 .onboarding__field-label {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--ink-2);
 }
@@ -2874,9 +3257,9 @@ body[data-onboarding='true'] {
   gap: 10px;
 }
 .onboarding .button {
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 9px 16px;
+  border-radius: var(--radius);
+  font-size: 14.5px;
   font-weight: 550;
 }
 .onboarding .onboarding__quiet {
@@ -2886,6 +3269,7 @@ body[data-onboarding='true'] {
 }
 .onboarding .onboarding__quiet:hover {
   color: var(--ink-1);
+  background: var(--surface-sunken);
 }
 .onboarding__tell {
   display: flex;
@@ -2917,6 +3301,9 @@ body[data-onboarding='true'] {
   color: var(--ink-2);
   font-size: 14px;
 }
+.onboarding__preview > summary:hover {
+  color: var(--ink-1);
+}
 .onboarding__preview pre {
   max-height: 360px;
   margin: 10px 0 0;
@@ -2925,6 +3312,7 @@ body[data-onboarding='true'] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -2937,30 +3325,83 @@ body[data-onboarding='true'] {
 
 /* ---------- settings ---------- */
 
+/*
+ * A column of groups, each a sheet titled in the serif, with an index beside
+ * them that stays put as the page scrolls and says where on it you are. In a
+ * group, each setting is a row: its name and what it does on the left, the
+ * control on the right, a rule between rows.
+ */
 .settings {
   display: grid;
-  gap: 16px;
-  max-width: 760px;
-  padding-bottom: 72px;
+  grid-template-columns: minmax(0, 740px) 200px;
+  column-gap: 44px;
+  row-gap: 16px;
+  max-width: 1000px;
+  padding-bottom: 80px;
+}
+.settings > * {
+  grid-column: 1;
 }
 .settings__head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
+  padding: 4px 2px 0;
+}
+.settings__nav {
+  grid-column: 2;
+  grid-row: 2 / span 40;
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  display: grid;
+  gap: 2px;
+  padding-top: 4px;
+}
+.settings__nav a {
+  display: block;
+  padding: 5px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 0 6px 6px 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+.settings__nav a:hover {
+  color: var(--ink-1);
+  background: var(--surface-sunken);
+}
+.settings__nav a[aria-current='true'] {
+  border-left-color: var(--accent);
+  color: var(--ink-1);
+  font-weight: 600;
+}
+@media (max-width: 1000px) {
+  .settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings__nav {
+    display: none;
+  }
 }
 .settings__title {
   margin: 0;
-  font-size: 18px;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
 }
 .settings__problem {
   margin: 0;
   padding: 10px 14px;
-  border: 1px solid var(--warning);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  background: var(--surface);
+  font-size: 13.5px;
 }
 .settings-card {
-  padding: 16px 18px;
+  padding: 18px 24px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -2968,55 +3409,148 @@ body[data-onboarding='true'] {
   scroll-margin-top: 16px;
 }
 .settings-card__title {
-  margin: 0 0 10px;
-  font-size: 15px;
+  margin: 0 0 4px;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 500;
 }
 .settings-card__help {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
+  max-width: 70ch;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.5;
 }
 .settings-card__warning {
   margin: 0 0 10px;
   color: var(--serious);
-  font-size: 13px;
+  font-size: 13.5px;
 }
 .settings-card__more {
-  margin-top: 6px;
+  margin: 0;
 }
 .settings-card__more > summary {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
   cursor: pointer;
   color: var(--ink-2);
-  font-size: 13px;
-  padding: 4px 0;
+  font-size: 13.5px;
 }
-.settings-card__more[open] > summary {
-  margin-bottom: 10px;
+.settings-card__more > summary:hover {
+  color: var(--ink-1);
 }
 
+/* One setting: name and help on the left, the control on the right. */
 .field {
   display: grid;
-  gap: 4px;
-  margin-bottom: 14px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-areas:
+    'label control'
+    'help control'
+    'note control';
+  column-gap: 28px;
+  row-gap: 3px;
+  align-items: start;
+  margin: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
 }
-.settings-card > .field:last-child,
-.settings-card__more > .field:last-child {
-  margin-bottom: 0;
+.settings-card__title + .field,
+.settings-card__help + .field,
+.settings-card__warning + .field,
+.settings-card__more > .field:first-of-type {
+  border-top: 0;
 }
 .field__label {
-  font-size: 13px;
-  font-weight: 500;
+  grid-area: label;
+  font-size: 14px;
+  font-weight: 600;
 }
 .field__input {
-  height: 32px;
+  grid-area: control;
+  width: 100%;
+  height: 34px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--page);
   color: var(--ink-1);
   font: inherit;
+  font-size: 13.5px;
+}
+select.field__input {
+  appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e7484' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+}
+@media (max-width: 600px) {
+  .field {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'label'
+      'help'
+      'note'
+      'control';
+  }
+}
+
+/*
+ * A yes/no, or a short list: a segmented control, in which the default is a
+ * segment of its own that says what it is. A setting never touched then never
+ * looks like a choice that was made.
+ */
+.segmented {
+  grid-area: control;
+  display: inline-flex;
+  justify-self: end;
+  max-width: 100%;
+  padding: 3px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.segmented__option {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
   font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.segmented__option small {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.segmented__option:hover {
+  color: var(--ink-1);
+}
+.segmented__option[aria-checked='true'] {
+  background: var(--band);
+  color: var(--band-ink);
+}
+.segmented__option[aria-checked='true'] small {
+  color: rgba(255, 255, 255, 0.7);
+}
+.segmented[aria-disabled='true'] {
+  opacity: 0.55;
+}
+.segmented[aria-disabled='true'] .segmented__option {
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .segmented {
+    justify-self: start;
+  }
 }
 .field__input:disabled {
   color: var(--ink-3);
@@ -3025,29 +3559,48 @@ body[data-onboarding='true'] {
 .field[data-changed='true'] .field__input {
   border-color: var(--accent);
 }
+.field[data-changed='true'] .segmented {
+  border-color: var(--accent);
+}
 .field__help,
 .field__note {
   margin: 0;
+  max-width: 70ch;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.45;
 }
+.field__help {
+  grid-area: help;
+}
 .field__note {
+  grid-area: note;
   color: var(--ink-2);
 }
 
+/* The objective's two fields read top to bottom: a sentence wants the width. */
 .objective-form {
   display: grid;
   gap: 2px;
+  padding-top: 4px;
+}
+.objective-form .field {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'label'
+    'control';
+  padding: 8px 0 10px;
 }
 .objective-form__actions {
   display: flex;
   justify-content: flex-end;
+  padding: 6px 0 12px;
 }
 
 .text-editor {
   display: grid;
   gap: 8px;
+  padding-bottom: 14px;
 }
 .text-editor__area {
   width: 100%;
@@ -3057,7 +3610,7 @@ body[data-onboarding='true'] {
   border-radius: var(--radius-sm);
   background: var(--page);
   color: var(--ink-1);
-  font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+  font: 12.5px/1.5 var(--font-mono);
   resize: vertical;
 }
 .text-editor__bar {
@@ -3068,7 +3621,7 @@ body[data-onboarding='true'] {
 }
 .text-editor__status {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .text-editor__conflict {
   display: flex;
@@ -3076,17 +3629,21 @@ body[data-onboarding='true'] {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid var(--warning);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
   border-radius: var(--radius-sm);
+  background: var(--page);
 }
 .text-editor__conflict p {
   flex: 1 1 100%;
   margin: 0;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .calendar-picker {
-  margin: -4px 0 14px;
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
 }
 .calendar-picker__list {
   display: grid;
@@ -3095,7 +3652,7 @@ body[data-onboarding='true'] {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 .calendar-picker__source {
   color: var(--ink-3);
@@ -3116,7 +3673,7 @@ body[data-onboarding='true'] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 6px 24px rgba(11, 11, 11, 0.14);
+  box-shadow: var(--shadow-float);
 }
 .settings__bar[hidden] {
   display: none;
@@ -3124,7 +3681,7 @@ body[data-onboarding='true'] {
 .settings__bar-text {
   flex: 1;
   margin: 0;
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--ink-2);
 }
 .settings__bar-text--error {

@@ -8,8 +8,8 @@
  * since saving them restarts nothing.
  */
 
-import type { JSX } from 'preact';
-import { useEffect } from 'preact/hooks';
+import { h, type JSX } from 'preact';
+import { useEffect, useState } from 'preact/hooks';
 
 import type { SettingView } from '../src/settings.ts';
 import type { DashboardState } from '../src/types.ts';
@@ -33,6 +33,11 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
 
   const page = ui.settings.value;
   const draft = ui.settingsDraft.value;
+  const sections: Section[] = [
+    { id: 'objective', title: 'Your objective' },
+    { id: 'sources', title: 'Where the agent looks' },
+    ...(page?.groups ?? []),
+  ];
 
   return el(
     'div',
@@ -43,6 +48,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
       el('h2', { class: 'settings__title' }, 'Settings'),
       el('button', { type: 'button', class: 'button', onClick: () => handlers.closeSettings() }, `Back to ${VIEW_NAME[ui.settingsReturn.value]}`),
     ),
+    h(SectionIndex, { sections }),
     page?.error ? el('p', { class: 'settings__problem', role: 'alert' }, page.error) : null,
     objectiveCard(state, ui, handlers),
     sourcesCard(state, ui, handlers),
@@ -69,6 +75,44 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
         })
       : el('p', { class: 'empty' }, 'Loading the settings…'),
     saveBar(ui, handlers),
+  );
+}
+
+/* ---------- the index ---------- */
+
+interface Section {
+  id: string;
+  title: string;
+}
+
+/**
+ * The groups, listed beside the page, with the one in view marked. Each entry
+ * is a link to `#settings-<id>`, which `followLocation` turns into a scroll to
+ * the card and nothing more, so the links need no handler of their own. Which
+ * is in view is read off the document as the page scrolls: the last card whose
+ * top has passed the band.
+ */
+function SectionIndex({ sections }: { sections: readonly Section[] }): JSX.Element {
+  const [current, setCurrent] = useState<string | null>(sections[0]?.id ?? null);
+  useEffect(() => {
+    const look = (): void => {
+      let seen: string | null = sections[0]?.id ?? null;
+      for (const section of sections) {
+        const card = document.getElementById(`settings-${section.id}`);
+        if (card && card.getBoundingClientRect().top <= 120) seen = section.id;
+      }
+      setCurrent(seen);
+    };
+    look();
+    window.addEventListener('scroll', look, { passive: true });
+    return () => window.removeEventListener('scroll', look);
+  }, [sections.map((section) => section.id).join(' ')]);
+  return el(
+    'nav',
+    { class: 'settings__nav', 'aria-label': 'Settings sections' },
+    sections.map((section) =>
+      el('a', { key: section.id, href: `#settings-${section.id}`, 'aria-current': section.id === current ? 'true' : undefined }, section.title),
+    ),
   );
 }
 
@@ -235,6 +279,9 @@ function shownValue(setting: SettingView, draft: ReadonlyMap<string, string | nu
   return setting.source === 'default' ? '' : (setting.value ?? '');
 }
 
+/** How many choices fit a segmented control; more than this is a dropdown. */
+const SEGMENTS = 4;
+
 /** On, off, or the default, from any of the spellings `config.ts` accepts. */
 function flagValue(raw: string): string {
   if (raw === '') return '';
@@ -255,12 +302,36 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
   if (setting.kind === 'choice' || setting.kind === 'flag') {
     const choices = setting.kind === 'flag' ? [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] : (setting.choices ?? []);
     const current = setting.kind === 'flag' ? flagValue(value) : value;
-    input = el(
-      'select',
-      { class: 'field__input', id, disabled: locked, value: current, onChange },
-      el('option', { value: '' }, `Default: ${setting.fallback}`),
-      choices.map((choice) => el('option', { value: choice.value, key: choice.value }, choice.label)),
-    );
+    // A yes/no or a short list is a segmented control, the default a segment of
+    // its own that says what it is; a longer list stays a dropdown.
+    input =
+      choices.length <= SEGMENTS
+        ? el(
+            'div',
+            { class: 'segmented', id, role: 'radiogroup', 'aria-label': setting.label, 'aria-disabled': String(locked) },
+            [{ value: '', label: 'Default', hint: setting.fallback }, ...choices.map((choice) => ({ value: choice.value, label: choice.label, hint: null }))].map((option) =>
+              el(
+                'button',
+                {
+                  type: 'button',
+                  key: option.value,
+                  role: 'radio',
+                  class: 'segmented__option',
+                  'aria-checked': String(current === option.value),
+                  disabled: locked,
+                  onClick: () => handlers.editSetting(setting.key, option.value === '' ? null : option.value),
+                },
+                option.label,
+                option.hint ? el('small', null, option.hint.toLowerCase()) : null,
+              ),
+            ),
+          )
+        : el(
+            'select',
+            { class: 'field__input', id, disabled: locked, value: current, onChange },
+            el('option', { value: '' }, `Default: ${setting.fallback}`),
+            choices.map((choice) => el('option', { value: choice.value, key: choice.value }, choice.label)),
+          );
   } else {
     input = el('input', {
       class: 'field__input',

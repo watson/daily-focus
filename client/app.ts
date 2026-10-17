@@ -33,8 +33,9 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
 
   return [
     el('a', { class: 'skip-link', href: '#main' }, 'Skip to content'),
-    h(Header, { state: current, ui, handlers }),
-    h(Tabs, { state: current, ui, handlers }),
+    // The band: the masthead's navy runs behind both, and on Today on behind
+    // the objective below (see `.band` in the stylesheet).
+    el('div', { class: 'band' }, h(Header, { state: current, ui, handlers }), h(Tabs, { state: current, ui, handlers })),
     el('div', { id: 'banners', class: 'banners' }, current ? renderBanners(current, ui, handlers) : null),
     el(
       'main',

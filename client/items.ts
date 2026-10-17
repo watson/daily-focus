@@ -163,7 +163,11 @@ export function ItemRow({ item, state, ui, handlers }: RowProps<ResolvedItem>): 
     },
     el(
       'span',
-      { class: 'item__mark' },
+      // A ranked row's number stands in the margin where the source dot would be:
+      // the stylesheet draws it off `data-rank` and hides the dot, since the
+      // source is named in the meta line anyway and the rank is what this row
+      // is for.
+      { class: 'item__mark', 'data-rank': item.priority !== undefined && item.status === 'open' ? String(item.priority) : undefined },
       el('span', {
         class: 'item__dot',
         style: `background:${sourceColor(item.source)}`,
@@ -190,10 +194,6 @@ function renderMeta(item: ResolvedItem, state: DashboardState, now: Date): JSX.E
     pills.push(el('span', { class: cls }, text));
     said.add(text.trim().toLowerCase());
   };
-
-  if (item.priority !== undefined && item.status === 'open') {
-    pill('pill pill--priority', `#${item.priority}`);
-  }
 
   for (const [cls, text] of rowPillTexts(item, state)) pill(cls, text);
 
