@@ -3542,9 +3542,9 @@ select.field__input {
 }
 
 /*
- * A yes/no, or a short list: a segmented control, in which the default is a
- * segment of its own that says what it is. A setting never touched then never
- * looks like a choice that was made.
+ * A yes/no, or a short list: a segmented control of the real answers. The one
+ * in force by default says "default" beside its name, so a setting never
+ * touched never looks like a choice that was made.
  */
 .segmented {
   grid-area: control;

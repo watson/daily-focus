@@ -279,7 +279,7 @@ function shownValue(setting: SettingView, draft: ReadonlyMap<string, string | nu
   return setting.source === 'default' ? '' : (setting.value ?? '');
 }
 
-/** How many choices fit a segmented control; more than this is a dropdown. */
+/** How many answers fit a segmented control; more than this is a dropdown. */
 const SEGMENTS = 4;
 
 /** On, off, or the default, from any of the spellings `config.ts` accepts. */
@@ -302,29 +302,38 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
   if (setting.kind === 'choice' || setting.kind === 'flag') {
     const choices = setting.kind === 'flag' ? [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] : (setting.choices ?? []);
     const current = setting.kind === 'flag' ? flagValue(value) : value;
-    // A yes/no or a short list is a segmented control, the default a segment of
-    // its own that says what it is; a longer list stays a dropdown.
+    // A yes/no or a short list is a segmented control of the real answers and
+    // nothing else: a two-answer question shows two. The default is one of them,
+    // found by the label the server describes it with; picking it means "use the
+    // default", so the page never saves a value only to restate one, and while
+    // the default is what is in force its segment says so. A longer list, or a
+    // default that is none of the answers, stays a dropdown with the default as
+    // its first entry.
+    const fallback = choices.find((choice) => choice.label.toLowerCase() === setting.fallback.toLowerCase());
     input =
-      choices.length <= SEGMENTS
+      choices.length <= SEGMENTS && fallback
         ? el(
             'div',
             { class: 'segmented', id, role: 'radiogroup', 'aria-label': setting.label, 'aria-disabled': String(locked) },
-            [{ value: '', label: 'Default', hint: setting.fallback }, ...choices.map((choice) => ({ value: choice.value, label: choice.label, hint: null }))].map((option) =>
-              el(
+            choices.map((choice) => {
+              const isDefault = choice.value === fallback.value;
+              const checked = current === '' ? isDefault : current === choice.value;
+              return el(
                 'button',
                 {
                   type: 'button',
-                  key: option.value,
+                  key: choice.value,
                   role: 'radio',
                   class: 'segmented__option',
-                  'aria-checked': String(current === option.value),
+                  'aria-checked': String(checked),
                   disabled: locked,
-                  onClick: () => handlers.editSetting(setting.key, option.value === '' ? null : option.value),
+                  title: isDefault ? 'The default' : undefined,
+                  onClick: () => handlers.editSetting(setting.key, isDefault ? null : choice.value),
                 },
-                option.label,
-                option.hint ? el('small', null, option.hint.toLowerCase()) : null,
-              ),
-            ),
+                choice.label,
+                checked && current === '' ? el('small', null, 'default') : null,
+              );
+            }),
           )
         : el(
             'select',

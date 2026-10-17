@@ -88,8 +88,14 @@ test('every setting is a field in its group, with its default as the empty choic
   );
   const agent = root.querySelector<HTMLElement>('#setting-DAILY_FOCUS_AGENT')!;
   const segments = [...agent.querySelectorAll('[role=radio]')];
+  assert.deepEqual(segments.map((segment) => segment.textContent), ['Off', 'Claude Code'], 'the real answers, and no segment for the default');
   assert.equal(segments.find((segment) => segment.getAttribute('aria-checked') === 'true')!.textContent, 'Claude Code');
-  assert.equal(segments[0]!.textContent, 'Defaultoff', 'the default is a segment of its own, and says what it is');
+
+  // Nothing saved: the default answer is the one checked, and it says so.
+  const unset = render({ settingsDraft: new Map([['DAILY_FOCUS_AGENT', null]]) });
+  const checked = unset.querySelector('#setting-DAILY_FOCUS_AGENT [aria-checked=true]')!;
+  assert.equal(checked.textContent, 'Offdefault');
+  assert.equal(checked.querySelector('small')!.textContent, 'default');
   assert.ok(root.querySelector('details #setting-DAILY_FOCUS_AGENT_BIN'), 'a path is folded away under More');
   assert.equal(root.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_AGENT_BIN')!.placeholder, 'Found on PATH');
 });
@@ -112,7 +118,7 @@ test('a change goes to the draft, and the bar offers to save it', () => {
   assert.equal(root.querySelector<HTMLElement>('.settings__bar')!.hidden, true, 'nothing to save yet');
   const agent = root.querySelector<HTMLElement>('#setting-DAILY_FOCUS_AGENT')!;
   agent.querySelector<HTMLButtonElement>('[role=radio]')!.click();
-  assert.deepEqual(edits, [['DAILY_FOCUS_AGENT', null]], 'the Default segment means back to the default');
+  assert.deepEqual(edits, [['DAILY_FOCUS_AGENT', null]], 'picking the default answer means back to the default, not a value saved to restate it');
 
   const drafted = render({ settingsDraft: new Map([['DAILY_FOCUS_AGENT', 'off']]) });
   assert.equal(drafted.querySelector<HTMLElement>('.settings__bar')!.hidden, false);
