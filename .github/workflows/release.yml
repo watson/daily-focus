@@ -1,9 +1,9 @@
 name: Release
 
 # Every push to main is a development build: a GitHub prerelease holding the
-# disk image, the dashboard on its own and the release notes, and the same
-# version on npm under the `dev` tag. A stable release is cut from main by hand, with Run workflow, and goes to
-# npm's `latest`. Only a stable release's disk image is notarised: that is a wait
+# disk image, the app and the dashboard each zipped on its own, and the release
+# notes, and the same version on npm under the `dev` tag. A stable release is cut
+# from main by hand, with Run workflow, and goes to npm's `latest`. Only a stable release's disk image is notarised: that is a wait
 # on Apple's queue, anything from seconds to most of an hour, and a development
 # build is signed but ready in minutes. Versions and notes come from the Conventional
 # Commits since the last release: see scripts/release.ts.
@@ -82,8 +82,8 @@ jobs:
       # Into the package, and from there into the app, which takes its version
       # from the package it carries. Never committed: main only moves by pull request.
       # With it, the last commit to change the app itself: an app that finds a
-      # newer release with another one offers its disk image, while a release that
-      # changed only the dashboard updates without one.
+      # newer release with another one replaces itself with the release's app, while
+      # a release that changed only the dashboard updates the dashboard alone.
       - name: Stamp the version
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -162,10 +162,13 @@ jobs:
 
       # And the dashboard as a signed bundle of its own, which apps download to
       # update it. It isn't notarised: macOS never runs it, the app's Node does.
+      # Nor is the app's zip, which apps download to replace themselves: a file an
+      # app downloads itself isn't quarantined, so Gatekeeper never looks at it, and
+      # the app checks its signature instead.
       - name: Build and sign the menu bar app and its disk image, notarised for a stable release
         run: |
           sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test
-          cp macos/build/Daily-Focus.dmg macos/build/Daily-Focus-Dashboard.zip "$RUNNER_TEMP/release/"
+          cp macos/build/Daily-Focus.dmg macos/build/Daily-Focus-App.zip macos/build/Daily-Focus-Dashboard.zip "$RUNNER_TEMP/release/"
 
       - name: Remove the keychain
         if: always()
@@ -224,7 +227,7 @@ jobs:
           CHANNEL: ${{ needs.build.outputs.channel }}
         run: |
           tag="v$VERSION"
-          assets="release/Daily-Focus.dmg release/Daily-Focus-Dashboard.zip"
+          assets="release/Daily-Focus.dmg release/Daily-Focus-App.zip release/Daily-Focus-Dashboard.zip"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release edit "$tag" --notes-file release/notes.md
             gh release upload "$tag" $assets --clobber

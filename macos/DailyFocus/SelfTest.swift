@@ -248,11 +248,13 @@ func runSelfTest() -> Bool {
     equal(Track.stable.distTag, "latest", "stable is npm's latest")
     equal(Track.development.distTag, "dev", "development is npm's dev")
     equal(manifestURL(.development, environment: [:]).absoluteString, "https://registry.npmjs.org/daily-focus/dev", "where releases are looked up")
-    equal(downloadURL("0.2.0", environment: [:]).absoluteString,
+    equal(downloadURL("0.2.0", asset: dashboardAsset, environment: [:]).absoluteString,
           "https://github.com/watson/daily-focus/releases/download/v0.2.0/Daily-Focus-Dashboard.zip", "where a dashboard is fetched")
+    equal(downloadURL("0.2.0", asset: appAsset, environment: [:]).absoluteString,
+          "https://github.com/watson/daily-focus/releases/download/v0.2.0/Daily-Focus-App.zip", "where an app is fetched")
     let local = ["DAILY_FOCUS_APP_UPDATES": "http://127.0.0.1:9000/feed"]
     equal(manifestURL(.stable, environment: local).absoluteString, "http://127.0.0.1:9000/feed/daily-focus/latest", "a local feed")
-    equal(downloadURL("0.2.0", environment: local).absoluteString, "http://127.0.0.1:9000/feed/v0.2.0/Daily-Focus-Dashboard.zip", "and its downloads")
+    equal(downloadURL("0.2.0", asset: appAsset, environment: local).absoluteString, "http://127.0.0.1:9000/feed/v0.2.0/Daily-Focus-App.zip", "and its downloads")
 
     // What this app can run.
     for (range, node, fits) in [
@@ -293,23 +295,65 @@ func runSelfTest() -> Bool {
     equal(dashboardCandidates(bundled: "0.2.0", downloaded: [misnamed], refused: [], nodeVersion: nil).map(\.version),
           [], "a folder that says another version than its package")
 
-    // What is offered.
-    equal(offer(latest: current, running: "0.2.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
-          Offer(dashboard: "0.3.0"), "a newer dashboard")
-    equal(offer(latest: current, running: "0.3.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
-          Offer(), "nothing newer")
-    equal(offer(latest: older, running: "0.2.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
-          Offer(), "nothing older, after a change of track")
-    equal(offer(latest: current, running: nil, appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
-          Offer(), "no dashboard for a checkout, or for one another process runs")
-    equal(offer(latest: demanding, running: "0.2.0", appVersion: "0.2.0", appSource: "aaa", nodeVersion: "v24.21.0"),
-          Offer(app: "0.3.0", appNeeded: true), "a dashboard that needs a newer app")
-    equal(offer(latest: current, running: "0.2.0", appVersion: "0.2.0", appSource: "bbb", nodeVersion: "v24.21.0"),
-          Offer(dashboard: "0.3.0", app: "0.3.0"), "a release whose app changed")
-    equal(offer(latest: current, running: "0.3.0", appVersion: "0.3.0", appSource: "bbb", nodeVersion: "v24.21.0"),
-          Offer(), "not this app's own release, whatever it says")
-    equal(offer(latest: current, running: "0.2.0", appVersion: "0.0.0-development", appSource: nil, nodeVersion: "v24.21.0"),
-          Offer(dashboard: "0.3.0"), "a checkout's build of the app is never told of a newer one")
+    // What is offered: the app when its code changed and it can put the new one in
+    // its own place, else the dashboard alone, with a link to the app's disk image.
+    func offered(_ latest: Manifest, running: String?, app: String = "0.2.0", source: String? = "aaa", replaces: Bool = true) -> Offer {
+        offer(latest: latest, running: running, appVersion: app, appSource: source, nodeVersion: "v24.21.0", canReplaceApp: replaces)
+    }
+    equal(offered(current, running: "0.2.0"), Offer(update: .dashboard("0.3.0")), "a newer dashboard")
+    equal(offered(current, running: "0.2.0", replaces: false), Offer(update: .dashboard("0.3.0")),
+          "a newer dashboard, whether or not the app could replace itself")
+    equal(offered(current, running: "0.3.0"), Offer(), "nothing newer")
+    equal(offered(older, running: "0.2.0"), Offer(), "nothing older, after a change of track")
+    equal(offered(current, running: nil), Offer(), "no dashboard for a checkout, or for one another process runs")
+    equal(offered(demanding, running: "0.2.0"), Offer(update: .app("0.3.0")), "a dashboard that needs a newer app brings the app")
+    equal(offered(demanding, running: "0.2.0", replaces: false), Offer(download: "0.3.0"),
+          "or links to it, when the app can't replace itself")
+    equal(offered(current, running: "0.2.0", source: "bbb"), Offer(update: .app("0.3.0")), "a release whose app changed")
+    equal(offered(current, running: "0.2.0", source: "bbb", replaces: false), Offer(update: .dashboard("0.3.0"), download: "0.3.0"),
+          "its dashboard, and a link to its app, when the app can't replace itself")
+    equal(offered(current, running: "0.3.0", source: "bbb"), Offer(update: .app("0.3.0")),
+          "the app, after its dashboard came on its own")
+    equal(offered(current, running: nil, source: "bbb"), Offer(update: .app("0.3.0")),
+          "the app, though another process runs the dashboard")
+    equal(offered(current, running: "0.3.0", app: "0.3.0", source: "bbb"), Offer(), "not this app's own release, whatever it says")
+    equal(offered(current, running: "0.2.0", app: "0.0.0-development", source: nil), Offer(update: .dashboard("0.3.0")),
+          "a checkout's build of the app is never told of a newer one")
+
+    // Whether the app can replace itself where it is.
+    let files = FileManager.default
+    let scratch = files.temporaryDirectory.appendingPathComponent("daily-focus-self-test-\(UUID().uuidString)")
+    defer { try? files.removeItem(at: scratch) }
+    let apps = scratch.appendingPathComponent("Applications")
+    let installed = apps.appendingPathComponent("Daily Focus.app")
+    let staged = scratch.appendingPathComponent("Staging/Daily Focus.app")
+    func put(_ text: String, in app: URL) {
+        try? files.createDirectory(at: app.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+        try? Data(text.utf8).write(to: app.appendingPathComponent("Contents/which"))
+    }
+    func which(_ app: URL) -> String? {
+        (try? Data(contentsOf: app.appendingPathComponent("Contents/which"))).map { String(decoding: $0, as: UTF8.self) }
+    }
+    put("old", in: installed)
+    put("new", in: staged)
+    equal(replacementProblem(bundle: installed, team: "TEAM"), nil, "an app in a folder this account can change")
+    check(replacementProblem(bundle: installed, team: nil) != nil, "not one with no team to check a download against")
+    let translocated = URL(fileURLWithPath: "/private/var/folders/x/T/AppTranslocation/ABC/d/Daily Focus.app")
+    check(replacementProblem(bundle: translocated, team: "TEAM")?.contains("temporary copy") == true, "not one macOS runs from a temporary copy")
+    try? files.setAttributes([.posixPermissions: 0o555], ofItemAtPath: apps.path)
+    check(replacementProblem(bundle: installed, team: "TEAM")?.hasPrefix("this account can't change") == true,
+          "not one in a folder this account can't change")
+    try? files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: apps.path)
+
+    // The swap that puts a new app in place.
+    check((try? putAppInPlace(installed: installed, staged: staged, version: "0.3.0", team: "TEAM")) == nil,
+          "an app that doesn't check out isn't put in place")
+    equal(which(installed), "old", "and is swapped back out")
+    equal(which(staged), "new", "to where it was")
+    check((try? swapFolders(staged, installed)) != nil, "two folders swap")
+    equal([which(installed), which(staged)], ["new", "old"], "each into the other's place")
+    check((try? swapFolders(scratch.appendingPathComponent("nothing"), installed)) == nil, "a swap with nothing to swap fails")
+    equal(which(installed), "new", "and leaves what was there")
 
     // What the package says, as npm serves it.
     let served = #"{"name":"daily-focus","version":"0.3.0","engines":{"node":">=22.18"},"daily-focus":{"appInterface":1,"appSource":"aaa"},"dist":{}}"#
@@ -327,7 +371,10 @@ func runSelfTest() -> Bool {
     let current2 = try? JSONDecoder().decode(DashboardStatus.self, from: Data(#"{"version":"0.3.0","busy":true}"#.utf8))
     equal(current2?.version, "0.3.0", "status says its version")
     equal(current2?.busy, true, "and whether it is busy")
-    equal(noticeText(.dashboardAvailable(version: "0.3.0")).title, "Dashboard 0.3.0 is available", "update notice")
+    equal(noticeText(.updateAvailable(version: "0.3.0")).title, "Daily Focus 0.3.0 is available", "update notice")
+    equal(noticeText(.downloadAvailable(version: "0.3.0", reason: "it runs from the disk image it came in")).body,
+          "Daily Focus can't replace itself, since it runs from the disk image it came in. Download it from the Daily Focus menu.",
+          "a notice for an app to download")
 
     print(failures == 0 ? "self-test passed: \(checks) checks" : "self-test failed: \(failures) of \(checks) checks")
     return failures == 0
