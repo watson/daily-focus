@@ -1,7 +1,7 @@
-// Which dashboard the app runs, and what it offers to install: the copy it carries,
-// or a newer one it downloaded. Everything here is a plain function of its
-// arguments, so `--self-test` can check it; the downloads, the signatures and the
-// files are `Updater`'s.
+// Which dashboard the app runs, the copy it carries or a newer one it downloaded,
+// and what it offers to install: a newer app, or only a newer dashboard. Everything
+// here is a plain function of its arguments, so `--self-test` can check it; the
+// downloads, the signatures and the files are `Updater`'s.
 
 import Foundation
 
@@ -160,36 +160,56 @@ func dashboardCandidates(bundled: String?, downloaded: [(copy: DashboardCopy, ma
         .map(\.1)
 }
 
+/// What an update puts in place. Either way the user ends up with the release's
+/// version, since a release's app carries its dashboard.
+enum Update: Equatable {
+    /// The release's app, in place of this one.
+    case app(String)
+    /// Only the release's dashboard, for this app to run.
+    case dashboard(String)
+
+    var version: String {
+        switch self {
+        case .app(let version), .dashboard(let version): return version
+        }
+    }
+}
+
 /// What the newest release on the app's track holds for it.
 struct Offer: Equatable {
-    /// A dashboard newer than the one running, which this app can run.
-    var dashboard: String?
-    /// A release whose app is newer than this one.
-    var app: String?
-    /// Whether the newest dashboard needs that app, so can't be installed without it.
-    var appNeeded = false
+    /// The one update the menu offers.
+    var update: Update?
+    /// A newer app that this copy can't put in its own place, so the menu links to
+    /// its disk image. It comes beside a dashboard update when this app can run the
+    /// newer dashboard.
+    var download: String?
 }
 
 /// What to offer, given the newest release on the track. `running` is the version
 /// of the dashboard the app runs, nil when it runs a checkout or none; `appSource`
-/// is the commit this app was built from, which only a release build knows.
-func offer(latest: Manifest, running: String?, appVersion: String, appSource: String?, nodeVersion: String?) -> Offer {
+/// is the commit this app was built from, which only a release build knows; and
+/// `canReplaceApp` says whether this copy can put a newer app in its own place.
+func offer(latest: Manifest, running: String?, appVersion: String, appSource: String?, nodeVersion: String?,
+           canReplaceApp: Bool) -> Offer {
     var offer = Offer()
     guard let newest = Version(latest.version) else { return offer }
-    if let running = running.flatMap(Version.init), newest > running {
-        if appShortfall(latest, nodeVersion: nodeVersion) == nil {
-            offer.dashboard = latest.version
-        } else {
-            offer.app = latest.version
-            offer.appNeeded = true
-            return offer
-        }
-    }
-    // Every release has a disk image, but its app is new only when the app's own
-    // code changed: the rest is the dashboard, which updates without one.
+    let newerDashboard = running.flatMap(Version.init).map { newest > $0 } ?? false
+    let runnable = appShortfall(latest, nodeVersion: nodeVersion) == nil
+    // Every release builds an app, but it differs from this one only when the app's
+    // own code changed. Otherwise only the dashboard did, which updates on its own.
+    var newerApp = false
     if let mine = appSource, !mine.isEmpty, let theirs = latest.app?.appSource, !theirs.isEmpty, theirs != mine,
        let own = Version(appVersion), newest > own {
-        offer.app = latest.version
+        newerApp = true
     }
+    // The app, when it changed or the dashboard needs it, brings the dashboard with it.
+    if newerApp || (newerDashboard && !runnable) {
+        if canReplaceApp {
+            offer.update = .app(latest.version)
+            return offer
+        }
+        offer.download = latest.version
+    }
+    if newerDashboard && runnable { offer.update = .dashboard(latest.version) }
     return offer
 }

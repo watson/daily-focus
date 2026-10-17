@@ -247,20 +247,36 @@ something new from the app: a flag, the calendar helper, a permission in
 `Info.plist` or the entitlements. `engines.node` is compared with the Node.js the app
 carries, so keep it in the form `>=X.Y`. `test/app-interface.test.ts` checks both.
 Set `DAILY_FOCUS_APP_UPDATES` to a URL to look up and download releases from
-there instead, as `<url>/daily-focus/<tag>` and
-`<url>/v<version>/Daily-Focus-Dashboard.zip`, to try an update against a local
-server. A build without a Developer ID or Apple Development signature can't check
-a download, so it only runs the dashboard it carries.
+there instead, as `<url>/daily-focus/<tag>` and `<url>/v<version>/<asset>`, to
+try an update against a local server. A build without a Developer ID or Apple
+Development signature can't check a download, so it only runs the dashboard it
+carries.
+
+The app replaces itself when a release changed its own code (`appSource`, below),
+and only then: otherwise it downloads the dashboard alone. `macos/build.sh` zips
+the signed app as `Daily-Focus-App.zip` and checks that the app would accept it
+(`--check-app`): the app's own identifier and team, with nothing in it changed. The
+app unpacks a download into a folder macOS gives it on the app's volume, checks it
+there, swaps the two folders in one `renamex_np` call, checks it again in place,
+and swaps back if that fails. Then it quits, and a shell it leaves behind opens
+the new copy once the old one has exited, passing on the `DAILY_FOCUS_*`
+variables. A build from a checkout or without a team signature, and an app that
+runs from a disk image, from a translocated copy, or from a folder the account
+can't write to, link to the release page instead (`replacementProblem`). To try
+it, give two copies another `CFBundleIdentifier` and two versions, re-sign them,
+and serve the newer one's zip: the identifier keeps them out of the installed
+app's settings, where the dashboard's process id is kept.
 
 ## Releases
 
 `.github/workflows/release.yml` makes every release, from main, and main only
 moves by pull request. Each one is a tag, a GitHub release holding the release
-notes, `Daily-Focus.dmg` and `Daily-Focus-Dashboard.zip`, both signed, and the
-same version on npm. The package it publishes carries `daily-focus.appSource`, the
-last commit to change the app (`macos/` and `tools/dfcal/`), stamped at build time
-and never committed. The app offers a newer release's disk image only when that
-differs from its own, since otherwise only the dashboard changed:
+notes, `Daily-Focus.dmg`, `Daily-Focus-App.zip` and `Daily-Focus-Dashboard.zip`,
+all signed, and the same version on npm. The package it publishes carries
+`daily-focus.appSource`, the last commit to change the app (`macos/` and
+`tools/dfcal/`), stamped at build time and never committed. The app replaces
+itself with a newer release's only when that differs from its own, since otherwise
+only the dashboard changed:
 
 - Every push to main is a development build, such as `0.2.0-dev.3`: a GitHub
   prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest. Its

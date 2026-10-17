@@ -129,8 +129,9 @@ func isBusy(_ status: DashboardStatus) -> Bool {
 enum Notice: Equatable {
     case briefReady(open: Int?)
     case agentFailed(error: String?)
-    case dashboardAvailable(version: String)
-    case appAvailable(version: String, needed: Bool)
+    case updateAvailable(version: String)
+    /// A newer app that this copy can't put in its own place, and why.
+    case downloadAvailable(version: String, reason: String?)
     /// A downloaded dashboard that failed to start, so the app went back to another.
     case dashboardRefused(version: String)
 }
@@ -171,15 +172,18 @@ func noticeText(_ notice: Notice) -> (title: String, body: String) {
     case .agentFailed(let error):
         let reason = error?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return ("The morning agent failed", reason.isEmpty ? "Open Daily Focus to see what it said." : reason)
-    case .dashboardAvailable(let version):
-        return ("Dashboard \(version) is available", "Install it from the Daily Focus menu.")
-    case .appAvailable(let version, let needed):
-        return ("Daily Focus \(version) is available", needed
-            ? "The newest dashboard needs this version of the app. Download it from the Daily Focus menu."
-            : "A new version of the app itself. Download it from the Daily Focus menu.")
+    case .updateAvailable(let version):
+        return ("Daily Focus \(version) is available", "Update from the Daily Focus menu.")
+    case .downloadAvailable(let version, let reason):
+        return ("Daily Focus \(version) is available", "\(cantReplace(reason)) Download it from the Daily Focus menu.")
     case .dashboardRefused(let version):
         return ("Dashboard \(version) didn't start", "Daily Focus went back to the dashboard it had before. Show Log says why.")
     }
+}
+
+/// Why the app links to a new version's disk image rather than updating itself.
+func cantReplace(_ reason: String?) -> String {
+    reason.map { "Daily Focus can't replace itself, since \($0)." } ?? "Daily Focus can't replace itself."
 }
 
 /// The `error` a dashboard put in a refusal, if it put one there.

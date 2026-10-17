@@ -1,6 +1,8 @@
 #!/bin/sh
-# Builds the menu bar app: macos/build/Daily Focus.app, a zip of it, and the disk
-# image people download, which shows the app beside a link to Applications.
+# Builds the menu bar app: macos/build/Daily Focus.app, a zip of it,
+# Daily-Focus-App.zip, which an app that already runs downloads to replace itself,
+# and the disk image people download, which shows the app beside a link to
+# Applications.
 #
 #   sh macos/build.sh [--server DIR] [--test]
 #
@@ -29,7 +31,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
 build="$here/build"
 app="$build/Daily Focus.app"
-zip="$build/Daily Focus.zip"
+zip="$build/Daily-Focus-App.zip"
 
 server=""
 test=no
@@ -200,6 +202,11 @@ sign "$app/Contents/Helpers/node" "$here/Node.entitlements"
 sign "$app" "$here/DailyFocus.entitlements"
 codesign --verify --deep --strict "$app"
 echo "signature verified"
+# What a copy of the app already installed asks of this one before it puts it in
+# its own place: the same identifier and team, with nothing in it changed.
+if [ "$identity" != "-" ]; then
+  "$app/Contents/MacOS/Daily Focus" --check-app "$app"
+fi
 
 # The dashboard bundle holds no code macOS runs, only the files the app's Node
 # does, so it takes no hardened runtime and no entitlements. Its signature seals
