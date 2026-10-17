@@ -34,7 +34,8 @@ let dashboardAsset = "Daily-Focus-Dashboard.zip"
 let appAsset = "Daily-Focus-App.zip"
 /// The identifier a new copy of the app must have: this one's.
 let appIdentifier = Bundle.main.bundleIdentifier ?? "dk.tson.daily-focus"
-let releasesURL = URL(string: "https://github.com/watson/daily-focus/releases")!
+let repositoryURL = URL(string: "https://github.com/watson/daily-focus")!
+let releasesURL = repositoryURL.appendingPathComponent("releases")
 
 /// Where the newest release on `track` is looked up: npm's manifest for the
 /// track's dist-tag. `DAILY_FOCUS_APP_UPDATES` replaces npm and GitHub both with one
@@ -315,7 +316,9 @@ final class Updater {
     private(set) var phase: Phase = .idle {
         didSet { if phase != oldValue { onChange?() } }
     }
-    private(set) var checking = false
+    private var checking = false
+    /// What wants the answer of the check under way.
+    private var waiting: [(String?) -> Void] = []
     /// The newest release on the track, from the last check that worked.
     private(set) var latest: Manifest?
     private(set) var checkedAt: Date?
@@ -369,14 +372,12 @@ final class Updater {
         set { UserDefaults.standard.set(newValue, forKey: askedAutomaticKey) }
     }
 
-    /// Looks up the newest release on the track; `done` gets why that failed, if it did.
+    /// Looks up the newest release on the track; `done` gets why that failed, if it
+    /// did. Asked while a check is under way, it waits for that one's answer.
     func check(then done: ((String?) -> Void)? = nil) {
-        if checking {
-            done?(nil)
-            return
-        }
+        if let done { waiting.append(done) }
+        if checking { return }
         checking = true
-        onChange?()
         let track = self.track
         let url = manifestURL(track, environment: environment)
         var request = URLRequest(url: url)
@@ -389,9 +390,10 @@ final class Updater {
                 guard let self else { return }
                 self.checking = false
                 // The track changed while this was asked, and asking for the new one
-                // waited for this answer, which is now beside the point.
+                // waited for this answer, which is now beside the point. Whatever
+                // waits for an answer waits for that one's.
                 guard track == self.track else {
-                    self.check(then: done)
+                    self.check()
                     return
                 }
                 if code == 200, let manifest, Version(manifest.version) != nil {
@@ -403,7 +405,9 @@ final class Updater {
                     self.log.note("couldn't check for updates at \(url): \(self.checkError!)")
                 }
                 self.onChange?()
-                done?(self.checkError)
+                let waiting = self.waiting
+                self.waiting = []
+                for done in waiting { done(self.checkError) }
             }
         }.resume()
     }

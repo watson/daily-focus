@@ -55,13 +55,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let loginItem = NSMenuItem(title: "Open at Login", action: nil, keyEquivalent: "")
     private let restartItem = NSMenuItem(title: "Restart Dashboard", action: nil, keyEquivalent: "")
     private let logItem = NSMenuItem(title: "Show Log", action: nil, keyEquivalent: "")
+    private let aboutItem = NSMenuItem(title: "About Daily Focus", action: nil, keyEquivalent: "")
     private let quitItem = NSMenuItem(title: "Quit Daily Focus", action: nil, keyEquivalent: "q")
     private let updateItem = NSMenuItem()
     private let downloadItem = NSMenuItem()
     private let updatesItem = NSMenuItem(title: "Updates", action: nil, keyEquivalent: "")
-    private let appVersionItem = NSMenuItem()
-    private let dashboardVersionItem = NSMenuItem()
-    private let checkedItem = NSMenuItem()
     private let checkItem = NSMenuItem(title: "Check for Updates", action: nil, keyEquivalent: "")
     private let stableItem = NSMenuItem(title: "Stable Releases", action: nil, keyEquivalent: "")
     private let developmentItem = NSMenuItem(title: "Development Builds", action: nil, keyEquivalent: "")
@@ -173,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             (loginItem, #selector(toggleOpenAtLogin)),
             (restartItem, #selector(restartDashboard)),
             (logItem, #selector(showLog)),
+            (aboutItem, #selector(showAbout)),
             (quitItem, #selector(quit)),
         ] {
             menuItem.target = self
@@ -180,16 +179,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
 
         for menuItem in [statusLineItem, attachedItem, updateItem, openItem, settingsItem, briefItem, nodeItem,
-                         NSMenuItem.separator(), loginItem, updatesItem, restartItem, logItem, NSMenuItem.separator(), quitItem] {
+                         NSMenuItem.separator(), loginItem, updatesItem, restartItem, logItem, NSMenuItem.separator(),
+                         aboutItem, quitItem] {
             menu.addItem(menuItem)
         }
     }
 
-    /// Both versions, since the dashboard updates without the app, and which releases to offer.
+    /// Which releases to offer, and whether they go in on their own. The versions are
+    /// in About Daily Focus.
     private func buildUpdatesMenu() {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
-        for item in [appVersionItem, dashboardVersionItem, checkedItem] { item.isEnabled = false }
         for (menuItem, action) in [
             (checkItem, #selector(checkForUpdates)),
             (downloadItem, #selector(downloadApp)),
@@ -204,8 +204,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         developmentItem.toolTip = "A build of every change, as soon as it is merged. Newer, and less tried."
         automaticItem.toolTip = "Installs updates on its own once nobody has used the dashboard for half an hour, "
             + "and never while the morning agent, the assistant or the setup screen is at work."
-        for item in [appVersionItem, dashboardVersionItem, checkedItem, checkItem, downloadItem, NSMenuItem.separator(),
-                     automaticItem, NSMenuItem.separator(), stableItem, developmentItem] {
+        for item in [checkItem, downloadItem, NSMenuItem.separator(), automaticItem, NSMenuItem.separator(),
+                     stableItem, developmentItem] {
             submenu.addItem(item)
         }
         updatesItem.submenu = submenu
@@ -476,6 +476,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         NSWorkspace.shared.open(logURL)
     }
 
+    /// The standard panel, with the app's version and Info.plist's copyright, and
+    /// between them the dashboard's version, which updates without the app's, the
+    /// newest release, and the repository.
+    @objc private func showAbout() {
+        comeForward()
+        // CFBundleVersion is the version again, which the panel would add in brackets.
+        NSApp.orderFrontStandardAboutPanel(options: [.version: "", .credits: aboutCredits()])
+    }
+
+    private func aboutCredits() -> NSAttributedString {
+        var lines = [dashboardVersionLine()]
+        if let error = updater.checkError {
+            lines.append("Couldn't check for updates: \(error)")
+        } else if let latest = updater.latest, let at = updater.checkedAt {
+            lines.append("Newest is \(latest.version), checked \(ago(at, now: Date()))")
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.paragraphSpacing = 4
+        let style: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph,
+        ]
+        let credits = NSMutableAttributedString(string: lines.joined(separator: "\n") + "\n", attributes: style)
+        var link = style
+        link[.link] = repositoryURL
+        credits.append(NSAttributedString(string: "github.com" + repositoryURL.path, attributes: link))
+        return credits
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -668,64 +699,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         track == .stable ? "stable releases" : "development builds"
     }
 
+    /// Sets each item once, to what it ends up as. Hiding or showing an item in the
+    /// open menu, even for a moment, closes the Updates submenu under the pointer and
+    /// leaves its title in the highlight's white with no highlight behind it.
     private func refreshUpdates() {
         let offer = currentOffer()
-        updateItem.isHidden = false
-        updateItem.isEnabled = false
-        updateItem.action = #selector(installUpdate)
-        updateItem.toolTip = nil
+        // The update at the top of the menu, hidden without one.
+        var title: String?
+        var action = #selector(installUpdate)
+        var tip: String?
         switch updater.phase {
         case .downloading(let update):
-            updateItem.title = "Downloading Daily Focus \(update.version)…"
+            title = "Downloading Daily Focus \(update.version)…"
         case .ready(let update):
-            updateItem.title = holdUp(update).map { "Daily Focus \(update.version) installs once \($0)" }
+            title = holdUp(update).map { "Daily Focus \(update.version) installs once \($0)" }
                 ?? "Installing Daily Focus \(update.version)…"
         case .idle:
             if let update = offer?.update {
-                updateItem.title = "Update Daily Focus to \(update.version)"
-                updateItem.isEnabled = true
+                title = "Update Daily Focus to \(update.version)"
             } else if let version = offer?.download {
-                updateItem.title = "Download Daily Focus \(version)…"
-                updateItem.action = #selector(downloadApp)
-                updateItem.toolTip = cantReplace(ownReplacementProblem())
-                updateItem.isEnabled = true
-            } else {
-                updateItem.isHidden = true
+                title = "Download Daily Focus \(version)…"
+                action = #selector(downloadApp)
+                tip = cantReplace(ownReplacementProblem())
             }
         }
+        let enabled = updater.phase == .idle
+        updateItem.isHidden = title == nil
+        if let title { updateItem.title = title }
+        updateItem.action = action
+        updateItem.isEnabled = enabled
+        updateItem.toolTip = tip
         // A new app this copy can't install, beside the dashboard update it can.
-        downloadItem.isHidden = offer?.download == nil || updateItem.action == #selector(downloadApp)
+        downloadItem.isHidden = offer?.download == nil || action == #selector(downloadApp)
         if let version = offer?.download {
             downloadItem.title = "Download Daily Focus \(version)…"
             downloadItem.toolTip = cantReplace(ownReplacementProblem())
         }
 
-        appVersionItem.title = "App \(updater.appVersion)"
-        dashboardVersionItem.title = dashboardVersionLine()
-        checkedItem.toolTip = nil
-        if updater.checking {
-            checkedItem.title = "Checking for updates…"
-        } else if let error = updater.checkError {
-            checkedItem.title = "Couldn't check for updates"
-            checkedItem.toolTip = error
-        } else if let latest = updater.latest, let at = updater.checkedAt {
-            checkedItem.title = "Newest is \(latest.version), checked \(ago(at, now: Date()))"
-        } else {
-            checkedItem.title = "Not checked yet"
-        }
-        // Beside the newest version, the button offers what the top of the menu does: a
-        // check would only find the same update again. With nothing found, it checks.
-        if !updateItem.isHidden {
-            checkItem.title = updateItem.title
-            checkItem.action = updateItem.action
-            checkItem.isEnabled = updateItem.isEnabled
-            checkItem.toolTip = updateItem.toolTip
-        } else {
-            checkItem.title = "Check for Updates"
-            checkItem.action = #selector(checkForUpdates)
-            checkItem.isEnabled = !updater.checking
-            checkItem.toolTip = nil
-        }
+        // The submenu offers what the top of the menu does, since a check would only
+        // find the same update again. With nothing found, it checks.
+        checkItem.title = title ?? "Check for Updates"
+        checkItem.action = title == nil ? #selector(checkForUpdates) : action
+        checkItem.isEnabled = title == nil || enabled
+        checkItem.toolTip = tip
         stableItem.state = updater.track == .stable ? .on : .off
         developmentItem.state = updater.track == .development ? .on : .off
         automaticItem.state = updater.automatic ? .on : .off
