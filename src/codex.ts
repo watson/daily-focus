@@ -21,12 +21,18 @@
  * plugins and MCP servers that act in the user's apps and browser with their
  * sign-ins. Off by default; `computerUseOff` works out what to switch off.
  *
+ * On Windows one more thing is chosen, only when the user's config doesn't say:
+ * which sandbox enforces workspace-write (`windowsSandbox`).
+ *
  * A tool the user has told Codex to always allow, or an app given its own
  * approval settings in their config, keeps them: Codex lets the more specific
  * setting win. The README says so.
  */
 
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { launchFor } from './launch.ts';
@@ -48,6 +54,34 @@ export const CONNECTOR_POLICY: readonly string[] = [
 export const GMAIL_DRAFTS: readonly string[] = ['create_draft', 'update_draft'].map(
   (tool) => `apps.${GMAIL_CONNECTOR}.tools.${tool}.approval_mode="approve"`,
 );
+
+/**
+ * On Windows, the sandbox Codex enforces workspace-write with. Codex has two
+ * there and runs no command at all until one is chosen: a headless `codex exec`
+ * refuses every one, "blocked by policy", where Codex's own app would first offer
+ * to set one up. So when the user's config names none, the dashboard asks for the
+ * one that needs no administrator. A choice in their `config.toml` stands.
+ */
+export function windowsSandbox(platform: NodeJS.Platform = process.platform, config: string | null = readCodexConfig()): string[] {
+  if (platform !== 'win32' || (config !== null && namesWindowsSandbox(config))) return [];
+  return ['windows.sandbox="unelevated"'];
+}
+
+/** Whether a `config.toml` sets `windows.sandbox`, dotted or in a `[windows]` table. */
+export function namesWindowsSandbox(config: string): boolean {
+  if (/^\s*windows\.sandbox\s*=/m.test(config)) return true;
+  const table = /^\s*\[windows\]\s*$([\s\S]*?)(?=^\s*\[|(?![\s\S]))/m.exec(config);
+  return table !== null && /^\s*sandbox\s*=/m.test(table[1]!);
+}
+
+/** The user's own Codex config, which the dashboard only ever reads, or null. */
+function readCodexConfig(): string | null {
+  try {
+    return readFileSync(join(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'), 'config.toml'), 'utf8');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The bundled plugins that drive the user's computer or browser. Turning a plugin
