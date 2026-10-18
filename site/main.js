@@ -35,7 +35,10 @@ const LIT_MS = 1000;
 /** When they leave the pile, how long they take to line up, and to swell into cards. */
 const GATHER_AT = 1900;
 const GATHER_MS = 650;
-const SWELL_MS = 520;
+const SWELL_MS = 560;
+/** How long the cards take to fill in, and the panel to come up around them. */
+const CARDS_MS = 750;
+const PANEL_MS = 800;
 /** Between one tag and the next, in both moves. */
 const STAGGER_MS = 90;
 
@@ -69,7 +72,7 @@ function sort() {
     standIns.forEach((el) => el.remove());
     standIns = [];
   };
-  const STATES = ['is-sifting', 'is-gathering', 'is-swelling', 'is-landed', 'is-done'];
+  const STATES = ['is-sifting', 'is-gathering', 'is-swelling', 'is-cards', 'is-panel', 'is-done'];
   const enter = (...states) => {
     figure.classList.remove(...STATES);
     figure.classList.add(...states);
@@ -147,17 +150,20 @@ function sort() {
             { ...place(pad(p.text, 3)), backgroundColor: tag.backgroundColor, borderColor: 'transparent', borderRadius: '3px', boxShadow: 'none' },
             { ...place(p.row), backgroundColor: p.surface, borderColor: p.border, borderRadius: p.radius, boxShadow: p.shadow },
           ],
-          { duration: SWELL_MS, easing: 'cubic-bezier(0.3, 0.8, 0.2, 1)', fill: 'forwards' },
+          // A touch past its size and back: the card pops out of the tag.
+          { duration: SWELL_MS, easing: 'cubic-bezier(0.3, 1.3, 0.5, 1)', fill: 'forwards' },
         );
         words.animate([{ color: tag.color }, { color: p.ink }], { duration: SWELL_MS, fill: 'forwards' });
       });
     });
 
-    // The last card is whole: the real rows take over and fill in.
+    // The last card is whole. From here the brief builds outwards: the real
+    // rows take over and fill in, then the panel comes up around them.
     later(GATHER_MS + SWELL_MS + (plan.length - 1) * STAGGER_MS + 40, () => {
-      enter('is-landed');
+      enter('is-cards');
       stop();
-      later(700, () => {
+      later(CARDS_MS, () => enter('is-panel'));
+      later(CARDS_MS + PANEL_MS, () => {
         enter('is-done');
         replay.hidden = false;
       });

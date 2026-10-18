@@ -453,10 +453,19 @@ h1 span {
 }
 
 .sort__brief {
+  position: relative;
+  isolation: isolate;
   padding: 20px 20px 18px;
+  color: var(--ink-1);
+}
+/* The panel's ground is a layer of its own, so it can arrive after its cards. */
+.sort__brief::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   border-radius: 14px;
   background: var(--page);
-  color: var(--ink-1);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
 }
 .sort__head {
@@ -507,29 +516,46 @@ h1 span {
 /*
  * The sort plays only with script and with motion allowed; otherwise the
  * page shows its end, the brief. main.js steps it through sifting (the noise
- * goes, the three light up), gathering (the tags line up where their rows
- * will be), swelling (the tags grow into the cards as the panel comes in)
- * and landed (the rows fill in), then done.
+ * goes, the three light up), gathering (the tags line up where their titles
+ * will be) and swelling (each tag grows into its card, on the bare band).
+ * Then the brief builds outwards: the cards fill in (is-cards), the panel
+ * comes up behind them and its own words arrive (is-panel), and it rests
+ * (is-done).
  */
 .sort__pile {
   visibility: hidden;
   opacity: 0;
 }
-.sort__brief {
-  transition: opacity 0.45s, visibility 0s;
-}
 .sort__count,
 .sort__caption {
   transition: opacity 0.3s;
 }
+.sort__brief::before {
+  transition: opacity 0.35s, transform 0.55s cubic-bezier(0.3, 1.35, 0.5, 1);
+}
+.sort__brief .row:nth-child(2) {
+  --row-d: 0.09s;
+}
+.sort__brief .row:nth-child(3) {
+  --row-d: 0.18s;
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
-  .js .sort:not(.is-done):not(.is-landed) .sort__pile {
+  .js .sort:not(.is-swelling, .is-cards, .is-panel, .is-done) .sort__pile {
     visibility: visible;
     opacity: 1;
   }
-  .js .sort:not(.is-done):not(.is-swelling):not(.is-landed) .sort__brief {
+  .js .sort:not(.is-swelling, .is-cards, .is-panel, .is-done) .sort__brief {
     visibility: hidden;
-    opacity: 0;
   }
   .js .sort.is-gathering .sort__count {
     opacity: 0;
@@ -538,16 +564,33 @@ h1 span {
   .js .sort.is-swelling .sort__brief .row {
     visibility: hidden;
   }
-  .js .sort.is-landed .sort__brief :is(.row__rank, .row__meta, .row__detail) {
-    animation: land 0.35s ease-out both;
+  /* Until the panel's turn, the cards stand on the band alone. */
+  .js .sort:is(.is-swelling, .is-cards) .sort__brief::before {
+    opacity: 0;
+    transform: scale(0.94);
   }
-  .js .sort.is-landed .sort__brief .row:nth-child(2) > * > *,
-  .js .sort.is-landed .sort__brief .row:nth-child(2) .row__rank {
-    animation-delay: 0.06s;
+  .js .sort:is(.is-swelling, .is-cards) :is(.sort__head, .sort__brief > .ui-heading, .sort__rest) {
+    opacity: 0;
   }
-  .js .sort.is-landed .sort__brief .row:nth-child(3) > * > *,
-  .js .sort.is-landed .sort__brief .row:nth-child(3) .row__rank {
-    animation-delay: 0.12s;
+  /* The cards fill in: the rank pops, then the source, then the reason. */
+  .js .sort.is-cards .sort__brief .row__rank {
+    animation: pop 0.45s cubic-bezier(0.3, 1.5, 0.5, 1) var(--row-d, 0s) both;
+  }
+  .js .sort.is-cards .sort__brief .row__meta {
+    animation: land 0.35s ease-out calc(var(--row-d, 0s) + 0.08s) both;
+  }
+  .js .sort.is-cards .sort__brief .row__detail {
+    animation: land 0.35s ease-out calc(var(--row-d, 0s) + 0.16s) both;
+  }
+  /* Then the panel's own words, top to bottom, once its ground is up. */
+  .js .sort.is-panel .sort__head {
+    animation: land 0.35s ease-out 0.15s both;
+  }
+  .js .sort.is-panel .sort__brief > .ui-heading {
+    animation: land 0.35s ease-out 0.24s both;
+  }
+  .js .sort.is-panel .sort__rest {
+    animation: land 0.35s ease-out 0.33s both;
   }
   .js .sort:not(.is-done) .sort__caption {
     opacity: 0;
