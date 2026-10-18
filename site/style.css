@@ -1,17 +1,16 @@
 /*
  * The page argues one thing: Daily Focus is an edit, not a list. Its opening
- * is the agent's pass over one invented morning: everything that came in,
- * most of it struck out, each line with the reason it stayed or went. The
- * sections after it show what decides the edit (the objective), what it
- * catches that a list wouldn't, what it learns from you, and the boards that
- * keep up through the day.
+ * plays one invented morning's pile of subject lines down to the three that
+ * matter, landing in the brief as the dashboard draws it. The sections after
+ * it show what decides the edit (the objective), what it catches that a list
+ * wouldn't, what it learns from you, and the boards that keep up through the
+ * day.
  *
  * It wears the dashboard's own materials (public/style.css), so the page and
  * the product are one thing: the navy band, the paper, white cards for rows,
  * Plex Serif for words the brief is made of and Plex Sans for everything
  * operational. Amber is the agent's hand and what can be pressed: rank
- * numerals, the reason something was kept, the highlighter on a line it
- * found, primary buttons. What it cut goes grey.
+ * numerals, the highlighter on a line it found, primary buttons.
  */
 
 @font-face {
@@ -339,28 +338,33 @@ button.button--ui:hover {
 }
 
 .hero {
-  padding-block: 52px 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 29rem);
+  gap: 48px 64px;
+  align-items: start;
+  padding-block: 40px 96px;
+}
+.hero__pitch {
+  container-type: inline-size;
 }
 h1 {
-  max-width: 20ch;
-  margin: 0 0 40px;
+  margin: 0 0 32px;
   font-weight: 400;
-  font-size: clamp(2.6rem, 1.4rem + 4vw, 4.6rem);
-  line-height: 1.04;
+  font-size: clamp(2.4rem, 1.3rem + 3vw, 4rem);
+  /* As large as lets "Everything that came in," (11 em) fill one line. */
+  font-size: max(2.4rem, min(4rem, 100cqi / 11.3));
+  line-height: 1.05;
   letter-spacing: -0.02em;
 }
-/* The lede, then what to do about it, side by side under the headline. */
-.hero__more {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: 28px 64px;
-  align-items: end;
+/* Each half of the headline starts its own line, and the first stays whole. */
+h1 span {
+  display: inline-block;
 }
 .lede {
   max-width: 34em;
-  margin: 0;
+  margin: 0 0 32px;
   color: rgba(255, 255, 255, 0.86);
-  font-size: 20px;
+  font-size: 19.5px;
   line-height: 1.6;
 }
 .cta {
@@ -375,228 +379,156 @@ h1 {
   font: 14px/1.5 var(--font-sans);
 }
 
-/* ---------- the edit ---------- */
+/* ---------- the sort: the pile, and the brief it becomes ---------- */
 
-/* The band runs on behind the top of the sheet, so the morning hands it to the day. */
-.edit {
-  --bleed: 220px;
+.sort {
   margin: 0;
-  background: linear-gradient(var(--band) var(--bleed), transparent var(--bleed));
 }
-.sheet {
+.sort__stage {
+  position: relative;
+}
+/* The pile lies over the brief's box and runs on past its foot. */
+.sort__pile {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  border-radius: 14px;
-  background: var(--surface);
-  color: var(--ink-1);
-  box-shadow: var(--shadow-float);
   font-family: var(--font-sans);
+  -webkit-mask-image: linear-gradient(#000 72%, transparent);
+  mask-image: linear-gradient(#000 72%, transparent);
 }
-.sheet__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 32px;
-  padding: 20px 28px 16px;
-  border-bottom: 1px solid var(--hairline);
-}
-.sheet__title {
-  margin: 0;
+.sort__count {
+  margin: 0 0 12px;
+  color: var(--band-ink);
   font-weight: 600;
   font-size: 15px;
-  line-height: 1.4;
 }
-.sheet__against {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+.sort__wall {
   margin: 0;
-  color: var(--ink-2);
-  font-size: 14px;
+  color: var(--band-muted);
+  font-size: 13.5px;
+  line-height: 1.85;
 }
-/* The brand's bull: what the day is being weighed against. */
-.sheet__against::before {
-  content: '';
-  flex: none;
-  align-self: center;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--surface), 0 0 0 4.5px var(--accent);
-  margin-right: 4px;
+.sort__wall span {
+  margin-right: 1.1em;
+  border-radius: 2px;
+  opacity: var(--o, 0.7);
+  transition: opacity 0.5s var(--d, 0s), color 0.4s var(--lit, 0s), background-color 0.4s var(--lit, 0s),
+    box-shadow 0.4s var(--lit, 0s);
 }
-.sheet__against b {
-  color: var(--ink-1);
-  font-weight: 600;
+.sort__wall .is-kept {
+  white-space: nowrap;
+}
+.sort.is-sifting .sort__wall span:not(.is-kept) {
+  opacity: 0;
+}
+.sort.is-sifting .sort__wall .is-kept,
+.sort__fly {
+  opacity: 1;
+  color: var(--band-ink);
+  background: rgba(224, 150, 42, 0.32);
+  box-shadow: 0 0 0 3px rgba(224, 150, 42, 0.32);
+}
+/* One of the three on its way from the pile to its row. */
+.sort__fly {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  border-radius: 2px;
+  font: 13.5px/1.85 var(--font-sans);
+  white-space: nowrap;
+  transform-origin: 0 0;
+  pointer-events: none;
 }
 
-.pile {
-  margin: 0;
-  padding: 4px 0;
-  list-style: none;
+.sort__brief {
+  padding: 20px 20px 18px;
+  border-radius: 14px;
+  background: var(--page);
+  color: var(--ink-1);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
 }
-.item {
-  display: grid;
-  grid-template-columns: 1.75rem 6rem minmax(0, 1fr) minmax(0, 17rem);
-  gap: 0 18px;
-  align-items: baseline;
-  padding: 9px 28px;
+.sort__head {
+  margin: 0 -20px 16px;
+  padding: 0 20px 14px;
+  border-bottom: 1px solid var(--hairline);
 }
-.item + .item {
-  border-top: 1px solid var(--rule);
-}
-.item__mark {
+.sort__label {
   color: var(--accent-ink);
-  font: 400 22px/1 var(--font-serif);
-  text-align: center;
+  font-weight: 600;
+  font-size: 13px;
 }
-.item .src {
-  color: var(--ink-2);
-  font-weight: 400;
+.sort__objective {
+  margin-top: 2px;
+  font: 500 18px/1.3 var(--font-serif);
+}
+.sort__brief .row {
+  padding: 13px 16px 14px 12px;
+}
+.sort__brief .row__title {
+  font-size: 15px;
+}
+.sort__brief .row__detail {
+  margin-top: 6px;
   font-size: 13.5px;
 }
-.item__title {
-  font-size: 15.5px;
-  line-height: 1.45;
-}
-.item--kept .item__title {
-  font-weight: 560;
-}
-/* The strike is a drawn line, one per line of text, so the pass can draw it. */
-.item__text {
-  background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0 1.5px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-.item--cut .item__text {
+.sort__rest {
+  margin-top: 12px;
   color: var(--ink-3);
-  background-size: 100% 1.5px;
+  font-size: 13.5px;
 }
-.item__why {
-  color: var(--ink-2);
-  font: italic 15px/1.45 var(--font-serif);
-}
-.item--kept .item__why {
-  color: var(--accent-ink);
-}
-.item--unread .item__text {
-  color: var(--ink-2);
-}
-.item--unread .item__why::before {
-  content: '⚠ ';
-  color: var(--serious);
-  font-style: normal;
-}
-
-.pile__more {
-  margin: 0;
-  padding: 12px 28px 14px calc(28px + 1.75rem + 18px);
-  border-top: 1px solid var(--rule);
-  color: var(--ink-3);
-  font-size: 14px;
-}
-.sheet__foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px 24px;
-  padding: 20px 28px 22px;
-  border-top: 1px solid var(--hairline);
-  background: var(--surface-sunken);
-}
-/* Every one of the 147, in the order they came: kept in amber, the rest grey. */
-.strip {
-  display: flex;
-  gap: 3px 2px;
-  flex-basis: 100%;
-}
-.strip i {
-  flex: 1 1 0;
-  min-width: 2px;
-  height: 20px;
-  border-radius: 1px;
-  background: var(--hairline);
-}
-.strip .is-kept {
-  background: var(--accent);
-}
-.strip .is-unread {
-  background: var(--serious);
-}
-.tally {
-  flex: 1;
-  margin: 0;
-  font: 500 clamp(1.15rem, 1rem + 0.5vw, 1.375rem)/1.3 var(--font-serif);
+.sort__caption {
+  margin-top: 14px;
+  color: var(--band-muted);
+  font: 13.5px/1.5 var(--font-sans);
 }
 .replay {
-  padding: 4px 0;
+  padding: 0;
   border: 0;
   background: none;
-  color: var(--ink-2);
-  font: 500 14px/1.4 var(--font-sans);
+  color: var(--band-ink);
+  font: 500 13.5px/1.5 var(--font-sans);
   text-decoration: underline;
   text-underline-offset: 0.2em;
   cursor: pointer;
 }
-.replay:hover {
-  color: var(--ink-1);
-}
-.edit__caption {
-  max-width: 60em;
-  margin: 14px 0 0;
-  color: var(--ink-3);
-  font: 13.5px/1.5 var(--font-sans);
-}
 
 /*
- * The pass. main.js marks the sheet raw, then judges the items one by one,
- * ranks the three, and tallies. Until an item is judged it reads like
- * everything else that came in: same ink, no reason.
+ * The sort plays only with script and with motion allowed; otherwise the
+ * page shows its end, the brief. main.js marks it sifting (the noise goes,
+ * the three light up), then landing (the three fly to their rows as the
+ * brief comes in), then arrived and done.
  */
-.item__text {
-  transition: background-size 0.4s ease-out, color 0.35s;
-}
-.item__title {
-  transition: font-weight 0.35s;
-}
-.item__why {
-  transition: opacity 0.35s 0.12s;
-}
-.item__mark {
-  transition: opacity 0.25s, transform 0.4s cubic-bezier(0.3, 1.6, 0.5, 1);
-}
-.strip i {
-  transition: background-color 0.3s;
-}
-.tally,
-.pile__more {
-  transition: opacity 0.4s;
-}
-.sheet.is-raw .item:not(.is-judged) .item__text {
-  color: var(--ink-1);
-  background-size: 0 1.5px;
-}
-.sheet.is-raw .item:not(.is-judged) .item__title {
-  font-weight: 400;
-}
-.sheet.is-raw .item:not(.is-judged) .item__why {
+.sort__pile {
+  visibility: hidden;
   opacity: 0;
 }
-.sheet.is-raw .item:not(.is-ranked) .item__mark {
-  opacity: 0;
-  transform: scale(0.5);
+.sort__brief {
+  transition: opacity 0.45s, visibility 0s;
 }
-.sheet.is-raw .strip i:not(.is-judged) {
-  background: var(--ink-3);
+.sort__brief .row__title,
+.sort__caption {
+  transition: opacity 0.3s;
 }
-.sheet.is-raw:not(.is-tallied) .tally,
-.sheet.is-raw:not(.is-tallied) .pile__more {
-  opacity: 0;
+@media (prefers-reduced-motion: no-preference) {
+  .js .sort:not(.is-done) .sort__pile {
+    visibility: visible;
+    opacity: 1;
+  }
+  .js .sort:not(.is-done):not(.is-landing) .sort__brief {
+    visibility: hidden;
+    opacity: 0;
+  }
+  .js .sort.is-landing .sort__pile {
+    opacity: 0;
+    transition: opacity 0.35s;
+  }
+  .js .sort.is-landing:not(.is-arrived) .sort__brief .row__title,
+  .js .sort:not(.is-done) .sort__caption {
+    opacity: 0;
+  }
 }
-/* Going back to raw for a replay happens at once; only the pass is drawn. */
-.sheet.is-instant,
-.sheet.is-instant * {
+.sort.is-instant,
+.sort.is-instant * {
   transition: none !important;
 }
 
@@ -1740,7 +1672,7 @@ h1 {
 /* ---------- narrower screens ---------- */
 
 @media (max-width: 1080px) {
-  .hero__more,
+  .hero,
   .split,
   .find,
   .day {
@@ -1762,8 +1694,8 @@ h1 {
   .goalset > .brief {
     margin-top: 28px;
   }
-  .item {
-    grid-template-columns: 1.75rem 5.5rem minmax(0, 1fr) minmax(0, 14rem);
+  .sort {
+    max-width: 560px;
   }
   .ways {
     grid-template-columns: minmax(0, 1fr);
@@ -1784,11 +1716,14 @@ h1 {
   .nav__links li:first-child {
     display: none;
   }
+  h1 span {
+    display: inline;
+  }
   .nav__links {
     gap: 20px;
   }
   .hero {
-    padding-block: 32px 48px;
+    padding-block: 32px 64px;
   }
   h1 {
     margin-bottom: 28px;
@@ -1802,55 +1737,6 @@ h1 {
   }
   .command {
     justify-content: space-between;
-  }
-  .edit {
-    --bleed: 120px;
-  }
-  .edit__inner {
-    padding-inline: 12px;
-  }
-  .sheet__head,
-  .sheet__foot {
-    padding-inline: 18px;
-  }
-  /* Each line folds to two: what came in, then why. The source shrinks to its dot. */
-  .item {
-    grid-template-columns: 1.5rem minmax(0, 1fr);
-    grid-template-areas: 'mark title' 'mark why';
-    gap: 2px 10px;
-    align-items: start;
-    padding: 10px 18px;
-  }
-  .item__mark {
-    grid-area: mark;
-    padding-top: 1px;
-  }
-  .item .src {
-    grid-area: mark;
-    justify-self: center;
-    gap: 0;
-    margin-top: 7px;
-    font-size: 0;
-  }
-  .item--ranked .src {
-    display: none;
-  }
-  .item__title {
-    grid-area: title;
-  }
-  .item__why {
-    grid-area: why;
-  }
-  .pile__more {
-    padding-left: calc(18px + 1.5rem + 10px);
-  }
-  .strip {
-    flex-wrap: wrap;
-  }
-  .strip i {
-    flex: none;
-    width: 4px;
-    height: 16px;
   }
   .section {
     padding-block: 80px;

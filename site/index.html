@@ -17,6 +17,7 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preload" href="fonts/IBMPlexSerif-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/IBMPlexSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <script>document.documentElement.classList.add('js')</script>
   <link rel="stylesheet" href="style.css">
   <script src="main.js" defer></script>
 </head>
@@ -41,10 +42,9 @@
   </nav>
 
   <section class="hero wrap" aria-labelledby="title">
-    <h1 id="title">Everything that came in, edited down to what matters today.</h1>
-    <div class="hero__more">
+    <div class="hero__pitch">
+      <h1 id="title"><span>Everything that came in,</span> <span>edited down to what matters today.</span></h1>
       <p class="lede">Every morning, Daily Focus uses AI to read your mail, calendar, pull requests, tickets and chat. It leaves out the noise, ranks what’s left against the goal you’re working toward, and puts the few things that must move today at the top.</p>
-      <div class="hero__act">
       <div class="cta">
         <div class="command">
           <code id="hero-command">npx daily-focus</code>
@@ -53,143 +53,117 @@
         <a class="button button--band" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
       </div>
       <p class="cta__note">Free and open source. It runs on your computer, on the Claude or ChatGPT plan you already pay for.</p>
-      </div>
     </div>
+
+    <!--
+      The sort: the morning's pile of subject lines, then the brief it became.
+      The pile is an illustration, so it is plain text on the band and never
+      looks like the app; what it settles into is the app's Top priorities, as
+      the dashboard draws them. main.js plays it once, when the page is in the
+      foreground and the card is in view. Without script, or with reduced
+      motion, the page shows only the brief.
+    -->
+    <figure class="sort" data-sort>
+      <div class="sort__stage">
+        <div class="sort__pile" aria-hidden="true">
+          <p class="sort__count">147 things came in since yesterday’s brief</p>
+          <p class="sort__wall">
+            <span>Design Systems Weekly, issue 212</span>
+            <span>38 new messages in #random</span>
+            <span>Dependabot: bump eslint from 9.8.0 to 9.9.1</span>
+            <span>Re: Lisbon hotel booking</span>
+            <span>@acme/frontend was asked to review webapp#3410</span>
+            <span>PROJ-8842 moved to In Review</span>
+            <span>Updated invitation: Platform ↔ Infra sync</span>
+            <span>Your receipt from Lunchbox Deli</span>
+            <span>Dana commented on PLAT-290</span>
+            <span class="is-kept" data-row="1">Review requested: Fix rounding in gift card balances</span>
+            <span>Expense report: two receipts missing</span>
+            <span>Webinar: Scaling checkout in 2027</span>
+            <span>CI passed on webapp#3398</span>
+            <span>12 new messages in #webapp-alerts</span>
+            <span>Lunch roulette, Thursday</span>
+            <span>Noor reacted to your message</span>
+            <span>Release v4.18.0 published</span>
+            <span>Jira: 3 issues updated on Gift Cards</span>
+            <span>Re: Re: Offsite dinner options</span>
+            <span>Your package has shipped</span>
+            <span>Tom shared “Q4 roadmap draft” with you</span>
+            <span>Dependabot: bump undici to 6.19.8</span>
+            <span class="is-kept" data-row="2">Complete annual security &amp; compliance training</span>
+            <span>PLAT-305 was resolved</span>
+            <span>Accepted: 1:1 with Alice</span>
+            <span>New comment on “Checkout v2 spec”</span>
+            <span>Frontend Digest, issue 98</span>
+            <span>9 new messages in #gift-cards</span>
+            <span>Your invoice from CloudHost is ready</span>
+            <span>Reminder: Lunch &amp; learn</span>
+            <span>@dana merged webapp#3388</span>
+            <span>Holiday sale banner copy, FYI</span>
+            <span>Out of office: Kenji returns Monday</span>
+            <span>4 new posts in Engineering</span>
+            <span class="is-kept" data-row="3">Re: Q4 headcount plan</span>
+            <span>Survey: how was your onboarding buddy?</span>
+            <span>CI failed on infra#517: runner outage</span>
+            <span>Timesheet due Friday</span>
+            <span>Teo assigned PLAT-318 to himself</span>
+            <span>Re: Parking at the new office</span>
+            <span>Check-in opens tomorrow</span>
+            <span>5 new messages in #design-review</span>
+            <span>2 new stars on acme/ui-kit</span>
+            <span>Ines invited you to “Sprint 41 retro”</span>
+            <span>Platform sync notes were edited</span>
+            <span>Dependabot: bump typescript to 5.6.3</span>
+            <span>Re: Team photo day</span>
+            <span>Your Workday profile was updated</span>
+            <span>21 new messages in #general</span>
+            <span>Design review moved to 11:15</span>
+            <span>What’s new in the CI runners</span>
+            <span>Weekly screen time report</span>
+            <span>Re: Re: Re: Offsite dinner options</span>
+            <span>Your password expires in 14 days</span>
+          </p>
+        </div>
+
+        <div class="sort__brief ui" aria-label="Top priorities on the Today tab, with sample data">
+          <div class="sort__head">
+            <p class="sort__label">Current objective</p>
+            <p class="sort__objective">Launch gift cards before the holiday sale</p>
+          </div>
+          <p class="ui-heading">Top priorities <span class="count">3</span></p>
+          <ol class="rows">
+            <li class="row">
+              <span class="row__rank">1</span>
+              <div>
+                <p class="row__title" data-title="1"><span class="row__repo">acme/webapp</span> Review requested: Fix rounding in gift card balances</p>
+                <p class="row__meta"><span class="src" style="--src: var(--src-github)">GitHub</span><span class="pill pill--accent">objective</span><span class="pill pill--warning">2 days on the list</span></p>
+                <p class="row__detail">Alice asked you directly 2 days ago. Merging it is what lets gift cards reach staging.</p>
+              </div>
+            </li>
+            <li class="row">
+              <span class="row__rank">2</span>
+              <div>
+                <p class="row__title" data-title="2">Complete annual security &amp; compliance training</p>
+                <p class="row__meta"><span class="src" style="--src: var(--src-workday)">Workday</span><span class="pill pill--critical">due today</span></p>
+                <p class="row__detail">Due tonight; after that it goes to your manager.</p>
+              </div>
+            </li>
+            <li class="row">
+              <span class="row__rank">3</span>
+              <div>
+                <p class="row__title" data-title="3">Re: Q4 headcount plan — Bob is waiting on your input</p>
+                <p class="row__meta"><span class="src" style="--src: var(--src-email)">Email</span><span class="pill pill--warning">3 days on the list</span></p>
+                <p class="row__detail">He asked on Monday and followed up yesterday.</p>
+              </div>
+            </li>
+          </ol>
+          <p class="sort__rest">13 more on today’s list</p>
+        </div>
+      </div>
+      <figcaption class="sort__caption">It kept 16 of the 147 things that came in, and put these three first. Mara and her morning are invented. <button class="replay" type="button" data-replay hidden>Watch it again</button></figcaption>
+    </figure>
   </section>
 </header>
-
-<!--
-  The edit: what came in since yesterday's brief, and what the agent did with
-  each thing. The dashboard never shows this list; it shows only what was kept.
-  The page shows it because the cut is the point. main.js plays the pass once
-  when the sheet comes into view; without script it shows the finished edit.
--->
-<figure class="edit" id="edit" aria-labelledby="edit-title">
-  <div class="edit__inner wrap">
-    <div class="sheet" data-sheet>
-      <header class="sheet__head">
-        <h2 class="sheet__title" id="edit-title">Came in since yesterday’s brief</h2>
-        <p class="sheet__against"><span>Weighed against <b>Launch gift cards before the holiday sale</b></span></p>
-      </header>
-      <ol class="pile">
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-email)">Email</span>
-          <span class="item__title"><span class="item__text">Design Systems Weekly, issue 212</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>A newsletter</span>
-        </li>
-        <li class="item item--kept item--ranked">
-          <span class="item__mark"><span class="sr">Priority </span>1</span>
-          <span class="src" style="--src: var(--src-github)">GitHub</span>
-          <span class="item__title"><span class="item__text">Alice asked for your review: Fix rounding in gift card balances</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>Unblocks your objective</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-slack)">Slack</span>
-          <span class="item__title"><span class="item__text">38 new messages in #random</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>Nothing addressed to you</span>
-        </li>
-        <li class="item item--kept item--ranked">
-          <span class="item__mark"><span class="sr">Priority </span>2</span>
-          <span class="src" style="--src: var(--src-workday)">Workday</span>
-          <span class="item__title"><span class="item__text">Third reminder: security &amp; compliance training is due today</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>Goes to your manager after tonight</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-github)">GitHub</span>
-          <span class="item__title"><span class="item__text">Dependabot wants to bump eslint from 9.8.0 to 9.9.1</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>Nobody is waiting on you</span>
-        </li>
-        <li class="item item--kept item--ranked">
-          <span class="item__mark"><span class="sr">Priority </span>3</span>
-          <span class="src" style="--src: var(--src-email)">Email</span>
-          <span class="item__title"><span class="item__text">Bob: Re: Q4 headcount plan</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>Asked twice; still no reply</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-email)">Email</span>
-          <span class="item__title"><span class="item__text">Re: Lisbon hotel booking</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>You marked it done yesterday</span>
-        </li>
-        <li class="item item--kept">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-github)">GitHub</span>
-          <span class="item__title"><span class="item__text">Checks failed on your pull request: Show the currency on order emails</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>Your change broke it, not a flaky runner</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-github)">GitHub</span>
-          <span class="item__title"><span class="item__text">@acme/frontend was asked to review webapp#3410</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>Asked of your team, not of you</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-jira)">Jira</span>
-          <span class="item__title"><span class="item__text">PROJ-8842 still says In Review; both its pull requests merged</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>Housekeeping, on the Jira tab</span>
-        </li>
-        <li class="item item--kept">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-slack)">Slack</span>
-          <span class="item__title"><span class="item__text">Noor: is the gift card API frozen for the mobile team?</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>A direct question, a day unanswered</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-calendar)">Calendar</span>
-          <span class="item__title"><span class="item__text">Updated invitation: Platform ↔ Infra sync, now at 15:00</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>Already on your agenda</span>
-        </li>
-        <li class="item item--kept">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-docs)">Docs</span>
-          <span class="item__title"><span class="item__text">Platform sync notes, Tuesday</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>One action item has your name on it</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-email)">Email</span>
-          <span class="item__title"><span class="item__text">Your receipt from Lunchbox Deli</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>A receipt</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-jira)">Jira</span>
-          <span class="item__title"><span class="item__text">Dana commented on PLAT-290</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>You’re only watching it</span>
-        </li>
-        <li class="item item--cut">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-email)">Email</span>
-          <span class="item__title"><span class="item__text">Expense report: two receipts missing, due Friday</span></span>
-          <span class="item__why"><span class="sr">Left out: </span>You snoozed it until Thursday</span>
-        </li>
-        <li class="item item--kept">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-email)">Email</span>
-          <span class="item__title"><span class="item__text">Lisbon offsite: your held fare expires at 17:00</span></span>
-          <span class="item__why"><span class="sr">Kept: </span>Gone after five today</span>
-        </li>
-        <li class="item item--unread">
-          <span class="item__mark"></span>
-          <span class="src" style="--src: var(--src-docs)">Docs</span>
-          <span class="item__title"><span class="item__text">Design review notes, last Thursday</span></span>
-          <span class="item__why"><span class="sr">Could not read: </span>Couldn’t open it, so the brief says so</span>
-        </li>
-      </ol>
-      <p class="pile__more">And 129 more: 9 kept, 120 left out.</p>
-      <footer class="sheet__foot">
-        <p class="tally">Read 147 things. Kept 16. Put 3 first.</p>
-        <button class="replay" type="button" data-replay hidden>Play it again</button>
-      </footer>
-    </div>
-    <figcaption class="edit__caption">What the agent did with Mara’s morning. You only ever see what it kept; this is how it got there. Mara and everything she was sent are invented.</figcaption>
-  </div>
-</figure>
 
 <main id="main">
   <section class="section" id="objective" aria-labelledby="objective-title">

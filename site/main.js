@@ -1,6 +1,6 @@
 // The page's few behaviours. Everything here is an enhancement: without script
-// the page shows the finished edit, the launch objective's brief, and the
-// commands to copy by hand.
+// the page shows the brief the sort ends on, the launch objective's brief, and
+// the commands to copy by hand.
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -26,99 +26,114 @@ for (const button of document.querySelectorAll('[data-copy]')) {
   });
 }
 
-/* ---------- The edit: the agent's pass over the morning ---------- */
+/* ---------- The sort: the morning's pile, down to three ---------- */
 
-// The strip under the sheet is every one of the 147 things, in the order they
-// came: the 18 lines the sheet shows, then the 129 it sums up. The 9 kept among
-// those sit at fixed places, so the strip reads the same on every visit.
-const TOTAL = 147;
-const MORE_KEPT = [6, 19, 27, 40, 58, 66, 87, 103, 120];
+/** The noise fades out across this long, each line at its own moment. */
+const SIFT_MS = 1300;
+/** When the three light up, and when they leave for their rows. */
+const LIT_MS = 1000;
+const LAND_MS = 2300;
+const FLY_MS = 700;
 
-/** Between judging one line and the next. */
-const JUDGE_MS = 95;
-/** Between ticks, for the 129 the sheet doesn't show. */
-const RIPPLE_MS = 5;
+function sort() {
+  const figure = document.querySelector('[data-sort]');
+  if (!figure || reduceMotion.matches) return;
+  const stage = figure.querySelector('.sort__stage');
+  const lines = [...figure.querySelectorAll('.sort__wall span')];
+  const kept = lines.filter((line) => line.classList.contains('is-kept'));
+  const replay = figure.querySelector('[data-replay]');
 
-function edit() {
-  const sheet = document.querySelector('[data-sheet]');
-  if (!sheet) return;
-  const items = [...sheet.querySelectorAll('.item')];
-  const ranked = items.filter((item) => item.classList.contains('item--ranked'));
-  const replay = sheet.querySelector('[data-replay]');
-
-  const verdict = (item) =>
-    item.classList.contains('item--kept') ? 'is-kept' : item.classList.contains('item--unread') ? 'is-unread' : null;
-  const ticks = Array.from({ length: TOTAL }, (_, i) => {
-    const tick = document.createElement('i');
-    const kind = i < items.length ? verdict(items[i]) : MORE_KEPT.includes(i - items.length) ? 'is-kept' : null;
-    if (kind) tick.classList.add(kind);
-    return tick;
+  // A fixed scatter, so the pile looks and goes the same way every visit: each
+  // line gets its own shade, and its own moment to leave.
+  lines.forEach((line, i) => {
+    const r = (n) => ((i + 1) * n) % 101 / 101;
+    line.style.setProperty('--o', (0.45 + r(37) * 0.4).toFixed(2));
+    line.style.setProperty('--d', `${Math.round(r(53) * SIFT_MS)}ms`);
   });
-  const strip = document.createElement('div');
-  strip.className = 'strip';
-  strip.setAttribute('aria-hidden', 'true');
-  strip.append(...ticks);
-  sheet.querySelector('.sheet__foot').prepend(strip);
-
-  if (reduceMotion.matches) return;
+  for (const line of kept) {
+    line.style.setProperty('--lit', `${LIT_MS}ms`);
+    line.style.setProperty('--d', `${LIT_MS}ms`);
+  }
 
   let timers = [];
+  let flying = [];
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
-  const marked = [...items, ...ticks];
-
-  // Back to the morning as it arrived, without animating the way back.
-  const unjudge = () => {
+  const stop = () => {
     timers.forEach(clearTimeout);
     timers = [];
-    sheet.classList.add('is-instant', 'is-raw');
-    sheet.classList.remove('is-tallied');
-    for (const el of marked) el.classList.remove('is-judged', 'is-ranked');
-    replay.hidden = true;
-    void sheet.offsetWidth;
-    sheet.classList.remove('is-instant');
+    flying.forEach((el) => el.remove());
+    flying = [];
   };
-  const finish = () => {
-    timers.forEach(clearTimeout);
-    timers = [];
-    sheet.classList.remove('is-raw', 'is-tallied');
-    replay.hidden = false;
+
+  const land = () => {
+    const box = stage.getBoundingClientRect();
+    const from = kept.map((line) => line.getBoundingClientRect());
+    figure.classList.add('is-landing');
+    kept.forEach((line, i) => {
+      const title = figure.querySelector(`[data-title="${line.dataset.row}"]`);
+      const to = title.getBoundingClientRect();
+      const fly = Object.assign(document.createElement('p'), { className: 'sort__fly', textContent: line.textContent });
+      fly.setAttribute('aria-hidden', 'true');
+      fly.style.left = `${from[i].left - box.left}px`;
+      fly.style.top = `${from[i].top - box.top}px`;
+      stage.append(fly);
+      flying.push(fly);
+      const move = `translate(${to.left - from[i].left}px, ${to.top - from[i].top}px) scale(1.1)`;
+      fly.animate(
+        [
+          { transform: 'none', opacity: 1 },
+          { transform: move, opacity: 1, offset: 0.8 },
+          { transform: move, opacity: 0 },
+        ],
+        { duration: FLY_MS, delay: i * 70, easing: 'cubic-bezier(0.3, 0.7, 0.2, 1)', fill: 'both' },
+      );
+    });
+    later(FLY_MS * 0.75, () => figure.classList.add('is-arrived'));
+    later(FLY_MS + kept.length * 70, () => {
+      stop();
+      figure.classList.add('is-done');
+      figure.classList.remove('is-sifting', 'is-landing', 'is-arrived');
+      replay.hidden = false;
+    });
   };
 
   const play = () => {
-    unjudge();
-    const start = 250;
-    items.forEach((item, i) =>
-      later(start + i * JUDGE_MS, () => {
-        item.classList.add('is-judged');
-        ticks[i].classList.add('is-judged');
-      }),
-    );
-    const judged = start + items.length * JUDGE_MS + 250;
-    ranked.forEach((item, i) => later(judged + i * 180, () => item.classList.add('is-ranked')));
-    for (let i = items.length; i < TOTAL; i++) {
-      later(judged + (i - items.length) * RIPPLE_MS, () => ticks[i].classList.add('is-judged'));
-    }
-    const rippled = judged + (TOTAL - items.length) * RIPPLE_MS + 150;
-    later(rippled, () => sheet.classList.add('is-tallied'));
-    later(rippled + 500, () => (replay.hidden = false));
+    stop();
+    figure.classList.add('is-instant');
+    figure.classList.remove('is-sifting', 'is-landing', 'is-arrived', 'is-done');
+    replay.hidden = true;
+    void figure.offsetWidth;
+    figure.classList.remove('is-instant');
+    later(150, () => figure.classList.add('is-sifting'));
+    later(LAND_MS, land);
   };
 
-  // Raw from the start, so nobody sees the answer before the pass.
-  unjudge();
-  const seen = new IntersectionObserver(
+  // Play once someone can see it: the page in front, and the pile in view.
+  let inView = false;
+  let started = false;
+  const start = () => {
+    if (started || !inView || document.hidden) return;
+    started = true;
+    later(600, play);
+  };
+  new IntersectionObserver(
     (entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      seen.disconnect();
-      play();
+      inView = entries.some((entry) => entry.isIntersecting);
+      start();
     },
-    { threshold: 0.2 },
-  );
-  seen.observe(sheet);
+    { threshold: 0.6 },
+  ).observe(stage);
+  document.addEventListener('visibilitychange', start);
   replay.addEventListener('click', play);
-  reduceMotion.addEventListener('change', () => reduceMotion.matches && finish());
+  reduceMotion.addEventListener('change', () => {
+    if (!reduceMotion.matches) return;
+    stop();
+    figure.classList.add('is-done');
+    replay.hidden = true;
+  });
 }
 
-edit();
+sort();
 
 /* ---------- The objective: the same morning, ranked against each ---------- */
 
