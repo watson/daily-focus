@@ -535,10 +535,15 @@ export const DEFAULT_AGENT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli 
 
 /**
  * What the morning agent may always do, whatever the list says, since a brief
- * can't be written without it: write `items.json` by way of a temporary sibling
- * and a rename, and nothing else in the store. The prompt and schema are
- * symlinks out of the store into this repo, so reading them is allowed where
- * they actually live as well.
+ * can't be written without it: write `items.json`, directly or by way of a
+ * temporary sibling and a rename, and nothing else in the store. The prompt and
+ * schema are symlinks out of the store into this repo, so reading them is allowed
+ * where they actually live as well.
+ *
+ * Writes are `Edit` rules: Claude Code applies those to every tool that writes a
+ * file, the Write tool included, while a path in a `Write` rule matches nothing.
+ * Under `Write(./items.json)`, a run that wrote `items.json` with the Write tool,
+ * as Claude Code on Windows did, was refused and left no brief.
  */
 export function briefWritingTools(): string[] {
   const repo = resolve(import.meta.dirname, '..');
@@ -546,8 +551,7 @@ export function briefWritingTools(): string[] {
     // `//` anchors a rule at the filesystem root; the path supplies one slash.
     `Read(/${repo}/prompts/**)`,
     `Read(/${repo}/schema/**)`,
-    'Write(./items.json)',
-    'Write(./items.json.*)',
+    'Edit(./items.json)',
     'Edit(./items.json.*)',
     'Bash(mv items.json.* items.json)',
   ];
