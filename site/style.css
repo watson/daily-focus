@@ -419,19 +419,22 @@ h1 span {
   flex: none;
   height: 110px;
 }
+/* The stream runs up behind the tray too, so the window is full from the start. */
 .sort__window {
-  --read-at: 0.38;
+  --read-y: 150px;
   position: relative;
   flex: 1;
+  margin-top: -110px;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(transparent, #000 16%, #000 80%, transparent);
-  mask-image: linear-gradient(transparent, #000 16%, #000 80%, transparent);
+  /* Faint behind the tray, so the picks stand clear; full from the reading line down. */
+  -webkit-mask-image: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.45) 100px, #000 140px, #000 80%, transparent);
+  mask-image: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.45) 100px, #000 140px, #000 80%, transparent);
 }
 /* The reading line: where each subject line is read as it passes. */
 .sort__window::after {
   content: '';
   position: absolute;
-  inset: calc(var(--read-at) * 100%) 0 auto;
+  inset: var(--read-y) 0 auto;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(224, 150, 42, 0.75) 15%, rgba(224, 150, 42, 0.75) 85%, transparent);
   opacity: 0;
@@ -453,6 +456,10 @@ h1 span {
 }
 .sort__wall .is-kept {
   white-space: nowrap;
+}
+/* Already read when the page came up: the stream was running before you got here. */
+.sort__wall .is-past {
+  opacity: 0.16;
 }
 /* Read: it brightens as it crosses the line, then dims. */
 .sort__wall .is-read {

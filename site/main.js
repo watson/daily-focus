@@ -28,8 +28,13 @@ for (const button of document.querySelectorAll('[data-copy]')) {
 
 /* ---------- The sort: the morning's pile, down to three ---------- */
 
-/** How long the stream takes to run past the reading line. */
+/** How long the stream takes to run the morning past the reading line. */
 const READ_MS = 4200;
+/** Lines of the endless stream around the morning's own: read ones above, more below. */
+const BEFORE = 20;
+const AFTER = 45;
+/** Where the count of read things starts, as if it had been reading a while. */
+const READ_FROM = 12;
 /** How long a pick takes to lift out of the stream into the tray. */
 const CATCH_MS = 520;
 /** Then the stream fades, the picks line up and swell into cards. */
@@ -53,15 +58,29 @@ function sort() {
   const wall = figure.querySelector('.sort__wall');
   const tally = figure.querySelector('[data-tally]');
   const lines = [...wall.querySelectorAll('span')];
+  // The stream is endless, or looks it: copies of the noise read already above
+  // the morning's lines, and more of it below, so the window is always full.
+  const noise = lines.filter((line) => !line.className);
+  const copy = (line, past) => {
+    const el = line.cloneNode(true);
+    if (past) el.classList.add('is-past');
+    return el;
+  };
+  wall.prepend(...noise.slice(-BEFORE).map((line) => copy(line, true)));
+  wall.append(...Array.from({ length: AFTER }, (_, i) => copy(noise[i % noise.length], false)));
+  const stream = [...wall.querySelectorAll('span')];
+  // What gets read as it passes the line: the morning's lines and the ones after.
+  const readable = stream.filter((line) => !line.classList.contains('is-past'));
   const rows = [...figure.querySelectorAll('.sort__brief .row')];
   const replay = figure.querySelector('[data-replay]');
 
   // A fixed scatter of shades, so the pile looks the same on every visit.
-  lines.forEach((line, i) => line.style.setProperty('--o', (0.45 + ((((i + 1) * 37) % 101) / 101) * 0.4).toFixed(2)));
+  stream.forEach((line, i) => line.style.setProperty('--o', (0.45 + ((((i + 1) * 37) % 101) / 101) * 0.4).toFixed(2)));
 
   let timers = [];
   let frame = 0;
   let picks = [];
+  let inView = false;
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
   const stop = () => {
     timers.forEach(clearTimeout);
@@ -88,16 +107,19 @@ function sort() {
   const spot = (r, extra = 0) => ({ left: px(r.x), top: px(r.y), width: px(r.w + extra) });
   const glide = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
 
-  // The stream starts with its first line just under the reading line and
-  // ends with its last just over it; every line is read on the way.
+  // The morning starts with its first line just under the reading line and
+  // ends with its last just over it; every line is read on the way, at one
+  // steady speed, and the stream runs on past them while it fades.
   const course = () => {
-    const at = view.clientHeight * parseFloat(getComputedStyle(view).getPropertyValue('--read-at'));
-    const middles = lines.map((line) => line.offsetTop + line.offsetHeight / 2);
-    return { at, middles, from: at - Math.min(...middles) + 10, to: at - Math.max(...middles) - 6 };
+    const at = parseFloat(getComputedStyle(view).getPropertyValue('--read-y'));
+    const middle = (line) => line.offsetTop + line.offsetHeight / 2;
+    const morning = lines.map(middle);
+    const from = at - Math.min(...morning) + 10;
+    const to = at - Math.max(...morning) - 6;
+    return { at, middles: readable.map(middle), from, speed: (from - to) / READ_MS };
   };
   const rest = () => (wall.style.transform = `translateY(${course().from}px)`);
   rest();
-  document.fonts?.ready.then(() => figure.classList.contains('is-reading') || rest());
 
   // A pick becomes a tag: a chip and its words, which lift into the tray.
   const lift = (line) => {
@@ -135,23 +157,30 @@ function sort() {
 
   const read = () => {
     enter('is-reading');
-    const { at, middles, from, to } = course();
-    const order = lines.map((line, i) => ({ line, y: middles[i] })).sort((a, b) => a.y - b.y);
-    const ease = (t) => (1 - Math.cos(Math.PI * t)) / 2;
-    const start = performance.now();
+    const { at, middles, from, speed } = course();
+    const order = readable.map((line, i) => ({ line, y: middles[i] })).sort((a, b) => a.y - b.y);
+    const morning = new Set(lines);
+    // The stream's own clock: it runs only while someone can see it, and a
+    // hidden tab coming back picks up where it was, not where it would be.
+    let clock = 0;
+    let then = null;
     let next = 0;
+    let done = 0;
     const tick = (now) => {
-      const p = Math.min(1, (now - start) / READ_MS);
-      const shift = from + (to - from) * ease(p);
+      if (inView && !document.hidden) clock += Math.min(50, now - (then ?? now));
+      then = now;
+      const shift = from - speed * clock;
       wall.style.transform = `translateY(${shift}px)`;
+      const was = done;
       while (next < order.length && order[next].y + shift <= at) {
         const { line } = order[next++];
         if (line.classList.contains('is-kept')) lift(line);
         else line.classList.add('is-read');
+        if (morning.has(line)) done++;
       }
-      tally.textContent = String(Math.round((147 * next) / order.length));
-      if (p < 1) frame = requestAnimationFrame(tick);
-      else later(Math.max(300, CATCH_MS), sift);
+      tally.textContent = String(READ_FROM + Math.round(((147 - READ_FROM) * done) / lines.length));
+      if (done === lines.length && was < done) later(Math.max(300, CATCH_MS), sift);
+      frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
   };
@@ -233,32 +262,22 @@ function sort() {
     stop();
     figure.classList.add('is-instant');
     enter();
-    for (const line of lines) line.classList.remove('is-read');
-    tally.textContent = '0';
+    for (const line of readable) line.classList.remove('is-read');
+    tally.textContent = String(READ_FROM);
     rest();
     replay.hidden = true;
     void figure.offsetWidth;
     figure.classList.remove('is-instant');
-    later(300, read);
+    read();
   };
 
-  // Play once someone can see it: the page in front, and the pile in view.
-  let inView = false;
-  let started = false;
-  const start = () => {
-    if (started || !inView || document.hidden) return;
-    started = true;
-    later(400, play);
-  };
-  new IntersectionObserver(
-    (entries) => {
-      inView = entries.some((entry) => entry.isIntersecting);
-      start();
-    },
-    { threshold: 0.6 },
-  ).observe(stage);
-  document.addEventListener('visibilitychange', start);
+  // The stream is moving as soon as the page is up, but only runs while the
+  // pile is in view, so nobody misses the picks below the fold.
+  new IntersectionObserver((entries) => (inView = entries.some((entry) => entry.isIntersecting)), {
+    threshold: 0.6,
+  }).observe(stage);
   replay.addEventListener('click', play);
+  (document.fonts?.ready ?? Promise.resolve()).then(play);
   reduceMotion.addEventListener('change', () => {
     if (!reduceMotion.matches) return;
     stop();
