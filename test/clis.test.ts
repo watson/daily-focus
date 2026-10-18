@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { detectClis, identify, preferredCli, probeCli } from '../src/clis.ts';
+import { detectClis, identify, knownLocations, preferredCli, probeCli } from '../src/clis.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -117,4 +117,12 @@ test('a login check that says nothing it understands does not hold a CLI back', 
   const bin = await dir();
   await fake(join(bin, 'codex'), 'codex-cli 0.162.1', { out: 'something new', code: 0 });
   assert.equal((await detectClis({}, { path: bin, locations: () => [] })).codex.ready, true);
+});
+
+test("on Windows, both CLIs are also looked for where Claude Code's installer and npm put them", () => {
+  const home = join('C:', 'Users', 'alex');
+  const appData = process.env.APPDATA ?? join(home, 'AppData', 'Roaming');
+  for (const cli of ['claude', 'codex'] as const) {
+    assert.deepEqual(knownLocations(cli, home, 'win32'), [join(home, '.local', 'bin', cli), join(appData, 'npm', cli)]);
+  }
 });

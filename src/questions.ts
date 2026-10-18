@@ -204,7 +204,7 @@ const cli: Question = {
         },
         fields: [
           field('path', 'Installed somewhere setup didn’t look? Its path', '', {
-            placeholder: '/opt/homebrew/bin/codex',
+            placeholder: process.platform === 'win32' ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\codex.cmd' : '/opt/homebrew/bin/codex',
             help: 'The program itself, codex or claude. Setup checks it before using it.',
           }),
         ],

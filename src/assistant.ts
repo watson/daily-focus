@@ -42,6 +42,7 @@ import { createInterface } from 'node:readline';
 import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS } from './codex.ts';
 import type { AssistantAgent, Config } from './config.ts';
 import { cliEnvironment } from './env.ts';
+import { launchFor } from './launch.ts';
 import type { ExecFile } from './shellpath.ts';
 import type {
   AssistantItemState,
@@ -933,7 +934,8 @@ export class Assistant {
 
     let child: ChildProcess;
     try {
-      child = this.spawnFn(this.config.assistant.binPath, args, {
+      const launch = launchFor(this.config.assistant.binPath, args);
+      child = this.spawnFn(launch.file, launch.args, {
         cwd: this.config.assistantDir,
         // Stdin closed: both CLIs wait on it otherwise, one of them for three seconds.
         stdio: ['ignore', 'pipe', 'pipe'],
