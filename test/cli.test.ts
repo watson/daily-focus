@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { appCalendarApp, command, ranDirectly } from '../src/install.ts';
+import { appCalendarApp, command, defaultCalendarApp, OWN_CALENDAR_APP, ranDirectly, USER_CALENDAR_APP } from '../src/install.ts';
 
 const run = promisify(execFile);
 const cli = resolve(import.meta.dirname, '../src/cli.ts');
@@ -166,4 +166,14 @@ test("the Mac app's calendar helper is found beside its Node, wherever the dashb
   assert.equal(appCalendarApp('/opt/homebrew/bin/node', `${app}/Contents/Resources/server`), helper, "the app's copy on another Node");
   assert.equal(appCalendarApp('/opt/homebrew/bin/node', '/Users/x/code/daily-focus'), null, 'no app at all');
   assert.equal(appCalendarApp('/opt/homebrew/bin/node', update), null, 'an update run by hand, outside the app');
+});
+
+test("the package's own calendar helper wins over one built by hand, and the app's over both", () => {
+  const app = '/Applications/Daily Focus.app/Contents/Helpers/Daily Focus Calendar.app';
+  const has = (...paths: string[]) => (path: string) => paths.includes(path);
+  assert.equal(defaultCalendarApp(has(app, OWN_CALENDAR_APP, USER_CALENDAR_APP), app), app);
+  assert.equal(defaultCalendarApp(has(OWN_CALENDAR_APP, USER_CALENDAR_APP), app), OWN_CALENDAR_APP, 'an app without its helper');
+  assert.equal(defaultCalendarApp(has(OWN_CALENDAR_APP, USER_CALENDAR_APP), null), OWN_CALENDAR_APP, 'whatever was built by hand');
+  assert.equal(defaultCalendarApp(has(USER_CALENDAR_APP), null), USER_CALENDAR_APP, 'a package without one');
+  assert.equal(defaultCalendarApp(has(), null), OWN_CALENDAR_APP, 'none: where to build one');
 });

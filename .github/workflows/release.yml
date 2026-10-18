@@ -91,9 +91,10 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           npm pkg set "daily-focus.appSource=$(git log -1 --format=%H -- macos tools/dfcal ':(exclude)macos/dmg-settings.py')"
 
-      # The tarball npm gets, and the app is built around, unpacked as npm would,
-      # the way `npm run app` does it. The last step to run npm packages, so none
-      # of them runs once the signing certificate is in reach.
+      # The package the app is built around, unpacked as npm would, the way `npm
+      # run app` does it, and the tarball npm gets, less the calendar helper added
+      # once it is signed. The last step to run npm packages, so none of them runs
+      # once the signing certificate is in reach.
       - name: Pack the package and write the release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -173,6 +174,24 @@ jobs:
       - name: Remove the keychain
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2> /dev/null || true
+
+      # The calendar helper the app carries, signed above, goes in the npm package
+      # too, so that the live agenda needs no developer tools without the app. It
+      # goes where the dashboard looks for its own (OWN_CALENDAR_APP in
+      # src/install.ts), and npm packs the package again, running no scripts. A
+      # file npm unpacks isn't quarantined, so Gatekeeper never asks a development
+      # build's helper for the notarisation it lacks.
+      - name: Put the signed calendar helper in the npm package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          package="$RUNNER_TEMP/server/package"
+          mkdir -p "$package/tools/dfcal/build"
+          ditto "macos/build/Daily Focus.app/Contents/Helpers/Daily Focus Calendar.app" "$package/tools/dfcal/build/Daily Focus Calendar.app"
+          codesign --verify --strict "$package/tools/dfcal/build/Daily Focus Calendar.app"
+          rm "$RUNNER_TEMP/release/daily-focus-$VERSION.tgz"
+          (cd "$package" && npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/release")
+          tar -tzf "$RUNNER_TEMP/release/daily-focus-$VERSION.tgz" | grep -qx 'package/tools/dfcal/build/Daily Focus Calendar.app/Contents/MacOS/dfcal'
 
       - name: Hand the release to the publish job
         uses: actions/upload-artifact@v7

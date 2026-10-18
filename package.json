@@ -33,7 +33,8 @@
     "schema/",
     "tools/dfcal/build.sh",
     "tools/dfcal/main.swift",
-    "tools/dfcal/Info.plist"
+    "tools/dfcal/Info.plist",
+    "tools/dfcal/build/Daily Focus Calendar.app/"
   ],
   "engines": {
     "node": ">=22.18"
