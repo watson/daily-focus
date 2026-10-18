@@ -40,7 +40,7 @@
     "node": ">=22.18"
   },
   "daily-focus": {
-    "appInterface": 1
+    "appInterface": 2
   },
   "scripts": {
     "start": "node src/server.ts",
@@ -55,7 +55,7 @@
     "build:calendar": "sh tools/dfcal/build.sh",
     "app": "node scripts/app.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --test --import ./test/sandbox.ts \"test/**/*.test.ts\"",
     "package": "node scripts/package.ts",
     "prepack": "node scripts/build.ts && node scripts/package.ts"
   },

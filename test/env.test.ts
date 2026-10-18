@@ -16,7 +16,7 @@ after(async () => {
 test('an empty value means the default', () => {
   const config = loadConfig({ DAILY_FOCUS_HOST: '', DAILY_FOCUS_DATA: '', DAILY_FOCUS_GH: '~/bin/gh' });
   assert.equal(config.host, '127.0.0.1', 'an empty host must not become "listen everywhere"');
-  assert.match(config.dataDir, /\.daily-focus$/, 'an empty store path must not become the working directory');
+  assert.match(config.dataDir, /\.daily-focus\/work$/, 'an empty store path must not become the working directory');
   assert.match(config.github.ghPath, /^\/.*\/bin\/gh$/, 'a tilde in the gh path is expanded');
 });
 
@@ -132,7 +132,7 @@ test('only the store, port and host come from the environment; every other setti
 test('a blank launch variable means the default', async () => {
   const sources = settingSources({ DAILY_FOCUS_DATA: '  ', DAILY_FOCUS_HOST: '' });
   assert.deepEqual(sources.launch, {});
-  assert.match(sources.settingsPath, /\.daily-focus\/settings\.json$/);
+  assert.match(sources.settingsPath, /\.daily-focus\/work\/settings\.json$/);
 });
 
 test('a fixed setting wins over the saved one, and a blank saved one is the default', async () => {

@@ -941,6 +941,12 @@ export interface DashboardState {
    */
   setupWarnings: string[];
   /**
+   * What changed in how this dashboard is set up and is worth saying, though
+   * nothing is wrong: a store that moved into its profile's folder, for a day
+   * after the move. Markdown written by this repo.
+   */
+  setupNotices: string[];
+  /**
    * Settings were saved and the dashboard restarts to apply them as soon as
    * nothing is running: `waiting` while the morning agent or the assistant is,
    * `manual` when nothing here can restart it and the user has to.

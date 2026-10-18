@@ -219,17 +219,19 @@ test("the assistant's prompt keeps its never-rules and stays in the chat", async
 
 /**
  * The launch settings can't be on the settings page, which lives in the store they
- * locate, so the setup page on the site is where anyone finds them. It names no
- * other setting: everything else is explained where it is changed, on the settings
- * page, and a second copy there would go stale.
+ * locate, so the setup page on the site is where anyone finds them, with the
+ * profile, which can be given at launch too. It names no other setting:
+ * everything else is explained where it is changed, on the settings page, and a
+ * second copy there would go stale.
  */
-test('the setup page documents the launch settings, and only those', async () => {
-  const { LAUNCH_SETTINGS } = await import('../src/env.ts');
+test('the setup page documents the launch settings and the profile, and only those', async () => {
+  const { LAUNCH_SETTINGS, PROFILE_SETTING } = await import('../src/env.ts');
   const page = await readFile(resolve(root, 'site/setup/index.html'), 'utf8');
   const named = new Set([...page.matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
-  for (const name of LAUNCH_SETTINGS) assert.ok(named.has(name), `site/setup/index.html never mentions ${name}`);
+  const documented = [...LAUNCH_SETTINGS, PROFILE_SETTING];
+  for (const name of documented) assert.ok(named.has(name), `site/setup/index.html never mentions ${name}`);
   for (const name of named) {
-    assert.ok(LAUNCH_SETTINGS.includes(name), `site/setup/index.html names ${name}, which belongs on the settings page`);
+    assert.ok(documented.includes(name), `site/setup/index.html names ${name}, which belongs on the settings page`);
   }
 });
 

@@ -6,6 +6,7 @@ import { after, test } from 'node:test';
 
 import type { SettingSources } from '../src/env.ts';
 import { applySettingsChange, describeSettings, saveSettings, SETTINGS, SETTING_GROUPS } from '../src/settings.ts';
+import { asProfile, type Profile } from '../src/stores.ts';
 
 const dirs: string[] = [];
 
@@ -13,12 +14,17 @@ after(async () => {
   await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-function sources(layers: Partial<Pick<SettingSources, 'settings' | 'fixed'>> = {}): SettingSources {
+/** A store whose folder follows the profile its settings name, as it does after the restart a save asks for; `given` as `--profile` would. */
+function sources(layers: Partial<Pick<SettingSources, 'settings' | 'fixed'>> & { given?: Profile } = {}): SettingSources {
+  const settings = layers.settings ?? {};
+  const profile = layers.given ?? asProfile(settings.DAILY_FOCUS_PROFILE) ?? 'work';
+  const root = '/tmp/daily-focus-settings-test';
   return {
-    launch: { DAILY_FOCUS_DATA: '/tmp/daily-focus-settings-test' },
-    settings: layers.settings ?? {},
+    launch: { DAILY_FOCUS_DATA: root },
+    store: { root, profile, dir: `${root}/${profile}`, given: layers.given !== undefined, move: null, problem: null },
+    settings,
     fixed: layers.fixed ?? {},
-    settingsPath: '/tmp/daily-focus-settings-test/settings.json',
+    settingsPath: `${root}/${profile}/settings.json`,
     settingsError: null,
   };
 }
@@ -46,6 +52,20 @@ test('each value says where it came from', () => {
   assert.deepEqual([view(all, 'DAILY_FOCUS_AGENT').value, view(all, 'DAILY_FOCUS_AGENT').source], ['claude', 'settings']);
   assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_START').value, view(all, 'DAILY_FOCUS_WORK_START').source], ['10', 'fixed']);
   assert.deepEqual([view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').value, view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').source], [null, 'default']);
+  // The store's folder says it, so the page shows it and can't change it.
+  assert.deepEqual([view(all, 'DAILY_FOCUS_PROFILE').value, view(all, 'DAILY_FOCUS_PROFILE').source], ['work', 'fixed']);
+});
+
+test('only the setup screen changes the profile, and not one given at launch', () => {
+  const page = applySettingsChange(sources(), { DAILY_FOCUS_PROFILE: 'personal' });
+  assert.ok('error' in page && /chosen at setup/.test(page.error), 'the page refuses it');
+  assert.deepEqual(applySettingsChange(sources(), { DAILY_FOCUS_PROFILE: 'work' }), { settings: {} }, 'restating it changes nothing');
+  assert.deepEqual(applySettingsChange(sources(), { DAILY_FOCUS_PROFILE: 'personal' }, { setup: true }), {
+    settings: { DAILY_FOCUS_PROFILE: 'personal' },
+  });
+  const given = applySettingsChange(sources({ given: 'work' }), { DAILY_FOCUS_PROFILE: 'personal' }, { setup: true });
+  assert.ok('error' in given && /given when the dashboard started/.test(given.error));
+  assert.equal(view(describeSettings(sources({ given: 'personal' })), 'DAILY_FOCUS_PROFILE').value, 'personal');
 });
 
 test('defaults that depend on the profile follow the profile in effect', () => {

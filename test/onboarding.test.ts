@@ -21,6 +21,7 @@ import type { CliFound, CliReport } from '../src/clis.ts';
 import type { SettingSources } from '../src/env.ts';
 import { Onboarding, type OnboardingDeps } from '../src/onboarding.ts';
 import { applySettingsChange } from '../src/settings.ts';
+import { asProfile } from '../src/stores.ts';
 import type { OnboardingAnswer, OnboardingState, SetupState } from '../src/types.ts';
 
 const dirs: string[] = [];
@@ -84,8 +85,11 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
   const values: Record<string, string> = { DAILY_FOCUS_DATA: dataDir, ...saved };
   const config = loadConfig(values);
   const h = { dataDir, settings: { ...saved }, values } as Harness;
+  // The store's folder follows the profile its settings name, as it does after
+  // the restart the finish asks for.
   const sources = (): SettingSources => ({
     launch: { DAILY_FOCUS_DATA: dataDir },
+    store: { root: dataDir, profile: asProfile(h.settings.DAILY_FOCUS_PROFILE) ?? 'work', dir: dataDir, given: false, move: null, problem: null },
     settings: h.settings,
     fixed: {},
     settingsPath: join(dataDir, 'settings.json'),
@@ -119,11 +123,11 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
       { title: 'Family', source: 'iCloud', eventsToday: 1 },
     ],
     checkSettings: (values) => {
-      const applied = applySettingsChange(sources(), values);
+      const applied = applySettingsChange(sources(), values, { setup: true });
       return 'error' in applied ? applied.error : null;
     },
     saveSettings: async (values) => {
-      const applied = applySettingsChange(sources(), values);
+      const applied = applySettingsChange(sources(), values, { setup: true });
       if ('error' in applied) return applied.error;
       h.settings = applied.settings;
       return null;

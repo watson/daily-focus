@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { detectClis, probeCli } from './clis.ts';
 import { loadConfig, type CliName, type Config } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
-import { layerSettings, oldDotenvWarning, settingSources, type SettingSources } from './env.ts';
+import { dataRoot, launchProfile, layerSettings, oldDotenvWarning, settingSources, tilde, type SettingSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board, type BoardDeps } from './board.ts';
@@ -28,6 +28,7 @@ import { applySettingsChange, describeSettings, saveSettings, type SettingsChang
 import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
+import { findStore, settleStore, type Profile } from './stores.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
 import type { Action, ActionType, DashboardState } from './types.ts';
 import { ACTION_TYPES } from './validate.ts';
@@ -203,6 +204,8 @@ function statusOf(
 
 export interface StartedServer {
   url: string;
+  /** The profile of the store it opened, which a restart keeps. */
+  profile: Profile;
   close(): Promise<void>;
 }
 
@@ -229,7 +232,16 @@ export interface ServerOptions {
   fixed?: Readonly<Record<string, string>>;
   /** Reads the Mac's zone; a test passes its own so it can move it. */
   readSystemZone?: () => Promise<string | null>;
+  /**
+   * The profile this process ran before restarting, when none was given at
+   * launch: a restart opens the same store, not whichever `stores.ts` would
+   * pick first.
+   */
+  profile?: Profile;
 }
+
+/** How long the page says a store has moved into its profile's folder. */
+const MOVED_NOTICE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Start listening. `env` is the environment the launch settings are read from,
@@ -240,8 +252,18 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // Everything a setting can come from, read again whenever the settings page
   // asks: a save lands in the store before the restart that applies it.
   const processEnv = env ?? process.env;
-  const readSources = (): SettingSources => settingSources(processEnv, options.fixed);
+  // Before anything reads the store: a store from before the profile folders
+  // moves into its folder here, once. See `stores.ts`.
+  const found = findStore(dataRoot(processEnv), { asked: launchProfile(processEnv), last: options.profile });
+  const settled = await settleStore(found);
+  const location = settled.location;
+  if (settled.moved) console.log(`[daily-focus] ${settled.moved}`);
+  // Worth a word on the page: the store isn't where it always was. A new store
+  // renamed after setup's answer is no news to anyone.
+  const movedAt = found.move?.kind === 'into-folder' ? new Date() : null;
+  const readSources = (): SettingSources => settingSources(processEnv, options.fixed, location);
   const { config, warnings: configWarnings } = configure(readSources());
+  if (location.problem) configWarnings.push(location.problem);
   // Only on a real start: a test or the demo has no business with a checkout's .env.
   const dotenvWarning = env ? null : oldDotenvWarning();
   if (dotenvWarning) configWarnings.push(dotenvWarning);
@@ -377,10 +399,10 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return facts.calendars.map(({ id, title, source }) => ({ title, source, eventsToday: today.get(id) ?? 0 }));
     },
     checkSettings: (values) => {
-      const applied = applySettingsChange(readSources(), values);
+      const applied = applySettingsChange(readSources(), values, { setup: true });
       return 'error' in applied ? applied.error : null;
     },
-    saveSettings: (values) => saveSettingsValues(values),
+    saveSettings: (values) => saveSettingsValues(values, { setup: true }),
   });
 
   // A Codex older than the oldest the dashboard's limits on it work with ignores
@@ -414,10 +436,10 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
    * not, or null. One save at a time, each reading the file afresh: two tabs
    * saving different settings at once must both land, not the later over the first.
    */
-  function saveSettingsValues(values: SettingsChange): Promise<string | null> {
+  function saveSettingsValues(values: SettingsChange, opts: { setup?: boolean } = {}): Promise<string | null> {
     const saved = settingsWrites.then(async (): Promise<string | null> => {
       const sources = readSources();
-      const applied = applySettingsChange(sources, values);
+      const applied = applySettingsChange(sources, values, opts);
       if ('error' in applied) return applied.error;
       const changed = JSON.stringify(Object.entries(applied.settings).sort()) !== JSON.stringify(Object.entries(sources.settings).sort());
       if (changed) {
@@ -468,6 +490,13 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
       setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
+      setupNotices:
+        movedAt && now.getTime() - movedAt.getTime() < MOVED_NOTICE_MS
+          ? [
+              `Daily Focus now keeps a folder for each profile, so this store has moved to \`${tilde(config.dataDir)}\`. ` +
+                'Nothing in it changed.',
+            ]
+          : [],
       restart,
       setup,
       onboarding: onboardingState,
@@ -1177,6 +1206,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
 
   return {
     url,
+    profile: config.profile,
     async close() {
       await stopEverything();
       await new Promise<void>((done, fail) => {
@@ -1229,14 +1259,21 @@ export async function runServer(options: RunOptions = {}): Promise<void> {
 
   let current: StartedServer | null = null;
   let stopping = false;
+  let profile: Profile | undefined;
 
   async function start(): Promise<void> {
-    current = await startServer(options.env, { onRestart: () => void restart(), integrations: options.integrations, fixed: options.fixed });
+    current = await startServer(options.env, {
+      onRestart: () => void restart(),
+      integrations: options.integrations,
+      fixed: options.fixed,
+      profile,
+    });
   }
 
   async function restart(): Promise<void> {
     console.log('[daily-focus] restarting to apply new settings');
     const previous = current;
+    profile = previous?.profile ?? profile;
     current = null;
     await previous?.close();
     if (stopping) return;

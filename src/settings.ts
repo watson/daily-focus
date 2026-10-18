@@ -15,7 +15,8 @@
  */
 
 import { loadConfig, PROFILES, type Profile } from './config.ts';
-import { layerSettings, LAUNCH_SETTINGS, type SettingSources } from './env.ts';
+import { layerSettings, LAUNCH_SETTINGS, PROFILE_SETTING, type SettingSources } from './env.ts';
+import { asProfile } from './stores.ts';
 import { writeJsonAtomic } from './fs.ts';
 
 export type SettingGroup = 'instance' | 'agent' | 'assistant' | 'github' | 'jira' | 'calendar' | 'day';
@@ -69,7 +70,9 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_PROFILE',
     group: 'instance',
     label: 'What this dashboard briefs',
-    help: 'Work or home. Picks the morning prompt and the defaults below: the personal profile switches off Jira and free time.',
+    help:
+      'Work or home, chosen at setup. It names the folder this store is in, and picks the morning prompt and the defaults below: ' +
+      'the personal profile switches off Jira and free time. To brief the other as well, run a second dashboard beside this one.',
     kind: 'choice',
     choices: PROFILES.map((value) => ({ value, label: value === 'work' ? 'Work' : 'Personal life' })),
     fallback: always('Work'),
@@ -454,7 +457,8 @@ function profileOf(sources: SettingSources, settings: Readonly<Record<string, st
 export function describeSettings(sources: SettingSources): SettingsView {
   const profile = profileOf(sources);
   const settings = SETTINGS.map((def): SettingView => {
-    const fixed = present(sources.fixed, def.key);
+    // The store's folder says it, so it is shown but never changed here.
+    const fixed = def.key === PROFILE_SETTING ? sources.store.profile : present(sources.fixed, def.key);
     const saved = present(sources.settings, def.key);
     const [value, source]: [string | null, SettingSource] =
       fixed !== null ? [fixed, 'fixed'] : saved !== null ? [saved, 'settings'] : [null, 'default'];
@@ -484,15 +488,31 @@ export type SettingsChange = Readonly<Record<string, string | null>>;
  * A fixed value can't be changed from the page, since it would still win, and
  * a save that changes nothing on screen would read as broken. The candidate is
  * checked by building the config from it exactly as the next start will.
+ *
+ * The profile is saved only by the setup screen's finish (`setup`), and only
+ * when none was given at launch: the next start renames the store's folder to
+ * match. See `stores.ts`.
  */
 export function applySettingsChange(
   sources: SettingSources,
   change: SettingsChange,
+  opts: { setup?: boolean } = {},
 ): { settings: Record<string, string> } | { error: string } {
   const next: Record<string, string> = { ...sources.settings };
   for (const [key, raw] of Object.entries(change)) {
     if (LAUNCH_SETTINGS.includes(key)) {
       return { error: `${key} says where the store is or how the server listens, so it is given when the dashboard starts, not here` };
+    }
+    if (key === PROFILE_SETTING && raw !== null && !asProfile(raw)) {
+      return { error: `${key} must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(raw)}` };
+    }
+    if (key === PROFILE_SETTING && (!opts.setup || sources.store.given)) {
+      if ((raw?.trim().toLowerCase() || null) === sources.store.profile) continue;
+      return {
+        error: sources.store.given
+          ? `${key} was given when the dashboard started, so it can't be changed here`
+          : `${key} is chosen at setup, so it can't be changed here; to brief the other as well, run a second dashboard`,
+      };
     }
     if (!BY_KEY.has(key)) return { error: `${key} is not a setting` };
     if (raw !== null && typeof raw !== 'string') return { error: `${key} must be text, or null for the default` };

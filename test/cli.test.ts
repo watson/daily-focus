@@ -1,16 +1,26 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { promisify } from 'node:util';
 
 import { appCalendarApp, command, defaultCalendarApp, OWN_CALENDAR_APP, ranDirectly, USER_CALENDAR_APP } from '../src/install.ts';
 
-const run = promisify(execFile);
+const execute = promisify(execFile);
 const cli = resolve(import.meta.dirname, '../src/cli.ts');
+
+/**
+ * A data folder of the tests' own, which every run of the CLI is pointed at,
+ * the ones expected to be refused included: a refusal that stops happening
+ * would otherwise start a dashboard, or a script, on the default store.
+ */
+const sandbox = await mkdtemp(join(tmpdir(), 'daily-focus-cli-'));
+after(() => rm(sandbox, { recursive: true, force: true }));
+const run = (file: string, args: string[]) =>
+  execute(file, args, { env: { ...process.env, DAILY_FOCUS_DATA: sandbox, DAILY_FOCUS_HOST: '127.0.0.1', DAILY_FOCUS_PORT: '0' } });
 
 test('the CLI says its version and how to use it', async () => {
   const { stdout: version } = await run(process.execPath, [cli, '--version']);
@@ -50,8 +60,9 @@ test('only a source file counts as run directly, since every module of the packa
 
 test('with --exit-with-stdin, the dashboard stops when whatever holds its input goes', async () => {
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-lifeline-'));
+  await mkdir(join(store, 'work'));
   // Nothing that reaches outside, saved in the store as the settings page would.
-  await writeFile(join(store, 'settings.json'), JSON.stringify({ DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_CALENDAR: 'off' }));
+  await writeFile(join(store, 'work', 'settings.json'), JSON.stringify({ DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_CALENDAR: 'off' }));
   const env = { ...process.env, DAILY_FOCUS_HOST: '127.0.0.1' };
   const child = spawn(process.execPath, [cli, '--data', store, '--no-open', '--exit-with-stdin', '--port', '0'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
   try {
@@ -136,8 +147,7 @@ test('a flag that belongs to another command is refused, not dropped', async () 
     ['init', '--no-open'],
     ['audit', '--demo'],
     ['init', '--exit-with-stdin'],
-    ['service', '--profile', 'personal'],
-    ['seed', '--profile', 'personal'],
+    ['build-calendar', '--profile', 'personal'],
   ]) {
     await assert.rejects(run(process.execPath, [cli, ...args]), (err: { code?: number; stderr?: string }) => {
       assert.equal(err.code, 1, args.join(' '));
@@ -147,12 +157,15 @@ test('a flag that belongs to another command is refused, not dropped', async () 
   }
 });
 
-test("a dashboard's profile is not a flag: the setup screen and the settings choose it", async () => {
-  await assert.rejects(run(process.execPath, [cli, '--no-open', '--profile', 'personal']), (err: { code?: number; stderr?: string }) => {
-    assert.equal(err.code, 1);
-    assert.match(err.stderr ?? '', /--profile is for --demo and init/);
-    return true;
-  });
+test('a profile that is neither is refused before anything starts', async () => {
+  for (const args of [['--no-open', '--profile', 'home'], ['seed', '--profile', 'home'], ['init', '--profile', 'home']]) {
+    await assert.rejects(run(process.execPath, [cli, ...args]), (err: { code?: number; stderr?: string }) => {
+      assert.equal(err.code, 1, args.join(' '));
+      assert.match(err.stderr ?? '', /^daily-focus: --profile must be one of work, personal, got "home"/);
+      return true;
+    });
+  }
+  assert.deepEqual(await readdir(sandbox), [], 'no store was made');
 });
 
 test("the Mac app's calendar helper is found beside its Node, wherever the dashboard came from", () => {

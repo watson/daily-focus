@@ -6,14 +6,18 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { startServer, type StartedServer } from '../src/server.ts';
+import type { Profile } from '../src/stores.ts';
 import type { DashboardState } from '../src/types.ts';
 
+let root: string;
+/** The work store, which a dashboard told no profile opens in a new data folder. */
 let dataDir: string;
 let server: StartedServer | null = null;
 let url = '';
@@ -22,20 +26,24 @@ let env: NodeJS.ProcessEnv;
 /** What the store starts with: boards off, and gh and the calendar helper pointing at nothing. */
 let SAVED: Record<string, string>;
 
-async function start(): Promise<void> {
+/** What `runServer` does, minus the process: close this one, start the next on the same environment and profile. */
+async function start(profile?: Profile): Promise<void> {
   server = await startServer(env, {
     onRestart: () => {
       restarts++;
       const previous = server;
       server = null;
-      void previous!.close().then(start);
+      void previous!.close().then(() => start(previous!.profile));
     },
+    profile,
   });
   url = server.url;
 }
 
 before(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-server-onboarding-'));
+  root = await mkdtemp(join(tmpdir(), 'daily-focus-server-onboarding-'));
+  dataDir = join(root, 'work');
+  await mkdir(dataDir);
   SAVED = {
     DAILY_FOCUS_GITHUB: 'off',
     DAILY_FOCUS_JIRA: 'off',
@@ -43,7 +51,7 @@ before(async () => {
     DAILY_FOCUS_CALENDAR_APP: join(dataDir, 'no-helper.app'),
   };
   env = {
-    DAILY_FOCUS_DATA: dataDir,
+    DAILY_FOCUS_DATA: root,
     DAILY_FOCUS_PORT: '0',
     DAILY_FOCUS_HOST: '127.0.0.1',
   };
@@ -53,7 +61,7 @@ before(async () => {
 
 after(async () => {
   await server?.close();
-  await rm(dataDir, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
 });
 
 const post = (path: string, body: unknown) =>
@@ -100,9 +108,15 @@ test('the finish saves the answers, restarts, and the screen is gone', async () 
   assert.equal(res.status, 200);
   for (let i = 0; i < 200 && (restarts < 1 || server === null); i++) await new Promise((done) => setTimeout(done, 10));
   assert.ok(server, 'the dashboard came back');
-  // What the store had stands beside the answers, which leave both boards off.
-  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), { ...SAVED, DAILY_FOCUS_PROFILE: 'personal' });
+  // What the store had stands beside the answers, which leave both boards off,
+  // and the store, which began as work, is now in the personal folder.
+  const personal = join(root, 'personal');
+  assert.deepEqual(JSON.parse(await readFile(join(personal, 'settings.json'), 'utf8')), { ...SAVED, DAILY_FOCUS_PROFILE: 'personal' });
+  assert.equal(existsSync(dataDir), false, 'the work folder was renamed, not copied');
+  const status = (await (await fetch(`${url}/api/status`)).json()) as { dataDir: string; profile: string };
+  assert.deepEqual([status.dataDir, status.profile], [personal, 'personal']);
   const after = await state();
+  assert.deepEqual(after.setupNotices, [], 'a new store renamed after setup is no news');
   assert.equal(after.onboarding, null);
   assert.equal(after.setup.needed, true, 'no brief yet, and no agent to write one');
   assert.equal(after.agentRun.last, null, 'nothing was started');

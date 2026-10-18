@@ -23,7 +23,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 
+import { launchProfile } from './env.ts';
 import { IN_NPX_CACHE, OWN_CALENDAR_APP, packageVersion, ROOT, USER_CALENDAR_APP } from './install.ts';
+import { asProfile, PROFILES } from './stores.ts';
 import type { RunOptions } from './server.ts';
 
 const run = promisify(execFile);
@@ -35,25 +37,28 @@ Usage
   daily-focus --demo               look around with sample data, in a throwaway store;
                                    add --profile personal to see the personal profile
   daily-focus service [--remove]   keep it running in the background (macOS)
-  daily-focus init [--profile <name>]
-                                   create the store with templates to edit by hand
+  daily-focus init                 create the store with templates to edit by hand
   daily-focus audit [--against <items.json>]
                                    check the current brief against the contract
   daily-focus seed [--force]       write a sample brief to the store
   daily-focus build-calendar       build the macOS calendar helper, for a copy without one
 
 Options
-  --data <dir>      the store (default ~/.daily-focus)
+  --data <dir>      the data folder, with a store in it per profile
+                    (default ~/.daily-focus)
+  --profile <name>  work or personal: which of them to open. Without it, the
+                    one there is, or work
   --port <port>     the port to listen on (default 4321)
   --host <host>     the address to listen on (default 127.0.0.1)
-  --profile <name>  work or personal, for the demo or a new store's init
   --no-open         don't open the browser
   --exit-with-stdin stop when standard input closes, for an app running it as a child
   -v, --version     print the version
   -h, --help        print this
 
-The first three can also be set as DAILY_FOCUS_DATA, DAILY_FOCUS_PORT and
-DAILY_FOCUS_HOST. Everything else is set up in the dashboard itself.`;
+The first four can also be set as DAILY_FOCUS_DATA, DAILY_FOCUS_PROFILE,
+DAILY_FOCUS_PORT and DAILY_FOCUS_HOST. To run work and personal side by side,
+start a second dashboard with the other --profile and its own --port.
+Everything else is set up in the dashboard itself.`;
 
 /** Open `url` in the default browser, quietly: failing to is never worth stopping for. */
 function openInBrowser(url: string): void {
@@ -84,19 +89,19 @@ async function demo(open: boolean, profile: string | undefined): Promise<void> {
   const { DEMO_FIXED, demoEnv, demoIntegrations, demoProfile, writeDemoStore } = await import('./demo.ts');
   // Checked before the store exists, so a typo costs nothing.
   const chosen = demoProfile(profile);
-  const store = await mkdtemp(join(tmpdir(), 'daily-focus-demo-'));
-  process.on('exit', () => rmSync(store, { recursive: true, force: true }));
+  const root = await mkdtemp(join(tmpdir(), 'daily-focus-demo-'));
+  process.on('exit', () => rmSync(root, { recursive: true, force: true }));
   // One clock for the store and the boards: the assistant's answers ahead in the
   // store are keyed by when the sample reviews came in, which the boards date.
   const now = new Date();
-  await writeDemoStore(store, chosen, now);
+  await writeDemoStore(join(root, chosen), chosen, now);
   await start(
     open,
     (url) => {
       console.log(`\n  The demo is at ${url}, with sample data in a throwaway store (the ${chosen} profile).`);
       console.log('  Nothing is connected and nothing runs. Stop it with Ctrl+C; the store goes with it.\n');
     },
-    { env: demoEnv(process.env, store), fixed: DEMO_FIXED, integrations: demoIntegrations(chosen, now) },
+    { env: demoEnv(process.env, root, chosen), fixed: DEMO_FIXED, integrations: demoIntegrations(chosen, now) },
   );
 }
 
@@ -189,6 +194,11 @@ async function main(argv: string[]): Promise<void> {
   if (values.data !== undefined) process.env.DAILY_FOCUS_DATA = values.data;
   if (values.port !== undefined) process.env.DAILY_FOCUS_PORT = values.port;
   if (values.host !== undefined) process.env.DAILY_FOCUS_HOST = values.host;
+  // The demo's profile is its own, kept out of the environment it passes on.
+  if (values.profile !== undefined && !values.demo) {
+    if (!asProfile(values.profile)) throw new Error(`--profile must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(values.profile)}`);
+    process.env.DAILY_FOCUS_PROFILE = values.profile;
+  }
   const open = values.open !== false;
 
   const [command, ...rest] = positionals;
@@ -197,8 +207,7 @@ async function main(argv: string[]): Promise<void> {
   // Every flag is parsed for every command, so one given to the wrong command
   // would otherwise be dropped without a word: `seed --remove` would seed.
   const only: Record<string, readonly string[]> = {
-    // The demo's, or init's, which saves it for a new store.
-    profile: ['start', 'init'],
+    profile: ['start', 'init', 'service', 'audit', 'seed'],
     demo: ['start'],
     'exit-with-stdin': ['start'],
     open: ['start'],
@@ -218,9 +227,8 @@ async function main(argv: string[]): Promise<void> {
     case undefined:
     case 'start':
       if (values.demo) return demo(open, values.profile);
-      if (values.profile !== undefined) {
-        throw new Error("--profile is for --demo and init; a dashboard's profile is chosen on its setup screen, or in its settings");
-      }
+      // Refused before anything starts, rather than by the server once it has.
+      launchProfile();
       if (IN_NPX_CACHE) {
         console.log('  Running from npx. To keep it running in the background, install it:');
         console.log('  npm install -g daily-focus, then daily-focus service.\n');

@@ -19,6 +19,7 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
   return {
     machine: 'Mac',
     profile: 'work',
+    profileSet: false,
     cli: 'claude',
     clis: report(READY('/usr/local/bin/claude'), MISSING('Codex')),
     identity: { name: 'Robin Lark', login: 'rlark', logins: ['rlark'], email: 'robin@example.com' },
@@ -299,4 +300,10 @@ test('the screen names the machine it runs on, and the calendars question asks f
   assert.doesNotMatch(withList.brief(without), /Below is every calendar/);
   assert.match(withList.brief(without), /List the calendars their calendar connector reaches/);
   assert.match(withList.facts!(without)!, /no list from Calendar\.app here/);
+});
+
+test('the profile is asked only when nothing has settled it', () => {
+  const profile = questionById('profile')!;
+  assert.equal(profile.applies?.(ctx()), true);
+  assert.equal(profile.applies?.(ctx({ profileSet: true })), false, 'given at launch, or the other store is already beside it');
 });

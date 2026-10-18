@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -231,9 +231,11 @@ after(async () => {
 });
 
 test('the dashboard asks ahead on its own once the board has read, each question once', async () => {
-  const store = await mkdtemp(join(tmpdir(), 'daily-focus-autoask-'));
-  dirs.push(store);
-  const bin = join(store, 'fake-claude');
+  const root = await mkdtemp(join(tmpdir(), 'daily-focus-autoask-'));
+  dirs.push(root);
+  const store = join(root, 'work');
+  await mkdir(store);
+  const bin = join(root, 'fake-claude');
   await writeFile(
     bin,
     [
@@ -257,7 +259,7 @@ test('the dashboard asks ahead on its own once the board has read, each question
     }),
   );
   const server = await startServer(
-    { PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_DATA: store, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' },
+    { PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_DATA: root, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' },
     { integrations: demoIntegrations('work') },
   );
   try {

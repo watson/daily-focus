@@ -57,6 +57,7 @@ import { ADAPTERS, type ParsedEvent, type ParsedStep } from './assistant.ts';
 import { CodexGate } from './codex.ts';
 import { CodexSessions, codexHome } from './codexsessions.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
+import { cliEnvironment } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
 import type { ExecFile } from './shellpath.ts';
@@ -604,7 +605,7 @@ export class AgentRunner {
         cwd: this.config.dataDir,
         // Stdin closed: both CLIs wait on it otherwise.
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: process.env,
+        env: cliEnvironment(this.config.dataDir),
       });
     } catch (err) {
       await this.finish(run, turn, { ok: false, error: this.spawnError(err) });

@@ -80,6 +80,9 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
   for (const warning of state.setupWarnings ?? []) {
     banners.push(banner('warning', '!', renderMarkdown(warning)));
   }
+  for (const notice of state.setupNotices ?? []) {
+    banners.push(banner('info', 'i', renderMarkdown(notice)));
+  }
   for (const warning of state.warnings) {
     banners.push(banner('warning', '!', warning));
   }

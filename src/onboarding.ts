@@ -21,6 +21,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +32,7 @@ import { preferredCli, type CliFound, type CliReport } from './clis.ts';
 import { CodexGate, codexLatestModel, computerUseOff } from './codex.ts';
 import { CLI_NAMES, PROFILES, type CliName, type Config, type Profile } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
-import { expandHome, layerSettings, type SettingSources } from './env.ts';
+import { cliEnvironment, expandHome, layerSettings, type SettingSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
   composeSources,
@@ -675,7 +676,11 @@ export class Onboarding {
 
     let child: ChildProcess;
     try {
-      child = this.spawnFn(bin, args, { cwd: this.config.onboardingDir, stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
+      child = this.spawnFn(bin, args, {
+        cwd: this.config.onboardingDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: cliEnvironment(this.config.dataDir),
+      });
     } catch (err) {
       await rm(schemaDir, { recursive: true, force: true });
       return this.settle(question.id, record, { ok: false, error: `could not run ${bin}: ${(err as Error).message}` });
@@ -878,7 +883,8 @@ export class Onboarding {
   private async context(
     opts: { listCalendars?: boolean; answers?: Readonly<Record<string, OnboardingAnswer>>; setup?: SetupState } = {},
   ): Promise<QuestionContext> {
-    const values = layerSettings(this.deps.readSources());
+    const sources = this.deps.readSources();
+    const values = layerSettings(sources);
     const current: Record<string, string> = {};
     for (const def of SETTINGS) {
       const value = (values[def.key] ?? '').trim();
@@ -886,12 +892,10 @@ export class Onboarding {
     }
     const setup = opts.setup ?? (await this.deps.setup());
     const answers = opts.answers ?? this.file?.answers ?? {};
-    const profileAnswer = given(answers.profile)?.choices.profile?.[0];
-    const profile: Profile = PROFILES.includes(profileAnswer as Profile)
-      ? (profileAnswer as Profile)
-      : current.DAILY_FOCUS_PROFILE === 'personal'
-        ? 'personal'
-        : 'work';
+    const { store } = sources;
+    const profileSet = store.given || PROFILES.some((other) => other !== store.profile && existsSync(join(store.root, other)));
+    const profileAnswer = profileSet ? null : given(answers.profile)?.choices.profile?.[0];
+    const profile: Profile = PROFILES.includes(profileAnswer as Profile) ? (profileAnswer as Profile) : store.profile;
     // What looking found, with a path the user typed folded in: after a restart
     // the look is fresh, and knows nothing of it.
     const cliAnswer = given(answers.cli);
@@ -908,7 +912,7 @@ export class Onboarding {
     // state is read before anyone is, and the calendar helper may ask for
     // access, a prompt that should come while they're there to answer it.
     const started = Object.keys(answers).length > 0;
-    const profileKnown = started && given(answers.profile) !== null;
+    const profileKnown = started && (profileSet || given(answers.profile) !== null);
     let calendars: CalendarListing[] | string | null = null;
     const liveAgenda = !['off', 'false', '0', 'no'].includes((current.DAILY_FOCUS_CALENDAR ?? '').toLowerCase());
     if (setup.calendar.supported && setup.calendar.built && liveAgenda) {
@@ -931,6 +935,7 @@ export class Onboarding {
     return {
       machine: machineName(),
       profile,
+      profileSet,
       cli: cli && CLI_NAMES.includes(cli) ? cli : null,
       clis,
       identity: started ? await this.deps.identity() : { name: null, login: null, logins: [], email: null },

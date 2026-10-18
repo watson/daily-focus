@@ -10,7 +10,11 @@ import Foundation
 /// app's Node, and the permissions in Info.plist and the entitlements. A dashboard
 /// whose package.json asks for more, in `daily-focus.appInterface`, needs a newer
 /// app. Raise both together, and only for something the dashboard can't do without.
-let appInterface = 1
+///
+/// 2: the stores moved into a folder per profile. A dashboard from before that
+/// would read a moved store as empty, so an app that falls back to the copy it
+/// carries must carry one that knows the folders.
+let appInterface = 2
 
 /// Which releases the app offers.
 enum Track: String, CaseIterable {
