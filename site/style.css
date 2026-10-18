@@ -634,12 +634,13 @@ h1 span {
   .js .sort.is-swelling .sort__brief .row {
     visibility: hidden;
   }
-  /* Until the panel's turn, the cards stand on the band alone. */
-  .js .sort:is(.is-swelling, .is-cards) .sort__brief::before {
+  /* Until the panel's turn, the cards stand on the band alone. Held back from
+     the start, so the panel never shows on its way out as the brief appears. */
+  .js .sort:not(.is-panel, .is-done) .sort__brief::before {
     opacity: 0;
     transform: scale(0.94);
   }
-  .js .sort:is(.is-swelling, .is-cards) :is(.sort__head, .sort__brief > .ui-heading, .sort__rest) {
+  .js .sort:not(.is-panel, .is-done) :is(.sort__head, .sort__brief > .ui-heading, .sort__rest) {
     opacity: 0;
   }
   /* The cards fill in: the rank pops, then the source, then the reason. */

@@ -37,8 +37,7 @@ const AFTER = 45;
 const READ_FROM = 12;
 /** How long a pick takes to lift out of the stream into the tray. */
 const CATCH_MS = 520;
-/** Then the stream fades, the picks line up and swell into cards. */
-const SIFT_MS = 450;
+/** Then the stream fades as the picks line up, and they swell into cards. */
 const GATHER_MS = 650;
 const SWELL_MS = 560;
 /** How long the cards take to fill in, and the panel to come up around them. */
@@ -179,15 +178,10 @@ function sort() {
         if (morning.has(line)) done++;
       }
       tally.textContent = String(READ_FROM + Math.round(((147 - READ_FROM) * done) / lines.length));
-      if (done === lines.length && was < done) later(Math.max(300, CATCH_MS), sift);
+      if (done === lines.length && was < done) later(250, gather);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
-  };
-
-  const sift = () => {
-    enter('is-sifting');
-    later(SIFT_MS, gather);
   };
 
   const gather = () => {
@@ -216,6 +210,7 @@ function sort() {
     const tag = getComputedStyle(plan[0].chip);
     const tagInk = getComputedStyle(plan[0].words).color;
 
+    // The stream fades while the picks line up, both at once.
     enter('is-sifting', 'is-gathering');
     const last = plan.length - 1;
     plan.forEach((p, i) => {
