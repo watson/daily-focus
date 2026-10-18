@@ -368,6 +368,10 @@ Notifications needing attention or follow-up.
 
 #### Jira
 
+**Only when `jira` in `agent-settings.json` is `true`** (the default). `false` means
+the user doesn't use Jira: gather nothing from it, through `acli` or a connector, and
+don't report it as missing.
+
 **Ticket status hygiene is the dashboard's job, not yours.** It has its own tab
 listing every ticket of the user's whose status doesn't match its pull requests —
 nothing open left but not Done, work started without the ticket moving, a ticket
@@ -406,6 +410,10 @@ Other Jira worth raising is the ordinary kind: a ticket assigned to the user tha
 newly blocked, newly commented on by someone waiting, or carrying a deadline.
 
 #### GitHub
+
+**Only when `github` in `agent-settings.json` is `true`** (the default). `false` means
+the user doesn't use GitHub: gather nothing from it, run no `gh`, and don't report it
+as missing.
 
 **Run every `gh` command outside the sandbox from the start**, including account
 identification, switching, queries and restoration. Use the permitted execution

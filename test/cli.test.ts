@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { after, test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { appCalendarApp, appGh, command, defaultCalendarApp, defaultGh, OWN_CALENDAR_APP, ranDirectly, USER_CALENDAR_APP } from '../src/install.ts';
+import { appCalendarApp, command, defaultCalendarApp, OWN_CALENDAR_APP, ranDirectly, USER_CALENDAR_APP } from '../src/install.ts';
 
 const execute = promisify(execFile);
 const cli = resolve(import.meta.dirname, '../src/cli.ts');
@@ -189,16 +189,4 @@ test("the package's own calendar helper wins over one built by hand, and the app
   assert.equal(defaultCalendarApp(has(OWN_CALENDAR_APP, USER_CALENDAR_APP), null), OWN_CALENDAR_APP, 'whatever was built by hand');
   assert.equal(defaultCalendarApp(has(USER_CALENDAR_APP), null), USER_CALENDAR_APP, 'a package without one');
   assert.equal(defaultCalendarApp(has(), null), OWN_CALENDAR_APP, 'none: where to build one');
-});
-
-test("the Mac app's gh is used only when there is none on PATH", { skip: process.platform === 'win32' && "the Mac app's paths" }, () => {
-  const app = '/Applications/Daily Focus.app';
-  const gh = `${app}/Contents/Helpers/GitHub CLI/gh`;
-  assert.equal(appGh(`${app}/Contents/Helpers/node`, `${app}/Contents/Resources/server`), gh, 'in a folder of its own, beside the Node');
-  assert.equal(appGh('/opt/homebrew/bin/node', '/Users/x/code/daily-focus'), null, 'no app at all');
-  const has = (...paths: string[]) => (path: string) => paths.includes(path);
-  assert.equal(defaultGh(true, has(gh), gh), 'gh', "the user's own wins");
-  assert.equal(defaultGh(false, has(gh), gh), gh, "none on PATH: the app's");
-  assert.equal(defaultGh(false, has(), gh), 'gh', 'an app from before it carried one');
-  assert.equal(defaultGh(false, has(), null), 'gh', 'the npm package, which never does');
 });

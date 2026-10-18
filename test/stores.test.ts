@@ -184,7 +184,10 @@ test("a store whose settings name the other profile is renamed to match, unless 
 
 test('every name a store keeps at its top level is known as one', () => {
   const config = loadConfig({ DAILY_FOCUS_DATA: '/store' });
-  const inStore = Object.values(config).filter((value): value is string => typeof value === 'string' && dirname(value) === resolve('/store'));
+  // The fetched CLIs are the data folder's, beside the stores, which here is the store itself.
+  const inStore = Object.values(config).filter(
+    (value): value is string => typeof value === 'string' && dirname(value) === resolve('/store') && value !== config.toolsDir,
+  );
   assert.ok(inStore.length > 10, 'the paths in Config moved');
   for (const path of inStore) assert.ok(STORE_ENTRIES.includes(basename(path)), `${basename(path)} is missing from STORE_ENTRIES`);
 });

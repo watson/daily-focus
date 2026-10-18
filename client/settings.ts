@@ -12,9 +12,9 @@ import { h, type JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import type { SettingView } from '../src/settings.ts';
-import type { DashboardState } from '../src/types.ts';
+import type { DashboardState, Service } from '../src/types.ts';
 import { el } from './el.ts';
-import { gitHubSignIn } from './signin.ts';
+import { connectionView } from './connect.ts';
 import type { CalendarName, Handlers, TextEditor, TextName, UiState, View } from './types.ts';
 
 /** The views Settings can return to, by the names their tabs carry. */
@@ -64,7 +64,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
             el('h3', { class: 'settings-card__title', id: `settings-${group.id}-title` }, group.title),
             plain.map((setting) => settingField(setting, draft, handlers)),
             group.id === 'calendar' ? calendarPicker(state, ui, handlers, page.settings) : null,
-            group.id === 'github' ? gitHubAccount(state, handlers) : null,
+            group.id === 'github' || group.id === 'jira' ? serviceAccount(group.id, state, handlers) : null,
             advanced.length > 0
               ? el(
                   'details',
@@ -434,28 +434,49 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
   );
 }
 
-/* ---------- GitHub ---------- */
+/* ---------- GitHub and Jira ---------- */
+
+/** Which CLI a service is read through, in each case, for the line above its button. */
+const WHERE: Record<Service, { missing: string; fetched: string; own: string }> = {
+  github: {
+    missing: 'The GitHub CLI isn’t installed; connecting gets it from GitHub. ',
+    fetched: 'Daily Focus reads GitHub through the GitHub CLI, which it got for you. ',
+    own: 'Daily Focus reads GitHub through your own GitHub CLI, gh. ',
+  },
+  jira: {
+    missing: 'The Atlassian CLI isn’t installed; connecting gets it from Atlassian. ',
+    fetched: 'Daily Focus reads Jira through the Atlassian CLI, which it got for you. ',
+    own: 'Daily Focus reads Jira through your own Atlassian CLI, acli. ',
+  },
+};
 
 /**
- * Who the board reads GitHub as, and a way to sign in again: the only way for
- * the copy of gh Daily Focus brings, and a way round the terminal for any other.
+ * Who the board reads a service as, and a way to connect it or sign in again:
+ * the only way for a CLI Daily Focus fetched, and a way round the terminal for
+ * a user's own.
  */
-function gitHubAccount(state: DashboardState, handlers: Handlers): JSX.Element | null {
+function serviceAccount(service: Service, state: DashboardState, handlers: Handlers): JSX.Element | null {
   // Absent from a server older than the page.
-  const signIn = state.gitHubSignIn;
-  if (!signIn) return null;
-  const logins = state.board.accounts.filter((account) => account.ok).map((account) => account.login);
+  const connection = state.connections?.[service];
+  if (!connection) return null;
+  const accounts =
+    service === 'github'
+      ? state.board.accounts.filter((account) => account.ok).map((account) => account.login)
+      : state.tickets.account && !state.tickets.reason
+        ? [state.tickets.account]
+        : [];
+  const where = !connection.cli.found ? WHERE[service].missing : connection.cli.fetched ? WHERE[service].fetched : WHERE[service].own;
   return el(
     'div',
-    { class: 'github-account' },
+    { class: 'service-account' },
     el(
       'p',
       { class: 'field__note' },
-      signIn.bundled ? 'There’s no GitHub CLI installed, so Daily Focus uses its own. ' : 'Daily Focus signs in through your GitHub CLI, gh. ',
-      logins.length ? `The board reads as ${logins.join(', ')}. ` : '',
-      'gh switches to whichever account you sign in as.',
+      where,
+      accounts.length ? `It reads as ${accounts.join(', ')}. ` : '',
+      service === 'github' ? 'gh switches to whichever account you sign in as.' : '',
     ),
-    gitHubSignIn(signIn, handlers, logins.length ? 'Sign in again' : 'Sign in to GitHub'),
+    connectionView(service, connection, handlers, accounts.length ? { label: 'Sign in again', again: true } : {}),
   );
 }
 

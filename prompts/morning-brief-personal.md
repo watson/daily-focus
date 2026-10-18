@@ -257,6 +257,10 @@ have no web link; omit `url`.
 
 #### GitHub
 
+**Only when `github` in `agent-settings.json` is `true`** (the default). `false` means
+the user doesn't use GitHub: gather nothing from it, run no `gh`, and don't report it
+as missing. The file also has `jira`, which this brief never gathers either way.
+
 The user's own projects: hobby code, open source they maintain, things they build for
 fun. Use the `gh` CLI with the login `sources.md` names, limited to the repositories or
 organisations it lists; if it names none, use the active login from

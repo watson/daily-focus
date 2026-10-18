@@ -18,7 +18,6 @@ import { loadConfig, PROFILES, type Profile } from './config.ts';
 import { layerSettings, LAUNCH_SETTINGS, PROFILE_SETTING, type SettingSources } from './env.ts';
 import { asProfile } from './stores.ts';
 import { writeJsonAtomic } from './fs.ts';
-import { APP_GH } from './install.ts';
 
 export type SettingGroup = 'instance' | 'agent' | 'assistant' | 'github' | 'jira' | 'calendar' | 'day';
 
@@ -230,8 +229,8 @@ export const SETTINGS: readonly SettingDef[] = [
   {
     key: 'DAILY_FOCUS_GITHUB',
     group: 'github',
-    label: 'Pull request board',
-    help: 'Reads your open pull requests through the GitHub CLI, gh. Sign in below. The Jira ticket board uses it too, to catch merges Jira hasn\'t heard about yet.',
+    label: 'Use GitHub',
+    help: 'Your pull requests, in the brief and on their own tab, read through the GitHub CLI, gh. Off leaves GitHub out of Daily Focus. The Jira ticket board uses it too, to catch merges Jira hasn\'t heard about yet.',
     kind: 'flag',
     fallback: always('On'),
   },
@@ -275,16 +274,15 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Path to gh',
     help: "Only needed when the dashboard can't find the GitHub CLI on its own.",
     kind: 'text',
-    // Only the Mac app brings one; the npm package never does.
-    fallback: always(APP_GH ? 'Found on PATH, else the one the app brings' : 'Found on PATH'),
+    fallback: always('Found on PATH, else the one Daily Focus fetched'),
     advanced: true,
   },
 
   {
     key: 'DAILY_FOCUS_JIRA',
     group: 'jira',
-    label: 'Jira ticket board',
-    help: 'Flags tickets whose status disagrees with their pull requests, through the Atlassian CLI. Sign in with acli jira auth login.',
+    label: 'Use Jira',
+    help: 'Your tickets, in the brief and on their own tab, which flags any whose status disagrees with their pull requests. Read through the Atlassian CLI, acli. Off leaves Jira out of Daily Focus.',
     kind: 'flag',
     fallback: (profile) => (profile === 'personal' ? 'Off' : 'On'),
   },
@@ -336,7 +334,7 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Path to acli',
     help: "Only needed when the dashboard can't find the Atlassian CLI on its own.",
     kind: 'text',
-    fallback: always('Found on PATH'),
+    fallback: always('Found on PATH, else the one Daily Focus fetched'),
     advanced: true,
   },
 

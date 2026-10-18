@@ -6,7 +6,7 @@
 
 import type { Signal } from '@preact/signals';
 import type { SettingsView } from '../src/settings.ts';
-import type { ActionType, DashboardState, OnboardingAnswer } from '../src/types.ts';
+import type { ActionType, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
 
 export type View = 'today' | 'board' | 'tickets' | 'settings';
 
@@ -206,9 +206,9 @@ export interface Handlers {
   refreshBoard(): void;
   refreshTickets(): void;
   refreshCalendar(): void;
-  /** Start gh's sign-in to GitHub, whose code every tab is then shown. */
-  signInToGitHub(): void;
-  cancelGitHubSignIn(): void;
+  /** Connect GitHub or Jira, whose progress every tab is then shown; `again` signs in even if it is signed in. */
+  connect(service: Service, again?: boolean): void;
+  cancelConnect(service: Service): void;
   ask(id: string, body: { action?: string; text?: string }): void;
   stopAssistant(id: string): void;
   /** Put text on the clipboard: a reply, or a block in one meant for pasting. */

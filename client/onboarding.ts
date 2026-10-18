@@ -12,9 +12,18 @@
 import { h, type JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-import type { DashboardState, GitHubSignInState, OnboardingChoice, OnboardingField, OnboardingState, OnboardingStep } from '../src/types.ts';
+import type {
+  ConnectionState,
+  DashboardState,
+  OnboardingCard,
+  OnboardingChoice,
+  OnboardingField,
+  OnboardingState,
+  OnboardingStep,
+  Service,
+} from '../src/types.ts';
 import { el } from './el.ts';
-import { gitHubSignIn } from './signin.ts';
+import { connectionView, SERVICE_NAME } from './connect.ts';
 import type { Handlers, SetupDraft, UiState } from './types.ts';
 
 type Chosen = SetupDraft['answer'];
@@ -56,7 +65,7 @@ export function OnboardingView({ state, ui, handlers }: { state: DashboardState;
         { class: 'onboarding__thread' },
         flow.steps.map((step) => {
           if (step.id === flow.current || step.id === editing) {
-            return el('li', { key: step.id }, h(StepCard, { step, ui, handlers, current: step.id === flow.current, signIn: state.gitHubSignIn }));
+            return el('li', { key: step.id }, h(StepCard, { step, ui, handlers, current: step.id === flow.current, connections: state.connections }));
           }
           if (step.status === 'open') return null;
           return el('li', { key: step.id }, doneRow(step, handlers, ui.setupBusy.value !== null));
@@ -160,14 +169,14 @@ function StepCard({
   ui,
   handlers,
   current,
-  signIn,
+  connections,
 }: {
   step: OnboardingStep;
   ui: UiState;
   handlers: Handlers;
   current: boolean;
-  /** gh's sign-in, which a card with `gitHub` holds. Absent from an older server. */
-  signIn: GitHubSignInState | undefined;
+  /** Connecting GitHub and Jira, which a card with `connections` holds. Absent from an older server. */
+  connections: Record<Service, ConnectionState> | undefined;
 }): JSX.Element {
   const saved = ui.setupDrafts.value.get(step.id);
   const draft = saved?.answer ?? baseAnswer(step);
@@ -193,9 +202,7 @@ function StepCard({
       ? 'Still looking; this fills in when it is done'
       : empty && step.card.problem?.blocking
         ? 'Fix what it says above, or decide later'
-        : step.card.gitHub && step.card.gitHub.logins.length === 0
-          ? 'Sign in first, or sign in later'
-          : null;
+        : unconnected(step.card, draft.choices.services ?? []);
 
   return el(
     'section',
@@ -263,9 +270,6 @@ function StepCard({
         )
       : null,
     step.card.problem?.blocking ? problem(step, busy, handlers) : null,
-    step.card.gitHub && signIn
-      ? gitHubSignIn(signIn, handlers, step.card.gitHub.logins.length ? 'Sign in to another account' : 'Sign in to GitHub')
-      : null,
     el(
       'form',
       {
@@ -290,11 +294,20 @@ function StepCard({
           )
         : null,
       step.card.choices.map((choice) =>
-        h(ChoiceView, {
-          choice,
-          picked: draft.choices[choice.id] ?? [],
-          onPick: (values: string[]) => edit({ ...draft, choices: { ...draft.choices, [choice.id]: values } }),
-        }),
+        step.card.connections && choice.id === 'services'
+          ? h(ServicesView, {
+              choice,
+              card: step.card,
+              connections,
+              handlers,
+              picked: draft.choices[choice.id] ?? [],
+              onPick: (values: string[]) => edit({ ...draft, choices: { ...draft.choices, [choice.id]: values } }),
+            })
+          : h(ChoiceView, {
+              choice,
+              picked: draft.choices[choice.id] ?? [],
+              onPick: (values: string[]) => edit({ ...draft, choices: { ...draft.choices, [choice.id]: values } }),
+            }),
       ),
       step.card.problem && !step.card.problem.blocking ? problem(step, busy, handlers) : null,
       error ? el('p', { class: 'onboarding__error', role: 'alert' }, error) : null,
@@ -361,6 +374,67 @@ function sparkle(): JSX.Element {
     'svg',
     { class: 'onboarding__sparkle', width: 14, height: 14, viewBox: '0 0 14 14', 'aria-hidden': 'true' },
     el('path', { d: 'M7 0l1.6 5.4L14 7l-5.4 1.6L7 14l-1.6-5.4L0 7l5.4-1.6z', fill: 'currentColor' }),
+  );
+}
+
+/** Why Continue waits on a card of services: one is ticked that isn't connected yet. */
+function unconnected(card: OnboardingCard, picked: readonly string[]): string | null {
+  const waiting = (card.connections ?? []).filter((each) => each.account === null && picked.includes(each.service));
+  if (waiting.length === 0) return null;
+  return `Connect ${waiting.map((each) => SERVICE_NAME[each.service]).join(' and ')} first, or untick ${waiting.length > 1 ? 'them' : 'it'}`;
+}
+
+/**
+ * GitHub and Jira, each a row to tick, as `ChoiceView` draws a list. A connected
+ * one says as whom. A ticked one that isn't connected opens its connection right
+ * under it: getting its CLI if need be, then signing in. Unticked, nothing about
+ * it is asked or run.
+ */
+function ServicesView({
+  choice,
+  card,
+  connections,
+  handlers,
+  picked,
+  onPick,
+}: {
+  choice: OnboardingChoice;
+  card: OnboardingCard;
+  connections: Record<Service, ConnectionState> | undefined;
+  handlers: Handlers;
+  picked: string[];
+  onPick: (values: string[]) => void;
+}): JSX.Element {
+  const accounts = new Map((card.connections ?? []).map((each) => [each.service, each.account]));
+  const toggle = (value: string) => onPick(picked.includes(value) ? picked.filter((v) => v !== value) : [...picked, value]);
+  return el(
+    'fieldset',
+    { class: 'onboarding__choice' },
+    el(
+      'div',
+      { class: 'onboarding__list' },
+      choice.options.map((option) => {
+        const service = option.value as Service;
+        const account = accounts.get(service) ?? null;
+        const ticked = picked.includes(option.value);
+        const connection = connections?.[service];
+        return el(
+          'div',
+          { class: 'onboarding__service', key: option.value },
+          el(
+            'label',
+            { class: 'onboarding__option' },
+            el('input', { type: 'checkbox', name: choice.id, checked: ticked, onChange: () => toggle(option.value) }),
+            el('span', { class: 'onboarding__box', 'data-kind': 'check', 'aria-hidden': 'true' }),
+            el('span', { class: 'onboarding__option-text' }, option.label, option.detail ? el('small', null, option.detail) : null),
+            account !== null ? el('span', { class: 'onboarding__connected' }, account ? `Connected as ${account}` : 'Connected') : null,
+          ),
+          ticked && account === null && connection
+            ? el('div', { class: 'onboarding__service-connect' }, connectionView(service, connection, handlers))
+            : null,
+        );
+      }),
+    ),
   );
 }
 

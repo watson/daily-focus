@@ -89,21 +89,22 @@ run it again with `--remove` afterwards.
 - `transitionTicket` is the dashboard's only external write. It moves one Jira ticket
   to one status after a user click. Do not add automatic transitions or other external
   writes without an explicit scope change.
-- The user's own `gh` on PATH always wins; the Mac app's copy is used only when there
-  is none (`defaultGh`), and the npm package never carries one. Signing gh in to
-  GitHub (`src/ghsignin.ts`) starts only from a click, and the user approves it on
-  GitHub; nothing signs in on its own.
+- GitHub and Jira are optional. `DAILY_FOCUS_GITHUB` and `DAILY_FOCUS_JIRA` off
+  leave them out of everything, the brief included (`agentSettings`). A user's own
+  `gh` or `acli` always wins; only without one does connecting fetch it from its
+  maker into the data folder's `tools/` (`src/tools.ts`), checked before use.
+  Nothing ships either: Atlassian's terms forbid passing acli on. Fetching and
+  signing in (`src/connect.ts`) start only from a click; nothing connects on its own.
 - Everything shipped that others wrote is credited in the acknowledgements. npm
   packages are found from the bundles (`scripts/licenses.ts`), and one without a
   licence file fails the build; anything else, like the fonts, is listed there by
-  hand. The Mac app adds Node's and gh's (`macos/build.sh`), and its own binaries
-  may link only macOS's libraries.
+  hand. The Mac app adds Node's (`macos/build.sh`), and its own binaries may link
+  only macOS's libraries.
 - Daily Focus is MIT licensed, and nothing it ships may change that. Never add
   code, a package or an asset under a copyleft licence, which would require the
   work that includes it to be released under its terms: the GPL family (GPL, LGPL,
   AGPL), SSPL, EUPL, OSL or CC-BY-SA. Weak copyleft (MPL, EPL, CDDL) needs the
-  maintainer's explicit go-ahead first. Both builds refuse them. The one exception
-  is an MPL-2.0 library inside gh, GitHub's own program shipped unchanged. Node's
+  maintainer's explicit go-ahead first. The package build refuses them. Node's
   licence quotes the GPL only for ICU build scripts under Autoconf's exception,
   which aren't in the binary.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted

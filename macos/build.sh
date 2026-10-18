@@ -16,9 +16,9 @@
 # --test        runs the app's self-test after building.
 #
 # The app carries its own Node.js, at the version in macos/node-version, downloaded
-# from nodejs.org on the first build and checked against its published checksums,
-# and the newest GitHub CLI, for a Mac without one, checked against its release's
-# checksums and GitHub's signature.
+# from nodejs.org on the first build and checked against its published checksums.
+# It carries neither gh nor acli: the dashboard fetches them from their makers for
+# a user who wants them (src/tools.ts).
 #
 # Signing uses DAILY_FOCUS_SIGN_IDENTITY when set, else the first Developer ID
 # Application identity in the keychain, else the first Apple Development one, else
@@ -121,51 +121,6 @@ tar -xzf "$node_cache/$name.tar.gz" -C "$node_cache" "$name/bin/node" "$name/LIC
 cp "$node_cache/$name/bin/node" "$app/Contents/Helpers/node"
 echo "bundled Node.js $node_version"
 
-# The GitHub CLI, for a Mac without one of its own: the dashboard uses this copy
-# only when there is no gh on PATH (src/install.ts), and then signs in through it
-# from the page, since nobody has it in a terminal. The newest release, looked up
-# at every build, Apple silicon only as Node is. The download is checked against
-# the checksums its release publishes, and the program against GitHub's own
-# Developer ID, whose signature it keeps: unlike Node's build, it carries nothing
-# notarisation refuses. It goes in a folder of its own, which the dashboard puts
-# on the PATH of the CLIs it runs, so that adds gh and nothing else.
-github_team=VEKTX9H2N7
-gh_tag=$(curl -fsSI https://github.com/cli/cli/releases/latest 2>/dev/null | awk 'tolower($1) == "location:" { print $2 }' | tr -d '\r' | sed 's#.*/##' || true)
-case "$gh_tag" in
-  v[0-9]*.[0-9]*.[0-9]*) ;;
-  *)
-    # Offline: the newest already downloaded, if there is one.
-    gh_tag=$(ls -d "$build"/gh-v* 2>/dev/null | sed 's#.*/gh-##' | sort -V | tail -n 1 || true)
-    [ -n "$gh_tag" ] || { echo "couldn't find the newest GitHub CLI release, and none is downloaded" >&2; exit 1; }
-    echo "couldn't ask GitHub for its newest CLI release; using $gh_tag, downloaded before" >&2
-    ;;
-esac
-gh_version=${gh_tag#v}
-gh_cache="$build/gh-$gh_tag"
-gh_name="gh_${gh_version}_macOS_arm64"
-mkdir -p "$gh_cache"
-if [ ! -s "$gh_cache/$gh_name.zip" ]; then
-  echo "downloading the GitHub CLI $gh_version"
-  curl -fsSL "https://github.com/cli/cli/releases/download/$gh_tag/gh_${gh_version}_checksums.txt" -o "$gh_cache/checksums.txt"
-  curl -fsSL "https://github.com/cli/cli/releases/download/$gh_tag/$gh_name.zip" -o "$gh_cache/$gh_name.zip"
-fi
-expected=$(awk -v file="$gh_name.zip" '$2 == file { print $1 }' "$gh_cache/checksums.txt")
-actual=$(shasum -a 256 "$gh_cache/$gh_name.zip" | awk '{ print $1 }')
-if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-  rm -f "$gh_cache/$gh_name.zip"
-  echo "$gh_name.zip doesn't match the checksum its release publishes; refusing to bundle it" >&2
-  exit 1
-fi
-rm -rf "$gh_cache/$gh_name"
-ditto -x -k "$gh_cache/$gh_name.zip" "$gh_cache"
-if ! codesign --verify --strict -R "=anchor apple generic and certificate leaf[subject.OU] = \"$github_team\"" "$gh_cache/$gh_name/bin/gh"; then
-  echo "$gh_name/bin/gh isn't signed by GitHub; refusing to bundle it" >&2
-  exit 1
-fi
-mkdir -p "$app/Contents/Helpers/GitHub CLI"
-cp "$gh_cache/$gh_name/bin/gh" "$app/Contents/Helpers/GitHub CLI/gh"
-echo "bundled the GitHub CLI $gh_version"
-
 dashboard="$build/Daily Focus Dashboard.bundle"
 dashboard_zip="$build/Daily-Focus-Dashboard.zip"
 rm -rf "$dashboard" "$dashboard_zip"
@@ -189,13 +144,11 @@ fi
 
 # The licences of what the app carries that others wrote, in one file, which the
 # app shows in a window of its own (Acknowledgements in its menu). Node's covers
-# what Node bundles. gh's release has only its own; those of its dependencies are
-# built into the program, and `gh licenses` prints them, so the build asks it, and
-# stops if it can't: a newer gh that has moved them must not ship without them.
-# The dashboard's are the package's own file, which lists every npm package its
-# bundles read (scripts/licenses.ts). The app and the calendar helper are this
-# repository's alone: they link nothing but macOS's own libraries, which the
-# check below holds them to, Node with them, so nothing else needs crediting.
+# what Node bundles. The dashboard's are the package's own file, which lists every
+# npm package its bundles read (scripts/licenses.ts). The app and the calendar
+# helper are this repository's alone: they link nothing but macOS's own libraries,
+# which the check below holds them to, Node with them, so nothing else needs
+# crediting. gh and acli aren't here: the app doesn't carry them.
 for binary in "$app/Contents/MacOS/Daily Focus" "$app/Contents/Helpers/Daily Focus Calendar.app/Contents/MacOS/dfcal" "$app/Contents/Helpers/node"; do
   # A library's line starts with a tab; the others name the file, once per architecture.
   foreign=$(otool -L "$binary" | awk '/^\t/ && $1 !~ /^\/(System\/Library|usr\/lib)\// { print $1 }')
@@ -212,29 +165,6 @@ credit() {
 printf '%s\n\n%s\n' "Acknowledgements" \
   "Daily Focus is MIT licensed. It carries software that others wrote, under the licences that follow." > "$acknowledgements"
 credit "Node.js $node_version" "https://nodejs.org" "$node_cache/$name/LICENSE"
-credit "GitHub CLI $gh_version" "https://cli.github.com" "$gh_cache/$gh_name/LICENSE"
-mkdir -p "$gh_cache/config"
-if ! GH_CONFIG_DIR="$gh_cache/config" GH_PAGER=cat GH_NO_UPDATE_NOTIFIER=1 NO_COLOR=1 \
-  "$gh_cache/$gh_name/bin/gh" licenses > "$gh_cache/licenses.txt" 2>"$build/gh-licenses.log" \
-  || ! grep -q "third-party" "$gh_cache/licenses.txt"; then
-  cat "$build/gh-licenses.log" >&2
-  echo "the GitHub CLI $gh_version didn't list its dependencies' licences with \`gh licenses\`; refusing to ship it without them" >&2
-  exit 1
-fi
-rm -f "$build/gh-licenses.log"
-# None of gh's dependencies may be copyleft (AGENTS.md), save the MPL's, whose
-# reach ends at its own files, inside a program GitHub built and we don't change.
-# One line per dependency, "name (version) - licence - link"; none read means the
-# list has changed shape, which must not pass for a clean one.
-gh_listed=$(grep -cE '^[^ ]+ \([^)]*\) - [^ ]+ - ' "$gh_cache/licenses.txt" || true)
-gh_copyleft=$(awk -F' - ' '/^[^ ]+ \([^)]*\) - [^ ]+ - / && $2 ~ /^(A|L)?GPL|^SSPL|^EUPL|^OSL|^CC-BY-SA|^EPL|^CDDL/ { print "  " $1 " - " $2 }' "$gh_cache/licenses.txt")
-if [ "$gh_listed" -eq 0 ] || [ -n "$gh_copyleft" ]; then
-  [ "$gh_listed" -eq 0 ] && echo "couldn't read the licences the GitHub CLI $gh_version lists; check \`gh licenses\` by hand" >&2
-  [ -n "$gh_copyleft" ] && printf 'the GitHub CLI %s depends on copyleft code, which Daily Focus can'"'"'t ship under MIT:\n%s\n' "$gh_version" "$gh_copyleft" >&2
-  exit 1
-fi
-printf '\n\n' >> "$acknowledgements"
-cat "$gh_cache/licenses.txt" >> "$acknowledgements"
 if [ -n "$server" ]; then
   [ -s "$server/dist/third-party-licenses.txt" ] || { echo "$server has no dist/third-party-licenses.txt; build it with scripts/package.ts" >&2; exit 1; }
   printf '\n\n' >> "$acknowledgements"

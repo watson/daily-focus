@@ -40,18 +40,19 @@ import {
   machineName,
   QUESTIONS,
   questionById,
-  type BoardHealth,
+  SERVICE_LABEL,
   type CalendarListing,
   type Chosen,
   type Question,
   type QuestionContext,
+  type ServiceHealth,
   type SourcesSection,
 } from './questions.ts';
 import { SETTINGS } from './settings.ts';
 import type { Identity } from './setup.ts';
 import type { ExecFile } from './shellpath.ts';
 import { FOCUS_TEMPLATE } from './templates.ts';
-import type { AssistantStep, OnboardingAnswer, OnboardingState, OnboardingStep, SetupState } from './types.ts';
+import type { AssistantStep, OnboardingAnswer, OnboardingState, OnboardingStep, Service, SetupState } from './types.ts';
 
 /** A session that takes longer than this is stopped: someone is waiting on the screen. */
 const TURN_TIMEOUT_MS = 4 * 60_000;
@@ -162,7 +163,8 @@ export interface OnboardingDeps {
   /** What the dashboard can check for itself: the calendar helper, mostly. */
   setup(): Promise<SetupState>;
   identity(): Promise<Identity>;
-  boards(): Promise<{ github: BoardHealth; jira: BoardHealth }>;
+  /** How GitHub and Jira stand: switched on, connected, and as whom. */
+  services(): Promise<Record<Service, ServiceHealth>>;
   /** Calendar.app's calendars; throws with why it couldn't list them. */
   listCalendars(): Promise<CalendarListing[]>;
   /** Whether these settings would be accepted, without saving them: the reason when not. */
@@ -377,8 +379,11 @@ export class Onboarding {
     let answer = cleanAnswer(raw);
     if (!question || !answer) return `there is no question ${JSON.stringify(id)}, or that is not an answer to it`;
     if (!given(answer) && !question.later) return `"${question.topic}" needs an answer`;
-    if (id === 'github' && given(answer) && (await this.context()).identity.logins.length === 0) {
-      return 'Sign in to GitHub first, or sign in later';
+    // A ticked service is one the user means to use: it has to work first.
+    if (id === 'services' && given(answer)) {
+      const ctx = await this.context();
+      const waiting = (given(answer)!.choices.services ?? []).filter((service) => !ctx.services[service as Service]?.connected);
+      if (waiting.length) return `Connect ${waiting.map((service) => SERVICE_LABEL[service as Service] ?? service).join(' and ')} first, or untick it`;
     }
     if (id === 'cli' && given(answer)) {
       const chosen = await this.chooseCli(given(answer)!);
@@ -933,6 +938,8 @@ export class Onboarding {
       // As listed so far: an answer doesn't wait on the helper, which can take twenty seconds.
       calendars = this.listed;
     }
+    const services = await this.deps.services();
+    const servicesAnswer = given(answers.services)?.choices.services ?? null;
     const proposals: Record<string, unknown> = {};
     for (const [id, record] of Object.entries(this.file?.proposals ?? {})) {
       if (record.cli === cli && record.profile === profile && record.result !== null) proposals[id] = record.result;
@@ -944,10 +951,14 @@ export class Onboarding {
       cli: cli && CLI_NAMES.includes(cli) ? cli : null,
       clis,
       identity: started ? await this.deps.identity() : { name: null, login: null, logins: [], email: null },
-      ghBundled: this.config.github.ghBundled,
+
       calendars,
       calendar: setup.calendar,
-      boards: await this.deps.boards(),
+      services,
+      uses: {
+        github: servicesAnswer ? servicesAnswer.includes('github') : services.github.enabled,
+        jira: servicesAnswer ? servicesAnswer.includes('jira') : services.jira.enabled,
+      },
       current,
       proposals,
     };

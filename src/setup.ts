@@ -16,6 +16,7 @@ import { promisify } from 'node:util';
 import { CLI_NAMES, type CliName, type Config } from './config.ts';
 import { command } from './install.ts';
 import { findExecutable } from './launch.ts';
+import { resolveTool } from './tools.ts';
 import type { SetupState } from './types.ts';
 
 const run = promisify(execFile);
@@ -157,12 +158,13 @@ export function ghLogins(json: string): string[] {
  */
 export function detectIdentity(config: Config): Promise<Identity> {
   identity ??= (async () => {
+    const gh = resolveTool('gh', config.github.ghPath, config.toolsDir).path;
     const [user, logins, email] = await Promise.all([
-      run(config.github.ghPath, ['api', 'user', '--jq', '[.login, .name // ""] | join("\\n")'], { timeout: 5_000 }).then(
+      run(gh, ['api', 'user', '--jq', '[.login, .name // ""] | join("\\n")'], { timeout: 5_000 }).then(
         ({ stdout }) => stdout.split('\n'),
         () => [],
       ),
-      run(config.github.ghPath, ['auth', 'status', '--json', 'hosts'], { timeout: 5_000 }).then(
+      run(gh, ['auth', 'status', '--json', 'hosts'], { timeout: 5_000 }).then(
         ({ stdout }) => ghLogins(stdout),
         () => [],
       ),

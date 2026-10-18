@@ -460,25 +460,32 @@ export interface BoardRow extends PullRequest {
   notes: { text: string; at: string }[];
 }
 
+/** The optional services the dashboard reads through a CLI: GitHub through gh, Jira through acli. */
+export type Service = 'github' | 'jira';
+
 /**
- * gh's browser sign-in, which the page starts and shows. `waiting` once gh has
- * a code for the user to enter at `url`; `done` or `failed` once it has ended,
- * until the next one starts.
+ * Connecting a service from the page, which fetches its CLI when there is none
+ * and signs it in; see `connect.ts`. `waiting` once it waits on the user in the
+ * browser, with a code to enter at `url` for GitHub; `done` or `failed` once it
+ * has ended, until the next one starts.
  */
-export interface GitHubSignInState {
+export interface ConnectionState {
   /**
-   * Whether the gh signing in is the Mac app's own copy, there being none on
-   * PATH: the one case where nobody can run `gh auth login` in a terminal.
+   * The CLI as it stands: whether there is one to run, and whether it is the
+   * copy Daily Focus fetched, there being none of the user's: then nobody has
+   * it in a terminal, so the page is the only place to sign it in.
    */
-  bundled: boolean;
-  status: 'idle' | 'starting' | 'waiting' | 'done' | 'failed';
+  cli: { found: boolean; fetched: boolean };
+  status: 'idle' | 'fetching' | 'starting' | 'waiting' | 'done' | 'failed';
   /** The one-time code GitHub's device page asks for. */
   code: string | null;
   url: string | null;
-  /** Who gh said it signed in as, once done. */
+  /** Who the CLI said it signed in as, once done. */
   login: string | null;
-  /** Why it failed, in gh's words. */
+  /** Why it failed, in the CLI's words. */
   error: string | null;
+  /** The command that signs in from a terminal, for when the page couldn't. */
+  command: string | null;
 }
 
 /** The board as the client sees it. */
@@ -499,10 +506,10 @@ export interface BoardState {
   warnings: string[];
   pollMinutes: number;
   /**
-   * Whether signing in to GitHub would fix what failed: gh holds no login, none
-   * for an account the board reads as, or GitHub turned a token away.
+   * Whether connecting GitHub would fix what failed: there is no gh, it holds no
+   * login, none for an account the board reads as, or GitHub turned a token away.
    */
-  signIn: boolean;
+  connect: boolean;
   rows: BoardRow[];
   counts: Record<Court | 'parked', number>;
 }
@@ -665,6 +672,8 @@ export interface TicketBoardState {
   fetching: boolean;
   /** Whoever `acli` is authenticated as, for the status line. Null when unknown. */
   account: string | null;
+  /** Whether connecting Jira would fix what failed: there is no acli, or it has no session. */
+  connect: boolean;
   /** Projects the search is limited to. Empty means every project the user sees. */
   projects: string[];
   warnings: string[];
@@ -943,8 +952,8 @@ export interface DashboardState {
   agenda: Agenda;
   /** The live pull request board. Present even when off, so the client can say why. */
   board: BoardState;
-  /** Signing in to GitHub from the page, through gh; see `ghsignin.ts`. */
-  gitHubSignIn: GitHubSignInState;
+  /** Connecting GitHub and Jira from the page; see `connect.ts`. */
+  connections: Record<Service, ConnectionState>;
   /** The Jira ticket board. Present even when off, for the same reason. */
   tickets: TicketBoardState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
@@ -1090,11 +1099,12 @@ export interface OnboardingCard {
   /** What the box for replying to the CLI invites, when the question wants more than corrections. */
   reply?: string;
   /**
-   * The card signs in to GitHub, with gh's sign-in drawn on it from
-   * `DashboardState.gitHubSignIn`. `logins` are the accounts gh holds now: until
-   * there is one, Continue waits.
+   * The services the card's `services` choice offers, each with who it is
+   * connected as, or null while it isn't. A ticked one connects on the card
+   * itself, from `DashboardState.connections`, and Continue waits until every
+   * ticked one is connected.
    */
-  gitHub?: { logins: string[] };
+  connections?: { service: Service; account: string | null }[];
   /** What Continue says while every field is empty, where that is a way to answer: "Continue without one". */
   empty?: string;
 }

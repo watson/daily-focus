@@ -319,34 +319,45 @@ test('while it reads, when it failed, and when the day is spent, the row says so
   assert.equal(byClass(ahead([], { enabled: false, usedToday: 10 }).node, 'item__ahead').length, 0);
 });
 
-test('a board signing in would fix offers it, and shows the code to enter once gh has one', () => {
+test('a board connecting would fix offers it, and shows the code to enter once gh has one', () => {
   const reason = { message: 'Not signed in to GitHub', detail: '', since: NOW.toISOString(), attempts: 1, retryAt: null, retrying: false };
-  const board = { enabled: true, reason, failures: [], fetchedAt: null, warnings: [], scope: [], rows: [], signIn: true } as unknown as BoardState;
-  const idle = { bundled: true, status: 'idle', code: null, url: null, login: null, error: null } as const;
+  const board = { enabled: true, reason, failures: [], fetchedAt: null, warnings: [], scope: [], rows: [], connect: true } as unknown as BoardState;
+  const idle = { cli: { found: true, fetched: true }, status: 'idle', code: null, url: null, login: null, error: null, command: null } as const;
+  const jira = { ...idle, cli: { found: false, fetched: false } };
   const started: string[] = [];
-  const handlers = handlersWith({ signInToGitHub: () => started.push('start'), copy: (text) => started.push(`copy ${text}`) });
+  const handlers = handlersWith({ connect: (service) => started.push(`connect ${service}`), copy: (text) => started.push(`copy ${text}`) });
+  const with_ = (github: object, board_ = board) =>
+    mount(h('div', null, renderBoard({ ...STATE, board: board_, connections: { github, jira } } as unknown as DashboardState, uiWith(), handlers)));
 
-  const offered = mount(h('div', null, renderBoard({ ...STATE, board, gitHubSignIn: idle }, uiWith(), handlers)));
-  const button = byTag(offered, 'button').find((b) => b.textContent === 'Sign in to GitHub');
+  const offered = with_(idle);
+  const button = byTag(offered, 'button').find((b) => b.textContent === 'Connect GitHub');
   assert.ok(button, buttonLabels(offered).join(' | '));
   button.click();
-  assert.deepEqual(started, ['start']);
+  assert.deepEqual(started, ['connect github']);
 
-  // An outage is not something signing in fixes.
-  const down = mount(h('div', null, renderBoard({ ...STATE, board: { ...board, signIn: false }, gitHubSignIn: idle }, uiWith(), handlers)));
-  assert.ok(!buttonLabels(down).includes('Sign in to GitHub'));
+  // An outage is not something connecting fixes.
+  assert.ok(!buttonLabels(with_(idle, { ...board, connect: false } as BoardState)).includes('Connect GitHub'));
 
-  const waiting = { ...idle, status: 'waiting', code: 'AB12-CD34', url: 'https://github.com/login/device' } as const;
+  // Getting gh first says so, and is shown even before the board has asked again.
+  assert.match(with_({ ...idle, status: 'fetching' }, { ...board, connect: false } as BoardState).textContent ?? '', /Getting the GitHub CLI from GitHub/);
+
+  const waiting = { ...idle, status: 'waiting', code: 'AB12-CD34', url: 'https://github.com/login/device' };
   const opened: string[] = [];
   const open = window.open;
   window.open = ((url: string) => (opened.push(url), null)) as typeof window.open;
   try {
-    const shown = mount(h('div', null, renderBoard({ ...STATE, board, gitHubSignIn: waiting }, uiWith(), handlers)));
-    assert.equal(byClass(shown, 'signin__code')[0]?.textContent, 'AB12-CD34');
+    const shown = with_(waiting);
+    assert.equal(byClass(shown, 'connect__code')[0]?.textContent, 'AB12-CD34');
     byTag(shown, 'button').find((b) => b.textContent === 'Copy the code and open GitHub')!.click();
-    assert.deepEqual(started, ['start', 'copy AB12-CD34']);
+    assert.deepEqual(started, ['connect github', 'copy AB12-CD34']);
     assert.deepEqual(opened, ['https://github.com/login/device']);
   } finally {
     window.open = open;
   }
+
+  // A failure says why, and how to finish in a terminal when the page can't.
+  const failed = with_({ ...idle, status: 'failed', error: 'expired_token', command: 'gh auth login --web' });
+  assert.match(failed.textContent ?? '', /That didn’t work: expired_token/);
+  assert.equal(failed.querySelector('.connect__command code')?.textContent, 'gh auth login --web');
+  assert.ok(buttonLabels(failed).includes('Try again'));
 });

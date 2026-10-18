@@ -16,7 +16,7 @@
 import { CLI_LABEL, CLI_PREFERENCE, LOGIN, type CliReport } from './clis.ts';
 import type { CliName, Profile } from './config.ts';
 import type { Identity } from './setup.ts';
-import type { OnboardingCard, OnboardingChoice, OnboardingField, OnboardingOption } from './types.ts';
+import type { OnboardingCard, OnboardingChoice, OnboardingField, OnboardingOption, Service } from './types.ts';
 
 /** A calendar Calendar.app has, with how many events it has today, which is evidence for free. */
 export interface CalendarListing {
@@ -25,11 +25,14 @@ export interface CalendarListing {
   eventsToday: number;
 }
 
-/** How a board is doing, as the setup screen words it. */
-export interface BoardHealth {
+/** How an optional service stands, as far as the dashboard can tell without asking anyone. */
+export interface ServiceHealth {
+  /** Whether its switch is on now: the setting, or its default. */
   enabled: boolean;
-  fetchedAt: string | null;
-  reason: string | null;
+  /** Whether its CLI is there and signed in. */
+  connected: boolean;
+  /** Who it is signed in as, when it has said. */
+  account: string | null;
 }
 
 export interface QuestionContext {
@@ -48,17 +51,14 @@ export interface QuestionContext {
   clis: CliReport | null;
   identity: Identity;
   /**
-   * Whether GitHub is read through the Mac app's own gh, there being none on
-   * PATH: setup then signs in for it, since nobody can in a terminal.
-   */
-  ghBundled: boolean;
-  /**
    * What Calendar.app has. A string is why it couldn't say; null when this
    * machine has no Calendar.app, or the list hasn't been read yet.
    */
   calendars: CalendarListing[] | string | null;
   calendar: { supported: boolean; built: boolean; buildCommand: string };
-  boards: { github: BoardHealth; jira: BoardHealth };
+  services: Record<Service, ServiceHealth>;
+  /** Whether each service is in use: the answer about them when given, else its switch. */
+  uses: Record<Service, boolean>;
   /** Every setting's value in effect now, from wherever it came. */
   current: Readonly<Record<string, string>>;
   /** The proposal each step's CLI session settled on, parsed but not trusted. */
@@ -351,19 +351,22 @@ const identity: Question = {
         }),
         field('email', ctx.profile === 'personal' ? 'Your email' : 'Your work email', email, { placeholder: 'robin@example.com' }),
       ],
-      choices: [
-        choice(
-          'github',
-          accounts.map((account) => option(account.login, account.login, account.note || null)),
-          accounts.map((account) => account.login),
-          { label: 'Your GitHub accounts', multiple: true, custom: 'Add a GitHub login' },
-        ),
-      ],
+      // Only of someone who said they use GitHub.
+      choices: ctx.uses.github
+        ? [
+            choice(
+              'github',
+              accounts.map((account) => option(account.login, account.login, account.note || null)),
+              accounts.map((account) => account.login),
+              { label: 'Your GitHub accounts', multiple: true, custom: 'Add a GitHub login' },
+            ),
+          ]
+        : [],
     });
   },
-  summary(answer) {
+  summary(answer, ctx) {
     const name = answer.fields.name?.split(',')[0]?.trim();
-    const logins = answer.choices.github ?? [];
+    const logins = ctx.uses.github ? (answer.choices.github ?? []) : [];
     const rest = [answer.fields.email?.trim() ?? '', logins.length ? `${listed(logins)} on GitHub` : ''].filter(Boolean);
     if (!name) return rest.length ? `You're ${listed(rest)}.` : 'No details about you.';
     return `You're ${name}${rest.length ? `, ${rest.join(', ')}` : ''}.`;
@@ -374,7 +377,7 @@ const identity: Question = {
     if (answer.fields.email?.trim()) values.DAILY_FOCUS_CALENDAR_ADDRESSES = answer.fields.email.trim();
     // The board reads as gh's active account unless told otherwise: told when
     // there is more than one, or the one isn't the active one.
-    const logins = answer.choices.github ?? [];
+    const logins = ctx.uses.github ? (answer.choices.github ?? []) : [];
     if (logins.length > 1 || (logins.length === 1 && logins[0] !== ctx.identity.logins[0])) {
       values.DAILY_FOCUS_GITHUB_ACCOUNTS = logins.join(', ');
     }
@@ -384,7 +387,7 @@ const identity: Question = {
     const names = (answer.fields.name ?? '').split(',').map((n) => n.trim()).filter(Boolean);
     const email = answer.fields.email?.trim();
     const notes = new Map(githubAccounts(ctx).map((account) => [account.login, account.note]));
-    const logins = answer.choices.github ?? [];
+    const logins = ctx.uses.github ? (answer.choices.github ?? []) : [];
     const lines = [
       names.length
         ? `- Name, as meeting notes and Doc assignments write it: ${ticked(names[0]!)}${names.length > 1 ? `, also ${listed(names.slice(1).map(ticked))}` : ''}`
@@ -441,75 +444,57 @@ const identity: Question = {
   },
 };
 
+/** The optional services, in the order the card offers them. */
+const SERVICES: readonly Service[] = ['github', 'jira'];
+
+export const SERVICE_LABEL: Record<Service, string> = { github: 'GitHub', jira: 'Jira' };
+
 /**
- * Asked only when the dashboard reads GitHub through the Mac app's own gh,
- * there being none on this Mac: nobody can type `gh auth login` for that one.
- * The card holds gh's sign-in (`ghsignin.ts`), and Continue waits for an
- * account. Before who the user is, which reads their accounts from gh.
+ * GitHub and Jira, which the user may use or not. Ticking one turns its board on
+ * and lets the agent read it; leaving both unticked leaves both out of Daily
+ * Focus altogether, which is a whole answer, not a gap. A ticked one connects on
+ * the card itself: its CLI fetched if there is none, then signed in
+ * (`connect.ts`), and Continue waits until every ticked one is connected. Before
+ * who the user is, which asks for GitHub accounts only of someone who uses it.
  */
-const github: Question = {
-  id: 'github',
-  topic: 'GitHub',
-  title: () => 'Sign in to GitHub',
-  applies: (ctx) => ctx.ghBundled,
-  later: { label: 'Sign in later', summary: 'Not signed in to GitHub yet. Sign in from Settings when you want your pull requests.' },
-  card(ctx) {
-    const logins = ctx.identity.logins;
-    return card({
-      why: logins.length
-        ? `You're signed in as ${listed(logins)}. Sign in again to add another account.`
-        : `So the brief and the pull request board can read GitHub as you. There's no GitHub CLI on this ${ctx.machine}, so Daily Focus uses its own.`,
-      gitHub: { logins: [...logins] },
-    });
-  },
-  summary: (_answer, ctx) =>
-    ctx.identity.logins.length ? `Signed in to GitHub as ${listed(ctx.identity.logins)}.` : 'Not signed in to GitHub.',
-};
-
-/** A board's state in a few words, for the option that turns it on. */
-function healthText(board: BoardHealth, via: string): string | null {
-  if (board.reason) return board.reason;
-  if (board.fetchedAt) return `Connected through ${via}.`;
-  if (board.enabled) return `Checking ${via}…`;
-  return null;
-}
-
-const boards: Question = {
-  id: 'boards',
-  topic: 'the boards',
-  title: () => 'What else should the dashboard show?',
+const services: Question = {
+  id: 'services',
+  topic: 'GitHub and Jira',
+  title: () => 'Do you use GitHub or Jira?',
   later: null,
   card(ctx) {
-    const { github, jira } = ctx.boards;
-    const selected = [
-      github.enabled && !github.reason ? 'github' : null,
-      jira.enabled && !jira.reason && ctx.profile === 'work' ? 'jira' : null,
-    ].filter((value): value is string => value !== null);
     return card({
-      why: 'Both are read live, beside the brief, so a merge or a status change shows up within minutes.',
+      why: 'Both are optional. Tick what you use, and Daily Focus reads your pull requests and tickets from it, in the brief and on tabs of their own.',
       choices: [
         choice(
-          'boards',
+          'services',
           [
-            option('github', 'Your pull requests', healthText(github, 'gh') ?? 'Through the GitHub CLI, gh.'),
-            option('jira', 'Your Jira tickets', healthText(jira, 'acli') ?? 'Through the Atlassian CLI, acli.'),
+            option('github', SERVICE_LABEL.github, 'Pull requests, and reviews waiting on you'),
+            option('jira', SERVICE_LABEL.jira, 'Your tickets, and any whose status lags their pull requests'),
           ],
-          selected,
+          // What is already connected is evidently in use; nothing else is assumed.
+          SERVICES.filter((service) => ctx.services[service].connected && ctx.services[service].enabled),
           { multiple: true },
         ),
       ],
+      connections: SERVICES.map((service) => ({
+        service,
+        account: ctx.services[service].connected ? (ctx.services[service].account ?? '') : null,
+      })),
     });
   },
-  summary(answer) {
-    const on = answer.choices.boards ?? [];
-    const names = [on.includes('github') ? 'your pull requests' : null, on.includes('jira') ? 'your Jira tickets' : null].filter(
-      (name): name is string => name !== null,
-    );
-    return names.length ? `It shows ${listed(names)}.` : 'No boards beside the brief.';
+  summary(answer, ctx) {
+    const used = SERVICES.filter((service) => answer.choices.services?.includes(service));
+    if (used.length === 0) return 'No GitHub or Jira.';
+    const each = used.map((service) => {
+      const account = ctx.services[service].account;
+      return account ? `${SERVICE_LABEL[service]} (${account})` : SERVICE_LABEL[service];
+    });
+    return `You use ${listed(each)}.`;
   },
   settings(answer) {
-    const on = answer.choices.boards ?? [];
-    return { DAILY_FOCUS_GITHUB: on.includes('github') ? 'on' : 'off', DAILY_FOCUS_JIRA: on.includes('jira') ? 'on' : 'off' };
+    const used = answer.choices.services ?? [];
+    return { DAILY_FOCUS_GITHUB: used.includes('github') ? 'on' : 'off', DAILY_FOCUS_JIRA: used.includes('jira') ? 'on' : 'off' };
   },
 };
 
@@ -784,7 +769,7 @@ const objective: Question = {
   },
 };
 
-export const QUESTIONS: readonly Question[] = [cli, profile, schedule, github, identity, boards, calendars, objective];
+export const QUESTIONS: readonly Question[] = [cli, profile, schedule, services, identity, calendars, objective];
 
 export function questionById(id: string): Question | undefined {
   return QUESTIONS.find((question) => question.id === id);

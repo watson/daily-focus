@@ -1,6 +1,6 @@
 /** Everything that talks to the server. */
 
-import type { DashboardState, OnboardingAnswer } from '../src/types.ts';
+import type { DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
 import type { CalendarName, SettingsPage, TextName } from './types.ts';
 
 async function stateFrom(res: Response, what: string): Promise<DashboardState> {
@@ -79,14 +79,14 @@ export function postBoardRefresh(): Promise<DashboardState> {
   return post('/api/board/refresh');
 }
 
-/** Start gh's sign-in to GitHub. Resolves once gh is started, before it has a code. */
-export function postGitHubSignIn(): Promise<DashboardState> {
-  return post('/api/github/sign-in');
+/** Connect GitHub or Jira: fetch its CLI if need be, then sign in. Resolves once started; the rest arrives over the live feed. */
+export function postConnect(service: Service, again = false): Promise<DashboardState> {
+  return post('/api/connect', { service, again });
 }
 
-/** Stop waiting on GitHub, which throws the code away. */
-export function postGitHubSignInCancel(): Promise<DashboardState> {
-  return post('/api/github/sign-in/cancel');
+/** Stop connecting, which throws away a code or consent page shown. Resolves once it has stopped. */
+export function postConnectCancel(service: Service): Promise<DashboardState> {
+  return post('/api/connect/cancel', { service });
 }
 
 /** Ask the server to read Jira now. Resolves once it has. */

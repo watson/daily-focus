@@ -494,22 +494,59 @@ test('the button that leaves a question says what it does, and an empty objectiv
   assert.deepEqual(buttonLabels(empty.querySelector('.onboarding__actions')!), ['Continue']);
 });
 
-test('the GitHub step holds Continue until gh has an account, and offers another once it has', () => {
-  const signIn = { bundled: true, status: 'idle', code: null, url: null, login: null, error: null } as const;
-  const card = (logins: string[]) =>
-    step('github', { title: 'Sign in to GitHub', card: { ...step('x').card, later: 'Sign in later', gitHub: { logins } } });
+test('GitHub and Jira are rows to tick; a ticked one that is not connected connects right there, and holds Continue', () => {
+  const idle = { cli: { found: false, fetched: false }, status: 'idle', code: null, url: null, login: null, error: null, command: null } as const;
+  const connections = { github: idle, jira: idle };
+  const services = (accounts: { github: string | null; jira: string | null }) =>
+    step('services', {
+      title: 'Do you use GitHub or Jira?',
+      card: {
+        ...step('x').card,
+        later: null,
+        choices: [
+          {
+            id: 'services',
+            label: null,
+            multiple: true,
+            custom: null,
+            selected: [],
+            options: [
+              { value: 'github', label: 'GitHub', detail: 'Pull requests, and reviews waiting on you', group: null },
+              { value: 'jira', label: 'Jira', detail: 'Your tickets, and any whose status lags their pull requests', group: null },
+            ],
+          },
+        ],
+        connections: [
+          { service: 'github', account: accounts.github },
+          { service: 'jira', account: accounts.jira },
+        ],
+      },
+    });
   const started: string[] = [];
-  const handlers = handlersWith({ signInToGitHub: () => started.push('start') });
+  const ui = uiWith();
+  const handlers = handlersWith({
+    connect: (service) => started.push(`connect ${service}`),
+    editSetupDraft: (_step, answer) => (ui.setupDrafts.value = new Map([['services', { version: 0, answer: answer! }]])),
+  });
+  const page = () => mount(h(OnboardingView, { state: stateWith({ onboarding: flow([services({ github: 'rlark', jira: null })], 'services'), connections }), ui, handlers }));
+  const cont = (root: HTMLElement) => byTag(root, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement;
 
-  const out = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([card([])], 'github'), gitHubSignIn: signIn }), ui: uiWith(), handlers }));
-  const cont = byTag(out, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement;
-  assert.equal(cont.disabled, true);
-  assert.equal(cont.title, 'Sign in first, or sign in later');
-  assert.ok(buttonLabels(out).includes('Sign in later'));
-  byTag(out, 'button').find((b) => b.textContent === 'Sign in to GitHub')!.click();
-  assert.deepEqual(started, ['start']);
+  // Nothing ticked: nothing to connect, and leaving both out is an answer.
+  let root = page();
+  assert.equal(cont(root).disabled, false);
+  assert.match(root.textContent ?? '', /Connected as rlark/);
+  assert.ok(!buttonLabels(root).some((label) => label.startsWith('Connect')), 'nothing offered for what is not ticked');
 
-  const signedIn = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([card(['rlark'])], 'github'), gitHubSignIn: signIn }), ui: uiWith(), handlers }));
-  assert.equal((byTag(signedIn, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement).disabled, false);
-  assert.ok(buttonLabels(signedIn).includes('Sign in to another account'));
+  // Ticking Jira, which is not connected, offers to connect it and holds Continue.
+  (root.querySelectorAll<HTMLInputElement>('input[name="services"]')[1]!).click();
+  root = page();
+  assert.equal(cont(root).disabled, true);
+  assert.equal(cont(root).title, 'Connect Jira first, or untick it');
+  byTag(root, 'button').find((b) => b.textContent === 'Connect Jira')!.click();
+  assert.deepEqual(started, ['connect jira']);
+
+  // Ticking GitHub, which is connected, holds nothing.
+  (root.querySelectorAll<HTMLInputElement>('input[name="services"]')[1]!).click();
+  (page().querySelectorAll<HTMLInputElement>('input[name="services"]')[0]!).click();
+  assert.equal(cont(page()).disabled, false);
 });

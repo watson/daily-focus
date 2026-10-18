@@ -15,6 +15,7 @@ import {
   type OrgVisibility,
 } from './github.ts';
 import { countBoard, resolveBoard } from './prs.ts';
+import { resolveTool } from './tools.ts';
 import type {
   Action,
   BoardAccount,
@@ -56,8 +57,8 @@ interface Identity {
 /** What one poll is finding out, published whole once it's done. */
 interface Attempt {
   accounts: BoardAccount[];
-  /** Something failed that signing in would fix: no login, or a token GitHub turned away. */
-  signIn: boolean;
+  /** Something failed that connecting GitHub would fix: no gh, no login, or a token GitHub turned away. */
+  connect: boolean;
   /** What lay under each failed account's error, by login. */
   details: Map<string, string>;
   warnings: string[];
@@ -95,8 +96,8 @@ export class Board {
   #accounts: BoardAccount[] = [];
   #accountDetails = new Map<string, string>();
   #attemptWarnings: string[] = [];
-  /** Whether signing in would fix what the last attempt ran into. */
-  #signIn = false;
+  /** Whether connecting GitHub would fix what the last attempt ran into. */
+  #connect = false;
   /** Why nothing can be polled at all right now, when that's the case. */
   #reason: Failure | null = null;
   /** Polls in a row that read nothing at all, which also spaces the next one out. */
@@ -207,7 +208,7 @@ export class Board {
       scope: [...this.#config.github.scope],
       warnings,
       pollMinutes: this.#config.github.pollMinutes,
-      signIn: this.enabled && this.#signIn,
+      connect: this.enabled && this.#connect,
       rows,
       counts: countBoard(rows),
     };
@@ -267,7 +268,10 @@ export class Board {
    * "active" is whichever one was last switched to in a terminal.
    */
   async #identities(attempt: Attempt): Promise<Identity[]> {
-    const { ghPath, ghBundled, accounts } = this.#config.github;
+    const { accounts } = this.#config.github;
+    // Looked at every poll: a gh fetched since the last one is used at once.
+    const gh = resolveTool('gh', this.#config.github.ghPath, this.#config.toolsDir);
+    const ghPath = gh.path;
 
     if (accounts.length > 0) {
       const tokens = await Promise.allSettled(accounts.map((login) => this.#deps.token(ghPath, login)));
@@ -281,9 +285,9 @@ export class Board {
         } else if (token.reason instanceof GhMissingError) {
           throw token.reason;
         } else {
-          if (token.reason instanceof GhAuthError) attempt.signIn = true;
-          // The Mac app's own gh has no terminal to run `gh auth login` in: the page signs in for it.
-          const error = token.reason instanceof GhAuthError && ghBundled ? `Not signed in to GitHub as ${login}` : (token.reason as Error).message;
+          if (token.reason instanceof GhAuthError) attempt.connect = true;
+          // The gh Daily Focus fetched is in no terminal to run `gh auth login` in: the page signs in for it.
+          const error = token.reason instanceof GhAuthError && gh.fetched ? `Not signed in to GitHub as ${login}` : (token.reason as Error).message;
           attempt.accounts.push({ login, ok: false, error });
           attempt.details.set(login, errorDetail(token.reason));
         }
@@ -295,7 +299,7 @@ export class Board {
     const active = known.find((account) => account.active) ?? known[0] ?? null;
     if (!active) {
       throw new GhAuthError(
-        ghBundled ? 'Not signed in to GitHub' : 'gh is not logged in to github.com — run `gh auth login`, or set DAILY_FOCUS_GITHUB=off',
+        gh.fetched ? 'Not signed in to GitHub' : 'gh is not logged in to github.com — run `gh auth login`, or set DAILY_FOCUS_GITHUB=off',
       );
     }
     if (known.length > 1) {
@@ -319,20 +323,20 @@ export class Board {
     }
 
     const previous = this.#file;
-    const attempt: Attempt = { accounts: [], signIn: false, details: new Map(), warnings: [] };
+    const attempt: Attempt = { accounts: [], connect: false, details: new Map(), warnings: [] };
     const publish = (reason: Failure | null): void => {
       this.#accounts = attempt.accounts;
       this.#accountDetails = attempt.details;
       this.#attemptWarnings = attempt.warnings;
       this.#reason = reason;
-      this.#signIn = attempt.signIn;
+      this.#connect = attempt.connect;
     };
 
     let identities: Identity[];
     try {
       identities = await this.#identities(attempt);
     } catch (err) {
-      if (err instanceof GhAuthError) attempt.signIn = true;
+      if (err instanceof GhAuthError || err instanceof GhMissingError) attempt.connect = true;
       publish({ message: (err as Error).message, detail: errorDetail(err) });
       this.#streak = extend(this.#streak);
       return;
@@ -352,7 +356,7 @@ export class Board {
     results.forEach((result, i) => {
       const { account } = identities[i]!;
       if (result.status === 'rejected') {
-        if (result.reason instanceof GitHubRequestError && result.reason.status === 401) attempt.signIn = true;
+        if (result.reason instanceof GitHubRequestError && result.reason.status === 401) attempt.connect = true;
         account.ok = false;
         account.error = (result.reason as Error).message;
         attempt.details.set(account.login, errorDetail(result.reason));

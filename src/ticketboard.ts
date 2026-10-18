@@ -18,6 +18,8 @@ import type { Config, GitHubConfig } from './config.ts';
 import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
+  AcliAuthError,
+  AcliMissingError,
   acliIdentity,
   fetchTickets,
   toTicket,
@@ -27,6 +29,7 @@ import {
 } from './jira.ts';
 import { readLinkedPulls, type LinkedRead } from './linked.ts';
 import { countTickets, resolveInProgress, resolveTickets } from './tickets.ts';
+import { resolveTool } from './tools.ts';
 import type { Action, LinkedPull, LinkedPullState, Ticket, TicketBoardState, TicketsFile } from './types.ts';
 
 /** Never re-read more often than this once reads start failing. */
@@ -68,6 +71,8 @@ export class TicketBoard {
   #warnings: string[] = [];
   /** Why the last read failed, when it did. */
   #reason: Failure | null = null;
+  /** Whether connecting Jira would fix the reason: no acli, or no session. */
+  #connect = false;
   /** Reads in a row that failed, which also spaces the next one out. */
   #streak: Streak | null = null;
 
@@ -168,6 +173,7 @@ export class TicketBoard {
       // Suppressed alongside a reason, as the board's account list is: an
       // account line beside "acli is not logged in" contradicts the banner.
       account: this.#reason ? null : (this.#file?.account ?? null),
+      connect: this.enabled && this.#reason !== null && this.#connect,
       projects: [...this.#config.jira.projects],
       warnings,
       pollMinutes: this.#config.jira.pollMinutes,
@@ -195,7 +201,7 @@ export class TicketBoard {
   async transition(key: string, status: string): Promise<void> {
     if (!this.enabled) throw new Error('the Jira ticket board is switched off (DAILY_FOCUS_JIRA=off)');
     if (this.#stopped) throw new Error('the server is shutting down');
-    await this.#deps.transition(this.#config.jira.acliPath, key, status);
+    await this.#deps.transition(this.#acliPath(), key, status);
     await this.refresh();
   }
 
@@ -220,8 +226,14 @@ export class TicketBoard {
     this.#timer.unref?.();
   }
 
+  /** The acli to run, looked at each time: one fetched since the last read is used at once. */
+  #acliPath(): string {
+    return resolveTool('acli', this.#config.jira.acliPath, this.#config.toolsDir).path;
+  }
+
   async #read(): Promise<void> {
-    const { acliPath, projects, site: configuredSite } = this.#config.jira;
+    const { projects, site: configuredSite } = this.#config.jira;
+    const acliPath = this.#acliPath();
 
     let identity: JiraIdentity;
     try {
@@ -233,6 +245,7 @@ export class TicketBoard {
       // previous rows stay on screen under the banner, since a status that was
       // wrong an hour ago is still wrong.
       this.#reason = { message: `${(err as Error).message}, or set DAILY_FOCUS_JIRA=off`, detail: errorDetail(err) };
+      this.#connect = err instanceof AcliMissingError || err instanceof AcliAuthError;
       this.#streak = extend(this.#streak);
       return;
     }
@@ -250,7 +263,11 @@ export class TicketBoard {
     const githubWarnings: string[] = [];
     const linked: Promise<LinkedRead | null> = this.#config.github.enabled
       ? this.#deps
-          .linked(this.#config.github, new Date(), AbortSignal.any([this.#abort.signal, AbortSignal.timeout(GITHUB_DEADLINE_MS)]))
+          .linked(
+            { ...this.#config.github, ghPath: resolveTool('gh', this.#config.github.ghPath, this.#config.toolsDir).path },
+            new Date(),
+            AbortSignal.any([this.#abort.signal, AbortSignal.timeout(GITHUB_DEADLINE_MS)]),
+          )
           .then(
             (read) => {
               githubWarnings.push(...read.warnings);

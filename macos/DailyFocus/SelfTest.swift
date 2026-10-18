@@ -472,8 +472,10 @@ func runSelfTest() -> Bool {
     // The build writes them; a built app without them would show an empty window.
     if Bundle.main.bundleURL.pathExtension == "app" {
         let acknowledged = acknowledgementsText() ?? ""
-        check(acknowledged.contains("Node.js") && acknowledged.contains("GitHub CLI") && acknowledged.contains("third-party"),
-              "the acknowledgements carry Node.js, the GitHub CLI and its dependencies")
+        let server = Bundle.main.resourceURL?.appendingPathComponent("server/dist/cli.js")
+        let carriesDashboard = server.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+        check(acknowledged.contains("Node.js") && (!carriesDashboard || acknowledged.contains("Daily Focus dashboard: third-party software")),
+              "the acknowledgements carry Node.js, and the dashboard's own when the app carries one")
     }
 
     print(failures == 0 ? "self-test passed: \(checks) checks" : "self-test failed: \(failures) of \(checks) checks")

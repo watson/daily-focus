@@ -23,7 +23,6 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
     cli: 'claude',
     clis: report(READY('/usr/local/bin/claude'), MISSING('Codex')),
     identity: { name: 'Robin Lark', login: 'rlark', logins: ['rlark'], email: 'robin@example.com' },
-    ghBundled: false,
     calendars: [
       { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 4 },
       { title: 'Platform team', source: 'robin@northwind.example', eventsToday: 2 },
@@ -31,10 +30,11 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
       { title: 'Holidays in Denmark', source: 'Other', eventsToday: 0 },
     ],
     calendar: { supported: true, built: true, buildCommand: 'daily-focus build-calendar' },
-    boards: {
-      github: { enabled: true, fetchedAt: '2026-10-16T08:00:00Z', reason: null },
-      jira: { enabled: true, fetchedAt: null, reason: 'could not run acli' },
+    services: {
+      github: { enabled: true, connected: true, account: 'rlark' },
+      jira: { enabled: true, connected: false, account: null },
     },
+    uses: { github: true, jira: false },
     current: {},
     proposals: {},
     ...overrides,
@@ -103,13 +103,13 @@ test('the chosen CLI brings the assistant with it, and a path off PATH is saved 
 test('a question can be left only where Continue cannot say "nothing", by a button named for what it does', () => {
   const offered = (id: string) => questionById(id)!.later?.label ?? null;
   assert.deepEqual(
-    ['cli', 'profile', 'schedule', 'identity', 'boards', 'calendars', 'objective'].map((id) => [id, offered(id)]),
+    ['cli', 'profile', 'schedule', 'services', 'identity', 'calendars', 'objective'].map((id) => [id, offered(id)]),
     [
       ['cli', 'Decide later'],
       ['profile', null],
       ['schedule', null],
+      ['services', null],
       ['identity', 'Leave this out'],
-      ['boards', null],
       ['calendars', null],
       ['objective', null],
     ],
@@ -182,13 +182,39 @@ test('every GitHub account gh holds is offered, with what the proposal says each
   );
 });
 
-test('the boards are ticked when they work, and Jira only for work', () => {
-  const card = question('boards').card(ctx());
-  assert.deepEqual(card.choices[0]!.selected, ['github'], 'a Jira that cannot be read is not ticked');
-  assert.match(card.choices[0]!.options.find((o) => o.value === 'jira')!.detail!, /acli/);
-  const personal = question('boards').card(ctx({ profile: 'personal', boards: { ...ctx().boards, jira: { enabled: true, fetchedAt: 'x', reason: null } } }));
-  assert.deepEqual(personal.choices[0]!.selected, ['github']);
-  assert.deepEqual(question('boards').settings!(chosen({ boards: ['jira'] }), ctx()), { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'on' });
+test('GitHub and Jira are both optional: only what is connected starts ticked, and leaving both out is an answer', () => {
+  const services = question('services');
+  const card = services.card(ctx());
+  assert.deepEqual(card.choices[0]!.options.map((o) => o.label), ['GitHub', 'Jira']);
+  assert.deepEqual(card.choices[0]!.selected, ['github'], 'GitHub is connected; Jira is not, so nothing assumes it');
+  assert.deepEqual(card.connections, [
+    { service: 'github', account: 'rlark' },
+    { service: 'jira', account: null },
+  ]);
+  assert.match(card.why!, /Both are optional/);
+
+  const neither = services.card(ctx({ services: { github: { enabled: true, connected: false, account: null }, jira: { enabled: true, connected: false, account: null } } }));
+  assert.deepEqual(neither.choices[0]!.selected, [], 'a new user ticks what they use themselves');
+  const off = services.card(ctx({ services: { github: { enabled: false, connected: true, account: 'rlark' }, jira: { enabled: true, connected: false, account: null } } }));
+  assert.deepEqual(off.choices[0]!.selected, [], 'switched off before: off still');
+  const unknown = services.card(ctx({ services: { github: { enabled: true, connected: true, account: null }, jira: { enabled: true, connected: false, account: null } } }));
+  assert.deepEqual(unknown.connections![0], { service: 'github', account: '' }, 'connected as nobody it said is still connected');
+
+  assert.deepEqual(services.settings!(chosen({ services: ['jira'] }), ctx()), { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'on' });
+  assert.deepEqual(services.settings!(chosen({ services: [] }), ctx()), { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'off' });
+  assert.equal(services.summary(chosen({ services: ['github'] }), ctx()), 'You use GitHub (rlark).');
+  assert.equal(services.summary(chosen({ services: [] }), ctx()), 'No GitHub or Jira.');
+});
+
+test('someone who uses no GitHub is asked for no GitHub accounts, and none are written', () => {
+  const identity = question('identity');
+  const without = ctx({ uses: { github: false, jira: false } });
+  assert.deepEqual(identity.card(without).choices, []);
+  const answer = chosen({ github: ['rlark'] }, { name: 'Robin Lark', email: 'robin@example.com' });
+  assert.equal(identity.settings!(answer, without).DAILY_FOCUS_GITHUB_ACCOUNTS, undefined);
+  assert.doesNotMatch(identity.sources!(answer, without).map((section) => section.body).join('\n'), /GitHub/);
+  assert.equal(identity.summary(answer, without), "You're Robin Lark, robin@example.com.");
+  assert.equal(identity.card(ctx()).choices[0]!.label, 'Your GitHub accounts', 'and is, by someone who does');
 });
 
 test("calendars are Calendar.app's, ticked by the proposal, plus what only the connector has", () => {
@@ -307,19 +333,4 @@ test('the profile is asked only when nothing has settled it', () => {
   const profile = questionById('profile')!;
   assert.equal(profile.applies?.(ctx()), true);
   assert.equal(profile.applies?.(ctx({ profileSet: true })), false, 'given at launch, or the other store is already beside it');
-});
-
-test("signing in to GitHub is a question only with the Mac app's own gh, and waits for an account", () => {
-  const github = question('github');
-  assert.equal(github.applies!(ctx()), false, 'a gh of your own signs in in a terminal');
-  assert.equal(github.applies!(ctx({ ghBundled: true })), true);
-
-  const out = github.card(ctx({ ghBundled: true, identity: { name: null, login: null, logins: [], email: null } }));
-  assert.deepEqual(out.gitHub, { logins: [] });
-  assert.match(out.why!, /no GitHub CLI on this Mac/);
-
-  const signedIn = ctx({ ghBundled: true, identity: { name: null, login: 'rlark', logins: ['rlark', 'robin-home'], email: null } });
-  assert.deepEqual(github.card(signedIn).gitHub, { logins: ['rlark', 'robin-home'] });
-  assert.equal(github.summary(chosen({}), signedIn), 'Signed in to GitHub as rlark and robin-home.');
-  assert.equal(github.later?.label, 'Sign in later');
 });

@@ -49,6 +49,9 @@ export type Profile = 'work' | 'personal';
 
 export const PROFILES: readonly Profile[] = ['work', 'personal'];
 
+/** The folder in the data folder, beside the stores, for the CLIs Daily Focus fetches. */
+export const TOOLS_FOLDER = 'tools';
+
 /**
  * Every name a store keeps at its top level. One of them in the data folder
  * itself is a store from before the folders, waiting to be moved into one.
@@ -301,7 +304,8 @@ export async function settleStore(location: StoreLocation, home: string = homedi
   if (await exists(folder)) throw new Error(`could not move the store in ${root} into ${folder}: it already exists`);
   await mkdir(staging, { recursive: true });
   for (const name of await readdir(root)) {
-    if ((PROFILES as readonly string[]).includes(name) || name.startsWith(STAGING_PREFIX)) continue;
+    // The CLIs Daily Focus fetched belong to the data folder, not to the store (`tools.ts`).
+    if ((PROFILES as readonly string[]).includes(name) || name === TOOLS_FOLDER || name.startsWith(STAGING_PREFIX)) continue;
     // A rename replaces a file it lands on, so a name both here and moved means
     // two copies of something, and which is current isn't this code's to guess.
     if (await exists(join(staging, name))) {

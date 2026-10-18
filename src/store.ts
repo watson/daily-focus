@@ -173,7 +173,7 @@ export class Store {
     now: Date = new Date(),
     actions?: readonly Action[],
     calendar?: CalendarState,
-  ): Promise<Omit<DashboardState, 'assetVersion' | 'storeId' | 'board' | 'gitHubSignIn' | 'tickets' | 'assistant' | 'agentRun' | 'setupWarnings' | 'setupNotices' | 'restart' | 'setup' | 'onboarding'>> {
+  ): Promise<Omit<DashboardState, 'assetVersion' | 'storeId' | 'board' | 'connections' | 'tickets' | 'assistant' | 'agentRun' | 'setupWarnings' | 'setupNotices' | 'restart' | 'setup' | 'onboarding'>> {
     const [{ brief, error, warnings }, readActions, focus] = await Promise.all([
       this.readBrief(),
       // The caller may have read the log already, to fold the board from the same

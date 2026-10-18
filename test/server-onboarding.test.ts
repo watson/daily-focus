@@ -93,7 +93,7 @@ test('the finish saves the answers, restarts, and the screen is gone', async () 
     // Work or personal, the boards, the calendars and the objective are answered; the rest can be left.
     const answers: Record<string, unknown> = {
       profile: { choices: { profile: ['personal'] }, fields: {} },
-      boards: { choices: { boards: [] }, fields: {} },
+      services: { choices: { services: [] }, fields: {} },
       calendars: { choices: { calendars: [] }, fields: {} },
       objective: { choices: {}, fields: { objective: '', blocker: '' } },
     };

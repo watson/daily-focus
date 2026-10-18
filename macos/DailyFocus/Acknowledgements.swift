@@ -1,7 +1,6 @@
 // The licences of what the app carries that others wrote, in a window of the
-// app's own: Node.js, the GitHub CLI and its dependencies, and what the
-// dashboard's page is built from. `macos/build.sh` writes them into one file in
-// the app's resources; this only shows it.
+// app's own: Node.js, and what the dashboard is built from. `macos/build.sh`
+// writes them into one file in the app's resources; this only shows it.
 
 import AppKit
 
