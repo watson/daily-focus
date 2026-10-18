@@ -59,6 +59,7 @@ import { CodexSessions, codexHome } from './codexsessions.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
 import { cliEnvironment } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
+import { launchFor } from './launch.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
 import type { ExecFile } from './shellpath.ts';
 import type { AgentRun, AgentRunState, AgentStep, AgentTurn } from './types.ts';
@@ -601,7 +602,8 @@ export class AgentRunner {
 
     let child: ChildProcess;
     try {
-      child = this.spawnFn(this.config.agent.binPath, args, {
+      const launch = launchFor(this.config.agent.binPath, args);
+      child = this.spawnFn(launch.file, launch.args, {
         cwd: this.config.dataDir,
         // Stdin closed: both CLIs wait on it otherwise.
         stdio: ['ignore', 'pipe', 'pipe'],

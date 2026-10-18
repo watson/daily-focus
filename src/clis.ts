@@ -21,7 +21,7 @@ import { join } from 'node:path';
 
 import { refusalFor } from './codex.ts';
 import { CLI_NAMES, type CliName } from './config.ts';
-import { findExecutable } from './setup.ts';
+import { findExecutable, launchFor } from './launch.ts';
 
 /** Which to use when both are ready. */
 export const CLI_PREFERENCE: readonly CliName[] = ['codex', 'claude'];
@@ -40,7 +40,8 @@ export type Probe = (file: string, args: readonly string[]) => Promise<ProbeResu
 
 const defaultProbe: Probe = (file, args) =>
   new Promise((resolve, reject) => {
-    execFile(file, [...args], { timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    const launch = launchFor(file, args);
+    execFile(launch.file, launch.args, { timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? ((err as { code: number }).code) : null) : 0;
       if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') return reject(err);
       resolve({ code, out: `${stdout}\n${stderr}`.trim() });
@@ -66,8 +67,15 @@ export type CliReport = Record<CliName, CliFound>;
 
 export const CLI_LABEL: Record<CliName, string> = { claude: 'Claude Code', codex: 'Codex' };
 
-/** Where each CLI's own installers put it, for a shell whose PATH doesn't say. */
-export function knownLocations(cli: CliName, home: string = homedir()): string[] {
+/**
+ * Where each CLI's own installers put it, for a shell whose PATH doesn't say. On
+ * Windows, Claude Code's installer puts it in `.local\bin` too, and npm puts both
+ * in its folder under Roaming; `findExecutable` adds the extension.
+ */
+export function knownLocations(cli: CliName, home: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === 'win32') {
+    return [join(home, '.local', 'bin', cli), join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'npm', cli)];
+  }
   const common = [join(home, '.local', 'bin', cli), `/opt/homebrew/bin/${cli}`, `/usr/local/bin/${cli}`];
   return cli === 'codex'
     ? [join(home, '.codex', 'packages', 'standalone', 'current', 'bin', 'codex'), ...common]

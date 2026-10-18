@@ -29,6 +29,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { launchFor } from './launch.ts';
 import type { ExecFile } from './shellpath.ts';
 
 /** Gmail's connector id. The same for every ChatGPT account. */
@@ -78,7 +79,8 @@ const exec = promisify(execFile);
  */
 const defaultExec: ExecFile = async (file, args, { timeout }) => {
   try {
-    const { stdout } = await exec(file, args, { timeout, maxBuffer: 16 * 1024 * 1024 });
+    const launch = launchFor(file, args);
+    const { stdout } = await exec(launch.file, launch.args, { timeout, maxBuffer: 16 * 1024 * 1024 });
     return stdout;
   } catch (err) {
     const stderr = String((err as { stderr?: unknown }).stderr ?? '').trim();

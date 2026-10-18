@@ -9,12 +9,13 @@
  */
 
 import { execFile } from 'node:child_process';
-import { access, constants, readdir, readFile, stat } from 'node:fs/promises';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { CLI_NAMES, type CliName, type Config } from './config.ts';
 import { command } from './install.ts';
+import { findExecutable } from './launch.ts';
 import type { SetupState } from './types.ts';
 
 const run = promisify(execFile);
@@ -41,19 +42,6 @@ export function placeholdersIn(text: string): number {
   return PLACEHOLDERS.filter((placeholder) => text.includes(placeholder)).length;
 }
 
-/** Where `name` would run from, as a shell would find it, or null. A path is checked as it is. */
-export async function findExecutable(name: string, path: string = process.env.PATH ?? ''): Promise<string | null> {
-  const candidates = isAbsolute(name) ? [name] : path.split(delimiter).filter(Boolean).map((dir) => join(dir, name));
-  for (const candidate of candidates) {
-    try {
-      await access(candidate, constants.X_OK);
-      if ((await stat(candidate)).isFile()) return candidate;
-    } catch {
-      // Not here; keep looking.
-    }
-  }
-  return null;
-}
 
 /**
  * Where each CLI the dashboard can run is installed: a path set for the agent or

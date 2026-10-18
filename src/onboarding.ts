@@ -34,6 +34,7 @@ import { CLI_NAMES, PROFILES, type CliName, type Config, type Profile } from './
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
 import { cliEnvironment, expandHome, layerSettings, type SettingSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
+import { launchFor } from './launch.ts';
 import {
   composeSources,
   machineName,
@@ -676,7 +677,8 @@ export class Onboarding {
 
     let child: ChildProcess;
     try {
-      child = this.spawnFn(bin, args, {
+      const launch = launchFor(bin, args);
+      child = this.spawnFn(launch.file, launch.args, {
         cwd: this.config.onboardingDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: cliEnvironment(this.config.dataDir),
