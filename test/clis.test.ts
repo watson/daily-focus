@@ -5,12 +5,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { detectClis, identify, knownLocations, preferredCli, probeCli } from '../src/clis.ts';
+import { fakeCli, quoted } from './fakecli.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -26,15 +27,7 @@ async function dir(): Promise<string> {
 /** A fake CLI: what it prints for `--version`, and for its login check with the exit code. */
 async function fake(at: string, version: string, login: { out: string; code: number }): Promise<string> {
   await mkdir(join(at, '..'), { recursive: true });
-  const script = [
-    '#!/bin/sh',
-    `if [ "$1" = "--version" ]; then echo '${version}'; exit 0; fi`,
-    `echo '${login.out}'`,
-    `exit ${login.code}`,
-  ].join('\n');
-  await writeFile(at, `${script}\n`, 'utf8');
-  await chmod(at, 0o755);
-  return at;
+  return fakeCli(at, `if (args[0] === '--version') { say(${quoted(version)}); process.exit(0); }\nsay(${quoted(login.out)});\nprocess.exit(${login.code});`);
 }
 
 const CODEX_IN = { out: 'Logged in using ChatGPT', code: 0 };

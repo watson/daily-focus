@@ -7,6 +7,7 @@ import { after, test } from 'node:test';
 
 import { loadConfig, type Config } from '../src/config.ts';
 import { linkState, linkStore, storeLinkWarning } from '../src/links.ts';
+import { NEEDS_SYMLINKS } from './symlinks.ts';
 
 const repo = resolve(import.meta.dirname, '..');
 const dirs: string[] = [];
@@ -52,7 +53,7 @@ async function otherCheckout(home: string): Promise<{ root: string; prompt: stri
   return files;
 }
 
-test('quiet when every link in use points at this checkout', async () => {
+test('quiet when every link in use points at this checkout', { skip: NEEDS_SYMLINKS }, async () => {
   const { home, config } = await setup();
   await linkAll(config);
 
@@ -60,7 +61,7 @@ test('quiet when every link in use points at this checkout', async () => {
   assert.deepEqual(await linkState(config.promptFile, config.promptSource), { state: 'linked' });
 });
 
-test("a real file where a link should be is someone's own prompt, left alone", async () => {
+test("a real file where a link should be is someone's own prompt, left alone", { skip: NEEDS_SYMLINKS }, async () => {
   const { home, config } = await setup();
   await linkAll(config);
   await rm(config.promptFile);
@@ -70,7 +71,7 @@ test("a real file where a link should be is someone's own prompt, left alone", a
   assert.equal(await storeLinkWarning(config, home), null);
 });
 
-test('names every link into another checkout, who follows it, and how to link them back', async () => {
+test('names every link into another checkout, who follows it, and how to link them back', { skip: NEEDS_SYMLINKS }, async () => {
   const { home, config } = await setup();
   const old = await otherCheckout(home);
   await symlink(old.prompt, config.promptFile);
@@ -80,13 +81,13 @@ test('names every link into another checkout, who follows it, and how to link th
   assert.deepEqual(await linkState(config.promptFile, config.promptSource), { state: 'elsewhere', target: old.prompt });
   assert.equal(
     await storeLinkWarning(config, home),
-    '`prompt.md`, `items.schema.json` and `assistant.md` in the store link to another checkout (`~/old-worktree`), ' +
+    `\`prompt.md\`, \`items.schema.json\` and \`assistant.md\` in the store link to another checkout (\`${join('~', 'old-worktree')}\`), ` +
       'so the morning agent and the assistant follow that copy, not this one. ' +
       `Restart the dashboard to link them back to \`${repo}\`.`,
   );
 });
 
-test("a link to a file that's gone, or no link at all, means the agent can't read it", async () => {
+test("a link to a file that's gone, or no link at all, means the agent can't read it", { skip: NEEDS_SYMLINKS }, async () => {
   const { home, config } = await setup();
   await linkAll(config);
   await rm(config.promptFile);
@@ -95,13 +96,13 @@ test("a link to a file that's gone, or no link at all, means the agent can't rea
 
   assert.equal(
     await storeLinkWarning(config, home),
-    "`prompt.md` in the store links to a file that no longer exists (`~/old-worktree/prompts/renamed.md`), so the morning agent can't read it. " +
+    `\`prompt.md\` in the store links to a file that no longer exists (\`${join('~', 'old-worktree', 'prompts', 'renamed.md')}\`), so the morning agent can't read it. ` +
       "`items.schema.json` is missing from the store, so the morning agent can't read it. " +
       `Restart the dashboard to link them back to \`${repo}\`.`,
   );
 });
 
-test('only the links something here reads are checked', async () => {
+test('only the links something here reads are checked', { skip: NEEDS_SYMLINKS }, async () => {
   // Nothing runs the agent or the assistant: nothing reads any of the three.
   const off = await setup({ DAILY_FOCUS_AGENT: 'off', DAILY_FOCUS_ASSISTANT: 'off' });
   assert.equal(await storeLinkWarning(off.config, off.home), null);
@@ -117,13 +118,14 @@ test('only the links something here reads are checked', async () => {
   assert.match((await storeLinkWarning(config, home)) ?? '', /^`assistant\.md` in the store links to another checkout .*, so the assistant follows that copy/);
 });
 
-test('linking the store makes what is missing, repoints what points elsewhere, and leaves a real file alone', async () => {
+test('linking the store makes what is missing, repoints what points elsewhere, and leaves a real file alone', { skip: NEEDS_SYMLINKS }, async () => {
   const { home, config } = await setup();
   const old = await otherCheckout(home);
   await symlink(old.schema, config.schemaFile);
   await writeFile(config.assistantPromptFile, 'my own instructions\n');
 
-  const outcomes = await linkStore(config);
+  // Links, as everywhere but Windows; Windows copies, below.
+  const outcomes = await linkStore(config, 'darwin');
 
   assert.deepEqual(
     outcomes.map(({ name, result }) => [name, result]),
@@ -142,7 +144,7 @@ test('linking the store makes what is missing, repoints what points elsewhere, a
 
   // A second pass has nothing to do.
   assert.deepEqual(
-    (await linkStore(config)).map(({ result }) => result),
+    (await linkStore(config, 'darwin')).map(({ result }) => result),
     ['kept', 'kept', 'own'],
   );
 });
@@ -207,7 +209,7 @@ test("on Windows, another version's copy is warned about, then refreshed at the 
   assert.equal(await storeLinkWarning(config, home), null);
 });
 
-test("on Windows, a link already there is replaced by a copy, even one to this checkout, which Claude Code won't read through", async () => {
+test("on Windows, a link already there is replaced by a copy, even one to this checkout, which Claude Code won't read through", { skip: NEEDS_SYMLINKS }, async () => {
   const { home, config } = await setup();
   const old = await otherCheckout(home);
   await symlink(config.promptSource, config.promptFile);

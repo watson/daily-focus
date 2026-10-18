@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -26,6 +26,7 @@ import {
 import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
 import { briefWritingTools, DEFAULT_AGENT_TOOLS, DEFAULT_ASSISTANT_TOOLS, loadConfig, type Config } from '../src/config.ts';
 import type { ExecFile } from '../src/shellpath.ts';
+import { fakeCli, quoted } from './fakecli.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -36,14 +37,10 @@ after(async () => {
 async function makeConfig(lines: string[], env: Record<string, string> = {}): Promise<Config> {
   const dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-assistant-'));
   dirs.push(dataDir);
-  const bin = join(dataDir, 'fake-cli');
-  const script = [
-    '#!/bin/sh',
-    `printf '%s\\n' "$@" > "${join(dataDir, 'argv')}"`,
-    ...lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, `'\\''`)}'`),
-  ].join('\n');
-  await writeFile(bin, `${script}\n`, 'utf8');
-  await chmod(bin, 0o755);
+  const bin = await fakeCli(
+    join(dataDir, 'fake-cli'),
+    [`fs.writeFileSync(${quoted(join(dataDir, 'argv'))}, args.map((arg) => arg + '\\n').join(''));`, ...lines.map((line) => `say(${quoted(line)});`)].join('\n'),
+  );
   return loadConfig({ DAILY_FOCUS_DATA: dataDir, DAILY_FOCUS_ASSISTANT: 'claude', DAILY_FOCUS_ASSISTANT_BIN: bin, ...env });
 }
 
@@ -256,10 +253,8 @@ test('a reply is kept whole; nothing in it becomes a note on the item', async ()
 });
 
 test('a CLI that exits without a result is a failed turn, in its words', async () => {
-  const config = await makeConfig([INIT, 'not json', 'echo "boom" >&2; exit 3']);
-  // The last "line" is shell, deliberately: the script prints it as text, so the
-  // fake exits 0 with junk. Make a real failure instead.
-  await writeFile(config.assistant.binPath, '#!/bin/sh\necho "no such tool" >&2\nexit 3\n', 'utf8');
+  const config = await makeConfig([INIT, 'not json']);
+  await fakeCli(join(config.dataDir, 'fake-cli'), "fail('no such tool', 3);");
   const assistant = new Assistant(config, { onChange: () => {} });
   await assistant.ask({ itemId: 'gh:1', text: 'hi' }, {});
   await settle(assistant, 'gh:1');
@@ -299,7 +294,7 @@ test('a turn left running by a dead process is closed as aborted on start', asyn
 
 test('one turn per item at a time, and nothing to ask is refused', async () => {
   const config = await makeConfig([INIT, RESULT('ok')]);
-  await writeFile(config.assistant.binPath, '#!/bin/sh\nsleep 5\n', 'utf8');
+  await fakeCli(join(config.dataDir, 'fake-cli'), 'sleep(5000);');
   const assistant = new Assistant(config, { onChange: () => {} });
   await assistant.ask({ itemId: 'gh:1', text: 'slow' }, {});
   await assert.rejects(assistant.ask({ itemId: 'gh:1', text: 'again' }, {}), /already working/);

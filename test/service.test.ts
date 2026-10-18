@@ -95,7 +95,7 @@ test('the plist is one launchd accepts, and says what the dashboard runs', { ski
   });
 });
 
-test('installed from npm, the service runs the bundled CLI and builds nothing', () => {
+test('installed from npm, the service runs the bundled CLI and builds nothing', { skip: process.platform === 'win32' && 'a LaunchAgent, with macOS paths' }, () => {
   const plist = servicePlist({ ...spec, repo: '/Users/alice/.npm-global/lib/node_modules/daily-focus', packaged: true });
   assert.ok(plist.includes('<string>/Users/alice/.npm-global/lib/node_modules/daily-focus/dist/cli.js</string>'));
   assert.ok(plist.includes('<string>--no-open</string>'));

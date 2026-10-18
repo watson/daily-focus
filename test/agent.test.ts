@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -18,6 +18,7 @@ import { AgentRunner, agentPrompt, displayPath, foldAgentLog, followUpPrompt } f
 import { CONNECTOR_POLICY, GMAIL_DRAFTS } from '../src/codex.ts';
 import type { ExecFile } from '../src/shellpath.ts';
 import { loadConfig, type Config } from '../src/config.ts';
+import { fakeCli, quoted } from './fakecli.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -31,24 +32,24 @@ process.env.CODEX_HOME = CODEX_HOME;
 
 /**
  * A store with a fake CLI that records its argv and working directory, runs
- * `body` as shell, then prints the given JSON lines.
+ * `body` as JavaScript (see `fakeCli`), then prints the given JSON lines.
  */
 async function makeConfig(lines: string[], env: Record<string, string> = {}, body = ''): Promise<Config> {
   const dataDir = await realpath(await mkdtemp(join(tmpdir(), 'daily-focus-agent-')));
   dirs.push(dataDir);
-  const bin = join(tmpdir(), `daily-focus-fake-agent-${dirs.length}-${process.pid}`);
-  dirs.push(bin);
-  const script = [
-    '#!/bin/sh',
-    // Asked before every run; answered the way Codex does, and not recorded as a run.
-    `[ "$1" = "--version" ] && { echo 'codex-cli 0.162.1'; exit 0; }`,
-    `printf '%s\\n' "$@" > "${join(dataDir, '.argv')}"`,
-    `pwd > "${join(dataDir, '.cwd')}"`,
-    body,
-    ...lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, `'\\''`)}'`),
-  ].join('\n');
-  await writeFile(bin, `${script}\n`, 'utf8');
-  await chmod(bin, 0o755);
+  const stem = join(tmpdir(), `daily-focus-fake-agent-${dirs.length}-${process.pid}`);
+  dirs.push(stem, `${stem}.cjs`, `${stem}.cmd`);
+  const bin = await fakeCli(
+    stem,
+    [
+      // Asked before every run; answered the way Codex does, and not recorded as a run.
+      "if (args[0] === '--version') { say('codex-cli 0.162.1'); process.exit(0); }",
+      `fs.writeFileSync(${quoted(join(dataDir, '.argv'))}, args.map((arg) => arg + '\\n').join(''));`,
+      `fs.writeFileSync(${quoted(join(dataDir, '.cwd'))}, process.cwd() + '\\n');`,
+      body,
+      ...lines.map((line) => `say(${quoted(line)});`),
+    ].join('\n'),
+  );
   return loadConfig({ DAILY_FOCUS_DATA: dataDir, DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_AGENT_BIN: bin, ...env });
 }
 
@@ -70,7 +71,7 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
     [THREAD, SAID('Reading the prompt.'), SAID('Wrote 7 items; Calendar was unreachable.'), DONE],
     { DAILY_FOCUS_AGENT_MODEL: 'some-model', DAILY_FOCUS_AGENT_EFFORT: 'xhigh' },
     // The agent writes the brief, the way the prompt tells it to.
-    `printf '{"version":1,"items":[]}' > items.json.tmp && mv items.json.tmp items.json`,
+    `fs.writeFileSync('items.json.tmp', '{"version":1,"items":[]}'); fs.renameSync('items.json.tmp', 'items.json');`,
   );
   const runner = new AgentRunner(config, { onChange: () => {} });
   await runner.run();
@@ -113,7 +114,7 @@ test('a run starts in the store on the wrapper prompt, and keeps the last word a
 
 test('the settings the agent reads are in the store before it starts, the wrapper unchanged', async () => {
   // The fake CLI keeps what it found, as the agent would read it.
-  const seen = `cp agent-settings.json .seen-settings`;
+  const seen = "fs.copyFileSync('agent-settings.json', '.seen-settings');";
   const plain = await makeConfig([THREAD, SAID('Done.'), DONE], {}, seen);
   const runner = new AgentRunner(plain, { onChange: () => {} });
   await runner.run();
@@ -217,7 +218,7 @@ test('a run made by the other CLI, or one that left no session, cannot be asked'
 });
 
 test('a stopped follow-up is recorded as aborted, and nothing runs alongside it', async () => {
-  const config = await makeConfig([THREAD, DONE], {}, 'if [ "$1" = "exec" ] && [ "$2" = "resume" ]; then sleep 5; fi');
+  const config = await makeConfig([THREAD, DONE], {}, "if (args[0] === 'exec' && args[1] === 'resume') sleep(5000);");
   const runner = new AgentRunner(config, { onChange: () => {} });
   const run = await runner.run();
   await settle(runner);
@@ -263,7 +264,7 @@ test('the clock starts a run once the time has passed on a scheduled day, and on
 });
 
 test('the clock does not retry a run that failed', async () => {
-  const config = await makeConfig([], { DAILY_FOCUS_AGENT_AT: '06:30', DAILY_FOCUS_AGENT_DAYS: '1-5' }, 'exit 2');
+  const config = await makeConfig([], { DAILY_FOCUS_AGENT_AT: '06:30', DAILY_FOCUS_AGENT_DAYS: '1-5' }, 'process.exit(2);');
   const today = '2026-09-23';
   const runner = new AgentRunner(config, { onChange: () => {} });
 
@@ -313,7 +314,7 @@ test('under Claude Code, editing is allowed but only for the brief', async () =>
 });
 
 test('a CLI that exits without finishing is a failed run, in its words', async () => {
-  const config = await makeConfig([], {}, 'echo "not logged in" >&2; exit 2');
+  const config = await makeConfig([], {}, "fail('not logged in', 2);");
   const runner = new AgentRunner(config, { onChange: () => {} });
   await runner.run();
   await settle(runner);
@@ -334,7 +335,7 @@ test('a missing CLI fails the run with a hint, not a crash', async () => {
 });
 
 test('one run at a time, and a stopped run is recorded as aborted', async () => {
-  const config = await makeConfig([], {}, 'sleep 5');
+  const config = await makeConfig([], {}, 'sleep(5000);');
   const runner = new AgentRunner(config, { onChange: () => {} });
   await runner.run();
   await assert.rejects(runner.run(), /already running/);

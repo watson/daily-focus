@@ -28,7 +28,7 @@
 import { createHash } from 'node:crypto';
 import { copyFile, lstat, readFile, readlink, rename, stat, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, relative, resolve } from 'node:path';
+import { basename, dirname, relative, resolve, sep } from 'node:path';
 
 import type { Config } from './config.ts';
 import { writeJsonAtomic } from './fs.ts';
@@ -118,9 +118,9 @@ function linksInUse(config: Config): StoreLink[] {
   return links;
 }
 
-/** `~/code/x` rather than `/Users/me/code/x`. */
+/** `~/code/x` rather than `/Users/me/code/x`, and `~\\code\\x` on Windows. */
 function shown(path: string, home: string): string {
-  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+  return path.startsWith(`${home}${sep}`) ? `~${path.slice(home.length)}` : path;
 }
 
 /** The checkout a repo file lives in, when it is one of the files init links. */

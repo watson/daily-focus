@@ -69,6 +69,13 @@ keep them independent of live accounts and calendar permission prompts. The ones
 that render the client do so into a happy-dom document through `test/dom.ts`, so a
 rendered row can be asked the same questions a browser would answer.
 
+CI runs the suite on Windows too. A test that stands in for Codex, Claude Code, `gh`
+or `acli` writes the stand-in with `fakeCli` (`test/fakecli.ts`), a Node script
+started the way the dashboard starts the real one, rather than a shell script, and
+a path a test expects is built with `path.join`. Tests that make symlinks skip
+where Windows won't let them (`test/symlinks.ts`), and the few about macOS alone
+skip on Windows.
+
 To check a generated brief, run `npm run audit` with `DAILY_FOCUS_DATA` pointing to
 its data folder, and `-- --profile personal` for a personal store. The audit checks content and history; it doesn't replace the test suite.
 

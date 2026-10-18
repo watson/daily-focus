@@ -11,7 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { after, before, test } from 'node:test';
 import { promisify } from 'node:util';
 
@@ -31,7 +31,7 @@ before(async () => {
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { files: string[] };
   for (const entry of ['package.json', ...manifest.files]) {
     // The calendar helper is there only once built: a release adds the one it signed.
-    if (join(root, entry) === `${OWN_CALENDAR_APP}/` && !existsSync(OWN_CALENDAR_APP)) continue;
+    if (resolve(root, entry) === OWN_CALENDAR_APP && !existsSync(OWN_CALENDAR_APP)) continue;
     await cp(join(root, entry), join(pkg, entry), { recursive: true });
   }
 });
@@ -56,7 +56,7 @@ test('the package ships what it runs and nothing it does not', async () => {
 
 test('the package carries the calendar helper where the dashboard looks for its own', async () => {
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { files: string[] };
-  const own = relative(root, OWN_CALENDAR_APP);
+  const own = relative(root, OWN_CALENDAR_APP).split(sep).join('/');
   assert.ok(manifest.files.includes(`${own}/`), `package.json ships ${own}`);
   const release = await readFile(join(root, '.github/workflows/release.yml'), 'utf8');
   assert.ok(release.includes(`"$package/${own}"`), 'and the release puts the copy it signed there');

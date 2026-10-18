@@ -1,6 +1,7 @@
 /**
  * Loaded before every test file (`npm test` passes it with `--import`): a home
- * folder of the run's own, and none of the shell's `DAILY_FOCUS_*` variables, so
+ * folder of the run's own (HOME, and USERPROFILE for Windows), and none of the
+ * shell's `DAILY_FOCUS_*` variables, so
  * nothing a test starts can fall back to the real `~/.daily-focus` when it isn't
  * handed a store of its own. A dashboard, the CLI or a script started without
  * one would otherwise open the store a real dashboard is running on, link it to
@@ -17,6 +18,8 @@ import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'daily-focus-test-home-'));
 process.env.HOME = home;
+// Where Windows takes the home folder from: `os.homedir()` there ignores HOME.
+process.env.USERPROFILE = home;
 for (const key of Object.keys(process.env)) {
   if (key.startsWith('DAILY_FOCUS_')) delete process.env[key];
 }

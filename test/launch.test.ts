@@ -36,7 +36,7 @@ const CODEX_WRAPPER =
 /** And for a program without one, as Claude Code's `claude.exe` is. */
 const CLAUDE_WRAPPER = `${HEAD}"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"   %*\r\n`;
 
-test('a program is found where a shell would find it, and only if it can run', async () => {
+test('a program is found where a shell would find it, and only if it can run', { skip: process.platform === 'win32' && 'Windows has no execute bit to check' }, async () => {
   const dir = await temp();
   await writeFile(join(dir, 'claude'), '#!/bin/sh\n');
   await chmod(join(dir, 'claude'), 0o755);

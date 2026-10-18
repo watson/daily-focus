@@ -61,7 +61,7 @@ test('nothing answering leaves PATH as it was, and Windows is left alone', async
   assert.equal(await hydratePath({ PATH: 'C:\\bin' }, 'win32', async () => answer('/nope')), null);
 });
 
-test("the login shell runs in a session of its own, so it can't take the terminal", async () => {
+test("the login shell runs in a session of its own, so it can't take the terminal", { skip: process.platform === 'win32' && 'Windows has no login shell to ask' }, async () => {
   // A stand-in for the login shell that prints, as its PATH, its process state.
   // `s` there marks a session leader: started in a session of its own, which is
   // what keeps an interactive shell from making itself the terminal's foreground.

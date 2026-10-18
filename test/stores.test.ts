@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig } from '../src/config.ts';
 import { startServer } from '../src/server.ts';
 import { findStore, renameWhenFree, settled, settleStore, STORE_ENTRIES } from '../src/stores.ts';
+import { NEEDS_SYMLINKS, SYMLINKS } from './symlinks.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -27,7 +28,9 @@ async function olderStore(dir: string, settings: Record<string, string>): Promis
   await writeFile(join(dir, 'actions.jsonl'), '{"id":"a","action":"done","at":"2026-10-01T09:00:00Z"}\n');
   await mkdir(join(dir, 'archive'));
   await writeFile(join(dir, 'archive', 'items-2026-10-01.json'), '{}\n');
-  await symlink('/nowhere/prompt.md', join(dir, 'prompt.md'));
+  // A link, as a store keeps its prompt; a copy, as Windows keeps it, where links can't be made.
+  if (SYMLINKS) await symlink('/nowhere/prompt.md', join(dir, 'prompt.md'));
+  else await writeFile(join(dir, 'prompt.md'), '# the prompt\n');
   await writeFile(join(dir, 'scratch-from-the-agent.txt'), 'notes\n');
   await writeFile(join(dir, '.hidden'), 'x\n');
 }
@@ -151,7 +154,7 @@ test('a name both moved and still out stops the move rather than replace either'
   assert.match(await readFile(join(root, '.moving-work', 'items.json'), 'utf8'), /moved/);
 });
 
-test('a data folder that is a link moves inside the folder it links to', async () => {
+test('a data folder that is a link moves inside the folder it links to', { skip: NEEDS_SYMLINKS }, async () => {
   const real = await dataFolder();
   await olderStore(real, {});
   const link = join(await dataFolder(), 'linked');
@@ -181,7 +184,7 @@ test("a store whose settings name the other profile is renamed to match, unless 
 
 test('every name a store keeps at its top level is known as one', () => {
   const config = loadConfig({ DAILY_FOCUS_DATA: '/store' });
-  const inStore = Object.values(config).filter((value): value is string => typeof value === 'string' && dirname(value) === '/store');
+  const inStore = Object.values(config).filter((value): value is string => typeof value === 'string' && dirname(value) === resolve('/store'));
   assert.ok(inStore.length > 10, 'the paths in Config moved');
   for (const path of inStore) assert.ok(STORE_ENTRIES.includes(basename(path)), `${basename(path)} is missing from STORE_ENTRIES`);
 });
@@ -200,7 +203,7 @@ test('a dashboard started on a store from before the folders moves it, says so o
     assert.deepEqual([status.dataDir, status.profile], [join(root, 'personal'), 'personal']);
     const state = (await (await fetch(`${server.url}/api/state`)).json()) as { setupNotices: string[]; setupWarnings: string[] };
     assert.equal(state.setupNotices.length, 1);
-    assert.match(state.setupNotices[0]!, /moved to `.*\/personal`/);
+    assert.match(state.setupNotices[0]!, /moved to `.*[\\/]personal`/);
     assert.equal(server.profile, 'personal');
     assert.ok(existsSync(join(root, 'personal', 'actions.jsonl')));
   } finally {

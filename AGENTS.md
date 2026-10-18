@@ -152,7 +152,8 @@ the store. A write there would also break the copy's signature, and the app woul
 refuse to run it. When the dashboard starts needing something new from the app (a
 flag, the calendar helper, a permission, a newer Node), raise `appInterface` in
 `package.json` and `macos/DailyFocus/Updates.swift` together. Keep tests independent of
-live accounts and calendar permission prompts. The client is built from `client/`
+live accounts and calendar permission prompts. CI runs them on Windows too: fake a
+CLI with `fakeCli` from `test/fakecli.ts`, never a shell script. The client is built from `client/`
 into `public/app.js`, which is not tracked: edit the source, never the bundle.
 
 A pull request's title must be a Conventional Commit (`feat(board): …`, `fix: …`),

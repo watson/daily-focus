@@ -52,6 +52,38 @@ jobs:
         env:
           DAILY_FOCUS_DATA: ${{ runner.temp }}/daily-focus
 
+  windows:
+    # The same suite on Windows, where the dashboard finds and stops the CLIs, and
+    # keeps its prompt files in the store, differently (src/launch.ts, src/links.ts).
+    # The runner is elevated, so the tests that make symlinks run here too; a
+    # developer's own Windows shell skips them.
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      # Files as they are in the repository: Git for Windows would otherwise check
+      # them out with CRLF, which the prompts, the docs and their tests don't have.
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
   app:
     # The menu bar app is Swift and macOS-only. Signed ad hoc here, since a runner
     # has no certificate, which is enough for the build and the self-test.

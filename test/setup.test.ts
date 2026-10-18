@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -7,6 +7,7 @@ import { after, test } from 'node:test';
 import { loadConfig } from '../src/config.ts';
 import { fillIdentity, firstBriefPending, ghLogins, placeholdersIn, setupState } from '../src/setup.ts';
 import { sourcesTemplate } from '../src/templates.ts';
+import { fakeCli } from './fakecli.ts';
 
 const dirs: string[] = [];
 
@@ -70,21 +71,18 @@ test('a brief that is there but broken is not a new store', async () => {
 
 test('a CLI path set for the agent is used whatever the file is called, and a wrong one falls back to PATH', async () => {
   const dir = await temp();
-  const wrapper = join(dir, 'morning-agent');
-  await writeFile(wrapper, '#!/bin/sh\n');
-  await chmod(wrapper, 0o755);
+  const wrapper = await fakeCli(join(dir, 'morning-agent'), '');
   const named = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: wrapper });
   assert.equal((await setupState(named)).clis.claude, wrapper);
 
   const bin = join(dir, 'bin');
   await mkdir(bin);
-  await writeFile(join(bin, 'claude'), '#!/bin/sh\n');
-  await chmod(join(bin, 'claude'), 0o755);
+  const claude = await fakeCli(join(bin, 'claude'), '');
   const path = process.env.PATH;
   process.env.PATH = bin;
   try {
     const wrong = loadConfig({ DAILY_FOCUS_DATA: dir, DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_AGENT_BIN: join(dir, 'gone') });
-    assert.equal((await setupState(wrong)).clis.claude, join(bin, 'claude'));
+    assert.equal((await setupState(wrong)).clis.claude, claude);
   } finally {
     process.env.PATH = path;
   }

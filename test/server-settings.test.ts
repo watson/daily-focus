@@ -60,10 +60,13 @@ const post = (path: string, body: unknown) =>
   fetch(`${url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 test('the store is linked to this copy when the dashboard starts', async () => {
+  // Copied on Windows, where Claude Code won't read through a link.
+  const windows = process.platform === 'win32';
   for (const name of ['prompt.md', 'items.schema.json', 'assistant.md']) {
-    assert.ok((await lstat(join(dataDir, name))).isSymbolicLink(), name);
+    assert.equal((await lstat(join(dataDir, name))).isSymbolicLink(), !windows, name);
   }
-  assert.match(await readlink(join(dataDir, 'prompt.md')), /prompts\/morning-brief-work\.md$/);
+  if (windows) assert.match(await readFile(join(dataDir, 'prompt.md'), 'utf8'), /morning brief/i);
+  else assert.match(await readlink(join(dataDir, 'prompt.md')), /prompts\/morning-brief-work\.md$/);
 });
 
 test('the settings page sees every setting, where it came from, and what the default is', async () => {

@@ -18,9 +18,9 @@ const originalTZ = process.env.TZ;
 const startedIn = localTimeZone();
 const dirs: string[] = [];
 
+/** Set back explicitly: on Windows, deleting TZ doesn't take Node back to the system's zone. */
 function restoreTZ(): void {
-  if (originalTZ === undefined) delete process.env.TZ;
-  else process.env.TZ = originalTZ;
+  process.env.TZ = originalTZ ?? startedIn;
 }
 
 afterEach(restoreTZ);
@@ -50,7 +50,7 @@ test('only named zones are accepted', () => {
   for (const zone of ['+02:00', 'Not/A_Zone', '', '../etc/passwd', 7, null, undefined]) assert.equal(validZone(zone), null, String(zone));
 });
 
-test("the Mac's zone is read from the link macOS moves, not from Node", async () => {
+test("the Mac's zone is read from the link macOS moves, not from Node", { skip: process.platform === 'win32' && 'Windows keeps no /etc/localtime' }, async () => {
   const dir = await tempDir();
   const link = (name: string, target: string) => symlink(target, join(dir, name)).then(() => join(dir, name));
   assert.equal(await readSystemZone(await link('mac', '/var/db/timezone/zoneinfo/America/New_York')), 'America/New_York');
