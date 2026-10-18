@@ -421,23 +421,35 @@ h1 span {
 .sort.is-sifting .sort__wall span:not(.is-kept) {
   opacity: 0;
 }
-.sort.is-sifting .sort__wall .is-kept,
-.sort__fly {
+/* The three it keeps light up as amber tags: the agent's mark. */
+.sort.is-sifting .sort__wall .is-kept {
   opacity: 1;
-  color: var(--band-ink);
-  background: rgba(224, 150, 42, 0.32);
-  box-shadow: 0 0 0 3px rgba(224, 150, 42, 0.32);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent);
+  color: var(--on-accent);
 }
-/* One of the three on its way from the pile to its row. */
-.sort__fly {
+
+/*
+ * The morph. Each tag becomes two stand-ins over the stage: the chip, which
+ * lines up and then swells from a tag into its row's card, and the words,
+ * which travel to the row's title and settle there. When they land, the real
+ * row takes their place and the rest of it fades in.
+ */
+.sort__chip,
+.sort__words {
   position: absolute;
   z-index: 2;
   margin: 0;
-  border-radius: 2px;
-  font: 13.5px/1.85 var(--font-sans);
-  white-space: nowrap;
-  transform-origin: 0 0;
   pointer-events: none;
+}
+.sort__chip {
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.sort__words {
+  color: var(--on-accent);
+  font-family: var(--font-sans);
 }
 
 .sort__brief {
@@ -494,9 +506,10 @@ h1 span {
 
 /*
  * The sort plays only with script and with motion allowed; otherwise the
- * page shows its end, the brief. main.js marks it sifting (the noise goes,
- * the three light up), then landing (the three fly to their rows as the
- * brief comes in), then arrived and done.
+ * page shows its end, the brief. main.js steps it through sifting (the noise
+ * goes, the three light up), gathering (the tags line up where their rows
+ * will be), swelling (the tags grow into the cards as the panel comes in)
+ * and landed (the rows fill in), then done.
  */
 .sort__pile {
   visibility: hidden;
@@ -505,24 +518,37 @@ h1 span {
 .sort__brief {
   transition: opacity 0.45s, visibility 0s;
 }
-.sort__brief .row__title,
+.sort__count,
 .sort__caption {
   transition: opacity 0.3s;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .js .sort:not(.is-done) .sort__pile {
+  .js .sort:not(.is-done):not(.is-landed) .sort__pile {
     visibility: visible;
     opacity: 1;
   }
-  .js .sort:not(.is-done):not(.is-landing) .sort__brief {
+  .js .sort:not(.is-done):not(.is-swelling):not(.is-landed) .sort__brief {
     visibility: hidden;
     opacity: 0;
   }
-  .js .sort.is-landing .sort__pile {
+  .js .sort.is-gathering .sort__count {
     opacity: 0;
-    transition: opacity 0.35s;
   }
-  .js .sort.is-landing:not(.is-arrived) .sort__brief .row__title,
+  .js .sort.is-gathering .sort__wall .is-kept,
+  .js .sort.is-swelling .sort__brief .row {
+    visibility: hidden;
+  }
+  .js .sort.is-landed .sort__brief :is(.row__rank, .row__meta, .row__detail) {
+    animation: land 0.35s ease-out both;
+  }
+  .js .sort.is-landed .sort__brief .row:nth-child(2) > * > *,
+  .js .sort.is-landed .sort__brief .row:nth-child(2) .row__rank {
+    animation-delay: 0.06s;
+  }
+  .js .sort.is-landed .sort__brief .row:nth-child(3) > * > *,
+  .js .sort.is-landed .sort__brief .row:nth-child(3) .row__rank {
+    animation-delay: 0.12s;
+  }
   .js .sort:not(.is-done) .sort__caption {
     opacity: 0;
   }

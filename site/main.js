@@ -30,10 +30,14 @@ for (const button of document.querySelectorAll('[data-copy]')) {
 
 /** The noise fades out across this long, each line at its own moment. */
 const SIFT_MS = 1300;
-/** When the three light up, and when they leave for their rows. */
+/** When the three light up. */
 const LIT_MS = 1000;
-const LAND_MS = 2300;
-const FLY_MS = 700;
+/** When they leave the pile, how long they take to line up, and to swell into cards. */
+const GATHER_AT = 1900;
+const GATHER_MS = 650;
+const SWELL_MS = 520;
+/** Between one tag and the next, in both moves. */
+const STAGGER_MS = 90;
 
 function sort() {
   const figure = document.querySelector('[data-sort]');
@@ -41,71 +45,134 @@ function sort() {
   const stage = figure.querySelector('.sort__stage');
   const lines = [...figure.querySelectorAll('.sort__wall span')];
   const kept = lines.filter((line) => line.classList.contains('is-kept'));
+  const rows = [...figure.querySelectorAll('.sort__brief .row')];
   const replay = figure.querySelector('[data-replay]');
 
   // A fixed scatter, so the pile looks and goes the same way every visit: each
   // line gets its own shade, and its own moment to leave.
   lines.forEach((line, i) => {
-    const r = (n) => ((i + 1) * n) % 101 / 101;
+    const r = (n) => (((i + 1) * n) % 101) / 101;
     line.style.setProperty('--o', (0.45 + r(37) * 0.4).toFixed(2));
     line.style.setProperty('--d', `${Math.round(r(53) * SIFT_MS)}ms`);
   });
   for (const line of kept) {
-    line.style.setProperty('--lit', `${LIT_MS}ms`);
     line.style.setProperty('--d', `${LIT_MS}ms`);
+    line.style.setProperty('--lit', `${LIT_MS}ms`);
   }
 
   let timers = [];
-  let flying = [];
+  let standIns = [];
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
   const stop = () => {
     timers.forEach(clearTimeout);
     timers = [];
-    flying.forEach((el) => el.remove());
-    flying = [];
+    standIns.forEach((el) => el.remove());
+    standIns = [];
+  };
+  const STATES = ['is-sifting', 'is-gathering', 'is-swelling', 'is-landed', 'is-done'];
+  const enter = (...states) => {
+    figure.classList.remove(...STATES);
+    figure.classList.add(...states);
   };
 
-  const land = () => {
+  // Where things are, relative to the stage the stand-ins are placed in.
+  const within = (rect) => {
     const box = stage.getBoundingClientRect();
-    const from = kept.map((line) => line.getBoundingClientRect());
-    figure.classList.add('is-landing');
-    kept.forEach((line, i) => {
-      const title = figure.querySelector(`[data-title="${line.dataset.row}"]`);
-      const to = title.getBoundingClientRect();
-      const fly = Object.assign(document.createElement('p'), { className: 'sort__fly', textContent: line.textContent });
-      fly.setAttribute('aria-hidden', 'true');
-      fly.style.left = `${from[i].left - box.left}px`;
-      fly.style.top = `${from[i].top - box.top}px`;
-      stage.append(fly);
-      flying.push(fly);
-      const move = `translate(${to.left - from[i].left}px, ${to.top - from[i].top}px) scale(1.1)`;
-      fly.animate(
-        [
-          { transform: 'none', opacity: 1 },
-          { transform: move, opacity: 1, offset: 0.8 },
-          { transform: move, opacity: 0 },
-        ],
-        { duration: FLY_MS, delay: i * 70, easing: 'cubic-bezier(0.3, 0.7, 0.2, 1)', fill: 'both' },
-      );
+    return { x: rect.left - box.left, y: rect.top - box.top, w: rect.width, h: rect.height };
+  };
+  const px = (n) => `${n}px`;
+  const place = (r) => ({ left: px(r.x), top: px(r.y), width: px(r.w), height: px(r.h) });
+  const pad = (r, n) => ({ x: r.x - n, y: r.y - n, w: r.w + 2 * n, h: r.h + 2 * n });
+  // The words keep their own height, so a title that wraps in its card can wrap.
+  const spot = (r, extra = 0) => ({ left: px(r.x), top: px(r.y), width: px(r.w + extra) });
+
+  const morph = () => {
+    // Measure everything first: the tags as they are, and the rows they'll
+    // become, which are laid out already, only hidden.
+    const plan = kept.map((line, i) => {
+      const row = rows[i];
+      const title = row.querySelector('.row__title');
+      const words = document.createRange();
+      words.selectNodeContents(title);
+      const look = getComputedStyle(title);
+      const card = getComputedStyle(row);
+      return {
+        label: line.textContent,
+        from: within(line.getBoundingClientRect()),
+        title: within(title.getBoundingClientRect()),
+        text: within(words.getBoundingClientRect()),
+        row: within(row.getBoundingClientRect()),
+        lineHeight: parseFloat(look.lineHeight),
+        size: look.fontSize,
+        ink: look.color,
+        surface: card.backgroundColor,
+        border: card.borderTopColor,
+        radius: card.borderTopLeftRadius,
+        shadow: card.boxShadow,
+      };
     });
-    later(FLY_MS * 0.75, () => figure.classList.add('is-arrived'));
-    later(FLY_MS + kept.length * 70, () => {
+    const tag = getComputedStyle(kept[0]);
+
+    enter('is-sifting', 'is-gathering');
+    plan.forEach((p, i) => {
+      const chip = Object.assign(document.createElement('div'), { className: 'sort__chip' });
+      const words = Object.assign(document.createElement('p'), { className: 'sort__words', textContent: p.label });
+      for (const el of [chip, words]) el.setAttribute('aria-hidden', 'true');
+      Object.assign(chip.style, place(pad(p.from, 3)));
+      Object.assign(words.style, { ...spot(p.from, 2), lineHeight: px(p.from.h), fontSize: tag.fontSize });
+      stage.append(chip, words);
+      standIns.push(chip, words);
+
+      const delay = i * STAGGER_MS;
+      const glide = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
+      // First the tags line up where the titles will be, growing to their size.
+      words.animate(
+        [
+          { ...spot(p.from, 2), lineHeight: px(p.from.h), fontSize: tag.fontSize, fontWeight: 400 },
+          { ...spot(p.title), lineHeight: px(p.lineHeight), fontSize: p.size, fontWeight: 600 },
+        ],
+        { duration: GATHER_MS, delay, easing: glide, fill: 'both' },
+      );
+      chip.animate([place(pad(p.from, 3)), place(pad(p.text, 3))], {
+        duration: GATHER_MS,
+        delay,
+        easing: glide,
+        fill: 'both',
+      });
+      // Then each tag swells into its card, and its words take the card's ink.
+      later(GATHER_MS + delay, () => {
+        if (i === 0) enter('is-sifting', 'is-gathering', 'is-swelling');
+        chip.animate(
+          [
+            { ...place(pad(p.text, 3)), backgroundColor: tag.backgroundColor, borderColor: 'transparent', borderRadius: '3px', boxShadow: 'none' },
+            { ...place(p.row), backgroundColor: p.surface, borderColor: p.border, borderRadius: p.radius, boxShadow: p.shadow },
+          ],
+          { duration: SWELL_MS, easing: 'cubic-bezier(0.3, 0.8, 0.2, 1)', fill: 'forwards' },
+        );
+        words.animate([{ color: tag.color }, { color: p.ink }], { duration: SWELL_MS, fill: 'forwards' });
+      });
+    });
+
+    // The last card is whole: the real rows take over and fill in.
+    later(GATHER_MS + SWELL_MS + (plan.length - 1) * STAGGER_MS + 40, () => {
+      enter('is-landed');
       stop();
-      figure.classList.add('is-done');
-      figure.classList.remove('is-sifting', 'is-landing', 'is-arrived');
-      replay.hidden = false;
+      later(700, () => {
+        enter('is-done');
+        replay.hidden = false;
+      });
     });
   };
 
   const play = () => {
     stop();
     figure.classList.add('is-instant');
-    figure.classList.remove('is-sifting', 'is-landing', 'is-arrived', 'is-done');
+    enter();
     replay.hidden = true;
     void figure.offsetWidth;
     figure.classList.remove('is-instant');
-    later(150, () => figure.classList.add('is-sifting'));
-    later(LAND_MS, land);
+    later(150, () => enter('is-sifting'));
+    later(GATHER_AT, morph);
   };
 
   // Play once someone can see it: the page in front, and the pile in view.
@@ -128,7 +195,7 @@ function sort() {
   reduceMotion.addEventListener('change', () => {
     if (!reduceMotion.matches) return;
     stop();
-    figure.classList.add('is-done');
+    enter('is-done');
     replay.hidden = true;
   });
 }
