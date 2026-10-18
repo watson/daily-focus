@@ -1,5 +1,6 @@
 // The page's few behaviours. Everything here is an enhancement: without script
-// the page shows the finished run, no now line, and the commands to copy by hand.
+// the page shows the finished edit, the launch objective's brief, and the
+// commands to copy by hand.
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -25,144 +26,253 @@ for (const button of document.querySelectorAll('[data-copy]')) {
   });
 }
 
-/* ---------- 07:00: the morning agent's run plays out once ---------- */
+/* ---------- The edit: the agent's pass over the morning ---------- */
 
-// Each subagent and when, in milliseconds from the start, it reports back. The
-// results are the trail's own, so the run ends exactly as the folded trail reads.
-const RUN = [
-  { at: 0, done: 1500 },
-  { at: 140, done: 2300 },
-  { at: 280, done: 2800 },
-  { at: 420, done: 1900 },
-  { at: 560, done: 1200 },
-];
-const LANDED = 3100;
-const FINISHED = 4100;
+// The strip under the sheet is every one of the 147 things, in the order they
+// came: the 18 lines the sheet shows, then the 129 it sums up. The 9 kept among
+// those sit at fixed places, so the strip reads the same on every visit.
+const TOTAL = 147;
+const MORE_KEPT = [6, 19, 27, 40, 58, 66, 87, 103, 120];
 
-function playRun() {
-  const run = document.querySelector('.run');
-  if (!run || reduceMotion.matches) return;
-  const live = run.querySelector('.run__live .run__steps');
-  const phase = run.querySelector('.run__phase-text');
-  const state = run.querySelector('.run__state');
-  const trail = [...run.querySelectorAll('.run__trail li')];
+/** Between judging one line and the next. */
+const JUDGE_MS = 95;
+/** Between ticks, for the 129 the sheet doesn't show. */
+const RIPPLE_MS = 5;
 
-  run.classList.add('is-playing');
-  state.textContent = '· running';
-  const timers = [];
+function edit() {
+  const sheet = document.querySelector('[data-sheet]');
+  if (!sheet) return;
+  const items = [...sheet.querySelectorAll('.item')];
+  const ranked = items.filter((item) => item.classList.contains('item--ranked'));
+  const replay = sheet.querySelector('[data-replay]');
+
+  const verdict = (item) =>
+    item.classList.contains('item--kept') ? 'is-kept' : item.classList.contains('item--unread') ? 'is-unread' : null;
+  const ticks = Array.from({ length: TOTAL }, (_, i) => {
+    const tick = document.createElement('i');
+    const kind = i < items.length ? verdict(items[i]) : MORE_KEPT.includes(i - items.length) ? 'is-kept' : null;
+    if (kind) tick.classList.add(kind);
+    return tick;
+  });
+  const strip = document.createElement('div');
+  strip.className = 'strip';
+  strip.setAttribute('aria-hidden', 'true');
+  strip.append(...ticks);
+  sheet.querySelector('.sheet__foot').prepend(strip);
+
+  if (reduceMotion.matches) return;
+
+  let timers = [];
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+  const marked = [...items, ...ticks];
 
-  trail.forEach((source, i) => {
-    const step = source.cloneNode(true);
-    const result = step.querySelector('.step__result');
-    const final = result.textContent;
-    result.textContent = 'reading…';
-    step.classList.add('is-running');
-    later(RUN[i].at, () => live.append(step));
-    later(RUN[i].done, () => {
-      step.classList.remove('is-running');
-      result.textContent = final;
-    });
-  });
-  later(LANDED, () => (phase.textContent = 'The brief is in; checking it and writing its report'));
-  later(FINISHED, () => {
-    run.classList.remove('is-playing');
-    run.classList.add('is-landed');
-    state.textContent = '· finished';
-  });
-
-  // Someone who turns reduced motion on mid-play gets the end straight away.
-  reduceMotion.addEventListener('change', () => {
+  // Back to the morning as it arrived, without animating the way back.
+  const unjudge = () => {
     timers.forEach(clearTimeout);
-    run.classList.remove('is-playing');
-    state.textContent = '· finished';
-  });
-}
-
-playRun();
-
-/* ---------- The now line ---------- */
-
-// Each hour's dot is a known time at a known height. The line sits at a fixed
-// height in the viewport; the time it shows is wherever that height falls
-// between the two dots around it, so scrolling from 10:20 to 11:30 runs the
-// clock through the minutes between.
-function nowLine() {
-  const now = document.querySelector('.now');
-  const label = now?.querySelector('.now__label');
-  const hours = [...document.querySelectorAll('.hour[data-at]')];
-  if (!now || !label || hours.length < 2) return;
-  now.hidden = false;
-
-  const minutes = (hhmm) => {
-    const [h, m] = hhmm.split(':').map(Number);
-    return h * 60 + m;
+    timers = [];
+    sheet.classList.add('is-instant', 'is-raw');
+    sheet.classList.remove('is-tallied');
+    for (const el of marked) el.classList.remove('is-judged', 'is-ranked');
+    replay.hidden = true;
+    void sheet.offsetWidth;
+    sheet.classList.remove('is-instant');
   };
-  const format = (total) => {
-    const h = Math.floor(total / 60);
-    const m = Math.floor(total % 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const finish = () => {
+    timers.forEach(clearTimeout);
+    timers = [];
+    sheet.classList.remove('is-raw', 'is-tallied');
+    replay.hidden = false;
   };
 
-  let marks = [];
-  const measure = () => {
-    marks = hours.map((hour) => {
-      const dot = hour.querySelector('.hour__time');
-      const box = dot.getBoundingClientRect();
-      const y = box.top + scrollY + parseFloat(getComputedStyle(hour.querySelector('.hour__inner')).getPropertyValue('--dot-y'));
-      return { y, t: minutes(hour.dataset.at), dot };
-    });
-  };
-
-  let queued = false;
-  const update = () => {
-    queued = false;
-    const y = now.getBoundingClientRect().top + scrollY;
-    const first = marks[0];
-    const last = marks[marks.length - 1];
-    let t = first.t;
-    if (y >= last.y) t = last.t;
-    else if (y > first.y) {
-      const i = marks.findIndex((mark) => mark.y > y);
-      const a = marks[i - 1];
-      const b = marks[i];
-      t = a.t + ((b.t - a.t) * (y - a.y)) / (b.y - a.y);
+  const play = () => {
+    unjudge();
+    const start = 250;
+    items.forEach((item, i) =>
+      later(start + i * JUDGE_MS, () => {
+        item.classList.add('is-judged');
+        ticks[i].classList.add('is-judged');
+      }),
+    );
+    const judged = start + items.length * JUDGE_MS + 250;
+    ranked.forEach((item, i) => later(judged + i * 180, () => item.classList.add('is-ranked')));
+    for (let i = items.length; i < TOTAL; i++) {
+      later(judged + (i - items.length) * RIPPLE_MS, () => ticks[i].classList.add('is-judged'));
     }
-    label.textContent = format(t);
-    for (const mark of marks) mark.dot.classList.toggle('is-passing', Math.abs(mark.y - y) < 18);
-    // The day ends at the last hour; the line goes with it, and isn't there
-    // before the first.
-    now.classList.toggle('is-gone', y > last.y + 4 || y < first.y - 4);
-  };
-  const queue = () => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(update);
+    const rippled = judged + (TOTAL - items.length) * RIPPLE_MS + 150;
+    later(rippled, () => sheet.classList.add('is-tallied'));
+    later(rippled + 500, () => (replay.hidden = false));
   };
 
-  // The line rides at the height of the first hour's dot, so the page opens
-  // with it on 07:00, and an hour reaches it as its heading nears the top.
-  const pin = () => {
-    now.style.top = `${Math.min(marks[0].y, innerHeight * 0.4)}px`;
-  };
-
-  measure();
-  pin();
-  update();
-  addEventListener('scroll', queue, { passive: true });
-  const remeasure = () => {
-    measure();
-    pin();
-    queue();
-  };
-  addEventListener('resize', remeasure);
-  // Fonts arriving move everything below them.
-  document.fonts?.ready.then(remeasure);
+  // Raw from the start, so nobody sees the answer before the pass.
+  unjudge();
+  const seen = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      seen.disconnect();
+      play();
+    },
+    { threshold: 0.2 },
+  );
+  seen.observe(sheet);
+  replay.addEventListener('click', play);
+  reduceMotion.addEventListener('change', () => reduceMotion.matches && finish());
 }
 
-nowLine();
+edit();
 
-/* ---------- 11:30: the assistant, replayed ---------- */
+/* ---------- The objective: the same morning, ranked against each ---------- */
+
+// The rows the four objectives draw on. Each objective picks three, in order,
+// and may say why in its own words.
+const ROWS = {
+  review: {
+    title: '<span class="row__repo">acme/webapp</span> Review requested: Fix rounding in gift card balances',
+    src: ['GitHub', 'github'],
+    who: '@alice',
+    pills: '<span class="pill pill--warning">2 days on the list</span>',
+    detail: 'Alice asked you directly 2 days ago; nobody else has looked.',
+  },
+  training: {
+    title: 'Complete annual security &amp; compliance training',
+    src: ['Workday', 'workday'],
+    pills: '<span class="pill pill--critical">due today</span><span class="pill pill--warning">6 days on the list</span>',
+    detail: 'Workday has sent three reminders. After tonight it goes to your manager.',
+  },
+  bob: {
+    title: 'Re: Q4 headcount plan — Bob is waiting on your input',
+    src: ['Email', 'email'],
+    who: 'bob@acme.example',
+    pills: '<span class="pill pill--warning">3 days on the list</span>',
+    detail: 'He asked for the team split on Monday and followed up yesterday. Nothing sent back yet.',
+  },
+  written: {
+    title: 'No path to faster checkout today. Protect 12:00–15:00 for profiling the slow requests',
+    src: ['Other', 'other'],
+    pills: '',
+    detail: 'Nothing that came in moves the objective, and nobody is going to write and tell you so. 12:00–15:00 is your one free block long enough.',
+  },
+};
+
+const GOALS = {
+  launch: {
+    objective: 'Launch gift cards before the holiday sale',
+    blocked: 'the rounding fix in webapp#3421 is still waiting on review',
+    note: 'Alice’s review on <code>webapp#3421</code> is the one thing here that moves the objective, and 12:00–15:00 is your only real focus block for it. The compliance training is due tonight.',
+    says: 'Alice’s review comes first: merging it is what gets gift cards to staging. The louder threads wait their turn.',
+    rows: [
+      ['review', { objective: true, detail: 'Alice asked you directly 2 days ago; nobody else has looked. Merging it is what lets gift cards go live in staging.' }],
+      ['training'],
+      ['bob'],
+    ],
+  },
+  hire: {
+    objective: 'Hire two engineers for the Platform team',
+    blocked: 'Platform’s share of the Q4 roles isn’t agreed',
+    note: 'Bob’s headcount thread decides whether Platform gets its two roles, and the planning deck locks on Friday. Answer it before the 15:00 sync.',
+    says: 'Same morning, same mail. Now Bob’s thread comes first, because his split decides whether Platform gets the roles.',
+    rows: [
+      ['bob', { objective: true, detail: 'His split decides whether Platform gets the two roles. He asked on Monday and followed up yesterday.' }],
+      ['training'],
+      ['review'],
+    ],
+  },
+  speed: {
+    objective: 'Halve the checkout page’s load time',
+    blocked: 'nobody has profiled the slow checkout requests yet',
+    note: 'Nothing that came in today moves the checkout work, so the time for it has to come from you. 12:00–15:00 is the only block long enough.',
+    says: 'Nothing that came in moves this one. So the brief says that, and makes room for it at the top. No email would have told you.',
+    rows: [['written', { objective: true }], ['training'], ['review']],
+  },
+  none: {
+    objective: null,
+    note: 'Two things are time-boxed today: the <b>compliance training</b>, due tonight, and the Lisbon fare that expires at 17:00.',
+    says: 'With no objective, it ranks by deadlines and by who’s waiting. That helps, but it can’t know which work matters most to you.',
+    rows: [['training'], ['bob'], ['review']],
+  },
+};
+
+function objective() {
+  const goals = document.querySelector('[data-goals]');
+  const brief = document.querySelector('[data-brief]');
+  if (!goals || !brief) return;
+  const list = brief.querySelector('[data-rows]');
+  const says = document.querySelector('[data-says]');
+  const label = brief.querySelector('[data-label]');
+  const text = brief.querySelector('[data-objective]');
+  const blocked = brief.querySelector('[data-blocked]');
+  const note = brief.querySelector('[data-note]');
+  let swap;
+
+  const row = (key, rank, { objective = false, detail } = {}) => {
+    const r = ROWS[key];
+    const pills = (objective ? '<span class="pill pill--accent">objective</span>' : '') + r.pills;
+    return (
+      `<span class="row__rank">${rank}</span><div>` +
+      `<p class="row__title">${r.title}</p>` +
+      `<p class="row__meta"><span class="src" style="--src: var(--src-${r.src[1]})">${r.src[0]}</span>` +
+      `${r.who ? `<span class="muted">${r.who}</span>` : ''}${pills}</p>` +
+      `<p class="row__detail">${detail ?? r.detail}</p></div>`
+    );
+  };
+
+  const band = (goal) => {
+    brief.classList.toggle('brief--empty', !goal.objective);
+    label.textContent = goal.objective ? 'Current objective' : 'No current objective';
+    text.textContent = goal.objective ?? 'Set one to have the day ranked against it.';
+    blocked.hidden = !goal.blocked;
+    blocked.querySelector('span').textContent = goal.blocked ?? '';
+    note.innerHTML = goal.note;
+  };
+
+  const choose = (key) => {
+    const goal = GOALS[key];
+    if (!goal) return;
+    const motion = !reduceMotion.matches;
+    const was = new Map([...list.children].map((el) => [el.dataset.key, el]));
+    const from = new Map([...was].map(([k, el]) => [k, el.getBoundingClientRect().top]));
+
+    const rows = goal.rows.map(([k, opts], i) => {
+      const el = was.get(k) ?? Object.assign(document.createElement('li'), { className: 'row' });
+      el.dataset.key = k;
+      el.classList.toggle('row--written', k === 'written');
+      el.classList.toggle('is-entering', motion && !was.has(k));
+      el.innerHTML = row(k, i + 1, opts);
+      return el;
+    });
+    list.replaceChildren(...rows);
+    says.textContent = goal.says;
+
+    // Each row that stayed slides from where it was to where it ranks now.
+    if (motion) {
+      for (const el of rows) {
+        const top = from.get(el.dataset.key);
+        if (top === undefined) continue;
+        const dy = top - el.getBoundingClientRect().top;
+        if (Math.abs(dy) < 1) continue;
+        el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], {
+          duration: 480,
+          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+        });
+      }
+    }
+
+    clearTimeout(swap);
+    if (!motion) return band(goal);
+    brief.classList.add('is-changing');
+    swap = setTimeout(() => {
+      band(goal);
+      brief.classList.remove('is-changing');
+    }, 200);
+  };
+
+  list.addEventListener('animationend', (event) => event.target.classList.remove('is-entering'));
+  goals.addEventListener('change', (event) => choose(event.target.value));
+  goals.hidden = false;
+}
+
+objective();
+
+/* ---------- The assistant, replayed ---------- */
 
 // What the assistant did for Mara on each quick action: its steps, how long the
 // panel says it worked, and its answer. The draft is the demo's own turn on this
@@ -273,7 +383,7 @@ function assistantReplay() {
 
 assistantReplay();
 
-/* ---------- 17:00: handle an item ---------- */
+/* ---------- Handle an item ---------- */
 
 function handleCard() {
   const card = document.querySelector('[data-handle]');
@@ -281,7 +391,7 @@ function handleCard() {
   const toast = card.querySelector('.toast');
   const text = toast.querySelector('.toast__text');
   const undo = toast.querySelector('.toast__undo');
-  const note = card.querySelector('[data-note]');
+  const note = card.querySelector('[data-note-form]');
   let hide;
 
   const show = (message, onUndo) => {
