@@ -2217,6 +2217,13 @@ h1 span {
   }
 }
 
+/* On the narrowest phones the name would wrap; the hero's install buttons sit just below. */
+@media (max-width: 374px) {
+  .nav__install {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
