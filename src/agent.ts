@@ -607,7 +607,7 @@ export class AgentRunner {
         cwd: this.config.dataDir,
         // Stdin closed: both CLIs wait on it otherwise.
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: cliEnvironment(this.config.dataDir),
+        env: cliEnvironment(this.config),
       });
     } catch (err) {
       await this.finish(run, turn, { ok: false, error: this.spawnError(err) });

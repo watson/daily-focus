@@ -943,7 +943,7 @@ export class Assistant {
         cwd: this.config.assistantDir,
         // Stdin closed: both CLIs wait on it otherwise, one of them for three seconds.
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: cliEnvironment(this.config.dataDir),
+        env: cliEnvironment(this.config),
       });
     } catch (err) {
       await this.finish(turn, { ok: false, error: this.spawnError(err) });

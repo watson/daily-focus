@@ -14,6 +14,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { SettingView } from '../src/settings.ts';
 import type { DashboardState } from '../src/types.ts';
 import { el } from './el.ts';
+import { gitHubSignIn } from './signin.ts';
 import type { CalendarName, Handlers, TextEditor, TextName, UiState, View } from './types.ts';
 
 /** The views Settings can return to, by the names their tabs carry. */
@@ -63,6 +64,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
             el('h3', { class: 'settings-card__title', id: `settings-${group.id}-title` }, group.title),
             plain.map((setting) => settingField(setting, draft, handlers)),
             group.id === 'calendar' ? calendarPicker(state, ui, handlers, page.settings) : null,
+            group.id === 'github' ? gitHubAccount(state, handlers) : null,
             advanced.length > 0
               ? el(
                   'details',
@@ -429,6 +431,31 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
           ),
         )
       : null,
+  );
+}
+
+/* ---------- GitHub ---------- */
+
+/**
+ * Who the board reads GitHub as, and a way to sign in again: the only way for
+ * the copy of gh Daily Focus brings, and a way round the terminal for any other.
+ */
+function gitHubAccount(state: DashboardState, handlers: Handlers): JSX.Element | null {
+  // Absent from a server older than the page.
+  const signIn = state.gitHubSignIn;
+  if (!signIn) return null;
+  const logins = state.board.accounts.filter((account) => account.ok).map((account) => account.login);
+  return el(
+    'div',
+    { class: 'github-account' },
+    el(
+      'p',
+      { class: 'field__note' },
+      signIn.bundled ? 'There’s no GitHub CLI installed, so Daily Focus uses its own. ' : 'Daily Focus signs in through your GitHub CLI, gh. ',
+      logins.length ? `The board reads as ${logins.join(', ')}. ` : '',
+      'gh switches to whichever account you sign in as.',
+    ),
+    gitHubSignIn(signIn, handlers, logins.length ? 'Sign in again' : 'Sign in to GitHub'),
   );
 }
 

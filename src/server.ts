@@ -21,11 +21,12 @@ import { codexVersionWarning } from './codex.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
+import { GitHubSignIn } from './ghsignin.ts';
 import { refusal } from './guard.ts';
 import { Onboarding } from './onboarding.ts';
 import { describeLink, linkStore, storeLinkWarning } from './links.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
-import { detectIdentity, fillIdentity, firstBriefPending, setupState } from './setup.ts';
+import { detectIdentity, fillIdentity, firstBriefPending, forgetIdentity, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
 import { findStore, settleStore, type Profile } from './stores.ts';
@@ -329,6 +330,20 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   const calendar = new CalendarBoard(config, () => void broadcast());
   const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
 
+  // gh's browser sign-in, which only a click starts. A new login is news to
+  // what reads through gh: the board looks again, and setup asks gh afresh who
+  // the user is. The ticket board's check against GitHub catches up on its next read.
+  const gitHubSignIn = new GitHubSignIn(config.github, {
+    onChange: () => {
+      void broadcast();
+      restartWhenIdle();
+    },
+    onSignedIn: () => {
+      forgetIdentity();
+      void board.refresh();
+    },
+  });
+
   // Runs a CLI on request and broadcasts as its answer streams in. It writes
   // nothing to the store but its own log: what the assistant says stays in the
   // chat, and never becomes a note or an action on the item.
@@ -460,7 +475,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   }
 
   function restartWhenIdle(): void {
-    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy || onboarding.busy) return;
+    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy || onboarding.busy || gitHubSignIn.busy) return;
     restarting = true;
     // After the reply that asked for it has gone out.
     setImmediate(() => options.onRestart?.());
@@ -487,6 +502,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     return {
       ...state,
       board: pulls,
+      gitHubSignIn: gitHubSignIn.view(),
       tickets: tickets.view(actions, now),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
@@ -674,7 +690,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (
       restart === 'waiting' &&
       req.method === 'POST' &&
-      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask'].includes(path)
+      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/github/sign-in'].includes(path)
     ) {
       sendJSON(res, 409, { error: 'the dashboard is restarting to apply new settings; try again in a moment' });
       return;
@@ -715,6 +731,26 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       // Waits for the fetch so the response carries the fresh board; a fetch
       // already in flight is joined rather than doubled.
       await board.refresh();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/github/sign-in' && req.method === 'POST') {
+      // The demo's boards answer from its sample world; a real sign-in would be
+      // the one thing in it that reached outside.
+      if (options.integrations?.github) {
+        sendJSON(res, 409, { error: 'the demo signs in to nothing' });
+        return;
+      }
+      gitHubSignIn.start();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/github/sign-in/cancel' && req.method === 'POST') {
+      // Waits for gh to go, so the reply can't land after the broadcast that
+      // says so and put a dead code back on the page.
+      await gitHubSignIn.cancel();
       sendState(res, await buildState());
       return;
     }
@@ -1168,6 +1204,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     board.stop();
     calendar.stop();
     tickets.stop();
+    gitHubSignIn.stop();
     await assistant.close();
     await agent.close();
     await onboarding.close();

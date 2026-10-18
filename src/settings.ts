@@ -18,6 +18,7 @@ import { loadConfig, PROFILES, type Profile } from './config.ts';
 import { layerSettings, LAUNCH_SETTINGS, PROFILE_SETTING, type SettingSources } from './env.ts';
 import { asProfile } from './stores.ts';
 import { writeJsonAtomic } from './fs.ts';
+import { APP_GH } from './install.ts';
 
 export type SettingGroup = 'instance' | 'agent' | 'assistant' | 'github' | 'jira' | 'calendar' | 'day';
 
@@ -230,7 +231,7 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_GITHUB',
     group: 'github',
     label: 'Pull request board',
-    help: 'Reads your open pull requests through the GitHub CLI. Sign in with gh auth login. The Jira ticket board uses it too, to catch merges Jira hasn\'t heard about yet.',
+    help: 'Reads your open pull requests through the GitHub CLI, gh. Sign in below. The Jira ticket board uses it too, to catch merges Jira hasn\'t heard about yet.',
     kind: 'flag',
     fallback: always('On'),
   },
@@ -274,7 +275,8 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Path to gh',
     help: "Only needed when the dashboard can't find the GitHub CLI on its own.",
     kind: 'text',
-    fallback: always('Found on PATH'),
+    // Only the Mac app brings one; the npm package never does.
+    fallback: always(APP_GH ? 'Found on PATH, else the one the app brings' : 'Found on PATH'),
     advanced: true,
   },
 

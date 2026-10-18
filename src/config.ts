@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 
 import { DEFAULT_DATA_DIR, expandHome, loadSettings, SETTINGS_FILE, type SettingValues } from './env.ts';
-import { defaultCalendarApp } from './install.ts';
+import { APP_GH, defaultCalendarApp, defaultGh } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 import { PROFILES, type Profile } from './stores.ts';
 
@@ -46,6 +46,12 @@ export interface GitHubConfig {
   pollMinutes: number;
   /** The gh binary. Overridable because a launchd job's PATH rarely has Homebrew on it. */
   ghPath: string;
+  /**
+   * Whether `ghPath` is the copy the Mac app carries, because Settings names no
+   * gh and there is none on PATH. Nobody can type `gh auth login` for that one,
+   * so the page signs in for it, and the CLIs the dashboard runs get it on PATH.
+   */
+  ghBundled: boolean;
 }
 
 /**
@@ -439,13 +445,15 @@ function gitHubConfig(values: SettingValues): GitHubConfig {
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_GITHUB_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
+  const ghPath = expandHome((values.DAILY_FOCUS_GH ?? '').trim() || defaultGh());
   return {
     enabled: flagSetting('DAILY_FOCUS_GITHUB', true, values),
     accounts: listSetting('DAILY_FOCUS_GITHUB_ACCOUNTS', values),
     scope: parseScope(listSetting('DAILY_FOCUS_GITHUB_SCOPE', values)),
     mergeGateChecks: nameListSetting('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', values),
     pollMinutes,
-    ghPath: expandHome((values.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
+    ghPath,
+    ghBundled: APP_GH !== null && ghPath === APP_GH,
   };
 }
 

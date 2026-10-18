@@ -227,7 +227,7 @@ export async function graphql<T>(
   const remaining = Number(res.headers.get('x-ratelimit-remaining'));
   const rateLimitRemaining = Number.isFinite(remaining) && res.headers.has('x-ratelimit-remaining') ? remaining : null;
 
-  if (res.status === 401) throw new GitHubRequestError('GitHub rejected the token (401) — run `gh auth login` again', 401);
+  if (res.status === 401) throw new GitHubRequestError('GitHub rejected the token (401) — sign in to GitHub again', 401);
   if (!res.ok) {
     const reply = await res.text().catch(() => '');
     const text = reply.slice(0, 200);

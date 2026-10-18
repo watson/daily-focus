@@ -79,6 +79,16 @@ export function postBoardRefresh(): Promise<DashboardState> {
   return post('/api/board/refresh');
 }
 
+/** Start gh's sign-in to GitHub. Resolves once gh is started, before it has a code. */
+export function postGitHubSignIn(): Promise<DashboardState> {
+  return post('/api/github/sign-in');
+}
+
+/** Stop waiting on GitHub, which throws the code away. */
+export function postGitHubSignInCancel(): Promise<DashboardState> {
+  return post('/api/github/sign-in/cancel');
+}
+
 /** Ask the server to read Jira now. Resolves once it has. */
 export function postTicketsRefresh(): Promise<DashboardState> {
   return post('/api/tickets/refresh');

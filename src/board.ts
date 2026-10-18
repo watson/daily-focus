@@ -4,7 +4,9 @@ import type { Config } from './config.ts';
 import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
+  GhAuthError,
   GhMissingError,
+  GitHubRequestError,
   fetchPulls,
   ghToken,
   listGhAccounts,
@@ -54,6 +56,8 @@ interface Identity {
 /** What one poll is finding out, published whole once it's done. */
 interface Attempt {
   accounts: BoardAccount[];
+  /** Something failed that signing in would fix: no login, or a token GitHub turned away. */
+  signIn: boolean;
   /** What lay under each failed account's error, by login. */
   details: Map<string, string>;
   warnings: string[];
@@ -91,6 +95,8 @@ export class Board {
   #accounts: BoardAccount[] = [];
   #accountDetails = new Map<string, string>();
   #attemptWarnings: string[] = [];
+  /** Whether signing in would fix what the last attempt ran into. */
+  #signIn = false;
   /** Why nothing can be polled at all right now, when that's the case. */
   #reason: Failure | null = null;
   /** Polls in a row that read nothing at all, which also spaces the next one out. */
@@ -201,6 +207,7 @@ export class Board {
       scope: [...this.#config.github.scope],
       warnings,
       pollMinutes: this.#config.github.pollMinutes,
+      signIn: this.enabled && this.#signIn,
       rows,
       counts: countBoard(rows),
     };
@@ -260,7 +267,7 @@ export class Board {
    * "active" is whichever one was last switched to in a terminal.
    */
   async #identities(attempt: Attempt): Promise<Identity[]> {
-    const { ghPath, accounts } = this.#config.github;
+    const { ghPath, ghBundled, accounts } = this.#config.github;
 
     if (accounts.length > 0) {
       const tokens = await Promise.allSettled(accounts.map((login) => this.#deps.token(ghPath, login)));
@@ -274,7 +281,10 @@ export class Board {
         } else if (token.reason instanceof GhMissingError) {
           throw token.reason;
         } else {
-          attempt.accounts.push({ login, ok: false, error: (token.reason as Error).message });
+          if (token.reason instanceof GhAuthError) attempt.signIn = true;
+          // The Mac app's own gh has no terminal to run `gh auth login` in: the page signs in for it.
+          const error = token.reason instanceof GhAuthError && ghBundled ? `Not signed in to GitHub as ${login}` : (token.reason as Error).message;
+          attempt.accounts.push({ login, ok: false, error });
           attempt.details.set(login, errorDetail(token.reason));
         }
       });
@@ -284,7 +294,9 @@ export class Board {
     const known = await this.#deps.listAccounts(ghPath);
     const active = known.find((account) => account.active) ?? known[0] ?? null;
     if (!active) {
-      throw new Error('gh is not logged in to github.com — run `gh auth login`, or set DAILY_FOCUS_GITHUB=off');
+      throw new GhAuthError(
+        ghBundled ? 'Not signed in to GitHub' : 'gh is not logged in to github.com — run `gh auth login`, or set DAILY_FOCUS_GITHUB=off',
+      );
     }
     if (known.length > 1) {
       attempt.warnings.push(
@@ -307,18 +319,20 @@ export class Board {
     }
 
     const previous = this.#file;
-    const attempt: Attempt = { accounts: [], details: new Map(), warnings: [] };
+    const attempt: Attempt = { accounts: [], signIn: false, details: new Map(), warnings: [] };
     const publish = (reason: Failure | null): void => {
       this.#accounts = attempt.accounts;
       this.#accountDetails = attempt.details;
       this.#attemptWarnings = attempt.warnings;
       this.#reason = reason;
+      this.#signIn = attempt.signIn;
     };
 
     let identities: Identity[];
     try {
       identities = await this.#identities(attempt);
     } catch (err) {
+      if (err instanceof GhAuthError) attempt.signIn = true;
       publish({ message: (err as Error).message, detail: errorDetail(err) });
       this.#streak = extend(this.#streak);
       return;
@@ -338,6 +352,7 @@ export class Board {
     results.forEach((result, i) => {
       const { account } = identities[i]!;
       if (result.status === 'rejected') {
+        if (result.reason instanceof GitHubRequestError && result.reason.status === 401) attempt.signIn = true;
         account.ok = false;
         account.error = (result.reason as Error).message;
         attempt.details.set(account.login, errorDetail(result.reason));

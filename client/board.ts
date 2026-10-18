@@ -11,6 +11,7 @@ import { cssId, onCard, renderAhead, renderSnoozeMenu, rowPills, sourceColor, ty
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
+import { gitHubSignIn } from './signin.ts';
 import type { Handlers, UiState } from './types.ts';
 
 const COURT_TITLE = {
@@ -49,6 +50,10 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
     parts.push(failureNotice(failure, { ...retry, fold: `failure:board:${i}`, className: 'banner banner--warning' }, ui, handlers));
   });
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
+  // Under what failed, when signing in is what fixes it: the Mac app's own gh
+  // has no terminal to run `gh auth login` in. Absent from an older server.
+  const signIn = state.gitHubSignIn;
+  if (signIn && (board.signIn || signIn.status === 'starting' || signIn.status === 'waiting')) parts.push(gitHubSignIn(signIn, handlers));
 
   const open = board.rows.filter((row) => row.status === 'open');
   for (const court of COURT_ORDER) {

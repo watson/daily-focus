@@ -16,7 +16,9 @@
 # --test        runs the app's self-test after building.
 #
 # The app carries its own Node.js, at the version in macos/node-version, downloaded
-# from nodejs.org on the first build and checked against its published checksums.
+# from nodejs.org on the first build and checked against its published checksums,
+# and the newest GitHub CLI, for a Mac without one, checked against its release's
+# checksums and GitHub's signature.
 #
 # Signing uses DAILY_FOCUS_SIGN_IDENTITY when set, else the first Developer ID
 # Application identity in the keychain, else the first Apple Development one, else
@@ -120,6 +122,53 @@ cp "$node_cache/$name/bin/node" "$app/Contents/Helpers/node"
 # Node's licence, and those of what it bundles, go wherever Node does.
 cp "$node_cache/$name/LICENSE" "$app/Contents/Resources/Node.js LICENSE"
 echo "bundled Node.js $node_version"
+
+# The GitHub CLI, for a Mac without one of its own: the dashboard uses this copy
+# only when there is no gh on PATH (src/install.ts), and then signs in through it
+# from the page, since nobody has it in a terminal. The newest release, looked up
+# at every build, Apple silicon only as Node is. The download is checked against
+# the checksums its release publishes, and the program against GitHub's own
+# Developer ID, whose signature it keeps: unlike Node's build, it carries nothing
+# notarisation refuses. It goes in a folder of its own, which the dashboard puts
+# on the PATH of the CLIs it runs, so that adds gh and nothing else.
+github_team=VEKTX9H2N7
+gh_tag=$(curl -fsSI https://github.com/cli/cli/releases/latest 2>/dev/null | awk 'tolower($1) == "location:" { print $2 }' | tr -d '\r' | sed 's#.*/##' || true)
+case "$gh_tag" in
+  v[0-9]*.[0-9]*.[0-9]*) ;;
+  *)
+    # Offline: the newest already downloaded, if there is one.
+    gh_tag=$(ls -d "$build"/gh-v* 2>/dev/null | sed 's#.*/gh-##' | sort -V | tail -n 1 || true)
+    [ -n "$gh_tag" ] || { echo "couldn't find the newest GitHub CLI release, and none is downloaded" >&2; exit 1; }
+    echo "couldn't ask GitHub for its newest CLI release; using $gh_tag, downloaded before" >&2
+    ;;
+esac
+gh_version=${gh_tag#v}
+gh_cache="$build/gh-$gh_tag"
+gh_name="gh_${gh_version}_macOS_arm64"
+mkdir -p "$gh_cache"
+if [ ! -s "$gh_cache/$gh_name.zip" ]; then
+  echo "downloading the GitHub CLI $gh_version"
+  curl -fsSL "https://github.com/cli/cli/releases/download/$gh_tag/gh_${gh_version}_checksums.txt" -o "$gh_cache/checksums.txt"
+  curl -fsSL "https://github.com/cli/cli/releases/download/$gh_tag/$gh_name.zip" -o "$gh_cache/$gh_name.zip"
+fi
+expected=$(awk -v file="$gh_name.zip" '$2 == file { print $1 }' "$gh_cache/checksums.txt")
+actual=$(shasum -a 256 "$gh_cache/$gh_name.zip" | awk '{ print $1 }')
+if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+  rm -f "$gh_cache/$gh_name.zip"
+  echo "$gh_name.zip doesn't match the checksum its release publishes; refusing to bundle it" >&2
+  exit 1
+fi
+rm -rf "$gh_cache/$gh_name"
+ditto -x -k "$gh_cache/$gh_name.zip" "$gh_cache"
+if ! codesign --verify --strict -R "=anchor apple generic and certificate leaf[subject.OU] = \"$github_team\"" "$gh_cache/$gh_name/bin/gh"; then
+  echo "$gh_name/bin/gh isn't signed by GitHub; refusing to bundle it" >&2
+  exit 1
+fi
+mkdir -p "$app/Contents/Helpers/GitHub CLI"
+cp "$gh_cache/$gh_name/bin/gh" "$app/Contents/Helpers/GitHub CLI/gh"
+# Its licence goes wherever it does, as Node's does.
+cp "$gh_cache/$gh_name/LICENSE" "$app/Contents/Resources/GitHub CLI LICENSE"
+echo "bundled the GitHub CLI $gh_version"
 
 dashboard="$build/Daily Focus Dashboard.bundle"
 dashboard_zip="$build/Daily-Focus-Dashboard.zip"

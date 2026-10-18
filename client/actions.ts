@@ -299,6 +299,15 @@ async function refreshBoard(): Promise<void> {
   }
 }
 
+/** Sign in to GitHub through gh, or stop waiting on it. The code arrives over the live feed. */
+async function gitHubSignIn(start: boolean): Promise<void> {
+  try {
+    adoptState(await (start ? api.postGitHubSignIn() : api.postGitHubSignInCancel()));
+  } catch (err) {
+    showToast(`Could not ${start ? 'start signing in' : 'stop signing in'}: ${(err as Error).message}`);
+  }
+}
+
 /** The same, for Jira. Three searches through a CLI, so this one really does wait. */
 async function refreshTickets(): Promise<void> {
   if (!state.value?.tickets?.enabled || state.value.tickets.fetching) return;
@@ -867,6 +876,8 @@ export const handlers: Handlers = {
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
   refreshCalendar: () => void refreshCalendar(),
+  signInToGitHub: () => void gitHubSignIn(true),
+  cancelGitHubSignIn: () => void gitHubSignIn(false),
   ask: (id, body) => void ask(id, body),
   stopAssistant: (id) => void stopAssistant(id),
   copy: (text) => void copy(text),

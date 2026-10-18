@@ -89,6 +89,10 @@ run it again with `--remove` afterwards.
 - `transitionTicket` is the dashboard's only external write. It moves one Jira ticket
   to one status after a user click. Do not add automatic transitions or other external
   writes without an explicit scope change.
+- The user's own `gh` on PATH always wins; the Mac app's copy is used only when there
+  is none (`defaultGh`), and the npm package never carries one. Signing gh in to
+  GitHub (`src/ghsignin.ts`) starts only from a click, and the user approves it on
+  GitHub; nothing signs in on its own.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
   `Host` before any route runs; keep every route behind it and every `GET` free of
   side effects, or any page open in the browser can act through the dashboard.
