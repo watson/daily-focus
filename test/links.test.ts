@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
@@ -144,4 +145,82 @@ test('linking the store makes what is missing, repoints what points elsewhere, a
     (await linkStore(config)).map(({ result }) => result),
     ['kept', 'kept', 'own'],
   );
+});
+
+/** `symlink` as Windows answers it without Developer Mode. */
+const refused = (async () => {
+  throw Object.assign(new Error('EPERM: operation not permitted, symlink'), { code: 'EPERM' });
+}) as unknown as typeof symlink;
+
+const sha256 = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
+
+test('on Windows without Developer Mode, the files are copied, recorded, and read as linked', async () => {
+  const { home, config } = await setup();
+
+  assert.deepEqual((await linkStore(config, 'win32', refused)).map(({ result }) => result), ['copied', 'copied', 'copied']);
+  assert.equal((await lstat(config.promptFile)).isSymbolicLink(), false);
+  const prompt = await readFile(config.promptSource);
+  assert.deepEqual(await readFile(config.promptFile), prompt);
+  const copies = JSON.parse(await readFile(config.copiesFile, 'utf8')) as Record<string, string>;
+  assert.deepEqual(Object.keys(copies).sort(), ['assistant.md', 'items.schema.json', 'prompt.md']);
+  assert.equal(copies['prompt.md'], sha256(prompt));
+  assert.deepEqual(await linkState(config.promptFile, config.promptSource, copies['prompt.md']), { state: 'linked' });
+  assert.equal(await storeLinkWarning(config, home), null);
+  assert.deepEqual((await readdir(config.dataDir)).filter((name) => name.endsWith('.link')), [], 'nothing staged is left behind');
+
+  assert.deepEqual((await linkStore(config, 'win32', refused)).map(({ result }) => result), ['kept', 'kept', 'kept'], 'a second start has nothing to do');
+});
+
+test("on Windows, a copy someone edited is their own, and a file that was never the dashboard's copy too", async () => {
+  const { home, config } = await setup();
+  await linkStore(config, 'win32', refused);
+  await writeFile(config.promptFile, '# my own prompt, started from the copy\n');
+  await rm(config.schemaFile);
+  await writeFile(config.schemaFile, '{}\n');
+  const copies = JSON.parse(await readFile(config.copiesFile, 'utf8')) as Record<string, string>;
+  delete copies['items.schema.json'];
+  await writeFile(config.copiesFile, JSON.stringify(copies));
+
+  assert.deepEqual(await linkState(config.promptFile, config.promptSource, copies['prompt.md']), { state: 'own' });
+  assert.equal(await storeLinkWarning(config, home), null);
+  assert.deepEqual((await linkStore(config, 'win32', refused)).map(({ result }) => result), ['own', 'own', 'kept']);
+  assert.equal(await readFile(config.promptFile, 'utf8'), '# my own prompt, started from the copy\n');
+});
+
+test("on Windows, another version's copy is warned about, then refreshed at the next start", async () => {
+  const { home, config } = await setup();
+  await writeFile(config.promptFile, 'an older prompt\n');
+  await writeFile(config.copiesFile, JSON.stringify({ 'prompt.md': sha256('an older prompt\n') }));
+
+  assert.match(
+    (await storeLinkWarning(config, home)) ?? '',
+    /^`prompt\.md` in the store is a copy of another version's, so the morning agent follows that, not this one's\. /,
+  );
+  const [prompt] = await linkStore(config, 'win32', refused);
+  assert.equal(prompt!.result, 'copied');
+  assert.deepEqual(await readFile(config.promptFile), await readFile(config.promptSource));
+  assert.equal(await storeLinkWarning(config, home), null);
+});
+
+test('on Windows with Developer Mode, a link replaces a copy once the file changes', async () => {
+  const { home, config } = await setup();
+  const old = await otherCheckout(home);
+  const older = { ...config, promptSource: old.prompt };
+  assert.equal((await linkStore(older, 'win32', refused))[0]!.result, 'copied');
+
+  // This checkout's prompt differs from the copy, and links can be made now.
+  const [prompt] = await linkStore(config, 'win32');
+  assert.equal(prompt!.result, 'linked');
+  assert.equal(await readlink(config.promptFile), config.promptSource);
+  const copies = JSON.parse(await readFile(config.copiesFile, 'utf8')) as Record<string, string>;
+  assert.equal(copies['prompt.md'], undefined, 'no longer a copy');
+});
+
+test("anywhere but Windows a link that can't be made fails, and nothing is copied", async () => {
+  const { config } = await setup();
+  const outcomes = await linkStore(config, 'darwin', refused);
+  assert.deepEqual(outcomes.map(({ result }) => result), ['failed', 'failed', 'failed']);
+  assert.match(outcomes[0]!.detail ?? '', /EPERM/);
+  await assert.rejects(lstat(config.promptFile), /ENOENT/);
+  await assert.rejects(lstat(config.copiesFile), /ENOENT/, 'and copies.json is never written');
 });

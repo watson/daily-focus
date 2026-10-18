@@ -63,6 +63,7 @@ export const STORE_ENTRIES: readonly string[] = [
   'assistant.jsonl',
   'assistant.md',
   'calendar.json',
+  'copies.json',
   'focus.md',
   'items.json',
   'items.schema.json',
