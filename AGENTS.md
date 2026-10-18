@@ -98,6 +98,14 @@ run it again with `--remove` afterwards.
   licence file fails the build; anything else, like the fonts, is listed there by
   hand. The Mac app adds Node's and gh's (`macos/build.sh`), and its own binaries
   may link only macOS's libraries.
+- Daily Focus is MIT licensed, and nothing it ships may change that. Never add
+  code, a package or an asset under a copyleft licence, which would require the
+  work that includes it to be released under its terms: the GPL family (GPL, LGPL,
+  AGPL), SSPL, EUPL, OSL or CC-BY-SA. Weak copyleft (MPL, EPL, CDDL) needs the
+  maintainer's explicit go-ahead first. Both builds refuse them. The one exception
+  is an MPL-2.0 library inside gh, GitHub's own program shipped unchanged. Node's
+  licence quotes the GPL only for ICU build scripts under Autoconf's exception,
+  which aren't in the binary.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
   `Host` before any route runs; keep every route behind it and every `GET` free of
   side effects, or any page open in the browser can act through the dashboard.

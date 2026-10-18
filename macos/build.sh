@@ -222,6 +222,17 @@ if ! GH_CONFIG_DIR="$gh_cache/config" GH_PAGER=cat GH_NO_UPDATE_NOTIFIER=1 NO_CO
   exit 1
 fi
 rm -f "$build/gh-licenses.log"
+# None of gh's dependencies may be copyleft (AGENTS.md), save the MPL's, whose
+# reach ends at its own files, inside a program GitHub built and we don't change.
+# One line per dependency, "name (version) - licence - link"; none read means the
+# list has changed shape, which must not pass for a clean one.
+gh_listed=$(grep -cE '^[^ ]+ \([^)]*\) - [^ ]+ - ' "$gh_cache/licenses.txt" || true)
+gh_copyleft=$(awk -F' - ' '/^[^ ]+ \([^)]*\) - [^ ]+ - / && $2 ~ /^(A|L)?GPL|^SSPL|^EUPL|^OSL|^CC-BY-SA|^EPL|^CDDL/ { print "  " $1 " - " $2 }' "$gh_cache/licenses.txt")
+if [ "$gh_listed" -eq 0 ] || [ -n "$gh_copyleft" ]; then
+  [ "$gh_listed" -eq 0 ] && echo "couldn't read the licences the GitHub CLI $gh_version lists; check \`gh licenses\` by hand" >&2
+  [ -n "$gh_copyleft" ] && printf 'the GitHub CLI %s depends on copyleft code, which Daily Focus can'"'"'t ship under MIT:\n%s\n' "$gh_version" "$gh_copyleft" >&2
+  exit 1
+fi
 printf '\n\n' >> "$acknowledgements"
 cat "$gh_cache/licenses.txt" >> "$acknowledgements"
 if [ -n "$server" ]; then

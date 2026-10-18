@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { bundledPackageDirs, licensesText, packageCredit } from '../scripts/licenses.ts';
+import { bundledPackageDirs, copyleft, licensesText, packageCredit } from '../scripts/licenses.ts';
 
 const dirs: string[] = [];
 
@@ -52,4 +52,19 @@ test('each package is credited with its own licence file, and one without stops 
   await mkdir(bare);
   await writeFile(join(bare, 'package.json'), JSON.stringify({ name: 'bare-lib', version: '0.1.0' }));
   await assert.rejects(packageCredit(bare), /bare-lib has no licence file/);
+});
+
+test('a copyleft licence is refused, unless another one on offer can be taken instead', async () => {
+  for (const licence of ['GPL-3.0-only', 'GPL-2.0-or-later', 'LGPL-2.1', 'AGPL-3.0', 'SSPL-1.0', 'EUPL-1.2', 'MPL-2.0', '(MIT AND GPL-3.0)']) {
+    assert.equal(copyleft(licence), true, licence);
+  }
+  for (const licence of ['MIT', 'ISC', 'BSD-3-Clause', 'Apache-2.0', '0BSD', 'Unlicense', '(MIT OR GPL-3.0)', 'GPL-2.0 OR Apache-2.0']) {
+    assert.equal(copyleft(licence), false, licence);
+  }
+
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-licenses-'));
+  dirs.push(dir);
+  await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'viral-lib', version: '2.0.0', license: 'GPL-3.0-or-later' }));
+  await writeFile(join(dir, 'LICENSE'), 'GNU GENERAL PUBLIC LICENSE\n');
+  await assert.rejects(packageCredit(dir), /viral-lib is under GPL-3.0-or-later, a copyleft licence/);
 });

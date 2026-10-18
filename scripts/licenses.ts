@@ -6,8 +6,10 @@
  * not from a list kept by hand: every file it read from `node_modules` belongs
  * to a package whose licence is due, so a dependency added later is credited
  * without anyone remembering to. A package with no licence file stops the build
- * rather than shipping uncredited. The fonts are the one thing the package
- * carries from elsewhere, and are named here.
+ * rather than shipping uncredited, and so does one under a copyleft licence,
+ * which would ask for the dashboard to be released under its terms instead of
+ * MIT (`copyleft`). The fonts are the one thing the package carries from
+ * elsewhere, and are named here.
  *
  * The Mac app shows this file in its Acknowledgements window, with Node's and
  * the GitHub CLI's (`macos/build.sh`).
@@ -22,6 +24,22 @@ import type { Metafile } from 'esbuild';
 const ASSETS: readonly { name: string; url: string; licence: string; file: string }[] = [
   { name: 'IBM Plex', url: 'https://github.com/IBM/plex', licence: 'OFL-1.1', file: 'public/fonts/OFL.txt' },
 ];
+
+/**
+ * Licences, by SPDX identifier, that reach past their own code into the work
+ * that includes them: the GPL family, and its kin. Weak copyleft (MPL, EPL,
+ * CDDL) is here too, for bundled code: each one needs a decision, not a build.
+ */
+const COPYLEFT = /^(A|L)?GPL|^SSPL|^EUPL|^OSL|^CC-BY-SA|^MPL|^EPL|^CDDL/i;
+
+/**
+ * Whether an SPDX expression holds the package to a copyleft licence: every
+ * alternative it offers is one, so `MIT OR GPL-3.0` can still be taken as MIT.
+ */
+export function copyleft(licence: string): boolean {
+  const alternatives = licence.replace(/[()]/g, ' ').split(/\s+OR\s+/i).map((each) => each.trim()).filter(Boolean);
+  return alternatives.length > 0 && alternatives.every((each) => each.split(/\s+AND\s+/i).some((part) => COPYLEFT.test(part.trim())));
+}
 
 export interface Credit {
   name: string;
@@ -58,6 +76,9 @@ export async function packageCredit(dir: string): Promise<Credit> {
     homepage?: string;
     repository?: string | { url?: string };
   };
+  if (manifest.license && copyleft(manifest.license)) {
+    throw new Error(`${manifest.name} is under ${manifest.license}, a copyleft licence Daily Focus can't ship under MIT; see AGENTS.md`);
+  }
   const file = (await readdir(dir)).find((entry) => /^(licen[cs]e|copying)(\.(md|txt))?$/i.test(entry));
   if (!file) throw new Error(`${manifest.name} has no licence file in ${dir}; credit it by hand before shipping it`);
   const repository = typeof manifest.repository === 'string' ? manifest.repository : manifest.repository?.url;
