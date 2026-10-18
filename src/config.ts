@@ -274,8 +274,8 @@ export interface Config {
   /** The schema in this repo that `schemaFile` links to. */
   schemaSource: string;
   /**
-   * The copies the dashboard made in place of those links, by hash, on Windows
-   * without Developer Mode, which can't make a link. See `links.ts`.
+   * The copies the dashboard makes in place of those links on Windows, by hash.
+   * See `links.ts`.
    */
   copiesFile: string;
   /** Dated snapshots of past briefs, written by the server. */

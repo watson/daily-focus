@@ -17,10 +17,12 @@
  * A real file where a link should be is someone's own prompt, put there on purpose,
  * and everything here leaves it alone.
  *
- * Windows makes a link only with Developer Mode on or for an elevated process, so
- * there the file is copied instead, and the copy's hash recorded in `copies.json`.
- * A file with the recorded hash is the dashboard's copy, refreshed at every start
- * as a link is repointed; one without it is someone's own, edited copies included.
+ * On Windows the files are copied instead, and each copy's hash recorded in
+ * `copies.json`. Windows makes a link only in Developer Mode or for an elevated
+ * process, and even then Claude Code there won't read through one that leads out
+ * of its working directory. A file with the recorded hash is the dashboard's copy,
+ * refreshed at every start as a link is repointed; one without it is someone's
+ * own, edited copies included.
  */
 
 import { createHash } from 'node:crypto';
@@ -207,10 +209,10 @@ function message(error: unknown): string {
 }
 
 /**
- * Point `target` in the store at `source` in this checkout. A link pointing
- * anywhere else is repointed, since a stale link is a stale prompt, and so is the
- * dashboard's own copy of an older file; any other real file is left strictly
- * alone. `copies` is what `copies.json` holds, updated here.
+ * Point `target` in the store at `source` in this checkout, or on Windows copy it
+ * there. A link pointing anywhere else is repointed, since a stale link is a stale
+ * prompt, and so is the dashboard's own copy of an older file; any other real file
+ * is left strictly alone. `copies` is what `copies.json` holds, updated here.
  */
 async function linkOne(
   name: string,
@@ -228,7 +230,7 @@ async function linkOne(
       if ((await hashOf(source)) === copies[name]) return { name, result: 'kept', detail: null };
     } else {
       before = resolve(dirname(target), await readlink(target));
-      if (before === source) {
+      if (before === source && platform !== 'win32') {
         delete copies[name];
         return { name, result: 'kept', detail: null };
       }
@@ -236,21 +238,21 @@ async function linkOne(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return { name, result: 'failed', detail: message(error) };
   }
-  // The new link is made beside the old one and renamed over it, so the agent
-  // never finds no link at all, and a link that can't be made leaves the old one.
+  // The new link or copy is made beside the old one and renamed over it, so the
+  // agent never finds none at all, and one that can't be made leaves the old one.
   const staged = `${target}.${process.pid}.link`;
-  try {
-    await unlink(staged).catch(() => {});
-    await symlinkFn(source, staged);
-    await rename(staged, target);
-    delete copies[name];
-    return { name, result: 'linked', detail: before };
-  } catch (error) {
-    await unlink(staged).catch(() => {});
-    const code = (error as NodeJS.ErrnoException).code;
-    if (platform !== 'win32' || (code !== 'EPERM' && code !== 'EACCES')) return { name, result: 'failed', detail: message(error) };
+  await unlink(staged).catch(() => {});
+  if (platform !== 'win32') {
+    try {
+      await symlinkFn(source, staged);
+      await rename(staged, target);
+      delete copies[name];
+      return { name, result: 'linked', detail: before };
+    } catch (error) {
+      await unlink(staged).catch(() => {});
+      return { name, result: 'failed', detail: message(error) };
+    }
   }
-  // Windows without Developer Mode: a copy, staged and renamed into place the same way.
   try {
     await copyFile(source, staged);
     copies[name] = await hashOf(staged);
