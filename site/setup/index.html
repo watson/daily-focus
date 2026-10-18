@@ -201,6 +201,10 @@ npm uninstall -g daily-focus</code><button class="button button--primary" type="
           <dd>The setup screen says what’s wrong with each and the command that fixes it, such as <code>claude auth login</code> or <code>codex login</code>. If it’s installed somewhere unusual, give setup its path.</dd>
         </div>
         <div>
+          <dt>PowerShell says running scripts is disabled</dt>
+          <dd>On Windows, PowerShell won’t run npm’s scripts until you allow it. Type <code>npx.cmd daily-focus</code> instead, or use Command Prompt.</dd>
+        </div>
+        <div>
           <dt>Daily Focus is gone after a restart</dt>
           <dd>It was probably started in a terminal and ended with it. Use the menu bar app or <a href="#running">the background service</a> to keep it running.</dd>
         </div>
