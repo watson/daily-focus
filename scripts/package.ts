@@ -14,16 +14,19 @@
  * `../schema` and `../public` either way.
  */
 
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { build } from 'esbuild';
+
+import { bundleOptions } from './bundle.ts';
+import { licensesText, packageCredits } from './licenses.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const outdir = resolve(root, 'dist');
 
 await rm(outdir, { recursive: true, force: true });
-await build({
+const server = await build({
   entryPoints: { cli: resolve(root, 'src/cli.ts') },
   outdir,
   bundle: true,
@@ -35,6 +38,13 @@ await build({
   // The server has no runtime dependencies; the page's are in its own bundle.
   packages: 'bundle',
   legalComments: 'none',
+  metafile: true,
   logLevel: 'warning',
 });
+
+// What the page's bundle reads, asked again of esbuild without writing it: the
+// build that writes it has run already, and its account is what is wanted here.
+const client = await build({ ...bundleOptions, write: false, metafile: true, logLevel: 'warning' });
+// The licences of every npm package either bundle read, and of the fonts. See `licenses.ts`.
+await writeFile(resolve(outdir, 'third-party-licenses.txt'), licensesText(await packageCredits([server.metafile, client.metafile], root)));
 console.log(`built ${outdir}`);

@@ -469,6 +469,13 @@ func runSelfTest() -> Bool {
     equal((try? String(contentsOf: logged, encoding: .utf8)) ?? "", "[Work] one\n[Work] two\nthree\n", "whole lines, labelled while there are two")
     try? FileManager.default.removeItem(at: logged)
 
+    // The build writes them; a built app without them would show an empty window.
+    if Bundle.main.bundleURL.pathExtension == "app" {
+        let acknowledged = acknowledgementsText() ?? ""
+        check(acknowledged.contains("Node.js") && acknowledged.contains("GitHub CLI") && acknowledged.contains("third-party"),
+              "the acknowledgements carry Node.js, the GitHub CLI and its dependencies")
+    }
+
     print(failures == 0 ? "self-test passed: \(checks) checks" : "self-test failed: \(failures) of \(checks) checks")
     return failures == 0
 }

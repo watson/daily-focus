@@ -93,6 +93,11 @@ run it again with `--remove` afterwards.
   is none (`defaultGh`), and the npm package never carries one. Signing gh in to
   GitHub (`src/ghsignin.ts`) starts only from a click, and the user approves it on
   GitHub; nothing signs in on its own.
+- Everything shipped that others wrote is credited in the acknowledgements. npm
+  packages are found from the bundles (`scripts/licenses.ts`), and one without a
+  licence file fails the build; anything else, like the fonts, is listed there by
+  hand. The Mac app adds Node's and gh's (`macos/build.sh`), and its own binaries
+  may link only macOS's libraries.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
   `Host` before any route runs; keep every route behind it and every `GET` free of
   side effects, or any page open in the browser can act through the dashboard.

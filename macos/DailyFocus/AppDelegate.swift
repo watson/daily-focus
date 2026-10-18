@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let dashboardsMenu = NSMenu()
     private let logItem = NSMenuItem(title: "Show Log", action: nil, keyEquivalent: "")
     private let aboutItem = NSMenuItem(title: "About Daily Focus", action: nil, keyEquivalent: "")
+    private let acknowledgementsItem = NSMenuItem(title: "Acknowledgements", action: nil, keyEquivalent: "")
+    private let acknowledgements = AcknowledgementsWindow()
     private let quitItem = NSMenuItem(title: "Quit Daily Focus", action: nil, keyEquivalent: "q")
     private let updateItem = NSMenuItem()
     private let downloadItem = NSMenuItem()
@@ -204,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             (loginItem, #selector(toggleOpenAtLogin)),
             (logItem, #selector(showLog)),
             (aboutItem, #selector(showAbout)),
+            (acknowledgementsItem, #selector(showAcknowledgements)),
             (quitItem, #selector(quit)),
         ] {
             menuItem.target = self
@@ -277,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             for each in watched { dashboardsMenu.addItem(each.removeItem) }
             items += [nodeItem, loginItem, updatesItem, dashboardsItem, logItem]
         }
-        for item in items + [NSMenuItem.separator(), aboutItem, quitItem] { menu.addItem(item) }
+        for item in items + [NSMenuItem.separator(), aboutItem, acknowledgementsItem, quitItem] { menu.addItem(item) }
     }
 
     /// Which releases to offer, and whether they go in on their own. The versions are
@@ -630,6 +633,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         comeForward()
         // CFBundleVersion is the version again, which the panel would add in brackets.
         NSApp.orderFrontStandardAboutPanel(options: [.version: "", .credits: aboutCredits()])
+    }
+
+    /// The licences of what the app carries, in a window of its own.
+    @objc private func showAcknowledgements() {
+        comeForward()
+        acknowledgements.show()
     }
 
     private func aboutCredits() -> NSAttributedString {

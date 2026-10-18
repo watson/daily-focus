@@ -119,8 +119,6 @@ if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
 fi
 tar -xzf "$node_cache/$name.tar.gz" -C "$node_cache" "$name/bin/node" "$name/LICENSE"
 cp "$node_cache/$name/bin/node" "$app/Contents/Helpers/node"
-# Node's licence, and those of what it bundles, go wherever Node does.
-cp "$node_cache/$name/LICENSE" "$app/Contents/Resources/Node.js LICENSE"
 echo "bundled Node.js $node_version"
 
 # The GitHub CLI, for a Mac without one of its own: the dashboard uses this copy
@@ -166,8 +164,6 @@ if ! codesign --verify --strict -R "=anchor apple generic and certificate leaf[s
 fi
 mkdir -p "$app/Contents/Helpers/GitHub CLI"
 cp "$gh_cache/$gh_name/bin/gh" "$app/Contents/Helpers/GitHub CLI/gh"
-# Its licence goes wherever it does, as Node's does.
-cp "$gh_cache/$gh_name/LICENSE" "$app/Contents/Resources/GitHub CLI LICENSE"
 echo "bundled the GitHub CLI $gh_version"
 
 dashboard="$build/Daily Focus Dashboard.bundle"
@@ -190,6 +186,50 @@ if [ -n "$server" ]; then
 else
   echo "no --server: the app runs whatever DAILY_FOCUS_APP_SERVER_ENTRY names"
 fi
+
+# The licences of what the app carries that others wrote, in one file, which the
+# app shows in a window of its own (Acknowledgements in its menu). Node's covers
+# what Node bundles. gh's release has only its own; those of its dependencies are
+# built into the program, and `gh licenses` prints them, so the build asks it, and
+# stops if it can't: a newer gh that has moved them must not ship without them.
+# The dashboard's are the package's own file, which lists every npm package its
+# bundles read (scripts/licenses.ts). The app and the calendar helper are this
+# repository's alone: they link nothing but macOS's own libraries, which the
+# check below holds them to, Node with them, so nothing else needs crediting.
+for binary in "$app/Contents/MacOS/Daily Focus" "$app/Contents/Helpers/Daily Focus Calendar.app/Contents/MacOS/dfcal" "$app/Contents/Helpers/node"; do
+  # A library's line starts with a tab; the others name the file, once per architecture.
+  foreign=$(otool -L "$binary" | awk '/^\t/ && $1 !~ /^\/(System\/Library|usr\/lib)\// { print $1 }')
+  if [ -n "$foreign" ]; then
+    echo "$binary links $foreign, which isn't part of macOS; credit it in the acknowledgements, then allow it here" >&2
+    exit 1
+  fi
+done
+acknowledgements="$app/Contents/Resources/Acknowledgements.txt"
+credit() {
+  printf '\n\n%s\n%s\n%s\n\n' "$1" "$(printf '%s' "$1" | sed 's/./=/g')" "$2" >> "$acknowledgements"
+  cat "$3" >> "$acknowledgements"
+}
+printf '%s\n\n%s\n' "Acknowledgements" \
+  "Daily Focus is MIT licensed. It carries software that others wrote, under the licences that follow." > "$acknowledgements"
+credit "Node.js $node_version" "https://nodejs.org" "$node_cache/$name/LICENSE"
+credit "GitHub CLI $gh_version" "https://cli.github.com" "$gh_cache/$gh_name/LICENSE"
+mkdir -p "$gh_cache/config"
+if ! GH_CONFIG_DIR="$gh_cache/config" GH_PAGER=cat GH_NO_UPDATE_NOTIFIER=1 NO_COLOR=1 \
+  "$gh_cache/$gh_name/bin/gh" licenses > "$gh_cache/licenses.txt" 2>"$build/gh-licenses.log" \
+  || ! grep -q "third-party" "$gh_cache/licenses.txt"; then
+  cat "$build/gh-licenses.log" >&2
+  echo "the GitHub CLI $gh_version didn't list its dependencies' licences with \`gh licenses\`; refusing to ship it without them" >&2
+  exit 1
+fi
+rm -f "$build/gh-licenses.log"
+printf '\n\n' >> "$acknowledgements"
+cat "$gh_cache/licenses.txt" >> "$acknowledgements"
+if [ -n "$server" ]; then
+  [ -s "$server/dist/third-party-licenses.txt" ] || { echo "$server has no dist/third-party-licenses.txt; build it with scripts/package.ts" >&2; exit 1; }
+  printf '\n\n' >> "$acknowledgements"
+  cat "$server/dist/third-party-licenses.txt" >> "$acknowledgements"
+fi
+echo "wrote the acknowledgements"
 
 # The identity. Matched by hash, since a renewed certificate leaves two with one name.
 identity=${DAILY_FOCUS_SIGN_IDENTITY:-}
