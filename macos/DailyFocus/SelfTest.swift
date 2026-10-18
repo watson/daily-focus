@@ -356,7 +356,7 @@ func runSelfTest() -> Bool {
     equal(which(installed), "new", "and leaves what was there")
 
     // What the package says, as npm serves it.
-    let served = #"{"name":"daily-focus","version":"0.3.0","engines":{"node":">=22.18"},"daily-focus":{"appInterface":1,"appSource":"aaa"},"dist":{}}"#
+    let served = #"{"name":"daily-focus","version":"0.3.0","engines":{"node":">=22.18"},"daily-focus":{"appInterface":\#(appInterface),"appSource":"aaa"},"dist":{}}"#
     equal(try? JSONDecoder().decode(Manifest.self, from: Data(served.utf8)), current, "manifest decodes")
     equal(try? JSONDecoder().decode(Manifest.self, from: Data(#"{"version":"0.1.0"}"#.utf8)), Manifest(version: "0.1.0"),
           "a manifest from before the app's fields")

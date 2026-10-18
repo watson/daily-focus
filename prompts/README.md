@@ -17,20 +17,22 @@ instructions ahead of the row and the request on the first turn of a session. Th
 quick actions the panel offers are sentences in `src/assistant.ts`, not in the
 prompt, so what the button sends is what the panel shows was sent.
 
-`DAILY_FOCUS_PROFILE` decides which one the dashboard links into a store. Each
-profile is its own instance, with its own store, server and agent, so a store only
-ever holds one. They are two complete files rather than a shared base with two
+The store's profile decides which one the dashboard links into it. Each profile
+is its own instance, with its own store, server and agent, so a store only ever
+holds one: `~/.daily-focus/work/` or `~/.daily-focus/personal/`, a folder per
+profile in the data folder (see `src/stores.ts`). They are two complete files rather than a shared base with two
 overlays, because the agent must be able to follow its prompt from a single read.
 A rule both agents need goes into both.
 
 ## The agent's world is the store, not this repo
 
-The briefing agent reads and writes one directory — `~/.daily-focus/` — and nothing
-else. The dashboard symlinks this prompt into it as `prompt.md` each time it starts,
-alongside `items.schema.json`, so a run only ever names a path inside the store:
+The briefing agent reads and writes one directory — the store, which it is started
+in — and nothing else. The dashboard symlinks this prompt into it as `prompt.md`
+each time it starts, alongside `items.schema.json`, so a run only ever names a path
+inside the store:
 
 ```
-~/.daily-focus/
+~/.daily-focus/work/
   prompt.md           → prompts/morning-brief-work.md   (symlink, made by the dashboard at start)
   items.schema.json   → schema/items.schema.json   (symlink, made by the dashboard at start)
   focus.md            you write it, on the setup screen, in the dashboard or by hand
@@ -104,8 +106,8 @@ works inside the store. Coding agents can read the implementation and tests, so
 | `morning-brief-*.md` | **Authoritative for the agent.** What to gather, how to judge it, and every rule the agent must apply. Imperative, addressed to the agent, read verbatim every morning. |
 | [`../AGENTS.md`](../AGENTS.md) | Coding guardrails for privacy, data ownership, and behavior to preserve. Never read by the morning agent. |
 | [`../schema/items.schema.json`](../schema/items.schema.json) | **Authoritative for the payload.** Field names, types and enums. `test/docs-contract.test.ts` checks that the prompt documents these fields. |
-| `~/.daily-focus/focus.md` | The standing objective. Not in this repo — it's personal state, and its lower half is deliberately never rendered. |
-| `~/.daily-focus/sources.md` | Which calendars, account and recurring documents are yours. Not in this repo, for the same reason: it's the half of the brief that names real things. |
+| `focus.md` in the store | The standing objective. Not in this repo — it's personal state, and its lower half is deliberately never rendered. |
+| `sources.md` in the store | Which calendars, account and recurring documents are yours. Not in this repo, for the same reason: it's the half of the brief that names real things. |
 
 When code changes what the briefing agent must produce or understand, update the
 prompt too. The tests check field names, required fields and enum values. Review
@@ -114,7 +116,7 @@ changes to judgement rules directly.
 ## Why the personal specifics live outside the repo
 
 The prompts are generic on purpose. Every real calendar name, account and
-document id lives in `~/.daily-focus/sources.md`, which the prompt reads before it
+document id lives in the store's `sources.md`, which the prompt reads before it
 gathers anything.
 
 The tempting alternative — a tracked sample prompt plus a private copy with the real

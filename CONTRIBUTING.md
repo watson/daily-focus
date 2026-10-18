@@ -20,10 +20,14 @@ store so your changes don't affect a real brief:
 ```sh
 npm install
 export DAILY_FOCUS_DATA=$(mktemp -d)
-echo '{"DAILY_FOCUS_GITHUB":"off","DAILY_FOCUS_JIRA":"off","DAILY_FOCUS_CALENDAR":"off"}' > "$DAILY_FOCUS_DATA/settings.json"
+mkdir "$DAILY_FOCUS_DATA/work"
+echo '{"DAILY_FOCUS_GITHUB":"off","DAILY_FOCUS_JIRA":"off","DAILY_FOCUS_CALENDAR":"off"}' > "$DAILY_FOCUS_DATA/work/settings.json"
 npm run seed
 npm run dev
 ```
+
+`DAILY_FOCUS_DATA` names the data folder, which holds a store per profile; `work/`
+is the one a dashboard opens when it isn't given `DAILY_FOCUS_PROFILE=personal`.
 
 A new store has the agent and the assistant off, and the settings file turns off
 the boards and the live agenda, so nothing reaches your accounts. Turn anything on
@@ -66,7 +70,7 @@ that render the client do so into a happy-dom document through `test/dom.ts`, so
 rendered row can be asked the same questions a browser would answer.
 
 To check a generated brief, run `npm run audit` with `DAILY_FOCUS_DATA` pointing to
-its store. The audit checks content and history; it doesn't replace the test suite.
+its data folder, and `-- --profile personal` for a personal store. The audit checks content and history; it doesn't replace the test suite.
 
 A pull request's title must be a [Conventional Commit](https://www.conventionalcommits.org/),
 such as `feat(board): show draft pull requests` or `fix!: read settings from the
@@ -79,7 +83,8 @@ versions and release notes come from, so CI checks it.
 |---|---|
 | `src/server.ts` | HTTP endpoints and live state updates over SSE |
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
-| `src/config.ts`, `src/env.ts` | Settings: the store's `settings.json`, and where the store is and how the server listens from the environment |
+| `src/config.ts`, `src/env.ts` | Settings: the store's `settings.json`, and where the data folder is, which profile, and how the server listens from the environment |
+| `src/stores.ts` | Which store in the data folder a dashboard opens, and moving a store from before the profile folders into its folder |
 | `src/settings.ts` | The settings page: every setting's label, help and field, and checking a change before it is saved |
 | `src/setup.ts` | What a new store still needs: the CLIs installed, the calendar helper, whether a brief has ever existed |
 | `src/clis.ts` | Finding Codex and Claude Code: installed, new enough and logged in, and which setup uses without asking |
@@ -135,7 +140,8 @@ When changing a contract, update the documents that describe it:
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
   symlink makes changes live on the next run.
 - Settings belong in `src/config.ts` and `src/settings.ts`. The three launch settings,
-  which can't be on the settings page, are documented on the setup page instead.
+  which can't be on the settings page, are documented on the setup page instead,
+  with the profile, which can be given at launch too.
 - Board buckets belong in server types, the client renderer, and the README.
 
 `test/docs-contract.test.ts` checks these lists for drift. Keep private focus text

@@ -37,6 +37,11 @@ export interface QuestionContext {
   machine: string;
   /** The profile answered, or the one in effect when it hasn't been. */
   profile: Profile;
+  /**
+   * Whether the profile is settled, so setup doesn't ask: given when the
+   * dashboard started, or the other profile's store is already beside this one.
+   */
+  profileSet: boolean;
   /** The CLI answered, set, or found ready; null when there is none to run. */
   cli: CliName | null;
   /** What looking for the CLIs found, with a path the user gave folded in; null until it has looked. */
@@ -246,6 +251,7 @@ const profile: Question = {
   topic: 'what it covers',
   title: () => 'What should your brief cover?',
   later: null,
+  applies: (ctx) => !ctx.profileSet,
   card: (ctx) =>
     card({
       choices: [
@@ -258,7 +264,7 @@ const profile: Question = {
           [ctx.current.DAILY_FOCUS_PROFILE === 'personal' ? 'personal' : 'work'],
         ),
       ],
-      why: 'One dashboard briefs one of them. For both, run a second dashboard with its own store.',
+      why: 'One dashboard briefs one of them. For both, run a second dashboard beside this one.',
     }),
   summary: (answer) => (one(answer, 'profile') === 'personal' ? 'It briefs your personal life.' : 'It briefs your work.'),
   settings: (answer) => ({ DAILY_FOCUS_PROFILE: one(answer, 'profile') }),

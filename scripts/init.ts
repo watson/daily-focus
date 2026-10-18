@@ -15,10 +15,11 @@
  * this repo, which it points at this checkout. That makes it safe to run when you
  * can't remember whether you have.
  *
- * `--profile` is for a new store: it saves the profile in the store's settings,
- * as the setup screen would, so the templates, the prompt it links and the
- * dashboard all follow the same one. A store already saved as the other
- * profile is refused rather than switched; that is the settings page's job.
+ * `--profile` picks which store in the data folder to set up, `work/` unless it
+ * says `personal`, as the dashboard picks it (`src/stores.ts`): the templates,
+ * the prompt it links and the dashboard all follow the folder. A store from
+ * before the folders is set up where it lies, and the dashboard moves it into
+ * its folder when it next starts.
  *
  * The two files this deliberately does *not* create are `items.json` and
  * `actions.jsonl`. Each has exactly one writer — the agent for the first, the
@@ -28,40 +29,21 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { dirname, relative } from 'node:path';
-import { parseArgs } from 'node:util';
+import { relative } from 'node:path';
 
-import { loadConfig, PROFILES } from '../src/config.ts';
-import { layerSettings, settingSources } from '../src/env.ts';
+import { loadConfig } from '../src/config.ts';
+import { layerSettings, settingSources, takeProfileFlag, type SettingSources } from '../src/env.ts';
 import { command, PACKAGED } from '../src/install.ts';
 import { describeLink, linkStore } from '../src/links.ts';
-import { applySettingsChange, saveSettings } from '../src/settings.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from '../src/templates.ts';
 
-// Not strict: `daily-focus init` hands over its whole command line, store flags included.
-const { values: flags } = parseArgs({ args: process.argv.slice(2), options: { profile: { type: 'string' } }, strict: false, allowPositionals: true });
-const asked = typeof flags.profile === 'string' ? flags.profile.trim().toLowerCase() : null;
-if (asked !== null && !(PROFILES as readonly string[]).includes(asked)) {
-  console.error(`--profile must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(flags.profile)}`);
-  process.exit(1);
-}
-
-let sources = settingSources();
-const savedProfile = sources.settings.DAILY_FOCUS_PROFILE?.trim().toLowerCase() || null;
-if (asked !== null && savedProfile !== null && savedProfile !== asked) {
-  console.error(`${sources.settingsPath} already says this store briefs the ${savedProfile} profile. Change it in the dashboard's settings.`);
-  process.exit(1);
-}
-const savesProfile = asked !== null && savedProfile === null;
-if (savesProfile) {
-  const applied = applySettingsChange(sources, { DAILY_FOCUS_PROFILE: asked });
-  if ('error' in applied) {
-    console.error(applied.error);
-    process.exit(1);
-  }
-  await mkdir(dirname(sources.settingsPath), { recursive: true });
-  await saveSettings(sources.settingsPath, applied.settings);
+takeProfileFlag();
+let sources: SettingSources;
+try {
   sources = settingSources();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
 }
 
 const config = loadConfig(layerSettings(sources));
@@ -109,7 +91,6 @@ async function writeIfAbsent(path: string, contents: string, what: string): Prom
 
 console.log(`\n\x1b[1mDaily Focus — store setup\x1b[0m`);
 console.log(`\x1b[2m${config.dataDir} (${config.profile} profile)\x1b[0m`);
-if (savesProfile) ok(`saved the ${asked} profile`, relative(config.dataDir, sources.settingsPath));
 
 section('Directories');
 try {
@@ -162,13 +143,9 @@ section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
   // A repointed link is the one change a second run usually makes, and the one worth hearing
   // about: it means the briefs before it followed another checkout's prompt.
-  const changed = [
-    savesProfile ? `Saved the ${asked} profile` : null,
-    linked > 0 ? `${savesProfile ? 'linked' : 'Linked'} ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout` : null,
-  ].filter((part) => part !== null);
   console.log(
-    changed.length > 0
-      ? `  The store was already set up. ${changed.join(' and ')}; nothing else changed.`
+    linked > 0
+      ? `  The store was already set up. Linked ${linked} ${linked === 1 ? 'file' : 'files'} to this checkout; nothing else changed.`
       : '  The store was already set up. Nothing was changed.',
   );
   console.log(`  ${start}, \`${command('audit')}\` to check the current brief.`);

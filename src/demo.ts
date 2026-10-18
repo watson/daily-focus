@@ -99,12 +99,13 @@ export function demoProfile(raw: string | undefined): Profile {
 }
 
 /**
- * The environment the demo runs in: `base`, with the store the CLI made for it,
- * and any free port unless one was asked for, so the demo never collides with a
- * dashboard already running on 4321.
+ * The environment the demo runs in: `base`, with the data folder the CLI made
+ * for it and the profile whose store it wrote there, and any free port unless
+ * one was asked for, so the demo never collides with a dashboard already
+ * running on 4321.
  */
-export function demoEnv(base: NodeJS.ProcessEnv, store: string): NodeJS.ProcessEnv {
-  return { ...base, DAILY_FOCUS_DATA: store, DAILY_FOCUS_PORT: base.DAILY_FOCUS_PORT ?? '0' };
+export function demoEnv(base: NodeJS.ProcessEnv, root: string, profile: Profile): NodeJS.ProcessEnv {
+  return { ...base, DAILY_FOCUS_DATA: root, DAILY_FOCUS_PROFILE: profile, DAILY_FOCUS_PORT: base.DAILY_FOCUS_PORT ?? '0' };
 }
 
 /**

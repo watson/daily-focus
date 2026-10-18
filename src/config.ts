@@ -3,19 +3,9 @@ import { resolve } from 'node:path';
 import { DEFAULT_DATA_DIR, expandHome, loadSettings, SETTINGS_FILE, type SettingValues } from './env.ts';
 import { defaultCalendarApp } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
+import { PROFILES, type Profile } from './stores.ts';
 
-/**
- * Which half of a life an instance briefs. Each instance has its own store, server
- * and morning agent; the profile only picks their defaults, so any setting below
- * can still override it.
- *
- * `personal` switches off the Jira board, which would otherwise poll for tickets
- * nobody on this instance has. The pull request board stays on: side projects
- * have pull requests too.
- */
-export type Profile = 'work' | 'personal';
-
-export const PROFILES: readonly Profile[] = ['work', 'personal'];
+export { PROFILES, type Profile };
 
 /**
  * How the pull request board reaches GitHub. See `board.ts` and `github.ts`.
@@ -638,10 +628,14 @@ function profileSetting(values: SettingValues): Profile {
  * Build the config. With no argument it reads the launch settings from the
  * environment and the rest from the store's settings; tests pass an explicit
  * object and touch neither.
+ *
+ * `DAILY_FOCUS_DATA` here is the store itself, which `layerSettings` puts in
+ * place of the data folder the dashboard was given. Without one, it is the
+ * profile's folder in the default data folder.
  */
 export function loadConfig(values: SettingValues = loadSettings()): Config {
-  const dataDir = expandHome(stringSetting('DAILY_FOCUS_DATA', DEFAULT_DATA_DIR, values));
   const profile = profileSetting(values);
+  const dataDir = expandHome(stringSetting('DAILY_FOCUS_DATA', `${DEFAULT_DATA_DIR}/${profile}`, values));
   return {
     profile,
     dataDir,

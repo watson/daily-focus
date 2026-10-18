@@ -4,16 +4,25 @@ import { platform } from 'node:os';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { serviceEnvironment, serviceLabel, servicePath, servicePlist } from '../scripts/service.ts';
+import { plistProfile, serviceEnvironment, serviceLabel, servicePath, servicePlist } from '../scripts/service.ts';
 
 const run = promisify(execFile);
 const home = '/Users/alice';
 
-test('the default store gets the plain label, and every other store its own', () => {
-  assert.equal(serviceLabel(`${home}/.daily-focus`, home), 'local.daily-focus');
-  assert.equal(serviceLabel(`${home}/.daily-focus-personal`, home), 'local.daily-focus.daily-focus-personal');
-  assert.equal(serviceLabel(`${home}/notes/focus store`, home), 'local.daily-focus.notes-focus-store');
-  assert.equal(serviceLabel('/private/tmp/df.x1', home), 'local.daily-focus.private-tmp-df-x1');
+test('the default data folder gets the plain label, every other its own, and a personal store its own beside it', () => {
+  assert.equal(serviceLabel(`${home}/.daily-focus`, null, home), 'local.daily-focus');
+  assert.equal(serviceLabel(`${home}/.daily-focus`, 'work', home), 'local.daily-focus', 'the name a service had before the folders');
+  assert.equal(serviceLabel(`${home}/.daily-focus`, 'personal', home), 'local.daily-focus.personal');
+  assert.equal(serviceLabel(`${home}/notes/focus store`, null, home), 'local.daily-focus.notes-focus-store');
+  assert.equal(serviceLabel(`${home}/notes/focus store`, 'personal', home), 'local.daily-focus.notes-focus-store.personal');
+  assert.equal(serviceLabel('/private/tmp/df.x1', null, home), 'local.daily-focus.private-tmp-df-x1');
+});
+
+test("an installed service's profile is read back from its property list", () => {
+  const plist = (env: Record<string, string>) =>
+    servicePlist({ label: 'local.daily-focus', node: '/bin/node', repo: '/r', packaged: true, log: '/l', env: { PATH: '/usr/bin', ...env } });
+  assert.equal(plistProfile(plist({ DAILY_FOCUS_PROFILE: 'personal' })), 'personal');
+  assert.equal(plistProfile(plist({ DAILY_FOCUS_DATA: '/d' })), null, 'given none, it opens whichever store is there');
 });
 
 test("the service's PATH drops what npm adds and keeps Node and the system on it", () => {
@@ -32,12 +41,13 @@ test("the service's PATH drops what npm adds and keeps Node and the system on it
   assert.equal(servicePath('/usr/local/bin:/usr/bin', '/usr/local/bin'), '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin');
 });
 
-test('the service keeps PATH, the store, port and host, and nothing else from the shell', () => {
+test('the service keeps PATH, the data folder, profile, port and host, and nothing else from the shell', () => {
   const env = serviceEnvironment(
     {
       PATH: '/usr/bin',
       DAILY_FOCUS_PORT: '4322',
-      DAILY_FOCUS_DATA: '~/.daily-focus-personal',
+      DAILY_FOCUS_DATA: '~/notes/daily-focus',
+      DAILY_FOCUS_PROFILE: 'personal',
       DAILY_FOCUS_HOST: ' ',
       DAILY_FOCUS_GITHUB_SCOPE: 'acme',
       npm_lifecycle_event: 'service',
@@ -47,8 +57,9 @@ test('the service keeps PATH, the store, port and host, and nothing else from th
   );
   assert.deepEqual(env, {
     PATH: '/opt/node/bin:/usr/bin:/bin:/usr/sbin:/sbin',
-    DAILY_FOCUS_DATA: '~/.daily-focus-personal',
+    DAILY_FOCUS_DATA: '~/notes/daily-focus',
     DAILY_FOCUS_PORT: '4322',
+    DAILY_FOCUS_PROFILE: 'personal',
   });
 });
 

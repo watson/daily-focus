@@ -24,8 +24,9 @@ calls them "it" rather than either word.
 - Use invented names, accounts, ticket keys, and content in tracked files, fixtures,
   screenshots, and commit messages. A real brief is private data, even as a fixture.
   Personal configuration belongs in the store's `settings.json`.
-- The default store is `~/.daily-focus`. For development, set `DAILY_FOCUS_DATA` to a
-  temporary directory or gitignored `./data`, and `DAILY_FOCUS_PORT` to a free port.
+- The default data folder is `~/.daily-focus`, with a store per profile in it:
+  `work/` and `personal/` (`src/stores.ts`). For development, set `DAILY_FOCUS_DATA`
+  to a temporary directory or gitignored `./data`, and `DAILY_FOCUS_PORT` to a free port.
   Stop that server by its PID: the real dashboard and other worktrees' servers run on
   the same machine. Do not put real briefs at the repo root.
 - `sources.md`, and the private half of `focus.md` after `<!-- agent-only -->`, reach
@@ -51,6 +52,12 @@ user's answers add up to, shown to them first, and only when there is none, and
 sets the objective they typed. Nothing else writes them on the user's behalf.
 
 Never compact or rewrite `actions.jsonl`, `assistant.jsonl` or `agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
+A store from before the profile folders lies in the data folder itself. The server
+moves it into its profile's folder as it starts (`settleStore`), by rename, and only
+a dashboard of that profile does: never over a folder that exists, never out of the
+home folder, never merged. Scripts read a store wherever it lies and never move one.
+The CLIs the dashboard runs get `DAILY_FOCUS_DATA` set to the store itself
+(`cliEnvironment`), since at launch it names the data folder.
 Integration caches use a sibling temporary file and rename; they store facts, not
 computed board classifications. The demo (`src/demo.ts`) is the one exception to
 all of this: it writes every one of those files into its own throwaway store before
@@ -131,7 +138,11 @@ run it again with `--remove` afterwards.
 
 ## Checks
 
-Run `npm run typecheck` and `npm test` for code changes. The npm package bundles
+Run `npm run typecheck` and `npm test` for code changes. `npm test` loads
+`test/sandbox.ts`, a throwaway home for the run; run one file the same way, with
+`node --test --import ./test/sandbox.ts`. A test that starts the CLI, a script or a
+server passes it a throwaway `DAILY_FOCUS_DATA`, even one that expects a refusal:
+once the refusal stops holding, it runs on the real store. The npm package bundles
 every module into the CLI's files: a module that runs when executed directly must
 check with `ranDirectly` from `src/install.ts`, never by comparing its URL with
 `process.argv[1]`. Never commit `dist/`. The menu bar app runs the package from
@@ -154,6 +165,7 @@ works out versions and release notes from those. Never set the version in
 consistency. New settings must appear in `src/config.ts` and `src/settings.ts` (the
 settings page). Only `DAILY_FOCUS_DATA`, `_PORT` and `_HOST` stay off the page, and
 the setup page (`site/setup/index.html`) documents them instead: they locate the
-store, so they can't be kept in it. They are the only
-settings read from the environment (or `--data`, `--port`, `--host`); don't read
+store, so they can't be kept in it. They and `DAILY_FOCUS_PROFILE`, which picks the
+store when given at launch and is locked on the page, are the only settings read
+from the environment (or `--data`, `--port`, `--host`, `--profile`); don't read
 another from it, or a `.env`.

@@ -41,6 +41,7 @@ import { createInterface } from 'node:readline';
 
 import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS } from './codex.ts';
 import type { AssistantAgent, Config } from './config.ts';
+import { cliEnvironment } from './env.ts';
 import type { ExecFile } from './shellpath.ts';
 import type {
   AssistantItemState,
@@ -936,7 +937,7 @@ export class Assistant {
         cwd: this.config.assistantDir,
         // Stdin closed: both CLIs wait on it otherwise, one of them for three seconds.
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: process.env,
+        env: cliEnvironment(this.config.dataDir),
       });
     } catch (err) {
       await this.finish(turn, { ok: false, error: this.spawnError(err) });

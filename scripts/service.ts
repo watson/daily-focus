@@ -2,6 +2,7 @@
  * `npm run service` — keep the dashboard running on macOS.
  *
  *   npm run service
+ *   npm run service -- --profile personal --port 4322
  *   npm run service -- --remove
  *
  * `npm start` lasts as long as its terminal, and a dashboard that is down at 07:00
@@ -14,13 +15,17 @@
  * The LaunchAgent is generated here rather than tracked, because everything in it
  * belongs to this machine: the checkout, the Node binary, and the PATH that finds
  * `gh`, `acli` and the agent's CLI. launchd hands a job almost no environment of its
- * own, so the PATH and the store, port and host are taken from the shell this runs
- * in, `--data`, `--port` and `--host` included. Every other setting is the store's,
- * read at every start.
+ * own, so the PATH and the data folder, profile, port and host are taken from the
+ * shell this runs in, `--data`, `--profile`, `--port` and `--host` included. Every
+ * other setting is the store's, read at every start.
  *
- * One service per store. The label is derived from the store's path, so a second
- * install against the same store replaces the first instead of starting a second
- * writer beside it, and a throwaway store can never displace the real service.
+ * One service per store. The label is derived from the data folder's path, and
+ * from the profile when it is `personal`, so a second install against the same
+ * store replaces the first instead of starting a second writer beside it, and a
+ * throwaway store can never displace the real service. A service without a
+ * profile opens whichever store is there (see `src/stores.ts`), so installing
+ * one also replaces the data folder's other service when that serves the same
+ * store.
  */
 
 import { execFile } from 'node:child_process';
@@ -30,21 +35,30 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { loadConfig } from '../src/config.ts';
-import { LAUNCH_SETTINGS } from '../src/env.ts';
+import { LAUNCH_SETTINGS, layerSettings, PROFILE_SETTING, settingSources, takeProfileFlag, tilde } from '../src/env.ts';
 import { command, IN_NPX_CACHE, PACKAGED, ranDirectly, ROOT } from '../src/install.ts';
+import { asProfile, findStore, settled, type Profile } from '../src/stores.ts';
 
 const run = promisify(execFile);
 
 /**
- * The launchd label for the dashboard on `dataDir`. The default store gets the
- * plain name; any other is named after its path, relative to home when it is
- * inside it, so the plist and the log say which store they belong to.
+ * The launchd label for the dashboard on the data folder `root`, for `profile`
+ * when one was given. The default folder gets the plain name; any other is
+ * named after its path, relative to home when it is inside it, so the plist and
+ * the log say which store they belong to. A work service has the name a service
+ * had before the profile folders, so installing one replaces that.
  */
-export function serviceLabel(dataDir: string, home: string = homedir()): string {
-  const fromHome = relative(home, dataDir);
-  const where = fromHome !== '' && !fromHome.startsWith('..') && !isAbsolute(fromHome) ? fromHome : dataDir;
+export function serviceLabel(root: string, profile: Profile | null, home: string = homedir()): string {
+  const fromHome = relative(home, root);
+  const where = fromHome !== '' && !fromHome.startsWith('..') && !isAbsolute(fromHome) ? fromHome : root;
   const slug = where.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return slug === 'daily-focus' ? 'local.daily-focus' : `local.daily-focus.${slug}`;
+  const base = slug === 'daily-focus' ? 'local.daily-focus' : `local.daily-focus.${slug}`;
+  return profile === 'personal' ? `${base}.personal` : base;
+}
+
+/** The profile an installed LaunchAgent was given, from its property list; null when it was given none. */
+export function plistProfile(plist: string): Profile | null {
+  return asProfile(new RegExp(`<key>${PROFILE_SETTING}</key>\\s*<string>([^<]*)</string>`).exec(plist)?.[1]);
 }
 
 /** What launchd itself would give the job, kept so a sparse shell can't lose `open`. */
@@ -63,12 +77,13 @@ export function servicePath(path: string, nodeDir: string): string {
 
 /**
  * The environment the service keeps from this shell: PATH, and the launch
- * settings, which are how a second instance on the same checkout is told apart.
- * Nothing else: the dashboard reads no other setting from its environment.
+ * settings and profile, which are how a second instance on the same checkout is
+ * told apart. Nothing else: the dashboard reads no other setting from its
+ * environment.
  */
 export function serviceEnvironment(env: NodeJS.ProcessEnv, nodeDir: string): Record<string, string> {
   const kept: Record<string, string> = { PATH: servicePath(env.PATH ?? '', nodeDir) };
-  for (const key of LAUNCH_SETTINGS) {
+  for (const key of [...LAUNCH_SETTINGS, PROFILE_SETTING]) {
     const value = env[key]?.trim();
     if (value) kept[key] = value;
   }
@@ -152,11 +167,6 @@ function bad(label: string, detail = ''): void {
   console.log(`  \x1b[31m✗\x1b[0m ${label}${detail ? ` — ${detail}` : ''}`);
 }
 
-function tilde(path: string): string {
-  const home = homedir();
-  return path === home || path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
-}
-
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 async function isLoaded(target: string): Promise<boolean> {
@@ -204,11 +214,13 @@ function reachable(host: string): string {
 
 export async function main(args: readonly string[]): Promise<number> {
   const remove = args.includes('--remove');
-  const unknown = args.filter((arg) => arg !== '--remove');
+  const at = args.indexOf('--profile');
+  const unknown = args.filter((arg, i) => arg !== '--remove' && !(at !== -1 && (i === at || i === at + 1)));
   if (unknown.length > 0) {
-    console.error(`unknown argument ${unknown[0]}. Usage: ${command('service', '[--remove]')}`);
+    console.error(`unknown argument ${unknown[0]}. Usage: ${command('service', '[--profile <name>] [--remove]')}`);
     return 1;
   }
+  takeProfileFlag(args);
   if (platform() !== 'darwin') {
     console.error(
       `${command('service')} installs a macOS LaunchAgent. Elsewhere, run ${PACKAGED ? '`daily-focus --no-open`' : '`npm start`'} under your own service manager.`,
@@ -226,15 +238,21 @@ export async function main(args: readonly string[]): Promise<number> {
     return 1;
   }
 
-  const config = loadConfig();
-  const label = serviceLabel(config.dataDir);
+  const sources = settingSources();
+  const config = loadConfig(layerSettings(sources));
+  const { store } = sources;
+  // Where the dashboard will say its store is: one from before the profile
+  // folders moves into its folder as the service starts it.
+  const expected = settled(store);
+  const label = serviceLabel(store.root, store.given ? store.profile : null);
   const domain = `gui/${process.getuid!()}`;
   const target = `${domain}/${label}`;
-  const plistPath = join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`);
+  const agents = join(homedir(), 'Library', 'LaunchAgents');
+  const plistPath = join(agents, `${label}.plist`);
   const log = join(homedir(), 'Library', 'Logs', `${label}.log`);
 
   console.log(`\n\x1b[1mDaily Focus — background service\x1b[0m`);
-  console.log(`\x1b[2m${label}, for ${tilde(config.dataDir)} (${config.profile} profile)\x1b[0m\n`);
+  console.log(`\x1b[2m${label}, for ${tilde(expected.dir)} (${expected.profile} profile)\x1b[0m\n`);
 
   if (await bootOut(target)) ok('stopped the service');
 
@@ -251,6 +269,20 @@ export async function main(args: readonly string[]): Promise<number> {
     return 0;
   }
 
+  // The data folder's other service, when it serves the same store: one without a
+  // profile opens whichever store is there, so two of them would be two writers.
+  for (const other of [serviceLabel(store.root, null), serviceLabel(store.root, 'personal')]) {
+    if (other === label) continue;
+    const otherPlist = join(agents, `${other}.plist`);
+    const text = await readFile(otherPlist, 'utf8').catch(() => null);
+    if (text === null) continue;
+    const serves = plistProfile(text) ?? settled(findStore(store.root)).profile;
+    if (serves !== expected.profile) continue;
+    await bootOut(`${domain}/${other}`);
+    await rm(otherPlist, { force: true });
+    ok(`replaced ${other}`, `it ran the same ${serves} store`);
+  }
+
   // Something else on the port would leave the service failing to listen every ten
   // seconds, and the first anyone heard of it would be a missing dashboard.
   const url = `http://${reachable(config.host)}:${config.port}`;
@@ -258,7 +290,7 @@ export async function main(args: readonly string[]): Promise<number> {
   if (found) {
     const pid = await listeningPid(config.port);
     const by = pid ? ` (process ${pid})` : '';
-    if (found.dataDir === config.dataDir) {
+    if (found.dataDir === expected.dir || found.dataDir === store.dir) {
       bad(`this dashboard is already running at ${url}${by}`, 'stop the one started by hand, then run this again');
     } else if (found.dataDir) {
       bad(`port ${config.port} is taken by the dashboard for ${tilde(found.dataDir)}${by}`, 'give one of them its own --port');
@@ -291,7 +323,7 @@ export async function main(args: readonly string[]): Promise<number> {
   }
 
   for (const deadline = Date.now() + 30_000; Date.now() < deadline; ) {
-    if ((await occupant(url))?.dataDir === config.dataDir) {
+    if ((await occupant(url))?.dataDir === expected.dir) {
       ok('running', url);
       console.log(`\n  It starts at login and again if it crashes. Logs: ${tilde(log)}`);
       console.log(

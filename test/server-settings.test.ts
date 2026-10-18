@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { lstat, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { startServer, type StartedServer } from '../src/server.ts';
+import type { Profile } from '../src/stores.ts';
 
+let root: string;
+/** The work store, which a dashboard told no profile opens in a new data folder. */
 let dataDir: string;
 let env: NodeJS.ProcessEnv;
 let server: StartedServer | null = null;
@@ -16,15 +19,16 @@ let restarts = 0;
 const FIXED = { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_CALENDAR: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_STALE_AFTER_HOURS: '30' };
 
 /** What `runServer` does, minus the process: close this one, start the next on the same environment. */
-async function start(): Promise<void> {
+async function start(profile?: Profile): Promise<void> {
   server = await startServer(env, {
     fixed: FIXED,
     onRestart: () => {
       restarts++;
       const previous = server;
       server = null;
-      void previous!.close().then(start);
+      void previous!.close().then(() => start(previous!.profile));
     },
+    profile,
   });
   url = server.url;
 }
@@ -36,9 +40,10 @@ async function restarted(count: number): Promise<void> {
 }
 
 before(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-server-settings-'));
+  root = await mkdtemp(join(tmpdir(), 'daily-focus-server-settings-'));
+  dataDir = join(root, 'work');
   env = {
-    DAILY_FOCUS_DATA: dataDir,
+    DAILY_FOCUS_DATA: root,
     DAILY_FOCUS_PORT: '0',
     DAILY_FOCUS_HOST: '127.0.0.1',
   };
@@ -47,7 +52,7 @@ before(async () => {
 
 after(async () => {
   await server?.close();
-  await rm(dataDir, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
 });
 
 const json = (res: Response): Promise<Record<string, any>> => res.json() as Promise<Record<string, any>>;
@@ -188,9 +193,10 @@ test('a page that says it is in use moves the time the menu bar app waits from',
 
 test("the morning agent's clock waits for the first brief, which comes from the setup screen", async () => {
   const store = await mkdtemp(join(tmpdir(), 'daily-focus-first-brief-'));
+  await mkdir(join(store, 'work'));
   // Due every minute of the day, so only the first-brief rule can be holding it back.
   await writeFile(
-    join(store, 'settings.json'),
+    join(store, 'work', 'settings.json'),
     JSON.stringify({
       DAILY_FOCUS_AGENT: 'codex',
       DAILY_FOCUS_AGENT_AT: '00:00',

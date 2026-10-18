@@ -3,8 +3,9 @@ attention today and write it to the Daily Focus dashboard's store. You are not
 writing prose for a human to read top-to-bottom — you are producing structured data
 that a dashboard renders. Optimise for **signal**, not coverage.
 
-Everything you need is in one directory: `~/.daily-focus/` (honour
-`$DAILY_FOCUS_DATA` if it is set). You have no reason to read anything outside it,
+Everything you need is in one directory, the one you are started in: the
+dashboard's store, `~/.daily-focus/work/` unless the user keeps it elsewhere
+(`$DAILY_FOCUS_DATA` names it too). You have no reason to read anything outside it,
 and nothing outside it is addressed to you — if you find yourself in a source
 checkout of the dashboard, the instructions there are for people changing its code,
 not for you.

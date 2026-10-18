@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,11 +8,15 @@ import { after, before, test } from 'node:test';
 import { PortInUseError, startServer, type StartedServer } from '../src/server.ts';
 
 let server: StartedServer;
+let root: string;
+/** The work store, which a dashboard told no profile opens in a new data folder. */
 let dataDir: string;
 
 before(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-server-'));
-  process.env.DAILY_FOCUS_DATA = dataDir;
+  root = await mkdtemp(join(tmpdir(), 'daily-focus-server-'));
+  dataDir = join(root, 'work');
+  await mkdir(dataDir);
+  process.env.DAILY_FOCUS_DATA = root;
   process.env.DAILY_FOCUS_PORT = '0'; // any free port
   process.env.DAILY_FOCUS_HOST = '127.0.0.1';
   await writeFile(
@@ -41,7 +45,7 @@ before(async () => {
 
 after(async () => {
   await server.close();
-  await rm(dataDir, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
 });
 
 const post = (body: unknown) =>

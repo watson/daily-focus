@@ -54,6 +54,22 @@ test('a setup warning is a warning strip, with its file names and command as cod
   assert.match(container.textContent!, /links to another checkout\. Run npm run init here/);
 });
 
+test('a store that moved into its folder says so in an info strip, not a warning', () => {
+  const state = {
+    brief: { generatedAt: '2026-09-10T06:30:00Z', ageHours: 2, refreshPending: false, stale: false },
+    schedule: { runsToday: true },
+    problem: null,
+    warnings: [],
+    setupWarnings: [],
+    setupNotices: ['Daily Focus now keeps a folder for each profile, so this store has moved to `~/.daily-focus/work`. Nothing in it changed.'],
+  } as unknown as DashboardState;
+  const container = mount(h('div', null, renderBanners(state, uiWith(), handlersWith())));
+
+  assert.equal(byClass(container, 'banner--warning').length, 0);
+  assert.equal(byClass(container, 'banner--info').length, 1);
+  assert.deepEqual(byTag(container, 'code').map((node) => node.textContent), ['~/.daily-focus/work']);
+});
+
 function renderWithRun(last: Record<string, unknown> | null, brief: Record<string, unknown> = {}, ui: Partial<UiValues> = {}) {
   const calls: string[] = [];
   const handlers = handlersWith({

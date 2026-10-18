@@ -26,13 +26,21 @@ function seed(dataDir: string, ...args: string[]) {
   });
 }
 
-test('seeds an empty store and names it', async () => {
+test("seeds an empty data folder's work store and names it", async () => {
   const dir = await tempStore();
   const { stdout } = await seed(dir);
 
-  assert.match(stdout, new RegExp(`Seeding store: ${dir}`));
-  const brief = JSON.parse(await readFile(join(dir, 'items.json'), 'utf8'));
+  assert.match(stdout, new RegExp(`Seeding store: ${join(dir, 'work')}`));
+  const brief = JSON.parse(await readFile(join(dir, 'work', 'items.json'), 'utf8'));
   assert.ok(brief.items.length > 0);
+});
+
+test('--profile picks the store, and the brief follows it', async () => {
+  const dir = await tempStore();
+  await seed(dir, '--profile', 'personal');
+
+  const brief = JSON.parse(await readFile(join(dir, 'personal', 'items.json'), 'utf8')) as { items: { source: string }[] };
+  assert.ok(brief.items.some((item) => item.source === 'eboks'), 'the personal brief');
 });
 
 test('creates a missing store directory without warning', async () => {
@@ -41,7 +49,7 @@ test('creates a missing store directory without warning', async () => {
 
   assert.equal(stderr, '');
   assert.match(stdout, /Wrote \d+ sample items/);
-  await readFile(join(dir, 'items.json'), 'utf8');
+  await readFile(join(dir, 'work', 'items.json'), 'utf8');
 });
 
 test('refuses to overwrite an existing brief and names its path', async () => {

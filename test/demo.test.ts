@@ -42,11 +42,12 @@ async function tempStore(): Promise<string> {
 
 /** The demo's dashboard, started as the CLI starts it, minus the browser. */
 async function demoServer(profile: Profile) {
-  const store = await tempStore();
+  const root = await tempStore();
+  const store = join(root, profile);
   // One clock for the store and the boards, as the CLI has it.
   const now = new Date();
   await writeDemoStore(store, profile, now);
-  const env = demoEnv({ PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' }, store);
+  const env = demoEnv({ PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' }, root, profile);
   const server = await startServer(env, { fixed: DEMO_FIXED, integrations: demoIntegrations(profile, now) });
   const fetchState = async (): Promise<DashboardState> => (await fetch(`${server.url}/api/state`)).json() as Promise<DashboardState>;
   // The boards fetch in the background once the server listens; wait for both.
@@ -70,11 +71,12 @@ test('the profile is checked before a store is made', () => {
 
 test('the demo store holds its own settings, and what would run something is fixed over them', async () => {
   for (const profile of PROFILES) {
-    const store = await tempStore();
+    const root = await tempStore();
+    const store = join(root, profile);
     await writeDemoStore(store, profile);
     // Whatever a developer has exported, only the store and the port are taken from it.
     const real = { PATH: '/usr/bin', DAILY_FOCUS_AGENT: 'codex', DAILY_FOCUS_GITHUB_SCOPE: 'realorg' };
-    const sources = settingSources(demoEnv(real, store), DEMO_FIXED);
+    const sources = settingSources(demoEnv(real, root, profile), DEMO_FIXED);
     const config = loadConfig(layerSettings(sources));
     assert.equal(config.profile, profile);
     assert.equal(config.dataDir, store);
@@ -101,7 +103,7 @@ test('the demo store holds its own settings, and what would run something is fix
       assert.ok('error' in applied, `${key} can't be switched on in the demo`);
     }
   }
-  assert.equal(demoEnv({ DAILY_FOCUS_PORT: '4322' }, '/tmp/demo-store').DAILY_FOCUS_PORT, '4322');
+  assert.equal(demoEnv({ DAILY_FOCUS_PORT: '4322' }, '/tmp/demo-store', 'work').DAILY_FOCUS_PORT, '4322');
 });
 
 test('working days back skip the weekend, so nothing in the demo is dated on a Sunday', () => {

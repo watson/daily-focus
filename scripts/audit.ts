@@ -16,6 +16,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
+import { takeProfileFlag } from '../src/env.ts';
 import { command } from '../src/install.ts';
 import { linkState } from '../src/links.ts';
 import { Store } from '../src/store.ts';
@@ -29,6 +30,7 @@ import { resolveItems } from '../src/store.ts';
 import type { Brief } from '../src/types.ts';
 import { readSystemZone, startingZone } from '../src/zone.ts';
 
+takeProfileFlag();
 const config = loadConfig();
 // The dashboard's days rather than this shell's, without writing its file.
 process.env.TZ = (await startingZone(config.timeZoneFile, await readSystemZone())).timeZone;

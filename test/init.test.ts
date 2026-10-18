@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readdir, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
@@ -9,6 +10,7 @@ import { promisify } from 'node:util';
 const run = promisify(execFile);
 const script = resolve(import.meta.dirname, '../scripts/init.ts');
 const personalPrompt = resolve(import.meta.dirname, '../prompts/morning-brief-personal.md');
+const workPrompt = resolve(import.meta.dirname, '../prompts/morning-brief-work.md');
 const dirs: string[] = [];
 
 after(async () => {
@@ -47,46 +49,46 @@ test('a second run reports that nothing changed', async () => {
 test('says so when it repoints a link at this checkout', async () => {
   const dir = await tempStore();
   await init(dir);
+  const store = join(dir, 'personal');
   // A link left pointing at another checkout, as a run from a since-abandoned worktree leaves it.
-  const elsewhere = join(dir, 'other-checkout-prompt.md');
+  const elsewhere = join(store, 'other-checkout-prompt.md');
   await writeFile(elsewhere, '# an older prompt\n');
-  await unlink(join(dir, 'prompt.md'));
-  await symlink(elsewhere, join(dir, 'prompt.md'));
+  await unlink(join(store, 'prompt.md'));
+  await symlink(elsewhere, join(store, 'prompt.md'));
 
   const { stdout } = await init(dir);
 
   assert.match(stdout, /Linked 1 file to this checkout; nothing else changed\./);
   assert.doesNotMatch(stdout, /Nothing was changed/);
-  assert.equal(await readlink(join(dir, 'prompt.md')), personalPrompt);
+  assert.equal(await readlink(join(store, 'prompt.md')), personalPrompt);
 });
 
-test('--profile saves the profile for a new store, so the dashboard follows the same one', async () => {
+test("--profile sets up that profile's store, in its folder, which says the profile", async () => {
   const dir = await tempStore();
   const { stdout } = await init(dir);
 
-  assert.match(stdout, /saved the personal profile/);
-  assert.deepEqual(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'personal' });
-  assert.match(await readFile(join(dir, 'sources.md'), 'utf8'), /e-Boks/i, 'the personal template');
-  assert.equal(await readlink(join(dir, 'prompt.md')), personalPrompt);
+  const store = join(dir, 'personal');
+  assert.match(stdout, /personal \(personal profile\)/);
+  assert.equal(existsSync(join(store, 'settings.json')), false, 'the folder is the record; nothing needs saving');
+  assert.match(await readFile(join(store, 'sources.md'), 'utf8'), /e-Boks/i, 'the personal template');
+  assert.equal(await readlink(join(store, 'prompt.md')), personalPrompt);
 });
 
-test('a store set up without a profile has it saved, and says so', async () => {
+test('without --profile, a new data folder gets the work store', async () => {
   const dir = await tempStore();
   await run(process.execPath, [script], { env: { ...process.env, DAILY_FOCUS_DATA: dir } });
 
-  const { stdout } = await init(dir);
-
-  assert.match(stdout, /The store was already set up\. Saved the personal profile and linked 1 file to this checkout; nothing else changed\./);
+  assert.deepEqual(await readdir(dir), ['work']);
+  assert.equal(await readlink(join(dir, 'work', 'prompt.md')), workPrompt);
 });
 
-test('a store saved as the other profile is refused, not switched', async () => {
+test('a store from before the folders is set up where it lies, for the dashboard to move', async () => {
   const dir = await tempStore();
-  await writeFile(join(dir, 'settings.json'), JSON.stringify({ DAILY_FOCUS_PROFILE: 'work', DAILY_FOCUS_AGENT: 'codex' }));
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ DAILY_FOCUS_PROFILE: 'personal', DAILY_FOCUS_AGENT: 'codex' }));
 
-  await assert.rejects(init(dir), (error: { code: number; stderr: string }) => {
-    assert.equal(error.code, 1);
-    assert.match(error.stderr, /already says this store briefs the work profile/);
-    return true;
-  });
-  assert.deepEqual(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'work', DAILY_FOCUS_AGENT: 'codex' });
+  await run(process.execPath, [script], { env: { ...process.env, DAILY_FOCUS_DATA: dir } });
+
+  assert.equal(await readlink(join(dir, 'prompt.md')), personalPrompt, "linked for the store's own profile");
+  assert.equal(existsSync(join(dir, 'personal')), false, 'moving it is the dashboard\'s job, as it starts');
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'personal', DAILY_FOCUS_AGENT: 'codex' });
 });
