@@ -28,51 +28,49 @@ for (const button of document.querySelectorAll('[data-copy]')) {
 
 /* ---------- The sort: the morning's pile, down to three ---------- */
 
-/** The noise fades out across this long, each line at its own moment. */
-const SIFT_MS = 1300;
-/** When the three light up. */
-const LIT_MS = 1000;
-/** When they leave the pile, how long they take to line up, and to swell into cards. */
-const GATHER_AT = 1900;
+/** How long the stream takes to run past the reading line. */
+const READ_MS = 4200;
+/** How long a pick takes to lift out of the stream into the tray. */
+const CATCH_MS = 520;
+/** Then the stream fades, the picks line up and swell into cards. */
+const SIFT_MS = 450;
 const GATHER_MS = 650;
 const SWELL_MS = 560;
 /** How long the cards take to fill in, and the panel to come up around them. */
 const CARDS_MS = 750;
 const PANEL_MS = 800;
-/** Between one tag and the next, in both moves. */
+/** Between one pick and the next, as they line up and swell. */
 const STAGGER_MS = 90;
+/** The tray's slots, one under another. */
+const SLOT_PX = 34;
 
 function sort() {
   const figure = document.querySelector('[data-sort]');
   if (!figure || reduceMotion.matches) return;
   const stage = figure.querySelector('.sort__stage');
-  const lines = [...figure.querySelectorAll('.sort__wall span')];
-  const kept = lines.filter((line) => line.classList.contains('is-kept'));
+  const tray = figure.querySelector('.sort__tray');
+  const view = figure.querySelector('.sort__window');
+  const wall = figure.querySelector('.sort__wall');
+  const tally = figure.querySelector('[data-tally]');
+  const lines = [...wall.querySelectorAll('span')];
   const rows = [...figure.querySelectorAll('.sort__brief .row')];
   const replay = figure.querySelector('[data-replay]');
 
-  // A fixed scatter, so the pile looks and goes the same way every visit: each
-  // line gets its own shade, and its own moment to leave.
-  lines.forEach((line, i) => {
-    const r = (n) => (((i + 1) * n) % 101) / 101;
-    line.style.setProperty('--o', (0.45 + r(37) * 0.4).toFixed(2));
-    line.style.setProperty('--d', `${Math.round(r(53) * SIFT_MS)}ms`);
-  });
-  for (const line of kept) {
-    line.style.setProperty('--d', `${LIT_MS}ms`);
-    line.style.setProperty('--lit', `${LIT_MS}ms`);
-  }
+  // A fixed scatter of shades, so the pile looks the same on every visit.
+  lines.forEach((line, i) => line.style.setProperty('--o', (0.45 + ((((i + 1) * 37) % 101) / 101) * 0.4).toFixed(2)));
 
   let timers = [];
-  let standIns = [];
+  let frame = 0;
+  let picks = [];
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
   const stop = () => {
     timers.forEach(clearTimeout);
     timers = [];
-    standIns.forEach((el) => el.remove());
-    standIns = [];
+    cancelAnimationFrame(frame);
+    for (const pick of picks) pick?.chip.remove(), pick?.words.remove();
+    picks = [];
   };
-  const STATES = ['is-sifting', 'is-gathering', 'is-swelling', 'is-cards', 'is-panel', 'is-done'];
+  const STATES = ['is-reading', 'is-sifting', 'is-gathering', 'is-swelling', 'is-cards', 'is-panel', 'is-done'];
   const enter = (...states) => {
     figure.classList.remove(...STATES);
     figure.classList.add(...states);
@@ -88,11 +86,84 @@ function sort() {
   const pad = (r, n) => ({ x: r.x - n, y: r.y - n, w: r.w + 2 * n, h: r.h + 2 * n });
   // The words keep their own height, so a title that wraps in its card can wrap.
   const spot = (r, extra = 0) => ({ left: px(r.x), top: px(r.y), width: px(r.w + extra) });
+  const glide = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
 
-  const morph = () => {
-    // Measure everything first: the tags as they are, and the rows they'll
-    // become, which are laid out already, only hidden.
-    const plan = kept.map((line, i) => {
+  // The stream starts with its first line just under the reading line and
+  // ends with its last just over it; every line is read on the way.
+  const course = () => {
+    const at = view.clientHeight * parseFloat(getComputedStyle(view).getPropertyValue('--read-at'));
+    const middles = lines.map((line) => line.offsetTop + line.offsetHeight / 2);
+    return { at, middles, from: at - Math.min(...middles) + 10, to: at - Math.max(...middles) - 6 };
+  };
+  const rest = () => (wall.style.transform = `translateY(${course().from}px)`);
+  rest();
+  document.fonts?.ready.then(() => figure.classList.contains('is-reading') || rest());
+
+  // A pick becomes a tag: a chip and its words, which lift into the tray.
+  const lift = (line) => {
+    const i = Number(line.dataset.row) - 1;
+    const from = within(line.getBoundingClientRect());
+    const slot = { ...from, x: 0, y: within(tray.getBoundingClientRect()).y + 4 + i * SLOT_PX };
+    const chip = Object.assign(document.createElement('div'), { className: 'sort__chip' });
+    const words = Object.assign(document.createElement('p'), { className: 'sort__words', textContent: line.textContent });
+    for (const el of [chip, words]) el.setAttribute('aria-hidden', 'true');
+    const size = getComputedStyle(line).fontSize;
+    Object.assign(chip.style, place(pad(from, 3)));
+    Object.assign(words.style, { ...spot(from, 2), lineHeight: px(from.h), fontSize: size });
+    stage.append(chip, words);
+    line.classList.add('is-read');
+    // A small pop where it was picked, then up into its slot.
+    const timing = { duration: CATCH_MS, easing: glide, fill: 'both' };
+    chip.animate(
+      [
+        { ...place(pad(from, 3)), transform: 'scale(1)' },
+        { ...place(pad(from, 3)), transform: 'scale(1.08)', offset: 0.2 },
+        { ...place(pad(slot, 3)), transform: 'scale(1)' },
+      ],
+      timing,
+    );
+    words.animate(
+      [
+        { ...spot(from, 2), transform: 'scale(1)' },
+        { ...spot(from, 2), transform: 'scale(1.08)', offset: 0.2 },
+        { ...spot(slot, 2), transform: 'scale(1)' },
+      ],
+      timing,
+    );
+    picks[i] = { chip, words, at: slot, size };
+  };
+
+  const read = () => {
+    enter('is-reading');
+    const { at, middles, from, to } = course();
+    const order = lines.map((line, i) => ({ line, y: middles[i] })).sort((a, b) => a.y - b.y);
+    const ease = (t) => (1 - Math.cos(Math.PI * t)) / 2;
+    const start = performance.now();
+    let next = 0;
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / READ_MS);
+      const shift = from + (to - from) * ease(p);
+      wall.style.transform = `translateY(${shift}px)`;
+      while (next < order.length && order[next].y + shift <= at) {
+        const { line } = order[next++];
+        if (line.classList.contains('is-kept')) lift(line);
+        else line.classList.add('is-read');
+      }
+      tally.textContent = String(Math.round((147 * next) / order.length));
+      if (p < 1) frame = requestAnimationFrame(tick);
+      else later(Math.max(300, CATCH_MS), sift);
+    };
+    frame = requestAnimationFrame(tick);
+  };
+
+  const sift = () => {
+    enter('is-sifting');
+    later(SIFT_MS, gather);
+  };
+
+  const gather = () => {
+    // The rows the picks become are laid out already, only hidden.
+    const plan = picks.map((pick, i) => {
       const row = rows[i];
       const title = row.querySelector('.row__title');
       const words = document.createRange();
@@ -100,13 +171,12 @@ function sort() {
       const look = getComputedStyle(title);
       const card = getComputedStyle(row);
       return {
-        label: line.textContent,
-        from: within(line.getBoundingClientRect()),
+        ...pick,
         title: within(title.getBoundingClientRect()),
         text: within(words.getBoundingClientRect()),
         row: within(row.getBoundingClientRect()),
         lineHeight: parseFloat(look.lineHeight),
-        size: look.fontSize,
+        titleSize: look.fontSize,
         ink: look.color,
         surface: card.backgroundColor,
         border: card.borderTopColor,
@@ -114,38 +184,27 @@ function sort() {
         shadow: card.boxShadow,
       };
     });
-    const tag = getComputedStyle(kept[0]);
+    const tag = getComputedStyle(plan[0].chip);
+    const tagInk = getComputedStyle(plan[0].words).color;
 
     enter('is-sifting', 'is-gathering');
+    const last = plan.length - 1;
     plan.forEach((p, i) => {
-      const chip = Object.assign(document.createElement('div'), { className: 'sort__chip' });
-      const words = Object.assign(document.createElement('p'), { className: 'sort__words', textContent: p.label });
-      for (const el of [chip, words]) el.setAttribute('aria-hidden', 'true');
-      Object.assign(chip.style, place(pad(p.from, 3)));
-      Object.assign(words.style, { ...spot(p.from, 2), lineHeight: px(p.from.h), fontSize: tag.fontSize });
-      stage.append(chip, words);
-      standIns.push(chip, words);
-
-      const delay = i * STAGGER_MS;
-      const glide = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
-      // First the tags line up where the titles will be, growing to their size.
-      words.animate(
+      // The lowest pick leaves first, so none passes over another on the way down.
+      const delay = (last - i) * STAGGER_MS;
+      // First the picks line up where the titles will be, growing to their size.
+      p.words.animate(
         [
-          { ...spot(p.from, 2), lineHeight: px(p.from.h), fontSize: tag.fontSize, fontWeight: 400 },
-          { ...spot(p.title), lineHeight: px(p.lineHeight), fontSize: p.size, fontWeight: 600 },
+          { ...spot(p.at, 2), lineHeight: px(p.at.h), fontSize: p.size, fontWeight: 400 },
+          { ...spot(p.title), lineHeight: px(p.lineHeight), fontSize: p.titleSize, fontWeight: 600 },
         ],
         { duration: GATHER_MS, delay, easing: glide, fill: 'both' },
       );
-      chip.animate([place(pad(p.from, 3)), place(pad(p.text, 3))], {
-        duration: GATHER_MS,
-        delay,
-        easing: glide,
-        fill: 'both',
-      });
-      // Then each tag swells into its card, and its words take the card's ink.
-      later(GATHER_MS + delay, () => {
+      p.chip.animate([place(pad(p.at, 3)), place(pad(p.text, 3))], { duration: GATHER_MS, delay, easing: glide, fill: 'both' });
+      // Then, in rank order, each pops out into its card, and its words take the card's ink.
+      later(GATHER_MS + (last + i) * STAGGER_MS, () => {
         if (i === 0) enter('is-sifting', 'is-gathering', 'is-swelling');
-        chip.animate(
+        p.chip.animate(
           [
             { ...place(pad(p.text, 3)), backgroundColor: tag.backgroundColor, borderColor: 'transparent', borderRadius: '3px', boxShadow: 'none' },
             { ...place(p.row), backgroundColor: p.surface, borderColor: p.border, borderRadius: p.radius, boxShadow: p.shadow },
@@ -153,13 +212,13 @@ function sort() {
           // A touch past its size and back: the card pops out of the tag.
           { duration: SWELL_MS, easing: 'cubic-bezier(0.3, 1.3, 0.5, 1)', fill: 'forwards' },
         );
-        words.animate([{ color: tag.color }, { color: p.ink }], { duration: SWELL_MS, fill: 'forwards' });
+        p.words.animate([{ color: tagInk }, { color: p.ink }], { duration: SWELL_MS, fill: 'forwards' });
       });
     });
 
     // The last card is whole. From here the brief builds outwards: the real
     // rows take over and fill in, then the panel comes up around them.
-    later(GATHER_MS + SWELL_MS + (plan.length - 1) * STAGGER_MS + 40, () => {
+    later(GATHER_MS + SWELL_MS + 2 * last * STAGGER_MS + 40, () => {
       enter('is-cards');
       stop();
       later(CARDS_MS, () => enter('is-panel'));
@@ -174,11 +233,13 @@ function sort() {
     stop();
     figure.classList.add('is-instant');
     enter();
+    for (const line of lines) line.classList.remove('is-read');
+    tally.textContent = '0';
+    rest();
     replay.hidden = true;
     void figure.offsetWidth;
     figure.classList.remove('is-instant');
-    later(150, () => enter('is-sifting'));
-    later(GATHER_AT, morph);
+    later(300, read);
   };
 
   // Play once someone can see it: the page in front, and the pile in view.
@@ -187,7 +248,7 @@ function sort() {
   const start = () => {
     if (started || !inView || document.hidden) return;
     started = true;
-    later(600, play);
+    later(400, play);
   };
   new IntersectionObserver(
     (entries) => {
