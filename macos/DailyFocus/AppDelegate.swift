@@ -1,5 +1,6 @@
-// The menu, the icon, the status polling and the notifications. The server itself
-// is `Dashboard`'s business; this file only shows what it and the server say.
+// The menu, the icon, the status polling and the notifications. The servers
+// themselves are `Dashboard`'s business, one for each dashboard the app runs (see
+// `Dashboards.swift`); this file only shows what they and the servers say.
 
 import AppKit
 import ServiceManagement
@@ -31,29 +32,64 @@ private enum Consent {
     case now
 }
 
+private enum Reading {
+    /// Nothing asked yet, since the dashboard last started.
+    case nothing
+    case status(DashboardStatus)
+    /// A dashboard from before `/api/status`, which can only say that it is up.
+    case healthOnly
+    case unreachable
+}
+
+/// A dashboard the app runs or watches, what it last said, and its part of the menu.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
-    private enum Reading {
-        /// Nothing asked yet, since the dashboard last started.
-        case nothing
-        case status(DashboardStatus)
-        /// A dashboard from before `/api/status`, which can only say that it is up.
-        case healthOnly
-        case unreachable
+private final class Watched {
+    let dashboard: Dashboard
+    var reading: Reading = .nothing
+    var readingFrom: URL?
+    var firstPoll = true
+    var polling = false
+    var pollAgain = false
+    /// Opens it in the browser once it listens: a dashboard just added, whose setup
+    /// screen is what the user wants next.
+    var openWhenRunning = false
+    let statusLineItem = NSMenuItem()
+    let attachedItem = NSMenuItem()
+    let openItem = NSMenuItem()
+    let settingsItem = NSMenuItem(title: "Settings…", action: nil, keyEquivalent: "")
+    let briefItem = NSMenuItem(title: "Write a Fresh Brief", action: nil, keyEquivalent: "")
+    let restartItem = NSMenuItem()
+    let removeItem = NSMenuItem()
+
+    init(_ dashboard: Dashboard) {
+        self.dashboard = dashboard
     }
 
-    private let dashboard = Dashboard()
-    private lazy var updater = Updater(environment: dashboard.environment, log: LogFile(url: logURL))
+    var slot: DashboardSlot { dashboard.slot }
+
+    var status: DashboardStatus? {
+        if case .status(let status) = reading { return status }
+        return nil
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate {
+    private let environment = ProcessInfo.processInfo.environment
+    /// The data folder every dashboard keeps its store in.
+    private lazy var folder = dataFolder(environment)
+    /// The dashboards, in the order the menu shows them: the first one the app ever
+    /// ran, then the one added beside it.
+    private var watched: [Watched] = []
+    private lazy var updater = Updater(environment: environment, log: LogFile(url: logURL))
     private var statusItem: NSStatusItem?
     private let menu = NSMenu()
-    private let statusLineItem = NSMenuItem()
-    private let attachedItem = NSMenuItem()
-    private let openItem = NSMenuItem(title: "Open Daily Focus", action: nil, keyEquivalent: "o")
-    private let settingsItem = NSMenuItem(title: "Settings…", action: nil, keyEquivalent: ",")
-    private let briefItem = NSMenuItem(title: "Write a Fresh Brief", action: nil, keyEquivalent: "")
     private let nodeItem = NSMenuItem(title: "Download Node.js…", action: nil, keyEquivalent: "")
+    private let addItem = NSMenuItem()
     private let loginItem = NSMenuItem(title: "Open at Login", action: nil, keyEquivalent: "")
-    private let restartItem = NSMenuItem(title: "Restart Dashboard", action: nil, keyEquivalent: "")
+    /// With two dashboards, restarting and removing each, kept out of the way.
+    private let dashboardsItem = NSMenuItem(title: "Dashboards", action: nil, keyEquivalent: "")
+    private let dashboardsMenu = NSMenu()
     private let logItem = NSMenuItem(title: "Show Log", action: nil, keyEquivalent: "")
     private let aboutItem = NSMenuItem(title: "About Daily Focus", action: nil, keyEquivalent: "")
     private let quitItem = NSMenuItem(title: "Quit Daily Focus", action: nil, keyEquivalent: "q")
@@ -65,14 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let developmentItem = NSMenuItem(title: "Development Builds", action: nil, keyEquivalent: "")
     private let automaticItem = NSMenuItem(title: "Update Automatically", action: nil, keyEquivalent: "")
 
-    private var reading: Reading = .nothing
-    private var readingFrom: URL?
-    private var firstPoll = true
-    private var polling = false
-    private var pollAgain = false
     private var pollTimer: DispatchSourceTimer?
     private var updateTimer: DispatchSourceTimer?
-    /// The downloaded dashboard the app restarted the dashboard to run, until it runs.
+    /// The downloaded dashboard the app restarted the dashboards to run, until they all run.
     private var restartingInto: String?
     /// When the update being installed may go in.
     private var consent: Consent = .whenIdle
@@ -99,12 +130,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         )
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
-        dashboard.onChange = { [weak self] in self?.dashboardChanged() }
-        dashboard.onRefused = { [weak self] version in self?.dashboardRefused(version) }
+        for slot in savedSlots(folder: folder, environment: environment) { watched.append(makeWatched(slot)) }
+        labelDashboards()
+        layOutMenu()
         updater.onChange = { [weak self] in self?.updaterChanged() }
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 30, repeating: 30)
-        timer.setEventHandler { [weak self] in self?.poll() }
+        timer.setEventHandler { [weak self] in self?.pollAll() }
         timer.resume()
         pollTimer = timer
         // A release a day at most, usually fewer: four looks a day find it the same day.
@@ -115,18 +147,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         updateTimer = updates
 
         refreshMenu()
-        dashboard.start()
+        for each in watched { each.dashboard.start() }
     }
 
+    /// Quits once every server the app runs has stopped.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         pollTimer?.cancel()
         updateTimer?.cancel()
         updater.discardStagedApp()
-        guard dashboard.hasChild else {
-            dashboard.stop {}
+        guard watched.contains(where: { $0.dashboard.hasChild }) else {
+            for each in watched { each.dashboard.stop {} }
             return .terminateNow
         }
-        dashboard.stop { NSApp.reply(toApplicationShouldTerminate: true) }
+        // At least one stops later, so the last to stop is never one stopped at once.
+        var waiting = watched.count
+        for each in watched {
+            each.dashboard.stop {
+                waiting -= 1
+                if waiting == 0 { NSApp.reply(toApplicationShouldTerminate: true) }
+            }
+        }
         refreshMenu()
         return .terminateLater
     }
@@ -152,24 +192,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
         menu.delegate = self
         menu.autoenablesItems = false
-        statusLineItem.isEnabled = false
-        attachedItem.title = "Run by another process"
-        attachedItem.isEnabled = false
-        // The app never takes over a dashboard it didn't start: the other one may
-        // be a LaunchAgent that would fight it for the port. Say how to hand it over.
-        attachedItem.toolTip = "Something other than this app, such as daily-focus service or a terminal, runs the dashboard "
-            + "on this port. To have the app run it, stop that one, then quit and reopen Daily Focus."
+        dashboardsMenu.autoenablesItems = false
+        dashboardsItem.submenu = dashboardsMenu
 
         buildUpdatesMenu()
 
         for (menuItem, action) in [
             (updateItem, #selector(installUpdate)),
-            (openItem, #selector(openDashboard)),
-            (settingsItem, #selector(openSettings)),
-            (briefItem, #selector(writeBrief)),
             (nodeItem, #selector(downloadNode)),
+            (addItem, #selector(addDashboard)),
             (loginItem, #selector(toggleOpenAtLogin)),
-            (restartItem, #selector(restartDashboard)),
             (logItem, #selector(showLog)),
             (aboutItem, #selector(showAbout)),
             (quitItem, #selector(quit)),
@@ -177,12 +209,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             menuItem.target = self
             menuItem.action = action
         }
+        addItem.toolTip = "Runs a second dashboard beside this one, for the other half of your life, with its own store "
+            + "in the same folder and its own port."
+    }
 
-        for menuItem in [statusLineItem, attachedItem, updateItem, openItem, settingsItem, briefItem, nodeItem,
-                         NSMenuItem.separator(), loginItem, updatesItem, restartItem, logItem, NSMenuItem.separator(),
-                         aboutItem, quitItem] {
-            menu.addItem(menuItem)
+    /// A dashboard, with its part of the menu, wired to the app.
+    private func makeWatched(_ slot: DashboardSlot) -> Watched {
+        let each = Watched(Dashboard(slot: slot, folder: folder, environment: environment))
+        each.dashboard.onChange = { [weak self, weak each] in
+            guard let self, let each else { return }
+            self.dashboardChanged(each)
         }
+        each.dashboard.onRefused = { [weak self] version in self?.dashboardRefused(version) }
+        each.statusLineItem.isEnabled = false
+        each.attachedItem.title = "Run by another process"
+        each.attachedItem.isEnabled = false
+        // The app never takes over a dashboard it didn't start: the other one may
+        // be a LaunchAgent that would fight it for the port. Say how to hand it over.
+        each.attachedItem.toolTip = "Something other than this app, such as daily-focus service or a terminal, runs the dashboard "
+            + "on this port. To have the app run it, stop that one, then quit and reopen Daily Focus."
+        for (menuItem, action) in [
+            (each.openItem, #selector(openDashboard(_:))),
+            (each.settingsItem, #selector(openSettings(_:))),
+            (each.briefItem, #selector(writeBrief(_:))),
+            (each.restartItem, #selector(restartDashboard(_:))),
+            (each.removeItem, #selector(removeDashboard(_:))),
+        ] {
+            menuItem.target = self
+            menuItem.action = action
+            menuItem.representedObject = slot.id
+        }
+        return each
+    }
+
+    /// What the log and the menu call each dashboard: nothing with one, its profile with two.
+    private func labelDashboards() {
+        for each in watched { each.dashboard.label = watched.count > 1 ? profileLabel(each.slot.profile) : nil }
+    }
+
+    /// Puts the items in the menu for one dashboard or for two. Only ever from a
+    /// click, which has closed the menu: rebuilt while open, it would lose its place.
+    private func layOutMenu() {
+        menu.removeAllItems()
+        dashboardsMenu.removeAllItems()
+        var items: [NSMenuItem] = []
+        if watched.count == 1, let only = watched.first {
+            only.openItem.title = "Open Daily Focus"
+            only.openItem.keyEquivalent = "o"
+            only.settingsItem.keyEquivalent = ","
+            only.restartItem.title = "Restart Dashboard"
+            items = [only.statusLineItem, only.attachedItem, updateItem, only.openItem, only.settingsItem, only.briefItem, nodeItem,
+                     NSMenuItem.separator(), addItem, loginItem, updatesItem, only.restartItem, logItem]
+        } else {
+            items = [updateItem]
+            for (index, each) in watched.enumerated() {
+                let label = profileLabel(each.slot.profile)
+                each.openItem.title = "Open \(label)"
+                // The first dashboard keeps the shortcuts it had alone.
+                each.openItem.keyEquivalent = index == 0 ? "o" : ""
+                each.settingsItem.keyEquivalent = index == 0 ? "," : ""
+                each.restartItem.title = "Restart \(label)"
+                each.removeItem.title = "Remove \(label)…"
+                items += [each.statusLineItem, each.attachedItem, each.openItem, each.settingsItem, each.briefItem, NSMenuItem.separator()]
+                dashboardsMenu.addItem(each.restartItem)
+            }
+            dashboardsMenu.addItem(NSMenuItem.separator())
+            for each in watched { dashboardsMenu.addItem(each.removeItem) }
+            items += [nodeItem, loginItem, updatesItem, dashboardsItem, logItem]
+        }
+        for item in items + [NSMenuItem.separator(), aboutItem, quitItem] { menu.addItem(item) }
     }
 
     /// Which releases to offer, and whether they go in on their own. The versions are
@@ -217,17 +312,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     private func refreshMenu() {
-        let state = dashboard.state
-        statusLineItem.title = currentStatusLine()
-        attachedItem.isHidden = !dashboard.isAttached
-        nodeItem.isHidden = state != .needsNode
-        openItem.isEnabled = dashboard.url != nil
-        settingsItem.isEnabled = dashboard.url != nil
-        briefItem.isEnabled = canWriteBrief
-        switch state {
-        case .attached, .preparing, .stopping, .stopped: restartItem.isEnabled = false
-        default: restartItem.isEnabled = true
+        let several = watched.count > 1
+        for each in watched {
+            let line = currentStatusLine(each)
+            each.statusLineItem.title = several ? "\(profileLabel(each.slot.profile)): \(line)" : line
+            each.attachedItem.isHidden = !each.dashboard.isAttached
+            each.openItem.isEnabled = each.dashboard.url != nil
+            each.settingsItem.isEnabled = each.dashboard.url != nil
+            each.briefItem.isEnabled = canWriteBrief(each)
+            switch each.dashboard.state {
+            case .attached, .preparing, .stopping, .stopped: each.restartItem.isEnabled = false
+            default: each.restartItem.isEnabled = true
+            }
+            each.removeItem.isEnabled = several
         }
+        nodeItem.isHidden = !watched.contains { $0.dashboard.state == .needsNode }
+        let adding = profileToAdd(watched.map(\.slot))
+        addItem.isHidden = adding == nil
+        if let adding { addItem.title = "Add a \(profileLabel(adding)) Dashboard" }
         refreshUpdates()
         switch SMAppService.mainApp.status {
         case .enabled: loginItem.state = .on
@@ -235,44 +337,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         default: loginItem.state = .off
         }
 
-        let look = currentLook()
+        // Something to see to on either outranks the other's agent at work.
+        let looks = watched.map(currentLook)
+        let look: IconLook = looks.contains(.attention) ? .attention : looks.contains(.working) ? .working : .normal
         statusItem?.button?.image = menuBarIcon(look)
-        var tip = "Daily Focus"
-        if case .status(let status) = reading, let store = status.dataDir { tip += "\n\(store)" }
-        statusItem?.button?.toolTip = tip
+        let stores = watched.map { $0.status?.dataDir ?? $0.dashboard.expectedStore }
+        statusItem?.button?.toolTip = (["Daily Focus"] + stores).joined(separator: "\n")
     }
 
-    private func currentStatusLine() -> String {
-        switch dashboard.state {
+    private func currentStatusLine(_ each: Watched) -> String {
+        switch each.dashboard.state {
         case .preparing, .starting: return "Starting…"
         case .restarting: return "Restarting…"
         case .needsNode: return "Node.js 22.18 or newer is needed"
         case .blocked(let reason): return reason
         case .stopping, .stopped: return "Stopping…"
         case .running, .attached:
-            switch reading {
+            switch each.reading {
             case .status(let status): return statusLine(status, now: Date())
             case .healthOnly: return "Running"
             case .unreachable: return "The dashboard isn't answering"
-            case .nothing: return dashboard.isAttached ? "Checking the dashboard…" : "Starting…"
+            case .nothing: return each.dashboard.isAttached ? "Checking the dashboard…" : "Starting…"
             }
         }
     }
 
-    private func currentLook() -> IconLook {
-        switch dashboard.state {
+    private func currentLook(_ each: Watched) -> IconLook {
+        switch each.dashboard.state {
         case .needsNode, .blocked: return .attention
         case .running, .attached:
-            guard case .status(let status) = reading else { return .normal }
+            guard let status = each.status else { return .normal }
             if status.agent?.running == true { return .working }
             return needsAttention(status) ? .attention : .normal
         default: return .normal
         }
     }
 
-    private var canWriteBrief: Bool {
-        guard dashboard.url != nil else { return false }
-        switch reading {
+    private func canWriteBrief(_ each: Watched) -> Bool {
+        guard each.dashboard.url != nil else { return false }
+        switch each.reading {
         case .status(let status): return status.agent?.enabled != false && status.agent?.running != true
         // An older dashboard can't say whether its agent is on; it will say so if it isn't.
         case .healthOnly: return true
@@ -280,22 +383,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         }
     }
 
+    /// The dashboard a menu item belongs to, by the slot it was made for.
+    private func watched(for item: Any?) -> Watched? {
+        let id = (item as? NSMenuItem)?.representedObject as? String
+        return watched.first { $0.slot.id == id } ?? watched.first
+    }
+
     // MARK: Actions
 
-    @objc private func openDashboard() {
-        guard let url = dashboard.expectedURL else { return }
+    @objc private func openDashboard(_ sender: Any?) {
+        open(watched(for: sender))
+    }
+
+    private func open(_ each: Watched?) {
+        guard let url = each?.dashboard.expectedURL else { return }
         NSWorkspace.shared.open(url)
     }
 
     /// The dashboard's own settings page: everything is set there, nothing here.
-    @objc private func openSettings() {
-        guard let url = dashboard.expectedURL, let settings = URL(string: "#settings", relativeTo: url) else { return }
+    @objc private func openSettings(_ sender: Any?) {
+        guard let url = watched(for: sender)?.dashboard.expectedURL, let settings = URL(string: "#settings", relativeTo: url) else { return }
         NSWorkspace.shared.open(settings.absoluteURL)
     }
 
-    @objc private func writeBrief() {
-        guard let url = dashboard.url else { return }
-        briefItem.isEnabled = false
+    @objc private func writeBrief(_ sender: Any?) {
+        guard let each = watched(for: sender), let url = each.dashboard.url else { return }
+        each.briefItem.isEnabled = false
         fetch(url.appendingPathComponent("api/agent/run"), method: "POST", timeout: 30) { [weak self] code, data in
             guard let self else { return }
             switch code {
@@ -308,7 +421,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             default:
                 break
             }
-            self.poll()
+            self.poll(each)
+        }
+    }
+
+    /// A second dashboard, for the profile the first isn't, on the next port. Its
+    /// store is a folder beside the first's, which its setup screen fills in, so it
+    /// opens in the browser once it listens.
+    @objc private func addDashboard() {
+        guard let profile = profileToAdd(watched.map(\.slot)) else { return }
+        let slot = DashboardSlot(id: profile, profile: profile, port: nextPort(watched.map(\.slot)))
+        let each = makeWatched(slot)
+        each.openWhenRunning = true
+        watched.append(each)
+        saveSlots(watched.map(\.slot), folder: folder)
+        labelDashboards()
+        layOutMenu()
+        refreshMenu()
+        each.dashboard.start()
+    }
+
+    /// Stops running a dashboard, leaving its store where it is.
+    @objc private func removeDashboard(_ sender: Any?) {
+        guard watched.count > 1, let each = watched(for: sender) else { return }
+        let label = profileLabel(each.slot.profile)
+        let store = (each.status?.dataDir ?? each.dashboard.expectedStore).replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        confirm("Remove the \(label.lowercased()) dashboard?",
+                "Daily Focus stops running it. Its briefs, notes and settings stay in \(store), and adding it again picks them up.",
+                button: "Remove") {
+            guard let index = self.watched.firstIndex(where: { $0 === each }) else { return }
+            self.watched.remove(at: index)
+            saveSlots(self.watched.map(\.slot), folder: self.folder)
+            self.labelDashboards()
+            self.layOutMenu()
+            self.refreshMenu()
+            each.dashboard.stop { each.dashboard.forgetChild() }
         }
     }
 
@@ -334,10 +481,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             }
             // A fresh look at whether anything is running before the update goes in.
             // With no dashboard to ask, nothing is.
-            if self.dashboard.url == nil {
+            if !self.watched.contains(where: { $0.dashboard.url != nil }) {
                 self.applyUpdate()
             } else {
-                self.poll()
+                self.pollAll()
             }
         }
     }
@@ -391,10 +538,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     /// Quits, leaving a shell to open the app now in this one's place once this one
     /// has gone: until then, its dashboard might still answer, and the new app would
     /// watch it instead of starting its own. The settings this app was started with,
-    /// such as the store and the port, go with it.
+    /// such as the data folder and the port, go with it.
     private func relaunch(_ version: String) {
         var open: [String] = []
-        for (key, value) in dashboard.environment.sorted(by: { $0.key < $1.key }) where key.hasPrefix("DAILY_FOCUS_") {
+        for (key, value) in environment.sorted(by: { $0.key < $1.key }) where key.hasPrefix("DAILY_FOCUS_") {
             open += ["--env", "\(key)=\(value)"]
         }
         open.append(Bundle.main.bundlePath)
@@ -468,8 +615,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         refreshMenu()
     }
 
-    @objc private func restartDashboard() {
-        dashboard.restart()
+    @objc private func restartDashboard(_ sender: Any?) {
+        watched(for: sender)?.dashboard.restart()
     }
 
     @objc private func showLog() {
@@ -545,88 +692,118 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     // MARK: Status
 
-    private func dashboardChanged() {
-        if dashboard.url != readingFrom {
-            reading = .nothing
-            readingFrom = dashboard.url
+    private func dashboardChanged(_ each: Watched) {
+        if each.dashboard.url != each.readingFrom {
+            each.reading = .nothing
+            each.readingFrom = each.dashboard.url
         }
-        if case .running = dashboard.state, let copy = dashboard.copy {
-            updater.started(copy)
-            if let target = restartingInto {
-                restartingInto = nil
-                if copy.version != target {
-                    updater.gaveUp(on: target)
-                    alert("Dashboard \(target) didn't start",
-                          "Daily Focus is running dashboard \(copy.version ?? "") instead. Show Log says why.")
-                }
+        if case .running(let url) = each.dashboard.state, let copy = each.dashboard.copy {
+            updater.started(copy, running: watched.compactMap { $0.dashboard.copy })
+            if each.openWhenRunning {
+                each.openWhenRunning = false
+                NSWorkspace.shared.open(url)
             }
+            settleRestart()
         }
         refreshMenu()
-        poll()
+        poll(each)
         announceOffer()
     }
 
-    private func poll() {
-        guard let url = dashboard.url else { return }
-        if polling {
-            pollAgain = true
+    /// Once every dashboard the app restarted into an update runs again: whether all
+    /// of them run it, and if not, which didn't.
+    private func settleRestart() {
+        guard let target = restartingInto else { return }
+        let runners = watched.filter { !$0.dashboard.isAttached }
+        guard runners.allSatisfy({ if case .running = $0.dashboard.state { return true } else { return false } }) else { return }
+        restartingInto = nil
+        guard let off = runners.first(where: { $0.dashboard.copy?.version != target }) else { return }
+        updater.gaveUp(on: target)
+        alert("Dashboard \(target) didn't start",
+              "Daily Focus is running dashboard \(off.dashboard.copy?.version ?? "") instead. Show Log says why.")
+    }
+
+    private func pollAll() {
+        for each in watched { poll(each) }
+    }
+
+    private func poll(_ each: Watched) {
+        guard let url = each.dashboard.url else { return }
+        if each.polling {
+            each.pollAgain = true
             return
         }
-        polling = true
+        each.polling = true
         fetch(url.appendingPathComponent("api/status")) { [weak self] code, data in
             guard let self else { return }
             if code == 200, let data, let status = try? JSONDecoder().decode(DashboardStatus.self, from: data) {
-                self.finishPoll(url, .status(status))
+                self.finishPoll(each, url, .status(status))
             } else if code == 404 {
                 fetch(url.appendingPathComponent("api/health")) { code, _ in
-                    self.finishPoll(url, code == 200 ? .healthOnly : .unreachable)
+                    self.finishPoll(each, url, code == 200 ? .healthOnly : .unreachable)
                 }
             } else {
-                self.finishPoll(url, .unreachable)
+                self.finishPoll(each, url, .unreachable)
             }
         }
     }
 
-    private func finishPoll(_ url: URL, _ result: Reading) {
-        polling = false
+    private func finishPoll(_ each: Watched, _ url: URL, _ result: Reading) {
+        each.polling = false
         // An answer from a dashboard that has since stopped or moved says nothing about this one.
-        if url == dashboard.url {
-            reading = result
+        if url == each.dashboard.url, watched.contains(where: { $0 === each }) {
+            each.reading = result
             if case .status(let status) = result {
-                tell(about: status)
+                learnProfile(each, status)
+                tell(about: status, from: each)
                 askAboutAutomaticUpdates(status)
             }
             refreshMenu()
             applyUpdate()
             updateUnattended()
         }
-        if pollAgain {
-            pollAgain = false
-            poll()
+        if each.pollAgain {
+            each.pollAgain = false
+            poll(each)
         }
+    }
+
+    /// Keeps the profile a dashboard says it is, once its setup is finished, and
+    /// gives it from the next start on. Until then its setup may still rename the
+    /// store, and with no profile given, the dashboard follows.
+    private func learnProfile(_ each: Watched, _ status: DashboardStatus) {
+        guard each.slot.profile == nil, status.setupNeeded == false, let profile = status.profile, profiles.contains(profile) else { return }
+        each.dashboard.slot.profile = profile
+        saveSlots(watched.map(\.slot), folder: folder)
     }
 
     // MARK: Notifications
 
-    private func tell(about status: DashboardStatus) {
+    /// What each dashboard has already been told about is kept apart, under its
+    /// slot's key suffix, as are its notifications.
+    private func tell(about status: DashboardStatus, from each: Watched) {
         let defaults = UserDefaults.standard
+        let suffix = keySuffix(each.slot)
         let before = Notified(
-            briefAt: defaults.object(forKey: notifiedBriefKey) as? Date,
-            failedRunId: defaults.string(forKey: notifiedFailureKey)
+            briefAt: defaults.object(forKey: notifiedBriefKey + suffix) as? Date,
+            failedRunId: defaults.string(forKey: notifiedFailureKey + suffix)
         )
-        let result = notices(for: status, after: before, firstPoll: firstPoll)
-        firstPoll = false
-        if let briefAt = result.notified.briefAt { defaults.set(briefAt, forKey: notifiedBriefKey) }
-        if let failedRunId = result.notified.failedRunId { defaults.set(failedRunId, forKey: notifiedFailureKey) }
-        for notice in result.notices { post(notice) }
+        let result = notices(for: status, after: before, firstPoll: each.firstPoll)
+        each.firstPoll = false
+        if let briefAt = result.notified.briefAt { defaults.set(briefAt, forKey: notifiedBriefKey + suffix) }
+        if let failedRunId = result.notified.failedRunId { defaults.set(failedRunId, forKey: notifiedFailureKey + suffix) }
+        for notice in result.notices { post(notice, from: each) }
     }
 
-    private func post(_ notice: Notice) {
-        let text = noticeText(notice)
+    /// `from` is the dashboard a notice is about, which a click opens; nil for the app's own.
+    private func post(_ notice: Notice, from each: Watched? = nil) {
+        let text = noticeText(notice, dashboard: each != nil && watched.count > 1 ? profileLabel(each?.slot.profile) : nil)
         let content = UNMutableNotificationContent()
         content.title = text.title
         content.body = text.body
-        // One identifier per kind, so today's notice replaces yesterday's in Notification Centre.
+        if let each { content.userInfo = ["dashboard": each.slot.id] }
+        // One identifier per kind and dashboard, so today's notice replaces yesterday's
+        // in Notification Centre, and one dashboard's never replaces the other's.
         let identifier: String
         switch notice {
         case .briefReady: identifier = "brief-ready"
@@ -635,18 +812,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         case .downloadAvailable: identifier = "update-download"
         case .dashboardRefused: identifier = "dashboard-refused"
         }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        let suffix = each.map { keySuffix($0.slot) } ?? ""
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier + suffix, content: content, trigger: nil))
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let identifier = response.notification.request.identifier
+        let id = response.notification.request.content.userInfo["dashboard"] as? String
         DispatchQueue.main.async {
             if updateNotices.contains(identifier) {
                 self.statusItem?.button?.performClick(nil)
             } else {
-                self.openDashboard()
+                self.open(self.watched.first { $0.slot.id == id } ?? self.watched.first)
             }
             completionHandler()
         }
@@ -660,13 +839,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
 
     // MARK: Updates
 
+    /// The dashboards the app runs itself. One run by another process is that
+    /// process's to update, and carries on through the app's relaunch.
+    private var runners: [Watched] { watched.filter { !$0.dashboard.isAttached } }
+
     /// What the newest release on the track holds for this app, once a check has found it.
     private func currentOffer() -> Offer? {
         guard let latest = updater.latest else { return nil }
-        // A dashboard run by another process is that process's to update.
-        let running = dashboard.isAttached ? nil : dashboard.copy?.version
-        return offer(latest: latest, running: running, appVersion: updater.appVersion, appSource: updater.appSource,
-                     nodeVersion: dashboard.nodeVersion, canReplaceApp: ownReplacementProblem() == nil)
+        return offer(latest: latest, running: oldestRunning(), appVersion: updater.appVersion, appSource: updater.appSource,
+                     nodeVersion: runners.lazy.compactMap(\.dashboard.nodeVersion).first ?? watched.first?.dashboard.nodeVersion,
+                     canReplaceApp: ownReplacementProblem() == nil)
+    }
+
+    /// The oldest version the app's dashboards run, which an update is newer than or
+    /// not. Nil while one hasn't started, or runs a checkout, which nothing updates.
+    private func oldestRunning() -> String? {
+        let versions = runners.map { $0.dashboard.copy?.version }
+        guard !versions.isEmpty, !versions.contains(nil) else { return nil }
+        return versions.compactMap { $0 }.min { (Version($0) ?? Version("0.0.0")!) < (Version($1) ?? Version("0.0.0")!) }
     }
 
     /// Why this copy can't put a newer app in its own place, or nil when it can.
@@ -675,13 +865,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         return replacementProblem(bundle: Bundle.main.bundleURL, team: ownTeam)
     }
 
-    /// What installing `update` now would stop in the dashboard, if anything: either
-    /// kind restarts it.
+    /// What installing an update now would stop in the dashboards the app runs, if
+    /// anything: either kind restarts them.
     private func wouldStop(_ update: Update) -> String? {
-        // A dashboard another process runs carries on through the app's relaunch.
-        if case .app = update, dashboard.isAttached { return nil }
-        guard case .status(let status) = reading, isBusy(status) else { return nil }
-        return busyWith(status)
+        busyAcross(runners.map { (watched.count > 1 ? profileLabel($0.slot.profile) : nil, $0.status) })
     }
 
     /// What a downloaded update waits for before it goes in, to end "installs once …",
@@ -690,9 +877,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         if consent == .now { return nil }
         if let busy = wouldStop(update) { return "\(busy) is done" }
         guard consent == .whenQuiet else { return nil }
-        if case .app = update, dashboard.isAttached { return nil }
-        guard case .status(let status) = reading, !mayUpdateUnattended(status, now: Date()) else { return nil }
-        return "nobody has used the dashboard for half an hour"
+        let used = runners.contains { each in each.status.map { !mayUpdateUnattended($0, now: Date()) } ?? false }
+        guard used else { return nil }
+        return watched.count > 1 ? "nobody has used either dashboard for half an hour" : "nobody has used the dashboard for half an hour"
     }
 
     private func trackName(_ track: Track) -> String {
@@ -750,11 +937,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     private func dashboardVersionLine() -> String {
-        if dashboard.isAttached {
-            guard case .status(let status) = reading, let version = status.version else { return "Dashboard run by another process" }
+        let lines = watched.map(dashboardVersionLine)
+        guard watched.count > 1 else { return lines.first ?? "Dashboard starting…" }
+        // Two running the same copy say it once.
+        if Set(lines).count == 1, !watched.contains(where: \.dashboard.isAttached) { return lines[0] }
+        return zip(watched, lines).map { "\(profileLabel($0.slot.profile)): \($1)" }.joined(separator: "\n")
+    }
+
+    private func dashboardVersionLine(_ each: Watched) -> String {
+        if each.dashboard.isAttached {
+            guard let version = each.status?.version else { return "Dashboard run by another process" }
             return "Dashboard \(version), run by another process"
         }
-        guard let copy = dashboard.copy else { return "Dashboard starting…" }
+        guard let copy = each.dashboard.copy else { return "Dashboard starting…" }
         guard let version = copy.version else { return "Dashboard from a checkout" }
         return version.isEmpty ? "Dashboard of unknown version" : "Dashboard \(version)"
     }
@@ -777,12 +972,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     /// Starts an update on its own, when the user has turned that on, the newest
-    /// release holds one this copy can install, and nobody has used the dashboard
-    /// for a while.
+    /// release holds one this copy can install, and nobody has used any of the
+    /// dashboards for a while.
     private func updateUnattended() {
         guard updater.automatic, updater.phase == .idle, restartingInto == nil,
-              let update = currentOffer()?.update, update.version != triedUnattended,
-              case .status(let status) = reading, mayUpdateUnattended(status, now: Date())
+              let update = currentOffer()?.update, update.version != triedUnattended, !watched.isEmpty,
+              watched.allSatisfy({ each in each.status.map { mayUpdateUnattended($0, now: Date()) } ?? false })
         else { return }
         // Before it starts, since the updater is idle again before it says why it failed.
         triedUnattended = update.version
@@ -801,27 +996,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     /// Puts a downloaded update in, on a fresh answer that says it may go in: nothing
-    /// in the dashboard is busy, and for one that started on its own, nobody has used
-    /// it for a while; or the user said to go ahead anyway. A dashboard goes in by
-    /// restarting it into the update, which anything else that restarts it does too,
-    /// and an app by swapping it in for this one and relaunching.
+    /// in the dashboards is busy, and for one that started on its own, nobody has used
+    /// them for a while; or the user said to go ahead anyway. Dashboards go in by
+    /// restarting them into the update, all of them, which anything else that
+    /// restarts one does too, and an app by swapping it in for this one and relaunching.
     private func applyUpdate() {
         guard case .ready(let update) = updater.phase, restartingInto == nil else { return }
+        let isRunning = { (each: Watched) -> Bool in if case .running = each.dashboard.state { return true } else { return false } }
         if case .dashboard(let version) = update {
-            guard case .running = dashboard.state else { return }
-            if dashboard.copy?.version == version {
-                updater.started(dashboard.copy!)
+            let runners = self.runners
+            guard !runners.isEmpty, runners.allSatisfy(isRunning) else { return }
+            if runners.allSatisfy({ $0.dashboard.copy?.version == version }), let copy = runners[0].dashboard.copy {
+                updater.started(copy, running: watched.compactMap { $0.dashboard.copy })
                 return
             }
         }
-        if case .running = dashboard.state {
+        let running = watched.filter(isRunning)
+        if !running.isEmpty {
             if holdUp(update) != nil { return }
-            if case .nothing = reading { return }
+            if running.contains(where: { if case .nothing = $0.reading { return true } else { return false } }) { return }
         }
         switch update {
         case .dashboard(let version):
             restartingInto = version
-            dashboard.restart()
+            for each in runners where each.dashboard.copy?.version != version { each.dashboard.restart() }
         case .app(let version):
             updater.replaceApp { [weak self] problem in
                 guard let self else { return }

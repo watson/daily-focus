@@ -139,7 +139,9 @@ daily-focus service</code><button class="button button--primary" type="button" d
 
     <section id="personal" aria-labelledby="personal-title">
       <h2 id="personal-title">A dashboard for home</h2>
-      <p>Daily Focus can brief your personal life too: family calendars, reminders, messages, paperwork and your own projects. Run a second dashboard for the other profile, on its own port. Both keep their data in the same folder, one in <code>~/.daily-focus/work</code> and the other in <code>~/.daily-focus/personal</code>. The menu bar app runs one, so run the other as a service beside it, here a personal one:</p>
+      <p>Daily Focus can brief your personal life too: family calendars, reminders, messages, paperwork and your own projects. Run a second dashboard for the other profile, on its own port. Both keep their data in the same folder, one in <code>~/.daily-focus/work</code> and the other in <code>~/.daily-focus/personal</code>.</p>
+      <p><b>With the menu bar app</b>, choose <b>Add a Personal Dashboard</b> from its menu, or <b>Add a Work Dashboard</b> if the first one briefs your personal life. It opens on its own setup screen, and the menu then shows both.</p>
+      <p><b>Without the app</b>, run the second as a service beside the first, here a personal one:</p>
       <div class="code"><code id="cmd-personal">daily-focus service --profile personal --port 4322</code><button class="button button--primary" type="button" data-copy="cmd-personal">Copy</button></div>
       <h3>Reach it from your other devices</h3>
       <p>Personal sources often live on one computer, such as a Mac at home with your messages and reminders. Run Daily Focus there and reach it through <a href="https://tailscale.com/kb/1312/serve">Tailscale Serve</a>, which only your own devices can use:</p>
