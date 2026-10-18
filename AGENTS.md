@@ -151,8 +151,9 @@ works out versions and release notes from those. Never set the version in
 
 `npm run audit` checks the brief in the selected store, not the code.
 `test/docs-contract.test.ts` checks prompt/schema, configuration, and board-label
-consistency. New settings must appear in `src/config.ts`, `src/settings.ts` (the
-settings page) and `SETUP.md`. Only `DAILY_FOCUS_DATA`, `_PORT` and `_HOST` stay off
-the page: they locate the store, so they can't be kept in it. They are the only
+consistency. New settings must appear in `src/config.ts` and `src/settings.ts` (the
+settings page). Only `DAILY_FOCUS_DATA`, `_PORT` and `_HOST` stay off the page, and
+the setup page (`site/setup/index.html`) documents them instead: they locate the
+store, so they can't be kept in it. They are the only
 settings read from the environment (or `--data`, `--port`, `--host`); don't read
 another from it, or a `.env`.

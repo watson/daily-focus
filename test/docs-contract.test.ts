@@ -218,21 +218,19 @@ test("the assistant's prompt keeps its never-rules and stays in the chat", async
 });
 
 /**
- * Configuration is documented in the setup guide and read in `src/config.ts`. A
- * setting in one but not the other is a setting nobody can find or one that does
- * nothing, so the two lists have to match.
+ * The launch settings can't be on the settings page, which lives in the store they
+ * locate, so the setup page on the site is where anyone finds them. It names no
+ * other setting: everything else is explained where it is changed, on the settings
+ * page, and a second copy there would go stale.
  */
-test('SETUP.md and config.ts name the same settings', async () => {
-  const names = (text: string) => new Set([...text.matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
-
-  // The whole setup guide, not a slice between headings: a check anchored on prose is
-  // a check about formatting, and it goes quiet the day a heading is reworded.
-  const documented = names(await readFile(resolve(root, 'SETUP.md'), 'utf8'));
-  const read = names(await readFile(resolve(root, 'src/config.ts'), 'utf8'));
-
-  assert.ok(read.size >= 10, 'config.ts reads fewer settings than expected; did the naming change?');
-  for (const name of read) assert.ok(documented.has(name), `SETUP.md never mentions ${name}`);
-  for (const name of documented) assert.ok(read.has(name), `${name} is documented but config.ts never reads it`);
+test('the setup page documents the launch settings, and only those', async () => {
+  const { LAUNCH_SETTINGS } = await import('../src/env.ts');
+  const page = await readFile(resolve(root, 'site/setup/index.html'), 'utf8');
+  const named = new Set([...page.matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
+  for (const name of LAUNCH_SETTINGS) assert.ok(named.has(name), `site/setup/index.html never mentions ${name}`);
+  for (const name of named) {
+    assert.ok(LAUNCH_SETTINGS.includes(name), `site/setup/index.html names ${name}, which belongs on the settings page`);
+  }
 });
 
 /**

@@ -1,5 +1,6 @@
 // The page's few behaviours. Everything here is an enhancement: without script
-// the page shows the finished run, no now line, and the commands to copy by hand.
+// the page shows the brief the sort ends on, the launch objective's brief, and
+// the commands to copy by hand.
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -25,144 +26,416 @@ for (const button of document.querySelectorAll('[data-copy]')) {
   });
 }
 
-/* ---------- 07:00: the morning agent's run plays out once ---------- */
+/* ---------- The sort: the morning's pile, down to three ---------- */
 
-// Each subagent and when, in milliseconds from the start, it reports back. The
-// results are the trail's own, so the run ends exactly as the folded trail reads.
-const RUN = [
-  { at: 0, done: 1500 },
-  { at: 140, done: 2300 },
-  { at: 280, done: 2800 },
-  { at: 420, done: 1900 },
-  { at: 560, done: 1200 },
-];
-const LANDED = 3100;
-const FINISHED = 4100;
+/** How long the stream takes to run the morning past the reading line. */
+const READ_MS = 4200;
+/** Lines of the endless stream around the morning's own: read ones above, more below. */
+const BEFORE = 20;
+const AFTER = 45;
+/** Where the count of read things starts, as if it had been reading a while. */
+const READ_FROM = 12;
+/** How long a pick takes to lift out of the stream into the tray. */
+const CATCH_MS = 520;
+/** Then the stream fades as the picks line up, and they swell into cards. */
+const GATHER_MS = 650;
+const SWELL_MS = 560;
+/** How long the cards take to fill in, and the panel to come up around them. */
+const CARDS_MS = 750;
+const PANEL_MS = 800;
+/** Between one pick and the next, as they line up and swell. */
+const STAGGER_MS = 90;
+/** The tray's slots, one under another. */
+const SLOT_PX = 34;
 
-function playRun() {
-  const run = document.querySelector('.run');
-  if (!run || reduceMotion.matches) return;
-  const live = run.querySelector('.run__live .run__steps');
-  const phase = run.querySelector('.run__phase-text');
-  const state = run.querySelector('.run__state');
-  const trail = [...run.querySelectorAll('.run__trail li')];
+function sort() {
+  const figure = document.querySelector('[data-sort]');
+  if (!figure || reduceMotion.matches) return;
+  const stage = figure.querySelector('.sort__stage');
+  const tray = figure.querySelector('.sort__tray');
+  const view = figure.querySelector('.sort__window');
+  const wall = figure.querySelector('.sort__wall');
+  const tally = figure.querySelector('[data-tally]');
+  const lines = [...wall.querySelectorAll('span')];
+  // The stream is endless, or looks it: copies of the noise read already above
+  // the morning's lines, and more of it below, so the window is always full.
+  const noise = lines.filter((line) => !line.className);
+  const copy = (line, past) => {
+    const el = line.cloneNode(true);
+    if (past) el.classList.add('is-past');
+    return el;
+  };
+  wall.prepend(...noise.slice(-BEFORE).map((line) => copy(line, true)));
+  wall.append(...Array.from({ length: AFTER }, (_, i) => copy(noise[i % noise.length], false)));
+  const stream = [...wall.querySelectorAll('span')];
+  // What gets read as it passes the line: the morning's lines and the ones after.
+  const readable = stream.filter((line) => !line.classList.contains('is-past'));
+  const rows = [...figure.querySelectorAll('.sort__brief .row')];
+  const replay = figure.querySelector('[data-replay]');
 
-  run.classList.add('is-playing');
-  state.textContent = '· running';
-  const timers = [];
+  // A fixed scatter of shades, so the pile looks the same on every visit.
+  stream.forEach((line, i) => line.style.setProperty('--o', (0.45 + ((((i + 1) * 37) % 101) / 101) * 0.4).toFixed(2)));
+
+  let timers = [];
+  let frame = 0;
+  let picks = [];
+  let inView = false;
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
-
-  trail.forEach((source, i) => {
-    const step = source.cloneNode(true);
-    const result = step.querySelector('.step__result');
-    const final = result.textContent;
-    result.textContent = 'reading…';
-    step.classList.add('is-running');
-    later(RUN[i].at, () => live.append(step));
-    later(RUN[i].done, () => {
-      step.classList.remove('is-running');
-      result.textContent = final;
-    });
-  });
-  later(LANDED, () => (phase.textContent = 'The brief is in; checking it and writing its report'));
-  later(FINISHED, () => {
-    run.classList.remove('is-playing');
-    run.classList.add('is-landed');
-    state.textContent = '· finished';
-  });
-
-  // Someone who turns reduced motion on mid-play gets the end straight away.
-  reduceMotion.addEventListener('change', () => {
+  const stop = () => {
     timers.forEach(clearTimeout);
-    run.classList.remove('is-playing');
-    state.textContent = '· finished';
-  });
-}
-
-playRun();
-
-/* ---------- The now line ---------- */
-
-// Each hour's dot is a known time at a known height. The line sits at a fixed
-// height in the viewport; the time it shows is wherever that height falls
-// between the two dots around it, so scrolling from 10:20 to 11:30 runs the
-// clock through the minutes between.
-function nowLine() {
-  const now = document.querySelector('.now');
-  const label = now?.querySelector('.now__label');
-  const hours = [...document.querySelectorAll('.hour[data-at]')];
-  if (!now || !label || hours.length < 2) return;
-  now.hidden = false;
-
-  const minutes = (hhmm) => {
-    const [h, m] = hhmm.split(':').map(Number);
-    return h * 60 + m;
+    timers = [];
+    cancelAnimationFrame(frame);
+    for (const pick of picks) pick?.chip.remove(), pick?.words.remove();
+    picks = [];
   };
-  const format = (total) => {
-    const h = Math.floor(total / 60);
-    const m = Math.floor(total % 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const STATES = ['is-reading', 'is-sifting', 'is-gathering', 'is-swelling', 'is-cards', 'is-panel', 'is-done'];
+  const enter = (...states) => {
+    figure.classList.remove(...STATES);
+    figure.classList.add(...states);
   };
 
-  let marks = [];
-  const measure = () => {
-    marks = hours.map((hour) => {
-      const dot = hour.querySelector('.hour__time');
-      const box = dot.getBoundingClientRect();
-      const y = box.top + scrollY + parseFloat(getComputedStyle(hour.querySelector('.hour__inner')).getPropertyValue('--dot-y'));
-      return { y, t: minutes(hour.dataset.at), dot };
+  // Where things are, relative to the stage the stand-ins are placed in.
+  const within = (rect) => {
+    const box = stage.getBoundingClientRect();
+    return { x: rect.left - box.left, y: rect.top - box.top, w: rect.width, h: rect.height };
+  };
+  const px = (n) => `${n}px`;
+  const place = (r) => ({ left: px(r.x), top: px(r.y), width: px(r.w), height: px(r.h) });
+  const pad = (r, n) => ({ x: r.x - n, y: r.y - n, w: r.w + 2 * n, h: r.h + 2 * n });
+  // The words keep their own height, so a title that wraps in its card can wrap.
+  const spot = (r, extra = 0) => ({ left: px(r.x), top: px(r.y), width: px(r.w + extra) });
+  const glide = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
+
+  // The morning starts with its first line just under the reading line and
+  // ends with its last just over it; every line is read on the way, at one
+  // steady speed, and the stream runs on past them while it fades.
+  const course = () => {
+    const at = parseFloat(getComputedStyle(view).getPropertyValue('--read-y'));
+    const middle = (line) => line.offsetTop + line.offsetHeight / 2;
+    const morning = lines.map(middle);
+    const from = at - Math.min(...morning) + 10;
+    const to = at - Math.max(...morning) - 6;
+    return { at, middles: readable.map(middle), from, speed: (from - to) / READ_MS };
+  };
+  const rest = () => (wall.style.transform = `translateY(${course().from}px)`);
+  rest();
+
+  // A pick becomes a tag: a chip and its words, which lift into the tray.
+  const lift = (line) => {
+    const i = Number(line.dataset.row) - 1;
+    const from = within(line.getBoundingClientRect());
+    const slot = { ...from, x: 0, y: within(tray.getBoundingClientRect()).y + 4 + i * SLOT_PX };
+    const chip = Object.assign(document.createElement('div'), { className: 'sort__chip' });
+    const words = Object.assign(document.createElement('p'), { className: 'sort__words', textContent: line.textContent });
+    for (const el of [chip, words]) el.setAttribute('aria-hidden', 'true');
+    const size = getComputedStyle(line).fontSize;
+    Object.assign(chip.style, place(pad(from, 3)));
+    Object.assign(words.style, { ...spot(from, 2), lineHeight: px(from.h), fontSize: size });
+    stage.append(chip, words);
+    line.classList.add('is-read');
+    // A small pop where it was picked, then up into its slot.
+    const timing = { duration: CATCH_MS, easing: glide, fill: 'both' };
+    chip.animate(
+      [
+        { ...place(pad(from, 3)), transform: 'scale(1)' },
+        { ...place(pad(from, 3)), transform: 'scale(1.08)', offset: 0.2 },
+        { ...place(pad(slot, 3)), transform: 'scale(1)' },
+      ],
+      timing,
+    );
+    words.animate(
+      [
+        { ...spot(from, 2), transform: 'scale(1)' },
+        { ...spot(from, 2), transform: 'scale(1.08)', offset: 0.2 },
+        { ...spot(slot, 2), transform: 'scale(1)' },
+      ],
+      timing,
+    );
+    picks[i] = { chip, words, at: slot, size };
+  };
+
+  const read = () => {
+    enter('is-reading');
+    const { at, middles, from, speed } = course();
+    const order = readable.map((line, i) => ({ line, y: middles[i] })).sort((a, b) => a.y - b.y);
+    const morning = new Set(lines);
+    // The stream's own clock: it runs only while someone can see it, and a
+    // hidden tab coming back picks up where it was, not where it would be.
+    let clock = 0;
+    let then = null;
+    let next = 0;
+    let done = 0;
+    const tick = (now) => {
+      if (inView && !document.hidden) clock += Math.min(50, now - (then ?? now));
+      then = now;
+      const shift = from - speed * clock;
+      wall.style.transform = `translateY(${shift}px)`;
+      const was = done;
+      while (next < order.length && order[next].y + shift <= at) {
+        const { line } = order[next++];
+        if (line.classList.contains('is-kept')) lift(line);
+        else line.classList.add('is-read');
+        if (morning.has(line)) done++;
+      }
+      tally.textContent = String(READ_FROM + Math.round(((147 - READ_FROM) * done) / lines.length));
+      if (done === lines.length && was < done) later(250, gather);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+  };
+
+  const gather = () => {
+    // The rows the picks become are laid out already, only hidden.
+    const plan = picks.map((pick, i) => {
+      const row = rows[i];
+      const title = row.querySelector('.row__title');
+      const words = document.createRange();
+      words.selectNodeContents(title);
+      const look = getComputedStyle(title);
+      const card = getComputedStyle(row);
+      return {
+        ...pick,
+        title: within(title.getBoundingClientRect()),
+        text: within(words.getBoundingClientRect()),
+        row: within(row.getBoundingClientRect()),
+        lineHeight: parseFloat(look.lineHeight),
+        titleSize: look.fontSize,
+        ink: look.color,
+        surface: card.backgroundColor,
+        border: card.borderTopColor,
+        radius: card.borderTopLeftRadius,
+        shadow: card.boxShadow,
+      };
+    });
+    const tag = getComputedStyle(plan[0].chip);
+    const tagInk = getComputedStyle(plan[0].words).color;
+
+    // The stream fades while the picks line up, both at once.
+    enter('is-sifting', 'is-gathering');
+    const last = plan.length - 1;
+    plan.forEach((p, i) => {
+      // The lowest pick leaves first, so none passes over another on the way down.
+      const delay = (last - i) * STAGGER_MS;
+      // First the picks line up where the titles will be, growing to their size.
+      p.words.animate(
+        [
+          { ...spot(p.at, 2), lineHeight: px(p.at.h), fontSize: p.size, fontWeight: 400 },
+          { ...spot(p.title), lineHeight: px(p.lineHeight), fontSize: p.titleSize, fontWeight: 600 },
+        ],
+        { duration: GATHER_MS, delay, easing: glide, fill: 'both' },
+      );
+      p.chip.animate([place(pad(p.at, 3)), place(pad(p.text, 3))], { duration: GATHER_MS, delay, easing: glide, fill: 'both' });
+      // Then, in rank order, each pops out into its card, and its words take the card's ink.
+      later(GATHER_MS + (last + i) * STAGGER_MS, () => {
+        if (i === 0) enter('is-sifting', 'is-gathering', 'is-swelling');
+        p.chip.animate(
+          [
+            { ...place(pad(p.text, 3)), backgroundColor: tag.backgroundColor, borderColor: 'transparent', borderRadius: '3px', boxShadow: 'none' },
+            { ...place(p.row), backgroundColor: p.surface, borderColor: p.border, borderRadius: p.radius, boxShadow: p.shadow },
+          ],
+          // A touch past its size and back: the card pops out of the tag.
+          { duration: SWELL_MS, easing: 'cubic-bezier(0.3, 1.3, 0.5, 1)', fill: 'forwards' },
+        );
+        p.words.animate([{ color: tagInk }, { color: p.ink }], { duration: SWELL_MS, fill: 'forwards' });
+      });
+    });
+
+    // The last card is whole. From here the brief builds outwards: the real
+    // rows take over and fill in, then the panel comes up around them.
+    later(GATHER_MS + SWELL_MS + 2 * last * STAGGER_MS + 40, () => {
+      enter('is-cards');
+      stop();
+      later(CARDS_MS, () => enter('is-panel'));
+      later(CARDS_MS + PANEL_MS, () => {
+        enter('is-done');
+        replay.hidden = false;
+      });
     });
   };
 
-  let queued = false;
-  const update = () => {
-    queued = false;
-    const y = now.getBoundingClientRect().top + scrollY;
-    const first = marks[0];
-    const last = marks[marks.length - 1];
-    let t = first.t;
-    if (y >= last.y) t = last.t;
-    else if (y > first.y) {
-      const i = marks.findIndex((mark) => mark.y > y);
-      const a = marks[i - 1];
-      const b = marks[i];
-      t = a.t + ((b.t - a.t) * (y - a.y)) / (b.y - a.y);
-    }
-    label.textContent = format(t);
-    for (const mark of marks) mark.dot.classList.toggle('is-passing', Math.abs(mark.y - y) < 18);
-    // The day ends at the last hour; the line goes with it, and isn't there
-    // before the first.
-    now.classList.toggle('is-gone', y > last.y + 4 || y < first.y - 4);
-  };
-  const queue = () => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(update);
+  const play = () => {
+    stop();
+    figure.classList.add('is-instant');
+    enter();
+    for (const line of readable) line.classList.remove('is-read');
+    tally.textContent = String(READ_FROM);
+    rest();
+    replay.hidden = true;
+    void figure.offsetWidth;
+    figure.classList.remove('is-instant');
+    read();
   };
 
-  // The line rides at the height of the first hour's dot, so the page opens
-  // with it on 07:00, and an hour reaches it as its heading nears the top.
-  const pin = () => {
-    now.style.top = `${Math.min(marks[0].y, innerHeight * 0.4)}px`;
-  };
-
-  measure();
-  pin();
-  update();
-  addEventListener('scroll', queue, { passive: true });
-  const remeasure = () => {
-    measure();
-    pin();
-    queue();
-  };
-  addEventListener('resize', remeasure);
-  // Fonts arriving move everything below them.
-  document.fonts?.ready.then(remeasure);
+  // The stream is moving as soon as the page is up, but only runs while the
+  // pile is in view, so nobody misses the picks below the fold.
+  new IntersectionObserver((entries) => (inView = entries.some((entry) => entry.isIntersecting)), {
+    threshold: 0.6,
+  }).observe(stage);
+  replay.addEventListener('click', play);
+  (document.fonts?.ready ?? Promise.resolve()).then(play);
+  reduceMotion.addEventListener('change', () => {
+    if (!reduceMotion.matches) return;
+    stop();
+    enter('is-done');
+    replay.hidden = true;
+  });
 }
 
-nowLine();
+sort();
 
-/* ---------- 11:30: the assistant, replayed ---------- */
+/* ---------- The objective: the same morning, ranked against each ---------- */
+
+// The rows the four objectives draw on. Each objective picks three, in order,
+// and may say why in its own words.
+const ROWS = {
+  review: {
+    title: '<span class="row__repo">acme/webapp</span> Review requested: Fix rounding in gift card balances',
+    src: ['GitHub', 'github'],
+    who: '@alice',
+    pills: '<span class="pill pill--warning">2 days on the list</span>',
+    detail: 'Alice asked you directly 2 days ago; nobody else has looked.',
+  },
+  training: {
+    title: 'Complete annual security &amp; compliance training',
+    src: ['Workday', 'workday'],
+    pills: '<span class="pill pill--critical">due today</span><span class="pill pill--warning">6 days on the list</span>',
+    detail: 'Workday has sent three reminders. After tonight it goes to your manager.',
+  },
+  bob: {
+    title: 'Re: Q4 headcount plan — Bob is waiting on your input',
+    src: ['Email', 'email'],
+    who: 'bob@acme.example',
+    pills: '<span class="pill pill--warning">3 days on the list</span>',
+    detail: 'He asked for the team split on Monday and followed up yesterday. Nothing sent back yet.',
+  },
+  written: {
+    title: 'No path to faster checkout today. Protect 12:00–15:00 for profiling the slow requests',
+    src: ['Other', 'other'],
+    pills: '',
+    detail: 'Nothing that came in moves the objective, and nobody is going to write and tell you so. 12:00–15:00 is your one free block long enough.',
+  },
+};
+
+const GOALS = {
+  launch: {
+    objective: 'Launch gift cards before the holiday sale',
+    blocked: 'the rounding fix in webapp#3421 is still waiting on review',
+    note: 'Alice’s review on <code>webapp#3421</code> is the one thing here that moves the objective, and 12:00–15:00 is your only real focus block for it. The compliance training is due tonight.',
+    says: 'Alice’s review comes first: merging it is what gets gift cards to staging. The louder threads wait their turn.',
+    rows: [
+      ['review', { objective: true, detail: 'Alice asked you directly 2 days ago; nobody else has looked. Merging it is what lets gift cards go live in staging.' }],
+      ['training'],
+      ['bob'],
+    ],
+  },
+  hire: {
+    objective: 'Hire two engineers for the Platform team',
+    blocked: 'Platform’s share of the Q4 roles isn’t agreed',
+    note: 'Bob’s headcount thread decides whether Platform gets its two roles, and the planning deck locks on Friday. Answer it before the 15:00 sync.',
+    says: 'Same morning, same mail. Now Bob’s thread comes first, because his split decides whether Platform gets the roles.',
+    rows: [
+      ['bob', { objective: true, detail: 'His split decides whether Platform gets the two roles. He asked on Monday and followed up yesterday.' }],
+      ['training'],
+      ['review'],
+    ],
+  },
+  speed: {
+    objective: 'Halve the checkout page’s load time',
+    blocked: 'nobody has profiled the slow checkout requests yet',
+    note: 'Nothing that came in today moves the checkout work, so the time for it has to come from you. 12:00–15:00 is the only block long enough.',
+    says: 'Nothing that came in moves this one. So the brief says that, and makes room for it at the top. No email would have told you.',
+    rows: [['written', { objective: true }], ['training'], ['review']],
+  },
+  none: {
+    objective: null,
+    note: 'Two things are time-boxed today: the <b>compliance training</b>, due tonight, and the Lisbon fare that expires at 17:00.',
+    says: 'With no objective, it ranks by deadlines and by who’s waiting. That helps, but it can’t know which work matters most to you.',
+    rows: [['training'], ['bob'], ['review']],
+  },
+};
+
+function objective() {
+  const goals = document.querySelector('[data-goals]');
+  const brief = document.querySelector('[data-brief]');
+  if (!goals || !brief) return;
+  const list = brief.querySelector('[data-rows]');
+  const says = document.querySelector('[data-says]');
+  const label = brief.querySelector('[data-label]');
+  const text = brief.querySelector('[data-objective]');
+  const blocked = brief.querySelector('[data-blocked]');
+  const note = brief.querySelector('[data-note]');
+  let swap;
+
+  const row = (key, rank, { objective = false, detail } = {}) => {
+    const r = ROWS[key];
+    const pills = (objective ? '<span class="pill pill--accent">objective</span>' : '') + r.pills;
+    return (
+      `<span class="row__rank">${rank}</span><div>` +
+      `<p class="row__title">${r.title}</p>` +
+      `<p class="row__meta"><span class="src" style="--src: var(--src-${r.src[1]})">${r.src[0]}</span>` +
+      `${r.who ? `<span class="muted">${r.who}</span>` : ''}${pills}</p>` +
+      `<p class="row__detail">${detail ?? r.detail}</p></div>`
+    );
+  };
+
+  const band = (goal) => {
+    brief.classList.toggle('brief--empty', !goal.objective);
+    label.textContent = goal.objective ? 'Current objective' : 'No current objective';
+    text.textContent = goal.objective ?? 'Set one to have the day ranked against it.';
+    blocked.hidden = !goal.blocked;
+    blocked.querySelector('span').textContent = goal.blocked ?? '';
+    note.innerHTML = goal.note;
+  };
+
+  const choose = (key) => {
+    const goal = GOALS[key];
+    if (!goal) return;
+    const motion = !reduceMotion.matches;
+    const was = new Map([...list.children].map((el) => [el.dataset.key, el]));
+    const from = new Map([...was].map(([k, el]) => [k, el.getBoundingClientRect().top]));
+
+    const rows = goal.rows.map(([k, opts], i) => {
+      const el = was.get(k) ?? Object.assign(document.createElement('li'), { className: 'row' });
+      el.dataset.key = k;
+      el.classList.toggle('row--written', k === 'written');
+      el.classList.toggle('is-entering', motion && !was.has(k));
+      el.innerHTML = row(k, i + 1, opts);
+      return el;
+    });
+    list.replaceChildren(...rows);
+    says.textContent = goal.says;
+
+    // Each row that stayed slides from where it was to where it ranks now.
+    if (motion) {
+      for (const el of rows) {
+        const top = from.get(el.dataset.key);
+        if (top === undefined) continue;
+        const dy = top - el.getBoundingClientRect().top;
+        if (Math.abs(dy) < 1) continue;
+        el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], {
+          duration: 480,
+          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+        });
+      }
+    }
+
+    clearTimeout(swap);
+    if (!motion) return band(goal);
+    brief.classList.add('is-changing');
+    swap = setTimeout(() => {
+      band(goal);
+      brief.classList.remove('is-changing');
+    }, 200);
+  };
+
+  list.addEventListener('animationend', (event) => event.target.classList.remove('is-entering'));
+  goals.addEventListener('change', (event) => choose(event.target.value));
+  goals.hidden = false;
+}
+
+objective();
+
+/* ---------- The assistant, replayed ---------- */
 
 // What the assistant did for Mara on each quick action: its steps, how long the
 // panel says it worked, and its answer. The draft is the demo's own turn on this
@@ -273,7 +546,7 @@ function assistantReplay() {
 
 assistantReplay();
 
-/* ---------- 17:00: handle an item ---------- */
+/* ---------- Handle an item ---------- */
 
 function handleCard() {
   const card = document.querySelector('[data-handle]');
@@ -281,7 +554,7 @@ function handleCard() {
   const toast = card.querySelector('.toast');
   const text = toast.querySelector('.toast__text');
   const undo = toast.querySelector('.toast__undo');
-  const note = card.querySelector('[data-note]');
+  const note = card.querySelector('[data-note-form]');
   let hide;
 
   const show = (message, onUndo) => {
@@ -311,3 +584,36 @@ function handleCard() {
 }
 
 handleCard();
+
+/* ---------- The setup page's contents, following you down ---------- */
+
+function contents() {
+  const links = [...document.querySelectorAll('.toc a')];
+  if (links.length === 0) return;
+  const sections = links.map((link) => document.querySelector(link.getAttribute('href')));
+  let queued = false;
+  // The current section is the last one whose top has passed a third of the way down.
+  const mark = () => {
+    queued = false;
+    const line = innerHeight / 3;
+    let current = 0;
+    sections.forEach((section, i) => {
+      if (section.getBoundingClientRect().top <= line) current = i;
+    });
+    links.forEach((link, i) => {
+      link.classList.toggle('is-current', i === current);
+      if (i === current) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  };
+  addEventListener(
+    'scroll',
+    () => {
+      if (!queued) requestAnimationFrame(mark), (queued = true);
+    },
+    { passive: true },
+  );
+  mark();
+}
+
+contents();

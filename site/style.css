@@ -1,17 +1,16 @@
 /*
- * The page is one day with Daily Focus, read top to bottom. A time rail runs
- * down its left edge, the same ruled timeline as the dashboard's agenda, and
- * each part of the product sits at the hour you would meet it: the brief at
- * 07:00, the pull request board when a review lands, the ticket board in the
- * afternoon, the notes for tomorrow at 17:00. The now line rides the rail as
- * you scroll.
+ * The page argues one thing: Daily Focus is an edit, not a list. Its opening
+ * plays one invented morning's pile of subject lines down to the three that
+ * matter, landing in the brief as the dashboard draws it. The sections after
+ * it show what decides the edit (the objective), what it catches that a list
+ * wouldn't, what it learns from you, and the boards that keep up through the
+ * day.
  *
  * It wears the dashboard's own materials (public/style.css), so the page and
- * the product are one thing: the navy band for the morning masthead and again
- * for the evening, the paper for the day, white cards for rows, amber for
- * what can be pressed, Plex Serif for words the brief is made of and Plex Sans
- * for everything operational. The recreated pieces of the product use the
- * dashboard's sample data, the same invented people and pull requests.
+ * the product are one thing: the navy band, the paper, white cards for rows,
+ * Plex Serif for words the brief is made of and Plex Sans for everything
+ * operational. Amber is the agent's hand and what can be pressed: rank
+ * numerals, the highlighter on a line it found, primary buttons.
  */
 
 @font-face {
@@ -70,7 +69,6 @@
   --band-rule: rgba(255, 255, 255, 0.18);
   --band-sheet: rgba(255, 255, 255, 0.07);
   --band-critical: #ffb3b3;
-  --band-good: #7ee2a8;
 
   --shadow: 0 1px 2px light-dark(rgba(27, 31, 42, 0.05), transparent),
     0 6px 20px light-dark(rgba(27, 31, 42, 0.06), transparent);
@@ -85,17 +83,18 @@
 
   --src-github: light-dark(#2a78d6, #3987e5);
   --src-email: light-dark(#eb6834, #d95926);
+  --src-calendar: light-dark(#1baf7a, #199e70);
   --src-jira: light-dark(#eda100, #c98500);
+  --src-slack: light-dark(#e87ba4, #d55181);
   --src-workday: #008300;
   --src-tasks: light-dark(#0b8ea8, #2ba8c4);
+  --src-docs: light-dark(#4a3aa7, #9085e9);
+  --src-other: #7d8392;
 
   --accent: #e0962a;
   --accent-ink: light-dark(#a86a14, #e8a743);
   --on-accent: #1b1f2a;
   --accent-wash: light-dark(#fbefd9, #3a3220);
-
-  /* The agenda's now line. */
-  --now: #e5484d;
 
   --font-sans: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-serif: 'Plex Serif', 'Iowan Old Style', Georgia, serif;
@@ -103,10 +102,6 @@
 
   --page-width: 1240px;
   --gutter: clamp(20px, 4vw, 48px);
-  /* The rail: times in the first 64px, the line at 80px, content from 112px. */
-  --rail: 112px;
-  --rail-times: 64px;
-  --rail-line: 80px;
 }
 
 *,
@@ -279,24 +274,28 @@ button.button--ui:hover {
   text-overflow: ellipsis;
 }
 
-/* ---------- the day and its rail ---------- */
 
-.day {
-  position: relative;
+/* Read aloud, not shown: the verdict a strike-through or a numeral shows. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- the morning: the band, and the pitch ---------- */
+
+.wrap {
+  max-width: var(--page-width);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
 }
 
 .band {
   background: var(--band);
   color: var(--band-ink);
-}
-
-.nav,
-.hour__inner,
-.evening__inner,
-.footer {
-  max-width: var(--page-width);
-  margin-inline: auto;
-  padding-inline: var(--gutter);
 }
 
 .nav {
@@ -338,429 +337,355 @@ button.button--ui:hover {
   color: var(--band-ink);
 }
 
-.hour__inner {
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr);
-  padding-block: 104px;
-  --dot-y: 24px;
-}
-/* The rail's line, drawn per hour so it takes the colour of the ground it crosses. */
-.hour__inner::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--gutter) + var(--rail-line));
-  width: 1px;
-  background: var(--hairline);
-}
-.band .hour__inner::before {
-  background: var(--band-rule);
-}
-.hour--first .hour__inner {
-  padding-block: 64px 104px;
-}
-.hour--first .hour__inner::before {
-  top: calc(64px + var(--dot-y));
-}
-.hour--last .hour__inner::before {
-  bottom: auto;
-  height: calc(104px + var(--dot-y));
-}
-
-.hour__time {
-  position: relative;
-  width: var(--rail-times);
-  margin: 0;
-  /* Centred on the heading's first line. */
-  padding-top: calc(var(--dot-y) - 0.5lh);
-  color: var(--ink-2);
-  font: 500 15px/1.5 var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.band .hour__time {
-  color: var(--band-muted);
-}
-.hour__time time {
-  transition: opacity 0.15s;
-}
-.hour__time.is-passing time {
-  opacity: 0;
-}
-.hour__time::after {
-  content: '';
-  position: absolute;
-  top: calc(var(--dot-y) - 6px);
-  left: calc(var(--rail-line) - 6px);
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--ink-1);
-  border-radius: 50%;
-  background: var(--page);
-}
-.band .hour__time::after {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.hour__body {
-  min-width: 0;
-}
-/* The heading spans the hour; the words and the piece of the product sit side by side under it. */
-.hour__body--split {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: 0 72px;
-  align-items: start;
-}
-.hour__body--split .copy {
-  display: contents;
-}
-.hour__body--split h2 {
-  grid-column: 1 / -1;
-  max-width: 22ch;
-  margin-bottom: 40px;
-}
-
-/* The now line rides the rail at a fixed height in the viewport. */
-.now {
-  position: sticky;
-  top: 46vh;
-  z-index: 5;
-  height: 0;
-  max-width: var(--page-width);
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-.now::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: calc(var(--gutter) + var(--rail-times) + 4px);
-  width: calc(var(--rail-line) + 16px - var(--rail-times) - 4px);
-  height: 2px;
-  background: var(--now);
-}
-.now__time {
-  position: absolute;
-  top: -11px;
-  left: var(--gutter);
-  width: calc(var(--rail-times) + 4px);
-  color: #fff;
-  font: 600 12px/1 var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.now__label {
-  display: inline-block;
-  padding: 5px 7px;
-  border-radius: 4px;
-  background: var(--now);
-}
-.now.is-gone {
-  opacity: 0;
-}
-
-/* ---------- 07:00, the hero ---------- */
-
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: 56px 64px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 29rem);
+  gap: 48px 64px;
   align-items: start;
+  padding-block: 40px 96px;
 }
-
+.hero__pitch {
+  container-type: inline-size;
+}
 h1 {
-  margin: 0 0 28px;
-  max-width: 11ch;
+  margin: 0 0 32px;
   font-weight: 400;
-  font-size: clamp(2.75rem, 1.5rem + 4.4vw, 5rem);
-  line-height: 1.02;
+  font-size: clamp(2.4rem, 1.3rem + 3vw, 4rem);
+  /* As large as lets "Everything that came in," (11 em) fill one line. */
+  font-size: max(2.4rem, min(4rem, 100cqi / 11.3));
+  line-height: 1.05;
   letter-spacing: -0.02em;
-  text-wrap: balance;
+}
+/* Each half of the headline starts its own line, and the first stays whole. */
+h1 span {
+  display: inline-block;
 }
 .lede {
-  max-width: 33em;
-  margin: 0 0 36px;
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 20px;
+  max-width: 34em;
+  margin: 0 0 32px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 19.5px;
   line-height: 1.6;
 }
 .cta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 .cta__note {
-  margin: 16px 0 0;
+  margin: 14px 0 0;
   color: var(--band-muted);
   font: 14px/1.5 var(--font-sans);
 }
 
-/* The morning agent's run, as the dashboard's run panel shows it. */
-.run {
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--ink-1);
-  box-shadow: var(--shadow-float);
-}
-.run__head {
-  padding: 18px 22px 14px;
-  border-bottom: 1px solid var(--rule);
-}
-.run__meta {
+/* ---------- the sort: the pile, and the brief it becomes ---------- */
+
+.sort {
   margin: 0;
-  font-weight: 600;
-  font-size: 13.5px;
 }
-.run__meta .muted {
-  font-weight: 400;
-}
-.run__title {
-  margin: 4px 0 0;
-  font-weight: 600;
-  font-size: 18px;
-}
-.run__live {
-  padding: 16px 22px 20px;
-}
-.run__phase {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px;
-  font-weight: 600;
-  font-size: 14px;
-}
-.run__steps {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.run__steps li {
-  display: grid;
-  grid-template-columns: 16px 64px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  padding: 7px 0;
-  border-top: 1px solid var(--rule);
-  font-size: 14px;
-}
-.step__name {
-  font-weight: 500;
-}
-.step__result {
-  color: var(--ink-2);
-}
-.step__check {
+.sort__stage {
   position: relative;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--good-ink);
 }
-.step__check::after {
+/*
+ * The pile lies over the brief's box: what it is reading, the tray its picks
+ * collect in, and the window the stream of subject lines runs through, past
+ * a reading line. Lines below the line are unread; above it, read.
+ */
+.sort__pile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-sans);
+}
+.sort__count {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 16px;
+  margin: 0 0 8px;
+  color: var(--band-ink);
+  font-weight: 600;
+  font-size: 15px;
+}
+.sort__tally {
+  color: var(--band-muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sort__tray {
+  flex: none;
+  height: 110px;
+}
+/* The stream runs up behind the tray too, so the window is full from the start. */
+.sort__window {
+  --read-y: 150px;
+  position: relative;
+  flex: 1;
+  margin-top: -110px;
+  overflow: hidden;
+  /* Faint behind the tray, so the picks stand clear; full from the reading line down. */
+  -webkit-mask-image: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.45) 100px, #000 140px, #000 80%, transparent);
+  mask-image: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.45) 100px, #000 140px, #000 80%, transparent);
+}
+/* The reading line: where each subject line is read as it passes. */
+.sort__window::after {
   content: '';
   position: absolute;
-  left: 5.5px;
-  top: 3px;
-  width: 4px;
-  height: 8px;
-  border: solid var(--surface);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  inset: var(--read-y) 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(224, 150, 42, 0.75) 15%, rgba(224, 150, 42, 0.75) 85%, transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
 }
-.run__steps .is-running .step__check {
-  background: none;
+.sort.is-reading .sort__window::after {
+  opacity: 1;
 }
-.run__steps .is-running .step__check::after {
-  display: none;
+.sort__wall {
+  margin: 0;
+  color: var(--band-muted);
+  font-size: 13.5px;
+  line-height: 1.85;
 }
-.run__steps .is-running .step__result {
-  color: var(--ink-3);
+.sort__wall span {
+  margin-right: 1.1em;
+  border-radius: 2px;
+  opacity: var(--o, 0.7);
 }
-
-.spinner,
-.run__steps .is-running .step__check::before {
-  content: '';
-  display: block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--rule);
-  border-top-color: var(--accent-ink);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.sort__wall .is-kept {
+  white-space: nowrap;
 }
-@keyframes spin {
+/* Already read when the page came up: the stream was running before you got here. */
+.sort__wall .is-past {
+  opacity: 0.16;
+}
+/* Read: it brightens as it crosses the line, then dims. */
+.sort__wall .is-read {
+  animation: read 1.1s ease-out forwards;
+}
+/* Weighed: it holds a moment in amber before it is let go. */
+.sort__wall .is-weighed.is-read {
+  animation: weigh 1.4s ease-out forwards;
+}
+/* Picked: a tag lifts out of the stream in its place. */
+.sort__wall .is-kept.is-read {
+  visibility: hidden;
+  animation: none;
+}
+@keyframes read {
+  15% {
+    opacity: 1;
+    color: var(--band-ink);
+  }
   to {
-    transform: rotate(360deg);
+    opacity: 0.16;
   }
 }
+@keyframes weigh {
+  12%,
+  55% {
+    opacity: 1;
+    color: var(--band-ink);
+    background-color: rgba(224, 150, 42, 0.32);
+    box-shadow: 0 0 0 3px rgba(224, 150, 42, 0.32);
+  }
+  to {
+    opacity: 0.16;
+  }
+}
+.sort__window,
+.sort__count {
+  transition: opacity 0.45s;
+}
 
-.run__report {
-  padding: 16px 22px 18px;
-  font-family: var(--font-serif);
-  font-size: 15.5px;
-  line-height: 1.58;
+/*
+ * The morph. Each tag becomes two stand-ins over the stage: the chip, which
+ * lines up and then swells from a tag into its row's card, and the words,
+ * which travel to the row's title and settle there. When they land, the real
+ * row takes their place and the rest of it fades in.
+ */
+.sort__chip,
+.sort__words {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  pointer-events: none;
 }
-.run__report p {
-  margin: 0 0 10px;
+.sort__chip {
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: var(--accent);
 }
-.run__report strong {
-  font-weight: 600;
+.sort__words {
+  color: var(--on-accent);
+  font-family: var(--font-sans);
 }
-.run__trail summary,
-.turn__trail summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-2);
-  font: 13.5px/1.5 var(--font-sans);
-  list-style: none;
-  cursor: pointer;
-}
-.run__trail summary::-webkit-details-marker,
-.turn__trail summary::-webkit-details-marker {
-  display: none;
-}
-.run__trail summary::before,
-.turn__trail summary::before {
-  content: '';
-  border-left: 6px solid currentColor;
-  border-block: 4px solid transparent;
-  transition: transform 0.15s;
-}
-.run__trail[open] summary::before,
-.turn__trail[open] summary::before {
-  transform: rotate(90deg);
-}
-.run__trail summary:hover,
-.turn__trail summary:hover {
+
+.sort__brief {
+  position: relative;
+  isolation: isolate;
+  padding: 20px 20px 18px;
   color: var(--ink-1);
 }
-.run__trail .run__steps {
-  margin-top: 10px;
-  font-family: var(--font-sans);
+/* The panel's ground is a layer of its own, so it can arrive after its cards. */
+.sort__brief::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 14px;
+  background: var(--page);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
 }
-
-/* While the run plays, its report waits; once it has played, the steps fold away. */
-.run:not(.is-playing) .run__live {
-  display: none;
+.sort__head {
+  margin: 0 -20px 16px;
+  padding: 0 20px 14px;
+  border-bottom: 1px solid var(--hairline);
 }
-.run.is-playing .run__report {
-  display: none;
-}
-.run.is-landed .run__report {
-  animation: land 0.5s ease-out;
-}
-@keyframes land {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-/* The brief it wrote: Today's masthead, on the band. */
-.masthead {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: 32px 64px;
-  margin: 0;
-  padding-top: 48px;
-  border-top: 1px solid var(--band-rule);
-}
-.masthead__label {
-  margin: 0 0 8px;
-  color: var(--accent);
-  font: 600 14px/1.5 var(--font-sans);
-}
-.masthead__headline {
-  margin: 0 0 12px;
-  font-weight: 500;
-  font-size: clamp(1.5rem, 1.1rem + 1vw, 1.875rem);
-  line-height: 1.25;
-  text-wrap: pretty;
-}
-.masthead__blocked {
-  margin: 0;
-  color: var(--band-muted);
-  font: 15px/1.5 var(--font-sans);
-}
-.masthead__blocked strong {
-  color: var(--band-critical);
+.sort__label {
+  color: var(--accent-ink);
   font-weight: 600;
+  font-size: 13px;
 }
-.note {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: end;
-  margin: 0;
-  padding: 2px 0 2px 22px;
-  border-left: 3px solid var(--accent);
-  color: rgba(255, 255, 255, 0.9);
-  font-style: italic;
-  font-size: 18px;
-  line-height: 1.62;
+.sort__objective {
+  margin-top: 2px;
+  font: 500 18px/1.3 var(--font-serif);
 }
-.note p {
-  margin: 0;
+.sort__brief .row {
+  padding: 13px 16px 14px 12px;
 }
-.note b {
-  color: var(--band-ink);
-  font-weight: 500;
-  font-style: normal;
+.sort__brief .row__title {
+  font-size: 15px;
 }
-.note code {
-  font-style: normal;
+.sort__brief .row__detail {
+  margin-top: 6px;
+  font-size: 13.5px;
 }
-.stats {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  margin: 0;
-  padding: 20px 0;
-  border: 1px solid var(--band-rule);
-  border-radius: 12px;
-  background: var(--band-sheet);
-  font-family: var(--font-sans);
+.sort__rest {
+  margin-top: 12px;
+  color: var(--ink-3);
+  font-size: 13.5px;
 }
-.stats > div {
-  display: flex;
-  flex-direction: column-reverse;
-  justify-content: flex-end;
-  padding: 0 22px;
-}
-.stats > div + div {
-  border-left: 1px solid var(--band-rule);
-}
-.stats dt {
-  color: var(--band-muted);
-  font-size: 14px;
-  line-height: 1.4;
-}
-.stats dd {
-  margin: 0 0 2px;
-  font-weight: 600;
-  font-size: 26px;
-  line-height: 1.2;
-}
-.stats .good {
-  color: var(--band-good);
-}
-.masthead figcaption {
-  grid-column: 1 / -1;
+.sort__caption {
+  margin-top: 14px;
   color: var(--band-muted);
   font: 13.5px/1.5 var(--font-sans);
 }
+.replay {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--band-ink);
+  font: 500 13.5px/1.5 var(--font-sans);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
 
-/* ---------- the day's hours, on the paper ---------- */
+/*
+ * The sort plays only with script and with motion allowed; otherwise the
+ * page shows its end, the brief. main.js steps it through reading (the
+ * stream runs past the reading line and the three are picked into the tray),
+ * sifting (the stream fades), gathering (the picks line up where their titles
+ * will be) and swelling (each grows into its card, on the bare band).
+ * Then the brief builds outwards: the cards fill in (is-cards), the panel
+ * comes up behind them and its own words arrive (is-panel), and it rests
+ * (is-done).
+ */
+.sort__pile {
+  visibility: hidden;
+  opacity: 0;
+}
+.sort__caption {
+  transition: opacity 0.3s;
+}
+.sort__brief::before {
+  transition: opacity 0.35s, transform 0.55s cubic-bezier(0.3, 1.35, 0.5, 1);
+}
+.sort__brief .row:nth-child(2) {
+  --row-d: 0.09s;
+}
+.sort__brief .row:nth-child(3) {
+  --row-d: 0.18s;
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .js .sort:not(.is-swelling, .is-cards, .is-panel, .is-done) .sort__pile {
+    visibility: visible;
+    opacity: 1;
+  }
+  .js .sort:not(.is-swelling, .is-cards, .is-panel, .is-done) .sort__brief {
+    visibility: hidden;
+  }
+  .js .sort.is-sifting :is(.sort__window, .sort__count) {
+    opacity: 0;
+  }
+  .js .sort.is-swelling .sort__brief .row {
+    visibility: hidden;
+  }
+  /* Until the panel's turn, the cards stand on the band alone. Held back from
+     the start, so the panel never shows on its way out as the brief appears. */
+  .js .sort:not(.is-panel, .is-done) .sort__brief::before {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  .js .sort:not(.is-panel, .is-done) :is(.sort__head, .sort__brief > .ui-heading, .sort__rest) {
+    opacity: 0;
+  }
+  /* The cards fill in: the rank pops, then the source, then the reason. */
+  .js .sort.is-cards .sort__brief .row__rank {
+    animation: pop 0.45s cubic-bezier(0.3, 1.5, 0.5, 1) var(--row-d, 0s) both;
+  }
+  .js .sort.is-cards .sort__brief .row__meta {
+    animation: land 0.35s ease-out calc(var(--row-d, 0s) + 0.08s) both;
+  }
+  .js .sort.is-cards .sort__brief .row__detail {
+    animation: land 0.35s ease-out calc(var(--row-d, 0s) + 0.16s) both;
+  }
+  /* Then the panel's own words, top to bottom, once its ground is up. */
+  .js .sort.is-panel .sort__head {
+    animation: land 0.35s ease-out 0.15s both;
+  }
+  .js .sort.is-panel .sort__brief > .ui-heading {
+    animation: land 0.35s ease-out 0.24s both;
+  }
+  .js .sort.is-panel .sort__rest {
+    animation: land 0.35s ease-out 0.33s both;
+  }
+  .js .sort:not(.is-done) .sort__caption {
+    opacity: 0;
+  }
+}
+.sort.is-instant,
+.sort.is-instant * {
+  transition: none !important;
+}
+
+/* ---------- the day's sections, on the paper ---------- */
+
+.section {
+  padding-block: 120px;
+}
+.section + .section {
+  border-top: 1px solid var(--hairline);
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px 72px;
+  align-items: start;
+}
 
 .copy h2,
 .evening h2 {
@@ -772,7 +697,7 @@ h1 {
   text-wrap: balance;
 }
 .copy h2 {
-  max-width: 18ch;
+  max-width: 16ch;
 }
 .copy p {
   max-width: 32em;
@@ -782,7 +707,13 @@ h1 {
 .copy p:last-child {
   margin-bottom: 0;
 }
-
+.copy--wide {
+  max-width: 44em;
+  margin-bottom: 64px;
+}
+.copy--wide h2 {
+  max-width: none;
+}
 /* The recreated pieces of the dashboard. */
 .ui {
   font-family: var(--font-sans);
@@ -946,99 +877,347 @@ h1 {
   border-top: 4px solid var(--ink-3);
   border-inline: 4px solid transparent;
 }
-
-/* 08:45: Today's priorities beside the agenda. */
-.today {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-  gap: 40px;
-  margin-top: 56px;
+.status--plain {
+  padding: 0 6px;
+  color: inherit;
+  font-size: inherit;
 }
-.agenda__card {
-  position: relative;
-  margin: 0;
-  padding: 16px 18px 16px 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  list-style: none;
-}
-.agenda__card::before {
-  content: '';
-  position: absolute;
-  top: 22px;
-  bottom: 22px;
-  left: 75px;
-  width: 1px;
-  background: var(--rule);
-}
-.slot {
-  display: grid;
-  grid-template-columns: 62px minmax(0, 1fr);
-  gap: 0 26px;
-  padding: 6px 0;
-}
-.slot time {
-  color: var(--ink-3);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  line-height: 1.6;
-}
-.slot__what {
-  position: relative;
-  font-size: 14px;
-}
-.slot__what::before {
-  content: '';
-  position: absolute;
-  top: 7px;
-  left: -18.5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--hairline);
-}
-.slot small {
-  display: block;
-  color: var(--ink-3);
-  font-size: 12.5px;
-}
-.slot--free .slot__what {
-  color: var(--good-ink);
-  font-weight: 600;
-}
-.slot--free .slot__what::before {
-  border: 1.5px solid var(--good-ink);
-  background: var(--surface);
-}
-.slot--free small {
-  color: var(--ink-1);
-  font-weight: 500;
-}
-.slot--optional .slot__what {
-  color: var(--ink-2);
-}
-.clash::before {
-  content: '⚠ ';
-  color: var(--serious);
+.status--plain::after {
+  display: none;
 }
 
-/* 10:20 and 14:10: a board's buckets. */
-.buckets {
-  margin: 28px 0 0;
+
+/* ---------- the objective, and the order it makes ---------- */
+
+/* The words and the choices on the left, the brief they change on the right. */
+.goalset {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas: 'copy brief' 'goals brief' 'says brief';
+  column-gap: 72px;
+  align-items: start;
+}
+.goalset > .copy {
+  grid-area: copy;
+}
+.goalset > .brief {
+  grid-area: brief;
+}
+
+.goals {
+  grid-area: goals;
+  display: grid;
+  gap: 8px;
+  margin: 36px 0 0;
   padding: 0;
-  list-style: none;
+  border: 0;
+  font-family: var(--font-sans);
 }
-.buckets li {
-  padding: 10px 2px;
-  border-top: 1px solid var(--hairline);
+.goals legend {
+  margin-bottom: 12px;
+  padding: 0;
   font-weight: 600;
   font-size: 15px;
 }
+.goal {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 15.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.goal:hover {
+  border-color: var(--ink-3);
+}
+.goal input {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.goal input::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.goal input:checked {
+  border-color: var(--accent);
+}
+.goal input:checked::after {
+  background: var(--accent);
+}
+.goal:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.goal input:focus-visible {
+  outline: none;
+}
+.goal:has(input:focus-visible) {
+  outline: 2px solid var(--ink-1);
+  outline-offset: 2px;
+}
+.goal__says {
+  grid-area: says;
+  max-width: 32em;
+  min-height: 3.2lh;
+  margin: 24px 0 0;
+  color: var(--ink-1);
+  font-size: 17.5px;
+  line-height: 1.55;
+}
 
-/* 11:30: the item panel, with the assistant. */
+/* Today, as the dashboard draws it: the masthead on the band, then the priorities. */
+.brief {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--page);
+  box-shadow: var(--shadow-float);
+}
+.brief__band {
+  padding: 26px 28px 28px;
+  background: var(--band);
+  color: var(--band-ink);
+}
+.brief__band > * {
+  transition: opacity 0.2s;
+}
+.brief.is-changing .brief__band > * {
+  opacity: 0;
+}
+.brief__label {
+  margin-bottom: 6px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.brief__objective {
+  font: 500 clamp(1.35rem, 1.1rem + 0.6vw, 1.625rem)/1.25 var(--font-serif);
+  text-wrap: pretty;
+}
+.brief--empty .brief__objective {
+  color: var(--band-muted);
+  font: 15px/1.5 var(--font-sans);
+}
+.brief__blocked {
+  margin-top: 8px;
+  color: var(--band-muted);
+  font-size: 14px;
+}
+.brief__blocked strong {
+  color: var(--band-critical);
+  font-weight: 600;
+}
+.note {
+  margin: 20px 0 0;
+  padding: 2px 0 2px 18px;
+  border-left: 3px solid var(--accent);
+  color: rgba(255, 255, 255, 0.9);
+  font: italic 16.5px/1.6 var(--font-serif);
+}
+.note p {
+  margin: 0;
+}
+.note code {
+  font-style: normal;
+}
+.note b {
+  color: var(--band-ink);
+  font-weight: 500;
+  font-style: normal;
+}
+.brief__list {
+  padding: 22px 24px 24px;
+}
+.brief__rest {
+  margin-top: 14px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+/* An item nobody sent: the agent wrote it because nothing that came in moves the objective. */
+.row--written {
+  border-color: var(--accent);
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--accent);
+}
+.rows > .row.is-entering {
+  animation: land 0.35s ease-out;
+}
+
+/* ---------- what it finds ---------- */
+
+.finds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.find {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 28px 72px;
+  align-items: center;
+  padding-block: 40px;
+  border-top: 1px solid var(--hairline);
+}
+.find:last-child {
+  padding-bottom: 0;
+}
+.find__caption {
+  margin: 10px 0 0;
+  color: var(--ink-3);
+  font: 13.5px/1.5 var(--font-sans);
+}
+.find__where mark {
+  padding: 1px 0;
+  border-radius: 2px;
+  background: var(--accent-wash);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+  color: var(--ink-1);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* The haystacks: the source as it was, small and grey, with the line that mattered marked. */
+.source-doc,
+.source-checks,
+.source-facts {
+  margin: 0;
+  padding: 18px 20px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  color: var(--ink-3);
+  font: 13.5px/1.55 var(--font-sans);
+}
+.source-doc {
+  /* A page out of a longer document: it runs on above and below. */
+  -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+  padding-block: 26px;
+}
+.source-doc p {
+  margin: 0 0 8px;
+}
+.source-doc p:last-child {
+  margin: 0;
+}
+.source-checks {
+  list-style: none;
+}
+.source-checks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+.source-checks li span:last-child {
+  color: var(--ink-3);
+}
+.fail,
+.pass {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--critical);
+}
+.pass {
+  background: var(--good-ink);
+}
+.source-facts div {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: 12px;
+  padding: 3px 0;
+}
+.source-facts dt {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.source-facts dd {
+  margin: 0;
+}
+
+/* ---------- through the day ---------- */
+
+.day {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 64px;
+  align-items: start;
+}
+.day__col {
+  display: grid;
+  gap: 64px;
+}
+.feature h3 {
+  margin: 0 0 8px;
+  font: 600 18px/1.35 var(--font-sans);
+}
+.feature h3 + p {
+  max-width: 32em;
+  margin: 0 0 24px;
+  color: var(--ink-2);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent-ink);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes land {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.turn__trail summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font: 13.5px/1.5 var(--font-sans);
+  list-style: none;
+  cursor: pointer;
+}
+.turn__trail summary::-webkit-details-marker {
+  display: none;
+}
+.turn__trail summary::before {
+  content: '';
+  border-left: 6px solid currentColor;
+  border-block: 4px solid transparent;
+  transition: transform 0.15s;
+}
+.turn__trail[open] summary::before {
+  transform: rotate(90deg);
+}
+.turn__trail summary:hover {
+  color: var(--ink-1);
+}
+/* The item panel, with the assistant. */
 .panel {
   overflow: hidden;
   max-width: 540px;
@@ -1216,7 +1395,7 @@ h1 {
   font-size: 14px;
 }
 
-/* 17:00: handling an item, for real on this page. */
+/* Handling an item, for real on this page. */
 .handle {
   max-width: 580px;
 }
@@ -1300,6 +1479,7 @@ h1 {
   cursor: pointer;
 }
 
+
 /* ---------- the evening: what it does, and how to start ---------- */
 
 .evening {
@@ -1308,10 +1488,6 @@ h1 {
 }
 .evening__inner {
   padding-block: 120px 96px;
-}
-.evening__inner,
-.footer {
-  padding-left: calc(var(--gutter) + var(--rail));
 }
 .evening h2 {
   max-width: 20ch;
@@ -1614,7 +1790,7 @@ h1 {
   gap: 16px 32px;
   padding-block: 28px 40px;
   background: linear-gradient(var(--band-rule), var(--band-rule)) no-repeat
-    calc(var(--gutter) + var(--rail)) 0 / calc(100% - 2 * var(--gutter) - var(--rail)) 1px;
+    var(--gutter) 0 / calc(100% - 2 * var(--gutter)) 1px;
   color: var(--band-muted);
   font: 14px/1.5 var(--font-sans);
 }
@@ -1632,34 +1808,321 @@ h1 {
   list-style: none;
 }
 
+
+/* ---------- the setup page ---------- */
+
+/*
+ * The setup guide wears the same band and paper as the home page, set as a
+ * document: a contents list that follows you down the left, and one column of
+ * reading beside it. Commands sit on the band's navy, each with its Copy button,
+ * so the things to type are the darkest things on the page.
+ */
+.nav__links a[aria-current='page'] {
+  color: var(--band-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.45em;
+}
+.guide-head {
+  padding-block: 32px 72px;
+}
+.guide-head h1 {
+  margin: 0 0 20px;
+  font-size: clamp(2.4rem, 1.6rem + 2.4vw, 3.5rem);
+}
+.guide-head .lede {
+  max-width: 36em;
+}
+
+.guide {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 46rem);
+  gap: 0 80px;
+  padding-block: 72px 120px;
+}
+.toc {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+}
+.toc ol {
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--hairline);
+  list-style: none;
+}
+.toc a {
+  display: block;
+  margin-left: -1px;
+  padding: 6px 0 6px 16px;
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+  line-height: 1.4;
+  text-decoration: none;
+}
+.toc a:hover {
+  color: var(--ink-1);
+}
+.toc a.is-current {
+  border-left-color: var(--accent);
+  color: var(--ink-1);
+  font-weight: 600;
+}
+
+.guide__body section {
+  scroll-margin-top: 24px;
+}
+.guide__body section + section {
+  margin-top: 88px;
+}
+.guide__body h2 {
+  margin: 0 0 20px;
+  font-weight: 400;
+  font-size: clamp(1.75rem, 1.4rem + 1vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.guide__body h3 {
+  margin: 36px 0 10px;
+  font: 600 17px/1.4 var(--font-sans);
+  scroll-margin-top: 24px;
+}
+.guide__body p {
+  max-width: 38em;
+  margin: 0 0 16px;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.65;
+}
+.guide__body b {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+.guide__body a {
+  color: var(--ink-1);
+}
+.guide__body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  color: var(--ink-1);
+  font-size: 0.84em;
+  white-space: nowrap;
+}
+.guide__body .aside {
+  color: var(--ink-3);
+  font: 15px/1.6 var(--font-sans);
+}
+
+/* What you need: a ring for what's required, a broken ring for what isn't. */
+.needs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.needs-list li {
+  position: relative;
+  padding: 18px 0 18px 36px;
+  border-top: 1px solid var(--hairline);
+}
+.needs-list li:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+.needs-list li::before {
+  content: '';
+  position: absolute;
+  top: 23px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+}
+.needs-list li:last-child::before {
+  border-style: dashed;
+  border-color: var(--ink-3);
+}
+.guide__body .needs-list__what {
+  margin: 0 0 4px;
+  color: var(--ink-1);
+  font: 600 17px/1.4 var(--font-sans);
+}
+.guide__body .needs-list p:last-child {
+  margin: 0;
+}
+
+/* Install: the two routes side by side, each a sequence of steps. */
+.routes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 4px 0 28px;
+}
+.route {
+  padding: 24px 24px 26px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.guide__body .route h3 {
+  margin: 0 0 16px;
+}
+.steps {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+  color: var(--ink-2);
+  font: 15.5px/1.55 var(--font-sans);
+  list-style: none;
+}
+.steps li {
+  position: relative;
+  padding-left: 32px;
+  counter-increment: step;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: -2px;
+  left: 0;
+  color: var(--accent-ink);
+  font: 400 21px/1.1 var(--font-serif);
+}
+.route__download {
+  margin-top: 10px;
+}
+.steps .code {
+  margin: 10px 0 0;
+}
+
+/* A command to type, on the band's navy, with its Copy button. */
+.code {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 38em;
+  margin: 14px 0 18px;
+  padding: 6px 6px 6px 18px;
+  border-radius: 10px;
+  background: var(--band);
+  color: var(--band-ink);
+}
+.guide__body .code code {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow-x: auto;
+  background: none;
+  color: inherit;
+  font-size: 14.5px;
+  line-height: 1.7;
+  white-space: pre;
+}
+.code .button {
+  flex: none;
+  align-self: flex-start;
+  min-width: 70px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+.code--block {
+  align-items: flex-start;
+}
+.guide__body .code--block code {
+  padding-block: 4px;
+}
+
+.table {
+  margin: 8px 0 20px;
+  overflow-x: auto;
+}
+.table table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 15px/1.5 var(--font-sans);
+}
+.table th,
+.table td {
+  padding: 10px 16px 10px 0;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-2);
+  text-align: left;
+  vertical-align: top;
+}
+.table thead th {
+  padding-bottom: 8px;
+  border-top: 0;
+  color: var(--ink-3);
+  font-weight: 500;
+  font-size: 13.5px;
+}
+.table tbody tr:last-child > * {
+  border-bottom: 1px solid var(--hairline);
+}
+.table tbody th {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.table code {
+  white-space: nowrap;
+}
+
+.faq {
+  margin: 0 0 20px;
+}
+.faq div {
+  padding: 18px 0;
+  border-top: 1px solid var(--hairline);
+}
+.faq div:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+.faq dt {
+  margin-bottom: 6px;
+  color: var(--ink-1);
+  font: 600 17px/1.4 var(--font-sans);
+}
+.faq dd {
+  max-width: 38em;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
 /* ---------- narrower screens ---------- */
 
 @media (max-width: 1080px) {
   .hero,
-  .hour__body--split {
+  .split,
+  .find,
+  .day {
     grid-template-columns: minmax(0, 1fr);
   }
-  .hour__body--split {
-    row-gap: 36px;
+  .split > .ui,
+  .find__said,
+  .day__col,
+  .goals,
+  .goalset > .brief {
+    max-width: 640px;
   }
-  .hour__body--split h2 {
-    margin-bottom: 0;
+  /* The choices sit right above the brief they change, so a tap shows its effect. */
+  .goalset {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: 'copy' 'goals' 'brief' 'says';
   }
-  .run {
+  .goalset > .brief {
+    margin-top: 28px;
+  }
+  .sort {
     max-width: 560px;
-  }
-  .masthead {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .note {
-    grid-column: auto;
-    grid-row: auto;
-  }
-  .today {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .agenda {
-    max-width: 420px;
   }
   .ways {
     grid-template-columns: minmax(0, 1fr);
@@ -1671,6 +2134,17 @@ h1 {
   .setup {
     max-width: 560px;
   }
+  .guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .toc {
+    position: static;
+    margin-bottom: 56px;
+  }
+  .toc ol {
+    columns: 2;
+    column-gap: 32px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1680,44 +2154,17 @@ h1 {
   .nav__links li:first-child {
     display: none;
   }
+  h1 span {
+    display: inline;
+  }
   .nav__links {
     gap: 20px;
   }
-  /* The rail folds into each hour's heading: a time with its dot, then the hour. */
-  .hour__inner {
-    grid-template-columns: minmax(0, 1fr);
-    padding-block: 80px;
+  .hero {
+    padding-block: 32px 64px;
   }
-  .hour--first .hour__inner {
-    padding-block: 40px 72px;
-  }
-  .hour__inner::before,
-  .now {
-    display: none;
-  }
-  .hour__time {
-    width: auto;
-    margin-bottom: 18px;
-    padding: 0 0 0 22px;
-    text-align: left;
-  }
-  .hour__time::after {
-    top: 50%;
-    left: 0;
-    transform: translateY(-50%);
-  }
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 18px;
-  }
-  .stats > div + div {
-    border-left: 0;
-  }
-  .stats > div:nth-child(even) {
-    border-left: 1px solid var(--band-rule);
-  }
-  .stats > div:last-child {
-    grid-column: 1 / -1;
+  h1 {
+    margin-bottom: 28px;
   }
   .lede {
     font-size: 18.5px;
@@ -1729,16 +2176,17 @@ h1 {
   .command {
     justify-content: space-between;
   }
+  .section {
+    padding-block: 80px;
+  }
+  .copy--wide {
+    margin-bottom: 40px;
+  }
+  .find {
+    padding-block: 32px;
+  }
   .evening__inner {
     padding-block: 88px 72px;
-  }
-  .evening__inner,
-  .footer {
-    padding-left: var(--gutter);
-  }
-  .footer {
-    background-position: var(--gutter) 0;
-    background-size: calc(100% - 2 * var(--gutter)) 1px;
   }
   .facts {
     grid-template-columns: minmax(0, 1fr);
@@ -1755,13 +2203,25 @@ h1 {
   .evening .evening__second {
     margin-top: 80px;
   }
+  .guide {
+    padding-block: 48px 80px;
+  }
+  .toc {
+    display: none;
+  }
+  .routes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .guide__body section + section {
+    margin-top: 64px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation: none;
-    transition: none;
+    animation: none !important;
+    transition: none !important;
   }
 }

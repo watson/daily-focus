@@ -23,7 +23,7 @@
  *
  * A tool the user has told Codex to always allow, or an app given its own
  * approval settings in their config, keeps them: Codex lets the more specific
- * setting win. SETUP.md says so.
+ * setting win. The README says so.
  */
 
 import { execFile } from 'node:child_process';
