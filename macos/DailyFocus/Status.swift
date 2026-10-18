@@ -137,6 +137,16 @@ func busyWith(_ status: DashboardStatus) -> String {
     return "the assistant"
 }
 
+/// What the first busy dashboard of several is busy with, named when there are
+/// more than one: "the morning agent on Personal". Nil when none is busy.
+func busyAcross(_ dashboards: [(label: String?, status: DashboardStatus?)]) -> String? {
+    for dashboard in dashboards {
+        guard let status = dashboard.status, isBusy(status) else { continue }
+        return busyWith(status) + (dashboard.label.map { " on \($0)" } ?? "")
+    }
+    return nil
+}
+
 /// How long nobody must have used the dashboard before an update goes in on its own.
 let quietBeforeUpdating: TimeInterval = 30 * 60
 
@@ -186,15 +196,17 @@ func notices(for status: DashboardStatus, after notified: Notified, firstPoll: B
     return (notices, updated)
 }
 
-/// The title and body of a notification.
-func noticeText(_ notice: Notice) -> (title: String, body: String) {
+/// The title and body of a notification, naming the dashboard it is about when the
+/// app runs two: "Your personal brief is ready".
+func noticeText(_ notice: Notice, dashboard label: String? = nil) -> (title: String, body: String) {
+    let which = label.map { "\($0.lowercased()) " } ?? ""
     switch notice {
     case .briefReady(let open):
-        guard let open else { return ("Your brief is ready", "") }
-        return ("Your brief is ready", open == 1 ? "1 open item" : "\(open) open items")
+        guard let open else { return ("Your \(which)brief is ready", "") }
+        return ("Your \(which)brief is ready", open == 1 ? "1 open item" : "\(open) open items")
     case .agentFailed(let error):
         let reason = error?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return ("The morning agent failed", reason.isEmpty ? "Open Daily Focus to see what it said." : reason)
+        return ("The \(which)morning agent failed", reason.isEmpty ? "Open Daily Focus to see what it said." : reason)
     case .updateAvailable(let version):
         return ("Daily Focus \(version) is available", "Update from the Daily Focus menu.")
     case .downloadAvailable(let version, let reason):
@@ -217,6 +229,12 @@ func errorMessage(_ data: Data?) -> String? {
           !error.isEmpty
     else { return nil }
     return error
+}
+
+/// The store a `/api/health` answer says the dashboard serves.
+func healthDataDir(_ data: Data?) -> String? {
+    guard let data, let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    return body["dataDir"] as? String
 }
 
 /// Whether a `/api/health` answer came from a Daily Focus dashboard.

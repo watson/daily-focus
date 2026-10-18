@@ -271,22 +271,27 @@ func swapFolders(_ a: URL, _ b: URL) throws {
     }
 }
 
-/// Removes downloaded dashboards the one now running makes redundant: those no
-/// newer than it, and those that failed to start. A newer one stays, since it may
-/// be an update downloaded and waiting for the dashboard to be idle.
-func removeOldDashboards(running: DashboardCopy, refused: Set<String>) -> [String] {
-    guard let current = running.version.flatMap(Version.init) else { return [] }
-    var removed: [String] = []
-    for (copy, _) in downloadedDashboards() {
-        guard let name = copy.version, copy.bundle != running.bundle else { continue }
+/// The downloaded dashboards the running ones make redundant: those no newer than
+/// the newest running, and those that failed to start. A newer one stays, since it
+/// may be an update downloaded and waiting for the dashboards to be idle, and so
+/// does every copy a dashboard runs: with two, one may still run the older copy
+/// while it waits to restart into the newer, and the server serves its page and
+/// links its store's prompt from the folder it runs in.
+func redundantDashboards(downloaded: [DashboardCopy], running: [DashboardCopy], refused: Set<String>) -> [String] {
+    guard let newest = running.compactMap({ $0.version.flatMap(Version.init) }).max() else { return [] }
+    let inUse = Set(running.compactMap(\.bundle))
+    return downloaded.compactMap { copy in
+        guard let name = copy.version, let bundle = copy.bundle, !inUse.contains(bundle) else { return nil }
         let version = Version(name)
-        if refused.contains(name) || version == nil || version! <= current {
-            if (try? FileManager.default.removeItem(at: dashboardsURL.appendingPathComponent(name))) != nil {
-                removed.append(name)
-            }
-        }
+        return refused.contains(name) || version == nil || version! <= newest ? name : nil
     }
-    return removed
+}
+
+/// Removes the downloaded dashboards `redundantDashboards` names, and says which went.
+func removeOldDashboards(running: [DashboardCopy], refused: Set<String>) -> [String] {
+    redundantDashboards(downloaded: downloadedDashboards().map(\.copy), running: running, refused: refused).filter { name in
+        (try? FileManager.default.removeItem(at: dashboardsURL.appendingPathComponent(name))) != nil
+    }
 }
 
 /// Nothing cached, since every answer is about now.
@@ -511,13 +516,14 @@ final class Updater {
         try? FileManager.default.removeItem(at: staged.deletingLastPathComponent())
     }
 
-    /// The dashboard has started: an update waiting for that is done, and older
-    /// downloads can go.
-    func started(_ copy: DashboardCopy) {
+    /// A dashboard has started on `copy`: an update waiting for that is done, and
+    /// older downloads can go, apart from whatever `running`, every copy a dashboard
+    /// runs or is about to, still needs.
+    func started(_ copy: DashboardCopy, running: [DashboardCopy]) {
         if case .ready(.dashboard(let version)) = phase, version == copy.version { phase = .idle }
         let refused = refusedDashboards()
         DispatchQueue.global().async { [log] in
-            for version in removeOldDashboards(running: copy, refused: refused) {
+            for version in removeOldDashboards(running: running, refused: refused) {
                 log.note("removed dashboard \(version), which \(copy.version ?? "the running one") replaces")
             }
         }

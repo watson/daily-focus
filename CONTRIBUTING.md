@@ -254,9 +254,14 @@ so the ticket covers the app too; the app isn't stapled, so Gatekeeper looks its
 ticket up online the first time it opens.
 
 The app starts the server with `--exit-with-stdin` and holds its standard input, so
-the server stops with the app however the app goes. To develop it against a
-checkout, run the built binary with `DAILY_FOCUS_APP_SERVER_ENTRY=$PWD/src/cli.ts`,
-a throwaway `DAILY_FOCUS_DATA` and a free `DAILY_FOCUS_PORT`.
+the server stops with the app however the app goes. It runs a dashboard for each
+profile the user has added, at most two, with `--profile` and a port each, and keeps
+that list in UserDefaults for the data folder (`macos/DailyFocus/Dashboards.swift`).
+To develop it against a checkout, run the built binary with
+`DAILY_FOCUS_APP_SERVER_ENTRY=$PWD/src/cli.ts`, a throwaway `DAILY_FOCUS_DATA` and a
+free `DAILY_FOCUS_PORT`: a throwaway folder starts a list of its own. Run it under
+another bundle identifier on a Mac where the real app runs, since the two would
+share the record of the server each left running.
 
 The dashboard updates without the app (`macos/DailyFocus/Updater.swift`). Built
 with a server, `macos/build.sh` also signs the same package as a bundle of its own,

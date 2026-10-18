@@ -1,4 +1,5 @@
-// Runs the dashboard server as a child of the app and keeps it running.
+// Runs one dashboard server as a child of the app and keeps it running: the one
+// for a slot, a profile on a port (see `Dashboards.swift`).
 //
 // This is what `npm run service` asks of launchd, done by the app instead: start
 // the server, start it again when it stops without being asked to, and stop it
@@ -125,7 +126,7 @@ func fetch(_ url: URL, method: String = "GET", timeout: TimeInterval = 10, then 
     }.resume()
 }
 
-/// The log file, written to from the main thread and from the pipe's.
+/// The log file, written to from the main thread and from the pipes'.
 final class LogFile: @unchecked Sendable {
     private let lock = NSLock()
     private let handle: FileHandle?
@@ -149,12 +150,66 @@ final class LogFile: @unchecked Sendable {
         try? handle?.write(contentsOf: data)
     }
 
-    /// A line from the app itself, set apart from the server's own `[daily-focus]` lines.
-    func note(_ text: String) {
+    /// A line from the app itself, set apart from the server's own `[daily-focus]`
+    /// lines, and labelled with the dashboard it is about when there are two.
+    func note(_ text: String, about label: String? = nil) {
         lock.lock()
         let now = stamp.string(from: Date())
         lock.unlock()
-        write(Data("[daily-focus app] \(now) \(text)\n".utf8))
+        write(Data("[daily-focus app] \(now) \(label.map { "\($0): " } ?? "")\(text)\n".utf8))
+    }
+}
+
+/// A server's output as whole lines, each labelled with its dashboard when there
+/// are two, so two servers writing at once don't cut into each other's lines.
+/// Used from the pipe's queue only.
+final class LogLines: @unchecked Sendable {
+    private let log: LogFile
+    private let lock = NSLock()
+    private var current: String?
+    private var pending = Data()
+
+    init(_ log: LogFile, label: String?) {
+        self.log = log
+        current = label
+    }
+
+    /// Set from the main thread when a second dashboard is added or one removed.
+    var label: String? {
+        get { lock.withLock { current } }
+        set { lock.withLock { current = newValue } }
+    }
+
+    func add(_ chunk: Data) {
+        pending.append(chunk)
+        guard let last = pending.lastIndex(of: 0x0A) else {
+            // A line that never ends still reaches the log, if late.
+            if pending.count > 65_536 { flush() }
+            return
+        }
+        write(pending[pending.startIndex...last])
+        pending.removeSubrange(pending.startIndex...last)
+    }
+
+    func flush() {
+        guard !pending.isEmpty else { return }
+        pending.append(0x0A)
+        write(pending)
+        pending.removeAll()
+    }
+
+    private func write(_ lines: Data) {
+        guard let label else {
+            log.write(lines)
+            return
+        }
+        var labelled = Data()
+        for line in lines.split(separator: 0x0A, omittingEmptySubsequences: false).dropLast() {
+            labelled.append(Data("[\(label)] ".utf8))
+            labelled.append(line)
+            labelled.append(0x0A)
+        }
+        log.write(labelled)
     }
 }
 
@@ -165,6 +220,8 @@ final class LogFile: @unchecked Sendable {
 // A pid alone is not enough to know it again: after a reboot the same number can
 // belong to anything, the `npm run service` dashboard included, which runs the same
 // Node under launchd. The binary and the moment it started are.
+// Each slot keeps its own, under its key suffix: the first's are the keys an app
+// from before the list of dashboards used, so an upgrade still knows its server.
 private let childPIDKey = "dashboardPID"
 private let childNodeKey = "dashboardNode"
 private let childStartKey = "dashboardStarted"
@@ -240,7 +297,20 @@ final class Dashboard {
         didSet { if state != oldValue { onChange?() } }
     }
 
-    let environment = ProcessInfo.processInfo.environment
+    /// Which dashboard this is. The profile is filled in once it has said, and is
+    /// passed from the next start on.
+    var slot: DashboardSlot
+    /// The data folder its store is in.
+    let folder: String
+    /// What the log and the menu call it, when the app runs more than one.
+    var label: String? {
+        didSet { lines?.label = label }
+    }
+    /// The running server's output, on its way to the log.
+    private var lines: LogLines?
+    private let base: [String: String]
+    /// What the server is started with: the app's environment, with this slot's port and profile.
+    var environment: [String: String] { slotEnvironment(base, slot) }
     private let log = LogFile(url: logURL)
     private var path: String?
     private var node: String?
@@ -265,6 +335,12 @@ final class Dashboard {
     private var restartRequested = false
     private var whenStopped: (() -> Void)?
 
+    init(slot: DashboardSlot, folder: String, environment: [String: String]) {
+        self.slot = slot
+        self.folder = folder
+        self.base = environment
+    }
+
     var url: URL? {
         switch state {
         case .running(let url), .attached(let url): return url
@@ -286,16 +362,23 @@ final class Dashboard {
         url ?? probeURL(environment)
     }
 
+    /// The store it serves, once the dashboard has said or the slot knows its profile.
+    var expectedStore: String {
+        slot.profile.map { (folder as NSString).appendingPathComponent($0) } ?? folder
+    }
+
     func start() {
         let defaults = UserDefaults.standard
-        let leftover = pid_t(defaults.integer(forKey: childPIDKey))
-        let leftoverNode = defaults.string(forKey: childNodeKey) ?? ""
-        let leftoverStarted = defaults.integer(forKey: childStartKey)
+        let suffix = keySuffix(slot)
+        let leftover = pid_t(defaults.integer(forKey: childPIDKey + suffix))
+        let leftoverNode = defaults.string(forKey: childNodeKey + suffix) ?? ""
+        let leftoverStarted = defaults.integer(forKey: childStartKey + suffix)
         let log = self.log
+        let label = self.label
         DispatchQueue.global().async {
             let found = stopLeftoverServer(pid: leftover, node: leftoverNode, started: leftoverStarted)
             if found == .stopped {
-                log.note("stopped the dashboard (process \(leftover)) an earlier launch of the app left running")
+                log.note("stopped the dashboard (process \(leftover)) an earlier launch of the app left running", about: label)
             }
             DispatchQueue.main.async {
                 if found != .owned { self.forgetChild() }
@@ -355,10 +438,18 @@ final class Dashboard {
         fetch(base.appendingPathComponent("api/health"), timeout: 2) { [weak self] code, data in
             guard let self, self.state != .stopping, self.state != .stopped else { return }
             if code == 200, isDashboardHealth(data) {
-                self.log.note("a dashboard already answers at \(base); watching it rather than starting another")
+                // Another store's dashboard on this port isn't this one, and watching
+                // it as this one would show the wrong brief under the wrong name.
+                let store = healthDataDir(data)
+                guard servesStore(store, folder: self.folder, profile: self.slot.profile) else {
+                    self.note("port \(port) runs the dashboard for \(store ?? "another store"), not this one's")
+                    self.scheduleStart(showing: .blocked("Port \(port) runs another store's dashboard"))
+                    return
+                }
+                self.note("a dashboard already answers at \(base); watching it rather than starting another")
                 self.state = .attached(base)
             } else if let code {
-                self.log.note("port \(port) answers HTTP \(code), and not as a dashboard")
+                self.note("port \(port) answers HTTP \(code), and not as a dashboard")
                 self.scheduleStart(showing: .blocked("Port \(port) is taken by another program"))
             } else {
                 self.prepareThenSpawn()
@@ -385,21 +476,21 @@ final class Dashboard {
             DispatchQueue.main.async {
                 guard let self, self.state != .stopping, self.state != .stopped else { return }
                 if let hydrated {
-                    self.log.note("PATH from \(hydrated.source): \(hydrated.path)")
+                    self.note("PATH from \(hydrated.source): \(hydrated.path)")
                     self.path = hydrated.path
                 }
-                for note in choice?.notes ?? [] { self.log.note(note) }
+                for note in choice?.notes ?? [] { self.note(note) }
                 switch check {
                 case .found(let node, let version):
-                    if known == nil { self.log.note("Node.js \(version) at \(node)") }
+                    if known == nil { self.note("Node.js \(version) at \(node)") }
                     self.node = node
                     self.nodeVersion = version
                     if let choice { self.spawn(node: node, copy: choice.copy) }
                 case .tooOld(let node, let version):
-                    self.log.note("Node.js \(version.isEmpty ? "of unknown version" : version) at \(node) is too old; the dashboard needs 22.18 or newer")
+                    self.note("Node.js \(version.isEmpty ? "of unknown version" : version) at \(node) is too old; the dashboard needs 22.18 or newer")
                     self.state = .needsNode
                 case .missing:
-                    self.log.note("no node on PATH; the dashboard needs Node.js 22.18 or newer")
+                    self.note("no node on PATH; the dashboard needs Node.js 22.18 or newer")
                     self.state = .needsNode
                 }
             }
@@ -410,13 +501,14 @@ final class Dashboard {
         let entry = copy.entry
         guard FileManager.default.fileExists(atPath: entry) else {
             // Nothing changes this short of a rebuild, so it isn't retried.
-            log.note("there is no dashboard at \(entry): build the app with --server, or set DAILY_FOCUS_APP_SERVER_ENTRY")
+            note("there is no dashboard at \(entry): build the app with --server, or set DAILY_FOCUS_APP_SERVER_ENTRY")
             state = .blocked("This build of the app has no dashboard in it")
             return
         }
         let child = Process()
         child.executableURL = URL(fileURLWithPath: node)
         child.arguments = [entry, "--no-open", "--exit-with-stdin"]
+        let environment = self.environment
         child.environment = childEnvironment(
             environment,
             path: appendingToPath(path ?? environment["PATH"] ?? "", bundledNode().map { ($0 as NSString).deletingLastPathComponent })
@@ -429,14 +521,16 @@ final class Dashboard {
         let pipe = Pipe()
         child.standardOutput = pipe
         child.standardError = pipe
-        let log = self.log
+        let lines = LogLines(log, label: label)
+        self.lines = lines
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
             if chunk.isEmpty {
+                lines.flush()
                 handle.readabilityHandler = nil
                 return
             }
-            log.write(chunk)
+            lines.add(chunk)
             DispatchQueue.main.async { self?.read(chunk, from: child) }
         }
         child.terminationHandler = { [weak self] finished in
@@ -447,12 +541,13 @@ final class Dashboard {
 
         if copy.version != self.copy?.version || copy.bundle != self.copy?.bundle { failedStarts = 0 }
         let which = copy.bundle != nil ? "downloaded dashboard \(copy.version ?? "")" : copy.version.map { "dashboard \($0), inside the app" } ?? "a development checkout"
-        log.note("starting \(which): \(node) \(entry) --no-open --exit-with-stdin")
+        let given = ["DAILY_FOCUS_DATA", "DAILY_FOCUS_PROFILE", "DAILY_FOCUS_PORT"].compactMap { key in environment[key].map { "\(key)=\($0)" } }
+        note("starting \(which): \(given.joined(separator: " ")) \(node) \(entry) --no-open --exit-with-stdin")
         do {
             try child.run()
         } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
-            log.note("could not start Node: \(error.localizedDescription)")
+            note("could not start Node: \(error.localizedDescription)")
             // It may have been uninstalled or upgraded away; look for it again next time.
             self.node = nil
             self.path = nil
@@ -493,7 +588,7 @@ final class Dashboard {
         lifeline = nil
         forgetChild()
         let uptime = Date().timeIntervalSince(startedAt)
-        log.note(signalled ? "the dashboard was stopped by signal \(code)" : "the dashboard exited with code \(code)")
+        note(signalled ? "the dashboard was stopped by signal \(code)" : "the dashboard exited with code \(code)")
         if stopRequested {
             stopRequested = false
             state = .stopped
@@ -514,7 +609,7 @@ final class Dashboard {
             if failedStarts >= 3 {
                 failedStarts = 0
                 setRefused(version, true)
-                log.note("dashboard \(version) stopped 3 times before it started listening; going back to an older copy")
+                note("dashboard \(version) stopped 3 times before it started listening; going back to an older copy")
                 onRefused?(version)
                 // The older copy is a fresh start, not a fourth try of this one.
                 attempt = 0
@@ -531,7 +626,7 @@ final class Dashboard {
     private func scheduleStart(showing waiting: State) {
         let delay = restartDelay(attempt: attempt)
         attempt += 1
-        log.note("trying again in \(Int(delay)) s")
+        note("trying again in \(Int(delay)) s")
         state = waiting
         let work = DispatchWorkItem { [weak self] in self?.probeThenSpawn() }
         pendingStart = work
@@ -545,21 +640,28 @@ final class Dashboard {
         child.terminate()
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self, self.process === child, child.isRunning else { return }
-            self.log.note("the dashboard didn't stop within 5 s; killing it")
+            self.note("the dashboard didn't stop within 5 s; killing it")
             kill(pid, SIGKILL)
         }
     }
 
-    private func rememberChild(_ pid: pid_t, node: String) {
-        guard let running = runningProcess(pid) else { return }
-        UserDefaults.standard.set(Int(pid), forKey: childPIDKey)
-        UserDefaults.standard.set(realPath(node), forKey: childNodeKey)
-        UserDefaults.standard.set(running.started, forKey: childStartKey)
+    private func note(_ text: String) {
+        log.note(text, about: label)
     }
 
-    private func forgetChild() {
+    private func rememberChild(_ pid: pid_t, node: String) {
+        guard let running = runningProcess(pid) else { return }
+        let suffix = keySuffix(slot)
+        UserDefaults.standard.set(Int(pid), forKey: childPIDKey + suffix)
+        UserDefaults.standard.set(realPath(node), forKey: childNodeKey + suffix)
+        UserDefaults.standard.set(running.started, forKey: childStartKey + suffix)
+    }
+
+    /// Forgets the server, for good: when it has stopped, and when the slot is removed.
+    func forgetChild() {
+        let suffix = keySuffix(slot)
         for key in [childPIDKey, childNodeKey, childStartKey] {
-            UserDefaults.standard.removeObject(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key + suffix)
         }
     }
 }

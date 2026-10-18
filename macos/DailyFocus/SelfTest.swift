@@ -402,6 +402,73 @@ func runSelfTest() -> Bool {
           "Daily Focus can't replace itself, since it runs from the disk image it came in. Download it from the Daily Focus menu.",
           "a notice for an app to download")
 
+    // Two dashboards, one per profile, in one data folder.
+    equal(dataFolder([:], home: "/Users/x"), "/Users/x/.daily-focus", "the default data folder")
+    equal(dataFolder(["DAILY_FOCUS_DATA": "~/notes/df/"], home: "/Users/x"), "/Users/x/notes/df", "a folder in home")
+    equal(dataFolder(["DAILY_FOCUS_DATA": "df"], home: "/Users/x"), "/Users/x/df", "a relative folder, from home, where the app starts the dashboards")
+    equal(dataFolder(["DAILY_FOCUS_DATA": " /tmp/x "], home: "/Users/x"), "/tmp/x", "an absolute folder")
+    equal(firstSlot([:]), DashboardSlot(id: "first", profile: nil, port: 4321), "the first dashboard, before it has said its profile")
+    equal(firstSlot(["DAILY_FOCUS_PORT": "0", "DAILY_FOCUS_PROFILE": "Personal"]), DashboardSlot(id: "first", profile: "personal", port: 0),
+          "a development run's port and profile")
+    equal(firstSlot(["DAILY_FOCUS_PROFILE": "home"]).profile, nil, "a profile that is neither is none")
+    let work = DashboardSlot(id: "first", profile: "work", port: 4321)
+    equal(profileToAdd([DashboardSlot(id: "first", profile: nil, port: 4321)]), nil, "nothing to add before the first has said what it is")
+    equal(profileToAdd([work]), "personal", "the other profile")
+    equal(profileToAdd([DashboardSlot(id: "first", profile: "personal", port: 4321)]), "work", "the other way round")
+    equal(profileToAdd([work, DashboardSlot(id: "personal", profile: "personal", port: 4322)]), nil, "nothing beside two")
+    equal(nextPort([work]), 4322, "the next port")
+    equal(nextPort([DashboardSlot(id: "first", profile: "work", port: 0)]), 0, "any free one beside a dashboard on any")
+    let started = slotEnvironment(["PATH": "/usr/bin", "DAILY_FOCUS_DATA": "/d", "DAILY_FOCUS_PROFILE": "work"],
+                                  DashboardSlot(id: "personal", profile: "personal", port: 4322))
+    equal(started["DAILY_FOCUS_PROFILE"], "personal", "a dashboard is told its profile")
+    equal(started["DAILY_FOCUS_PORT"], "4322", "and its port")
+    equal(started["DAILY_FOCUS_DATA"], "/d", "and the data folder is the app's")
+    equal(slotEnvironment(["DAILY_FOCUS_PROFILE": "work"], DashboardSlot(id: "first", profile: nil, port: 4321))["DAILY_FOCUS_PROFILE"], nil,
+          "one that hasn't said is told none, and opens whichever store is there")
+    check(servesStore("/d/work", folder: "/d", profile: "work"), "the profile's store is this dashboard's")
+    check(!servesStore("/d/personal", folder: "/d", profile: "work"), "the other profile's isn't")
+    check(!servesStore("/elsewhere/work", folder: "/d", profile: "work"), "nor one in another folder")
+    check(servesStore("/d", folder: "/d", profile: nil), "before it knows its profile, a store from before the folders is")
+    check(servesStore("/d/personal", folder: "/d/", profile: nil), "and so is either profile's")
+    check(!servesStore(nil, folder: "/d", profile: nil), "a dashboard that doesn't say isn't")
+    equal(keySuffix(work), "", "the first dashboard keeps the keys an app from before the list used")
+    equal(keySuffix(DashboardSlot(id: "personal", profile: "personal", port: 4322)), ".personal", "another has its own")
+    if let defaults = UserDefaults(suiteName: "dk.tson.daily-focus.self-test.\(getpid())") {
+        equal(savedSlots(folder: "/d", environment: [:], defaults: defaults), [DashboardSlot(id: "first", profile: nil, port: 4321)],
+              "with nothing saved, one dashboard")
+        saveSlots([work, DashboardSlot(id: "personal", profile: "personal", port: 4322)], folder: "/d", defaults: defaults)
+        equal(savedSlots(folder: "/d", environment: [:], defaults: defaults).map(\.id), ["first", "personal"], "the list is kept")
+        equal(savedSlots(folder: "/tmp/other", environment: [:], defaults: defaults).count, 1, "per data folder")
+        defaults.removePersistentDomain(forName: "dk.tson.daily-focus.self-test.\(getpid())")
+    }
+    func copy(_ version: String, downloaded: Bool = true) -> DashboardCopy {
+        DashboardCopy(version: version, entry: "/x/\(version)/cli.js", bundle: downloaded ? "/dl/\(version)/Dashboard.bundle" : nil)
+    }
+    let downloads = ["0.3.0", "0.4.0", "0.5.0", "0.6.0"].map { copy($0) }
+    equal(redundantDashboards(downloaded: downloads, running: [copy("0.5.0", downloaded: false)], refused: []), ["0.3.0", "0.4.0", "0.5.0"],
+          "the copy inside the app makes older downloads redundant, and a newer one waits")
+    equal(redundantDashboards(downloaded: downloads, running: [copy("0.5.0"), copy("0.4.0")], refused: ["0.6.0"]), ["0.3.0", "0.6.0"],
+          "never a copy one of two dashboards still runs")
+    equal(redundantDashboards(downloaded: downloads, running: [DashboardCopy(version: nil, entry: "/checkout/src/cli.ts", bundle: nil)], refused: []),
+          [], "nothing beside a checkout")
+    var agentAtWork = base
+    agentAtWork.busy = true
+    agentAtWork.busyWith = ["agent"]
+    equal(busyAcross([("Work", base), ("Personal", agentAtWork)]), "the morning agent on Personal", "what an update would stop, by dashboard")
+    equal(busyAcross([(nil, agentAtWork)]), "the morning agent", "unnamed with one")
+    equal(busyAcross([("Work", base), ("Personal", nil)]), nil, "nothing busy")
+    equal(noticeText(.briefReady(open: 2), dashboard: "Personal").title, "Your personal brief is ready", "a notice names its dashboard")
+    equal(noticeText(.agentFailed(error: nil), dashboard: "Work").title, "The work morning agent failed", "a failure too")
+    let logged = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("daily-focus-self-test-\(getpid()).log")
+    let lines = LogLines(LogFile(url: logged), label: "Work")
+    lines.add(Data("one\ntw".utf8))
+    lines.add(Data("o\n".utf8))
+    lines.label = nil
+    lines.add(Data("three".utf8))
+    lines.flush()
+    equal((try? String(contentsOf: logged, encoding: .utf8)) ?? "", "[Work] one\n[Work] two\nthree\n", "whole lines, labelled while there are two")
+    try? FileManager.default.removeItem(at: logged)
+
     print(failures == 0 ? "self-test passed: \(checks) checks" : "self-test failed: \(failures) of \(checks) checks")
     return failures == 0
 }
