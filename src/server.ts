@@ -282,6 +282,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // the agent follows whichever version is running, wherever it was installed from.
   for (const outcome of await linkStore(config)) {
     if (outcome.result === 'linked') console.log(`[daily-focus] linked ${describeLink(config, outcome)}`);
+    if (outcome.result === 'copied') console.log(`[daily-focus] copied ${describeLink(config, outcome)}, as Claude Code on Windows won't read through a link`);
     if (outcome.result === 'failed') console.warn(`[daily-focus] could not link ${outcome.name}: ${outcome.detail}`);
   }
 

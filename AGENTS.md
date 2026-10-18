@@ -42,7 +42,7 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
 | User, through the dashboard's editors, the setup screen, or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if

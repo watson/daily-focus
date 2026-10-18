@@ -114,6 +114,9 @@ for (const outcome of await linkStore(config)) {
   if (outcome.result === 'linked') {
     linked++;
     ok(`linked ${outcome.name}`, shown);
+  } else if (outcome.result === 'copied') {
+    linked++;
+    ok(`copied ${outcome.name}`, `${shown}; Claude Code on Windows won't read through a link`);
   } else if (outcome.result === 'kept') kept(`${outcome.name} already linked`, shown);
   else if (outcome.result === 'own') kept(`${outcome.name} is a real file, left alone`, 'delete it to track the repo again');
   else bad(`could not link ${outcome.name}`, outcome.detail ?? '');

@@ -61,7 +61,11 @@ a month ago. The link keeps the content in git — reviewable, revertible — wh
 path a run names stays inside the store. Linked at every start rather than once,
 so the prompt the agent follows is always the running dashboard's own, however it
 was installed. A real file in its place is left alone by the dashboard, `npm run
-init` and the audit, for anyone who wants a private prompt of their own.
+init` and the audit, for anyone who wants a private prompt of their own. On
+Windows the dashboard copies the files instead, since Windows links only in
+Developer Mode and Claude Code there won't read through a link, and records each
+copy's hash in `copies.json`: a file with that hash is its copy, refreshed at every
+start; anything else is someone's own.
 
 ## How a run starts
 

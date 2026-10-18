@@ -273,6 +273,11 @@ export interface Config {
   schemaFile: string;
   /** The schema in this repo that `schemaFile` links to. */
   schemaSource: string;
+  /**
+   * The copies the dashboard makes in place of those links on Windows, by hash.
+   * See `links.ts`.
+   */
+  copiesFile: string;
   /** Dated snapshots of past briefs, written by the server. */
   archiveDir: string;
   port: number;
@@ -648,6 +653,7 @@ export function loadConfig(values: SettingValues = loadSettings()): Config {
     promptSource: resolve(import.meta.dirname, '..', 'prompts', `morning-brief-${profile}.md`),
     schemaFile: resolve(dataDir, 'items.schema.json'),
     schemaSource: resolve(import.meta.dirname, '..', 'schema', 'items.schema.json'),
+    copiesFile: resolve(dataDir, 'copies.json'),
     archiveDir: resolve(dataDir, 'archive'),
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
