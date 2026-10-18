@@ -11,7 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -33,6 +33,7 @@ import {
 import type { LinkedRead } from '../src/linked.ts';
 import { judge } from '../src/tickets.ts';
 import type { LinkedPull } from '../src/types.ts';
+import { fakeCli } from './fakecli.ts';
 
 /* ---------- the JQL ---------- */
 
@@ -382,9 +383,7 @@ test('a refused session keeps one line for the page and the whole transcript for
   // A stand-in acli: real enough to exit non-zero with a complaint over two lines.
   const dir = await mkdtemp(join(tmpdir(), 'daily-focus-acli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const acli = join(dir, 'acli');
-  await writeFile(acli, '#!/bin/sh\necho "✗ Error: not logged in" >&2\necho "  run acli jira auth login to sign in to acme.atlassian.net" >&2\nexit 1\n');
-  await chmod(acli, 0o755);
+  const acli = await fakeCli(join(dir, 'acli'), "fail('✗ Error: not logged in\\n  run acli jira auth login to sign in to acme.atlassian.net');");
 
   const err = await acliIdentity(acli).then(
     () => null,
@@ -392,7 +391,9 @@ test('a refused session keeps one line for the page and the whole transcript for
   );
   assert.ok(err instanceof AcliAuthError);
   assert.equal(err.message, 'acli has no Jira session (not logged in) — run `acli jira auth login`');
-  assert.equal(err.detail, `$ ${acli} jira auth status\n✗ Error: not logged in\n  run acli jira auth login to sign in to acme.atlassian.net`);
+  // Quoted as a shell word when it needs to be, as a Windows path does.
+  const shown = /^[\w@%+=:,./-]+$/.test(acli) ? acli : `'${acli}'`;
+  assert.equal(err.detail, `$ ${shown} jira auth status\n✗ Error: not logged in\n  run acli jira auth login to sign in to acme.atlassian.net`);
 });
 
 /* ---------- the whole fetch, against a stand-in acli ---------- */
@@ -412,13 +413,10 @@ async function standInAcli(
   const data = join(dir, 'world.json');
   const log = join(dir, 'viewed.log');
   await writeFile(data, JSON.stringify(world));
-  const acli = join(dir, 'acli');
-  await writeFile(
-    acli,
-    `#!${process.execPath}
-const { readFileSync, appendFileSync } = require('node:fs');
+  const acli = await fakeCli(
+    join(dir, 'acli'),
+    `const { readFileSync, appendFileSync } = fs;
 const world = JSON.parse(readFileSync(${JSON.stringify(data)}, 'utf8'));
-const args = process.argv.slice(2);
 if (args[2] === 'view') {
   appendFileSync(${JSON.stringify(log)}, args[3] + '\\n');
   console.log(JSON.stringify({ key: args[3], fields: { customfield_10000: world.panels[args[3]] ?? null } }));
@@ -429,10 +427,8 @@ if (args[2] === 'view') {
   else if (jql.includes('.open > 0')) console.log(JSON.stringify(only(world.open)));
   else if (jql.includes('.all > 0')) console.log(JSON.stringify(only(world.any)));
   else console.log(JSON.stringify(world.base));
-}
-`,
+}`,
   );
-  await chmod(acli, 0o755);
   return {
     acli,
     async viewed() {

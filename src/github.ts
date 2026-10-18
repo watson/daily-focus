@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { unreachable } from './failure.ts';
+import { launchFor } from './launch.ts';
 import { laterISO } from './time.ts';
 import type {
   CheckState,
@@ -69,7 +70,8 @@ export class GhAuthError extends Error {
 
 async function gh(ghPath: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
-    const { stdout, stderr } = await run(ghPath, args, { env: GH_ENV, timeout: GH_TIMEOUT_MS, maxBuffer: 1 << 20 });
+    const launch = launchFor(ghPath, args);
+    const { stdout, stderr } = await run(launch.file, launch.args, { env: GH_ENV, timeout: GH_TIMEOUT_MS, maxBuffer: 1 << 20 });
     return { stdout, stderr, code: 0 };
   } catch (err) {
     const failure = err as NodeJS.ErrnoException & {

@@ -17,6 +17,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { launchFor } from './launch.ts';
 import { needsJiraCount, reconcile, type LinkedRead } from './linked.ts';
 import type { Ticket, TicketStatusCategory } from './types.ts';
 
@@ -89,7 +90,8 @@ export class JiraTransitionError extends Error {
 
 async function acli(acliPath: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
-    const { stdout, stderr } = await run(acliPath, args, {
+    const launch = launchFor(acliPath, args);
+    const { stdout, stderr } = await run(launch.file, launch.args, {
       env: ACLI_ENV,
       timeout: ACLI_TIMEOUT_MS,
       // A hundred tickets of raw Jira issue JSON measured 135 KB; this is room

@@ -38,10 +38,10 @@ test('reports a missing brief instead of throwing', async () => {
 /** The browser counts days in it, so they agree with the server's about when a snooze ends. */
 test('the state names the zone the server counts days in', async (t) => {
   const store = await makeStore();
-  const previous = process.env.TZ;
+  // Set back explicitly: on Windows, deleting TZ doesn't take Node back to the system's zone.
+  const previous = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   t.after(() => {
-    if (previous === undefined) delete process.env.TZ;
-    else process.env.TZ = previous;
+    process.env.TZ = previous;
   });
   process.env.TZ = 'Asia/Tokyo';
   assert.equal((await store.getState()).timeZone, 'Asia/Tokyo');

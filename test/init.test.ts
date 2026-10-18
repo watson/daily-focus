@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 import { promisify } from 'node:util';
+import { NEEDS_SYMLINKS } from './symlinks.ts';
 
 const run = promisify(execFile);
 const script = resolve(import.meta.dirname, '../scripts/init.ts');
@@ -27,6 +28,13 @@ function init(dataDir: string, ...args: string[]) {
   return run(process.execPath, [script, '--profile', 'personal', ...args], { env: { ...process.env, DAILY_FOCUS_DATA: dataDir } });
 }
 
+
+/** Linked to `source`, or on Windows, where the store gets copies, a copy of it. */
+async function assertLinked(path: string, source: string, message?: string): Promise<void> {
+  if (process.platform === 'win32') assert.equal(await readFile(path, 'utf8'), await readFile(source, 'utf8'), message);
+  else assert.equal(await readlink(path), source, message);
+}
+
 test('a first run never suggests seeding the store it just set up', async () => {
   const dir = await tempStore();
 
@@ -46,7 +54,7 @@ test('a second run reports that nothing changed', async () => {
   assert.match(stdout, /The store was already set up\. Nothing was changed\./);
 });
 
-test('says so when it repoints a link at this checkout', async () => {
+test('says so when it repoints a link at this checkout', { skip: NEEDS_SYMLINKS }, async () => {
   const dir = await tempStore();
   await init(dir);
   const store = join(dir, 'personal');
@@ -60,7 +68,7 @@ test('says so when it repoints a link at this checkout', async () => {
 
   assert.match(stdout, /Linked 1 file to this checkout; nothing else changed\./);
   assert.doesNotMatch(stdout, /Nothing was changed/);
-  assert.equal(await readlink(join(store, 'prompt.md')), personalPrompt);
+  await assertLinked(join(store, 'prompt.md'), personalPrompt);
 });
 
 test("--profile sets up that profile's store, in its folder, which says the profile", async () => {
@@ -71,7 +79,7 @@ test("--profile sets up that profile's store, in its folder, which says the prof
   assert.match(stdout, /personal \(personal profile\)/);
   assert.equal(existsSync(join(store, 'settings.json')), false, 'the folder is the record; nothing needs saving');
   assert.match(await readFile(join(store, 'sources.md'), 'utf8'), /e-Boks/i, 'the personal template');
-  assert.equal(await readlink(join(store, 'prompt.md')), personalPrompt);
+  await assertLinked(join(store, 'prompt.md'), personalPrompt);
 });
 
 test('without --profile, a new data folder gets the work store', async () => {
@@ -79,7 +87,7 @@ test('without --profile, a new data folder gets the work store', async () => {
   await run(process.execPath, [script], { env: { ...process.env, DAILY_FOCUS_DATA: dir } });
 
   assert.deepEqual(await readdir(dir), ['work']);
-  assert.equal(await readlink(join(dir, 'work', 'prompt.md')), workPrompt);
+  await assertLinked(join(dir, 'work', 'prompt.md'), workPrompt);
 });
 
 test('a store from before the folders is set up where it lies, for the dashboard to move', async () => {
@@ -88,7 +96,7 @@ test('a store from before the folders is set up where it lies, for the dashboard
 
   await run(process.execPath, [script], { env: { ...process.env, DAILY_FOCUS_DATA: dir } });
 
-  assert.equal(await readlink(join(dir, 'prompt.md')), personalPrompt, "linked for the store's own profile");
+  await assertLinked(join(dir, 'prompt.md'), personalPrompt, "linked for the store's own profile");
   assert.equal(existsSync(join(dir, 'personal')), false, 'moving it is the dashboard\'s job, as it starts');
   assert.deepEqual(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')), { DAILY_FOCUS_PROFILE: 'personal', DAILY_FOCUS_AGENT: 'codex' });
 });

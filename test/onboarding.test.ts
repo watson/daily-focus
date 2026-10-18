@@ -11,7 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -23,10 +23,12 @@ import { Onboarding, type OnboardingDeps } from '../src/onboarding.ts';
 import { applySettingsChange } from '../src/settings.ts';
 import { asProfile } from '../src/stores.ts';
 import type { OnboardingAnswer, OnboardingState, SetupState } from '../src/types.ts';
+import { fakeCli, quoted } from './fakecli.ts';
 
 const dirs: string[] = [];
 after(async () => {
-  await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
+  // Retried: on Windows a folder is busy while a stopped session's process still lets go of it.
+  await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })));
 });
 
 /** What the fake CLI answers with: one object both questions can read their own part of. */
@@ -64,7 +66,6 @@ const MISSING_CODEX: CliFound = { path: null, version: null, onPath: false, read
 async function harness(saved: Record<string, string> = {}, reply: unknown = PROPOSAL, raw = false): Promise<Harness> {
   const dataDir = await mkdtemp(join(tmpdir(), 'daily-focus-onboarding-'));
   dirs.push(dataDir);
-  const bin = join(dataDir, 'fake-claude');
   // The lines a real Claude Code prints, with the session id left for the script to fill in.
   const lines = [
     { type: 'system', subtype: 'init', session_id: 'SESSION' },
@@ -73,14 +74,15 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
     { type: 'result', subtype: 'success', is_error: false, session_id: 'SESSION', result: raw ? String(reply) : JSON.stringify(reply) },
   ];
   await writeFile(join(dataDir, 'lines.jsonl'), `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`, 'utf8');
-  const script = [
-    '#!/bin/sh',
-    `printf '%s\\n' "$@" > "${dataDir}/argv-$$"`,
-    'case "$*" in *"Is this you"*|*sess-identity*) id=sess-identity;; *) id=sess-calendars;; esac',
-    `sed "s/SESSION/$id/g" "${dataDir}/lines.jsonl"`,
-  ].join('\n');
-  await writeFile(bin, `${script}\n`, 'utf8');
-  await chmod(bin, 0o755);
+  const bin = await fakeCli(
+    join(dataDir, 'fake-claude'),
+    [
+      `fs.writeFileSync(${quoted(join(dataDir, 'argv-'))} + String(Date.now()).padStart(15, '0') + '-' + process.pid, args.map((arg) => arg + '\\n').join(''));`,
+      "const asked = args.join(' ');",
+      "const id = asked.includes('Is this you') || asked.includes('sess-identity') ? 'sess-identity' : 'sess-calendars';",
+      `process.stdout.write(fs.readFileSync(${quoted(join(dataDir, 'lines.jsonl'))}, 'utf8').replaceAll('SESSION', id));`,
+    ].join('\n'),
+  );
 
   const values: Record<string, string> = { DAILY_FOCUS_DATA: dataDir, ...saved };
   const config = loadConfig(values);
@@ -134,8 +136,9 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
     },
   };
   h.onboarding = new Onboarding(config, h.deps);
+  // In the order they were made: each file is named for the time it was written.
   h.calls = async () => {
-    const names = (await readdir(dataDir)).filter((name) => name.startsWith('argv-'));
+    const names = (await readdir(dataDir)).filter((name) => name.startsWith('argv-')).sort();
     return Promise.all(names.map(async (name) => (await readFile(join(dataDir, name), 'utf8')).split('\n')));
   };
   return h;
@@ -414,7 +417,6 @@ test('an answer that is not JSON fails the question, which falls back and can be
  * the model `accepts`, and refuses any other the way the server does.
  */
 async function withCodex(h: Harness, accepts: string | null): Promise<void> {
-  const bin = join(h.dataDir, 'fake-codex');
   const refusal = JSON.stringify({
     type: 'error',
     status: 400,
@@ -433,16 +435,16 @@ async function withCodex(h: Harness, accepts: string | null): Promise<void> {
     join(h.dataDir, 'codex-refused.jsonl'),
     lines([{ type: 'thread.started', thread_id: 'th-1' }, { type: 'error', message: refusal }, { type: 'turn.failed', error: { message: refusal } }]),
   );
-  const script = [
-    '#!/bin/sh',
-    `printf '%s\\n' "$@" > "${h.dataDir}/argv-$$"`,
-    `model=$(printf '%s\\n' "$@" | sed -n 's/^model="\\(.*\\)"$/\\1/p')`,
-    `if [ "$model" = "${accepts ?? ''}" ]; then cat "${h.dataDir}/codex-ok.jsonl"; exit 0; fi`,
-    `sed "s/MODEL/$model/g" "${h.dataDir}/codex-refused.jsonl"`,
-    'exit 1',
-  ].join('\n');
-  await writeFile(bin, `${script}\n`, 'utf8');
-  await chmod(bin, 0o755);
+  const bin = await fakeCli(
+    join(h.dataDir, 'fake-codex'),
+    [
+      `fs.writeFileSync(${quoted(join(h.dataDir, 'argv-'))} + String(Date.now()).padStart(15, '0') + '-' + process.pid, args.map((arg) => arg + '\\n').join(''));`,
+      "const model = (args.map((arg) => /^model=\"(.*)\"$/.exec(arg)).find(Boolean) ?? [])[1] ?? '';",
+      `if (model === ${quoted(accepts ?? '')}) { process.stdout.write(fs.readFileSync(${quoted(join(h.dataDir, 'codex-ok.jsonl'))}, 'utf8')); process.exit(0); }`,
+      `process.stdout.write(fs.readFileSync(${quoted(join(h.dataDir, 'codex-refused.jsonl'))}, 'utf8').replaceAll('MODEL', model));`,
+      'process.exit(1);',
+    ].join('\n'),
+  );
   h.report = { claude: h.report.claude, codex: { path: bin, version: '0.162.1', onPath: true, ready: true, problem: null, fix: null } };
   h.deps.execFn = async (_file, args) => {
     if (args[0] === '--version') return 'codex-cli 0.162.1';
@@ -531,12 +533,18 @@ test('a question is left only where it offers to be, and the thread says what le
 
 test('answering while it is still looking stops it, and keeps what the user answered', async () => {
   const h = await harness();
-  const slow = join(h.dataDir, 'slow-claude');
-  // A command after the sleep, so no shell hands itself over to it: the shell
-  // dies when stopped and the sleep goes on holding the output, as a CLI's own
-  // children can. Stopping must not wait for it. Each says when it is asleep.
-  await writeFile(slow, `#!/bin/sh\ntouch "${h.dataDir}/asleep-$$"\nsleep 30\necho never\n`, 'utf8');
-  await chmod(slow, 0o755);
+  // It starts a child that goes on holding the output once it is stopped itself,
+  // as a CLI's own children can. Stopping must not wait for that. Each says when
+  // it is asleep.
+  const slow = await fakeCli(
+    join(h.dataDir, 'slow-claude'),
+    [
+      "require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'inherit' });",
+      `fs.writeFileSync(${quoted(join(h.dataDir, 'asleep-'))} + process.pid, '');`,
+      'sleep(30000);',
+      "say('never');",
+    ].join('\n'),
+  );
   h.report = { ...h.report, claude: { ...h.report.claude, path: slow } };
   await h.onboarding.answer('cli', pick({ cli: ['claude'] }));
   await h.onboarding.answer('profile', pick({ profile: ['work'] }));
@@ -547,7 +555,8 @@ test('answering while it is still looking stops it, and keeps what the user answ
   for (let i = 0; i < 200 && (await asleep()) < 3; i++) await new Promise((done) => setTimeout(done, 10));
   assert.equal(await asleep(), 3);
   assert.equal(await h.onboarding.answer('objective', pick({}, { objective: 'Ship the reliability fix', blocker: '' })), null);
-  for (let i = 0; i < 100; i++) {
+  // Up to five seconds: on Windows a stop starts taskkill first.
+  for (let i = 0; i < 250; i++) {
     if ((await view(h)).steps.find((step) => step.id === 'objective')!.proposal?.status !== 'working') break;
     await new Promise((done) => setTimeout(done, 20));
   }

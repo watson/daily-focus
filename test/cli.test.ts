@@ -168,7 +168,7 @@ test('a profile that is neither is refused before anything starts', async () => 
   assert.deepEqual(await readdir(sandbox), [], 'no store was made');
 });
 
-test("the Mac app's calendar helper is found beside its Node, wherever the dashboard came from", () => {
+test("the Mac app's calendar helper is found beside its Node, wherever the dashboard came from", { skip: process.platform === 'win32' && "the Mac app's paths" }, () => {
   const app = '/Applications/Daily Focus.app';
   const helper = `${app}/Contents/Helpers/Daily Focus Calendar.app`;
   const node = `${app}/Contents/Helpers/node`;

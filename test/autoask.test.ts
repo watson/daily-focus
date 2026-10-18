@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -18,6 +18,7 @@ import { loadConfig } from '../src/config.ts';
 import { demoIntegrations } from '../src/demo.ts';
 import { startServer } from '../src/server.ts';
 import type { AssistantTurn, BoardRow, CourtReason } from '../src/types.ts';
+import { fakeCli, quoted } from './fakecli.ts';
 
 const NOW = new Date('2026-10-16T12:00:00Z');
 
@@ -235,17 +236,13 @@ test('the dashboard asks ahead on its own once the board has read, each question
   dirs.push(root);
   const store = join(root, 'work');
   await mkdir(store);
-  const bin = join(root, 'fake-claude');
-  await writeFile(
-    bin,
+  const bin = await fakeCli(
+    join(root, 'fake-claude'),
     [
-      '#!/bin/sh',
-      `echo '{"type":"system","subtype":"init","session_id":"s-1"}'`,
-      `echo '{"type":"result","subtype":"success","is_error":false,"session_id":"s-1","result":"Yours: the retry drops the headers."}'`,
-    ].join('\n') + '\n',
-    'utf8',
+      `say(${quoted('{"type":"system","subtype":"init","session_id":"s-1"}')});`,
+      `say(${quoted('{"type":"result","subtype":"success","is_error":false,"session_id":"s-1","result":"Yours: the retry drops the headers."}')});`,
+    ].join('\n'),
   );
-  await chmod(bin, 0o755);
   await writeFile(
     join(store, 'settings.json'),
     JSON.stringify({

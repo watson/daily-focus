@@ -30,7 +30,7 @@ test("seeds an empty data folder's work store and names it", async () => {
   const dir = await tempStore();
   const { stdout } = await seed(dir);
 
-  assert.match(stdout, new RegExp(`Seeding store: ${join(dir, 'work')}`));
+  assert.ok(stdout.includes(`Seeding store: ${join(dir, 'work')}`), stdout);
   const brief = JSON.parse(await readFile(join(dir, 'work', 'items.json'), 'utf8'));
   assert.ok(brief.items.length > 0);
 });
