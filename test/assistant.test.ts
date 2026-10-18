@@ -610,6 +610,11 @@ test("a step names a connector's tool and the command that was asked for", () =>
   assert.equal(unwrapShell(`bash -lc 'echo '\\''hi'\\'''`), "echo 'hi'");
   assert.equal(unwrapShell('/bin/sh -c "ls -la"'), 'ls -la');
   assert.equal(unwrapShell('gh pr view 1'), 'gh pr view 1');
+  // Codex on Windows, as its events have it.
+  const powershell = '"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"';
+  assert.equal(unwrapShell(`${powershell} -Command "Get-Content -LiteralPath .\\prompt.md -TotalCount 1"`), 'Get-Content -LiteralPath .\\prompt.md -TotalCount 1');
+  assert.equal(unwrapShell(`${powershell} -Command 'Get-Content ''a b.md'''`), "Get-Content 'a b.md'");
+  assert.equal(unwrapShell('pwsh.exe -NoProfile -c "gh pr list"'), 'gh pr list');
 });
 
 test('Claude receives the first prompt separately from the default tool permissions', () => {

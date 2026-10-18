@@ -672,13 +672,16 @@ function codexStep(item: CodexItem, completed: boolean): ParsedStep | null {
 }
 
 /**
- * Codex runs each command through the user's login shell, `/bin/zsh -lc '…'`;
- * the panel shows the command that was asked for.
+ * Codex runs each command through the user's login shell, `/bin/zsh -lc '…'`,
+ * and on Windows through PowerShell, `"C:\…\powershell.exe" -Command "…"`; the
+ * panel shows the command that was asked for.
  */
 export function unwrapShell(command: string): string {
   const wrapped = /^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/.exec(command.trim());
-  if (!wrapped) return command.trim();
-  return wrapped[1] === "'" ? wrapped[2]!.replaceAll(`'\\''`, `'`) : wrapped[2]!;
+  if (wrapped) return wrapped[1] === "'" ? wrapped[2]!.replaceAll(`'\\''`, `'`) : wrapped[2]!;
+  const powershell = /^"?(?:[^"]*\\)?(?:powershell|pwsh)(?:\.exe)?"?(?:\s+-NoProfile)?\s+-(?:Command|c)\s+(['"])([\s\S]*)\1$/i.exec(command.trim());
+  if (powershell) return powershell[1] === "'" ? powershell[2]!.replaceAll(`''`, `'`) : powershell[2]!;
+  return command.trim();
 }
 
 /**
