@@ -304,7 +304,9 @@ test('under Claude Code, editing is allowed but only for the brief', async () =>
 
   const argv = (await readFile(join(config.dataDir, '.argv'), 'utf8')).split('\n');
   assert.ok(!argv.includes('--disallowedTools'), 'the agent has to be able to write its brief');
-  assert.ok(argv.includes('Write(./items.json.*)') && argv.includes('Bash(mv items.json.* items.json)'));
+  // Edit rules, which Claude Code applies to the Write tool too; a path in a Write rule matches nothing.
+  assert.ok(argv.includes('Edit(./items.json)') && argv.includes('Edit(./items.json.*)') && argv.includes('Bash(mv items.json.* items.json)'));
+  assert.ok(!argv.some((arg) => arg.startsWith('Write(')));
   assert.ok(argv.includes('mcp__calendar'), 'the configured source tools come along');
   assert.ok(!argv.includes('Bash(gh *)'), 'and replace the default ones');
   assert.ok(!argv.some((arg) => /^(Write|Edit)\(\.\/(actions|focus|sessions)/.test(arg)));
