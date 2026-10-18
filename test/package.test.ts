@@ -8,11 +8,14 @@
 
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { promisify } from 'node:util';
+
+import { OWN_CALENDAR_APP } from '../src/install.ts';
 
 const run = promisify(execFile);
 const root = resolve(import.meta.dirname, '..');
@@ -27,6 +30,8 @@ before(async () => {
   await mkdir(pkg, { recursive: true });
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { files: string[] };
   for (const entry of ['package.json', ...manifest.files]) {
+    // The calendar helper is there only once built: a release adds the one it signed.
+    if (join(root, entry) === `${OWN_CALENDAR_APP}/` && !existsSync(OWN_CALENDAR_APP)) continue;
     await cp(join(root, entry), join(pkg, entry), { recursive: true });
   }
 });
@@ -47,6 +52,14 @@ test('the package ships what it runs and nothing it does not', async () => {
   assert.deepEqual(manifest.dependencies ?? {}, {}, 'the server needs nothing at runtime');
   for (const needed of ['dist/', 'public/app.js', 'prompts/', 'schema/']) assert.ok(manifest.files.includes(needed), needed);
   assert.ok(!manifest.files.some((entry) => entry.startsWith('src') || entry.startsWith('test')));
+});
+
+test('the package carries the calendar helper where the dashboard looks for its own', async () => {
+  const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { files: string[] };
+  const own = relative(root, OWN_CALENDAR_APP);
+  assert.ok(manifest.files.includes(`${own}/`), `package.json ships ${own}`);
+  const release = await readFile(join(root, '.github/workflows/release.yml'), 'utf8');
+  assert.ok(release.includes(`"$package/${own}"`), 'and the release puts the copy it signed there');
 });
 
 test('installed under node_modules, the demo starts and serves the sample brief', async () => {

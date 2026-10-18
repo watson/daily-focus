@@ -372,9 +372,9 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_CALENDAR_APP',
     group: 'calendar',
     label: 'Path to the calendar helper',
-    help: 'Only needed when the helper is somewhere other than where it was built.',
+    help: 'Only needed to use a helper other than the one Daily Focus comes with.',
     kind: 'text',
-    fallback: always('The built copy'),
+    fallback: always('The one Daily Focus comes with'),
     advanced: true,
   },
 

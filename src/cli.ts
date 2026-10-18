@@ -17,13 +17,13 @@
  */
 
 import { execFile, spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { cp, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 
-import { IN_NPX_CACHE, packageVersion, ROOT, USER_CALENDAR_APP } from './install.ts';
+import { IN_NPX_CACHE, OWN_CALENDAR_APP, packageVersion, ROOT, USER_CALENDAR_APP } from './install.ts';
 import type { RunOptions } from './server.ts';
 
 const run = promisify(execFile);
@@ -40,7 +40,7 @@ Usage
   daily-focus audit [--against <items.json>]
                                    check the current brief against the contract
   daily-focus seed [--force]       write a sample brief to the store
-  daily-focus build-calendar       build the macOS calendar helper for the live agenda
+  daily-focus build-calendar       build the macOS calendar helper, for a copy without one
 
 Options
   --data <dir>      the store (default ~/.daily-focus)
@@ -113,12 +113,20 @@ async function start(open: boolean, onStarted?: (url: string) => void, options: 
 
 /**
  * Build the calendar helper and put it where every copy looks for it, outside
- * the package, which an update replaces. The script needs the Xcode command line
- * tools, so it is run here rather than shipped built.
+ * the package, which an update replaces. A release's package carries the helper
+ * built and signed, so this is for one that doesn't, such as a package packed
+ * from a checkout. The script needs the Xcode command line tools.
  */
 async function buildCalendar(): Promise<void> {
   if (process.platform !== 'darwin') {
     console.log('The calendar helper reads Calendar.app, so it is macOS-only. Nothing to build.');
+    return;
+  }
+  // The dashboard looks for this copy's own helper before the one built here, so
+  // building another would change nothing.
+  if (existsSync(OWN_CALENDAR_APP)) {
+    console.log(`This copy of Daily Focus carries its calendar helper, at ${OWN_CALENDAR_APP}. Nothing to build.`);
+    console.log('Choose calendars in its settings, and allow access when macOS asks.');
     return;
   }
   // Built in a temporary copy of its sources: a global install may well be owned

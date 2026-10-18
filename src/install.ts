@@ -7,7 +7,7 @@
  * Which one this is shows in the extension of the running file.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,8 +73,28 @@ export function appCalendarApp(execPath: string, root: string): string | null {
 export const APP_CALENDAR_APP = appCalendarApp(process.execPath, ROOT);
 
 /**
- * Where `daily-focus build-calendar` puts the calendar helper: outside the
- * package, which an update replaces, and in one place for every copy, since
- * macOS keeps the calendar permission with the helper that asked for it.
+ * This copy's own calendar helper, where `tools/dfcal/build.sh` puts it: in a
+ * checkout, what `npm run build:calendar` built; in the npm package, the one a
+ * release signed with its Developer ID. macOS keeps the calendar permission
+ * against that signature, not the path, so an update to the package keeps it.
+ */
+export const OWN_CALENDAR_APP = resolve(ROOT, 'tools', 'dfcal', 'build', 'Daily Focus Calendar.app');
+
+/**
+ * Where `daily-focus build-calendar` puts the calendar helper, for a package that
+ * carries none: outside the package, which an update replaces, and in one place
+ * for every copy, since macOS keeps the calendar permission with the helper that
+ * asked for it.
  */
 export const USER_CALENDAR_APP = resolve(homedir(), 'Library', 'Application Support', 'Daily Focus', 'Daily Focus Calendar.app');
+
+/**
+ * The calendar helper to use when Settings names none: the one the Mac app
+ * carries, then this copy's own, then the one `daily-focus build-calendar` built.
+ * This copy's own comes first of the last two so that it matches the dashboard
+ * reading it, however old the one built by hand is. With none of them, this
+ * copy's own place is where to build one.
+ */
+export function defaultCalendarApp(exists: (path: string) => boolean = existsSync, app: string | null = APP_CALENDAR_APP): string {
+  return [app, OWN_CALENDAR_APP, USER_CALENDAR_APP].find((path): path is string => path !== null && exists(path)) ?? OWN_CALENDAR_APP;
+}
