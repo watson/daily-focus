@@ -107,6 +107,8 @@ versions and release notes come from, so CI checks it.
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
 | `src/zone.ts`, `client/zone.ts` | The dashboard's time zone: the one the browser last reported, or the Mac's when it moves |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
+| `src/ghsignin.ts`, `client/signin.ts` | Signing gh in to GitHub from the page: the setup step, the board and Settings |
+| `scripts/licenses.ts` | The package's `dist/third-party-licenses.txt`: every npm package its bundles read, and the fonts |
 | `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
@@ -248,7 +250,15 @@ calendar helper in it. It adds its own calendar helper, and Node.js at the versi
 in `macos/node-version`: the official Apple silicon release, checked against
 nodejs.org's checksums and cached in `macos/build/`. The app is Apple silicon only,
 except the helper, which is built for Intel Macs and macOS 11 too because the npm
-package carries the same one. To move to a newer Node, change that file. It draws the icon and
+package carries the same one. To move to a newer Node, change that file. It also
+adds the newest release of the GitHub CLI, looked up at every build, checked against
+its release's checksums and GitHub's Developer ID, and kept as GitHub signed it, in
+`Contents/Helpers/GitHub CLI/`. The dashboard uses that copy only when there is no
+`gh` on PATH, and then signs it in from the page (`src/ghsignin.ts`); the npm package
+never carries one. Everything others wrote goes into one
+`Acknowledgements.txt`, which the app shows from its menu: Node's licence, gh's and
+those `gh licenses` prints for its dependencies, and the package's
+`dist/third-party-licenses.txt`. It draws the icon and
 the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
 app's self-test, and makes `Daily-Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
 which needs Python 3.10 or newer.

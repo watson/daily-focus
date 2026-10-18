@@ -206,6 +206,9 @@ export interface Handlers {
   refreshBoard(): void;
   refreshTickets(): void;
   refreshCalendar(): void;
+  /** Start gh's sign-in to GitHub, whose code every tab is then shown. */
+  signInToGitHub(): void;
+  cancelGitHubSignIn(): void;
   ask(id: string, body: { action?: string; text?: string }): void;
   stopAssistant(id: string): void;
   /** Put text on the clipboard: a reply, or a block in one meant for pasting. */

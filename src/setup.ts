@@ -182,6 +182,11 @@ export function detectIdentity(config: Config): Promise<Identity> {
   return identity;
 }
 
+/** Ask again next time: gh has signed in since, and holds an account it didn't. */
+export function forgetIdentity(): void {
+  identity = null;
+}
+
 /** The template with whatever is known about the user in place of its placeholders. */
 export function fillIdentity(template: string, who: Identity): string {
   let text = template;

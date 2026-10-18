@@ -12,6 +12,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { findExecutable } from './launch.ts';
+
 /** True in the npm package, false in a checkout. */
 export const PACKAGED = import.meta.url.endsWith('.js');
 
@@ -64,13 +66,39 @@ export function packageVersion(root: string = ROOT): string {
  * finds it from its own place, `Contents/Resources/server`.
  */
 export function appCalendarApp(execPath: string, root: string): string | null {
+  return appHelper(execPath, root, 'Daily Focus Calendar.app');
+}
+
+/** Where `name` would be in the Mac app's `Contents/Helpers`, found as `appCalendarApp` says; null outside the app. */
+function appHelper(execPath: string, root: string, name: string): string | null {
   const contents = `.app${sep}Contents${sep}`;
-  if (dirname(execPath).endsWith(`${contents}Helpers`)) return resolve(dirname(execPath), 'Daily Focus Calendar.app');
-  if (root.includes(`${contents}Resources${sep}`)) return resolve(root, '..', '..', 'Helpers', 'Daily Focus Calendar.app');
+  if (dirname(execPath).endsWith(`${contents}Helpers`)) return resolve(dirname(execPath), name);
+  if (root.includes(`${contents}Resources${sep}`)) return resolve(root, '..', '..', 'Helpers', name);
   return null;
 }
 
 export const APP_CALENDAR_APP = appCalendarApp(process.execPath, ROOT);
+
+/**
+ * The GitHub CLI the Mac app carries, for a Mac without one of its own. In a
+ * folder of its own, so that putting it on a CLI's PATH adds `gh` and nothing
+ * else: the app's Node is one folder up. `macos/build.sh` puts the newest
+ * release there, as GitHub signed it.
+ */
+export function appGh(execPath: string, root: string): string | null {
+  return appHelper(execPath, root, join('GitHub CLI', 'gh'));
+}
+
+export const APP_GH = appGh(process.execPath, ROOT);
+
+/**
+ * The gh to use when Settings names none: the one on PATH, by name, so a gh the
+ * user installed always wins; the Mac app's own only when there is none. PATH
+ * is the shell's by now (`hydratePath`), so a Homebrew gh is found from the app.
+ */
+export function defaultGh(onPath: boolean = findExecutable('gh') !== null, exists: (path: string) => boolean = existsSync, app: string | null = APP_GH): string {
+  return !onPath && app !== null && exists(app) ? app : 'gh';
+}
 
 /**
  * This copy's own calendar helper, where `tools/dfcal/build.sh` puts it: in a

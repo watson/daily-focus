@@ -377,6 +377,9 @@ export class Onboarding {
     let answer = cleanAnswer(raw);
     if (!question || !answer) return `there is no question ${JSON.stringify(id)}, or that is not an answer to it`;
     if (!given(answer) && !question.later) return `"${question.topic}" needs an answer`;
+    if (id === 'github' && given(answer) && (await this.context()).identity.logins.length === 0) {
+      return 'Sign in to GitHub first, or sign in later';
+    }
     if (id === 'cli' && given(answer)) {
       const chosen = await this.chooseCli(given(answer)!);
       if (typeof chosen === 'string') return chosen;
@@ -681,7 +684,7 @@ export class Onboarding {
       child = this.spawnFn(launch.file, launch.args, {
         cwd: this.config.onboardingDir,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: cliEnvironment(this.config.dataDir),
+        env: cliEnvironment(this.config),
       });
     } catch (err) {
       await rm(schemaDir, { recursive: true, force: true });
@@ -941,6 +944,7 @@ export class Onboarding {
       cli: cli && CLI_NAMES.includes(cli) ? cli : null,
       clis,
       identity: started ? await this.deps.identity() : { name: null, login: null, logins: [], email: null },
+      ghBundled: this.config.github.ghBundled,
       calendars,
       calendar: setup.calendar,
       boards: await this.deps.boards(),

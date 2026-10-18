@@ -23,6 +23,7 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
     cli: 'claude',
     clis: report(READY('/usr/local/bin/claude'), MISSING('Codex')),
     identity: { name: 'Robin Lark', login: 'rlark', logins: ['rlark'], email: 'robin@example.com' },
+    ghBundled: false,
     calendars: [
       { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 4 },
       { title: 'Platform team', source: 'robin@northwind.example', eventsToday: 2 },
@@ -306,4 +307,19 @@ test('the profile is asked only when nothing has settled it', () => {
   const profile = questionById('profile')!;
   assert.equal(profile.applies?.(ctx()), true);
   assert.equal(profile.applies?.(ctx({ profileSet: true })), false, 'given at launch, or the other store is already beside it');
+});
+
+test("signing in to GitHub is a question only with the Mac app's own gh, and waits for an account", () => {
+  const github = question('github');
+  assert.equal(github.applies!(ctx()), false, 'a gh of your own signs in in a terminal');
+  assert.equal(github.applies!(ctx({ ghBundled: true })), true);
+
+  const out = github.card(ctx({ ghBundled: true, identity: { name: null, login: null, logins: [], email: null } }));
+  assert.deepEqual(out.gitHub, { logins: [] });
+  assert.match(out.why!, /no GitHub CLI on this Mac/);
+
+  const signedIn = ctx({ ghBundled: true, identity: { name: null, login: 'rlark', logins: ['rlark', 'robin-home'], email: null } });
+  assert.deepEqual(github.card(signedIn).gitHub, { logins: ['rlark', 'robin-home'] });
+  assert.equal(github.summary(chosen({}), signedIn), 'Signed in to GitHub as rlark and robin-home.');
+  assert.equal(github.later?.label, 'Sign in later');
 });

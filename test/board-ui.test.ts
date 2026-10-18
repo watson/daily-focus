@@ -318,3 +318,35 @@ test('while it reads, when it failed, and when the day is spent, the row says so
   assert.equal(byClass(ahead([]).node, 'item__ahead').length, 0, 'waiting its turn is not worth a line');
   assert.equal(byClass(ahead([], { enabled: false, usedToday: 10 }).node, 'item__ahead').length, 0);
 });
+
+test('a board signing in would fix offers it, and shows the code to enter once gh has one', () => {
+  const reason = { message: 'Not signed in to GitHub', detail: '', since: NOW.toISOString(), attempts: 1, retryAt: null, retrying: false };
+  const board = { enabled: true, reason, failures: [], fetchedAt: null, warnings: [], scope: [], rows: [], signIn: true } as unknown as BoardState;
+  const idle = { bundled: true, status: 'idle', code: null, url: null, login: null, error: null } as const;
+  const started: string[] = [];
+  const handlers = handlersWith({ signInToGitHub: () => started.push('start'), copy: (text) => started.push(`copy ${text}`) });
+
+  const offered = mount(h('div', null, renderBoard({ ...STATE, board, gitHubSignIn: idle }, uiWith(), handlers)));
+  const button = byTag(offered, 'button').find((b) => b.textContent === 'Sign in to GitHub');
+  assert.ok(button, buttonLabels(offered).join(' | '));
+  button.click();
+  assert.deepEqual(started, ['start']);
+
+  // An outage is not something signing in fixes.
+  const down = mount(h('div', null, renderBoard({ ...STATE, board: { ...board, signIn: false }, gitHubSignIn: idle }, uiWith(), handlers)));
+  assert.ok(!buttonLabels(down).includes('Sign in to GitHub'));
+
+  const waiting = { ...idle, status: 'waiting', code: 'AB12-CD34', url: 'https://github.com/login/device' } as const;
+  const opened: string[] = [];
+  const open = window.open;
+  window.open = ((url: string) => (opened.push(url), null)) as typeof window.open;
+  try {
+    const shown = mount(h('div', null, renderBoard({ ...STATE, board, gitHubSignIn: waiting }, uiWith(), handlers)));
+    assert.equal(byClass(shown, 'signin__code')[0]?.textContent, 'AB12-CD34');
+    byTag(shown, 'button').find((b) => b.textContent === 'Copy the code and open GitHub')!.click();
+    assert.deepEqual(started, ['start', 'copy AB12-CD34']);
+    assert.deepEqual(opened, ['https://github.com/login/device']);
+  } finally {
+    window.open = open;
+  }
+});

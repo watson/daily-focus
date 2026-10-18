@@ -460,6 +460,27 @@ export interface BoardRow extends PullRequest {
   notes: { text: string; at: string }[];
 }
 
+/**
+ * gh's browser sign-in, which the page starts and shows. `waiting` once gh has
+ * a code for the user to enter at `url`; `done` or `failed` once it has ended,
+ * until the next one starts.
+ */
+export interface GitHubSignInState {
+  /**
+   * Whether the gh signing in is the Mac app's own copy, there being none on
+   * PATH: the one case where nobody can run `gh auth login` in a terminal.
+   */
+  bundled: boolean;
+  status: 'idle' | 'starting' | 'waiting' | 'done' | 'failed';
+  /** The one-time code GitHub's device page asks for. */
+  code: string | null;
+  url: string | null;
+  /** Who gh said it signed in as, once done. */
+  login: string | null;
+  /** Why it failed, in gh's words. */
+  error: string | null;
+}
+
 /** The board as the client sees it. */
 export interface BoardState {
   enabled: boolean;
@@ -477,6 +498,11 @@ export interface BoardState {
   scope: string[];
   warnings: string[];
   pollMinutes: number;
+  /**
+   * Whether signing in to GitHub would fix what failed: gh holds no login, none
+   * for an account the board reads as, or GitHub turned a token away.
+   */
+  signIn: boolean;
   rows: BoardRow[];
   counts: Record<Court | 'parked', number>;
 }
@@ -917,6 +943,8 @@ export interface DashboardState {
   agenda: Agenda;
   /** The live pull request board. Present even when off, so the client can say why. */
   board: BoardState;
+  /** Signing in to GitHub from the page, through gh; see `ghsignin.ts`. */
+  gitHubSignIn: GitHubSignInState;
   /** The Jira ticket board. Present even when off, for the same reason. */
   tickets: TicketBoardState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
@@ -1061,6 +1089,12 @@ export interface OnboardingCard {
   later: string | null;
   /** What the box for replying to the CLI invites, when the question wants more than corrections. */
   reply?: string;
+  /**
+   * The card signs in to GitHub, with gh's sign-in drawn on it from
+   * `DashboardState.gitHubSignIn`. `logins` are the accounts gh holds now: until
+   * there is one, Continue waits.
+   */
+  gitHub?: { logins: string[] };
   /** What Continue says while every field is empty, where that is a way to answer: "Continue without one". */
   empty?: string;
 }

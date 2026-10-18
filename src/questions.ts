@@ -48,6 +48,11 @@ export interface QuestionContext {
   clis: CliReport | null;
   identity: Identity;
   /**
+   * Whether GitHub is read through the Mac app's own gh, there being none on
+   * PATH: setup then signs in for it, since nobody can in a terminal.
+   */
+  ghBundled: boolean;
+  /**
    * What Calendar.app has. A string is why it couldn't say; null when this
    * machine has no Calendar.app, or the list hasn't been read yet.
    */
@@ -436,6 +441,31 @@ const identity: Question = {
   },
 };
 
+/**
+ * Asked only when the dashboard reads GitHub through the Mac app's own gh,
+ * there being none on this Mac: nobody can type `gh auth login` for that one.
+ * The card holds gh's sign-in (`ghsignin.ts`), and Continue waits for an
+ * account. Before who the user is, which reads their accounts from gh.
+ */
+const github: Question = {
+  id: 'github',
+  topic: 'GitHub',
+  title: () => 'Sign in to GitHub',
+  applies: (ctx) => ctx.ghBundled,
+  later: { label: 'Sign in later', summary: 'Not signed in to GitHub yet. Sign in from Settings when you want your pull requests.' },
+  card(ctx) {
+    const logins = ctx.identity.logins;
+    return card({
+      why: logins.length
+        ? `You're signed in as ${listed(logins)}. Sign in again to add another account.`
+        : `So the brief and the pull request board can read GitHub as you. There's no GitHub CLI on this ${ctx.machine}, so Daily Focus uses its own.`,
+      gitHub: { logins: [...logins] },
+    });
+  },
+  summary: (_answer, ctx) =>
+    ctx.identity.logins.length ? `Signed in to GitHub as ${listed(ctx.identity.logins)}.` : 'Not signed in to GitHub.',
+};
+
 /** A board's state in a few words, for the option that turns it on. */
 function healthText(board: BoardHealth, via: string): string | null {
   if (board.reason) return board.reason;
@@ -754,7 +784,7 @@ const objective: Question = {
   },
 };
 
-export const QUESTIONS: readonly Question[] = [cli, profile, schedule, identity, boards, calendars, objective];
+export const QUESTIONS: readonly Question[] = [cli, profile, schedule, github, identity, boards, calendars, objective];
 
 export function questionById(id: string): Question | undefined {
   return QUESTIONS.find((question) => question.id === id);

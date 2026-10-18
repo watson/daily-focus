@@ -54,6 +54,14 @@ test('the package ships what it runs and nothing it does not', async () => {
   assert.ok(!manifest.files.some((entry) => entry.startsWith('src') || entry.startsWith('test')));
 });
 
+test('the package credits every npm package its bundles carry, and the fonts', async () => {
+  const text = await readFile(join(pkg, 'dist', 'third-party-licenses.txt'), 'utf8');
+  for (const name of ['preact', '@preact/signals', '@preact/signals-core', 'IBM Plex']) {
+    assert.match(text, new RegExp(`^${name.replace(/[/@]/g, '\\$&')}( \\d|$)`, 'm'), name);
+  }
+  assert.match(text, /Permission is hereby granted/, 'with the licences themselves');
+});
+
 test('the package carries the calendar helper where the dashboard looks for its own', async () => {
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { files: string[] };
   const own = relative(root, OWN_CALENDAR_APP).split(sep).join('/');

@@ -582,3 +582,40 @@ test('an answer comes back before the sessions it starts have started, so the ne
   await settled(h);
   assert.equal((await h.calls()).length, 3, 'each question started once, though two answers asked');
 });
+
+test("with the Mac app's own gh, setup signs in to GitHub before asking who you are, and waits for an account", async () => {
+  const h = await harness();
+  let logins: string[] = [];
+  h.deps.identity = async () => ({ name: null, login: logins[0] ?? null, logins, email: null });
+  const config = loadConfig(h.values);
+  h.onboarding = new Onboarding({ ...config, github: { ...config.github, ghBundled: true } }, h.deps);
+  await h.onboarding.detect();
+  assert.equal(await h.onboarding.answer('profile', pick({ profile: ['work'] })), null);
+  assert.equal(await h.onboarding.answer('schedule', PLAIN.schedule!), null);
+
+  let state = await view(h);
+  assert.deepEqual(
+    state.steps.map((step) => step.id).slice(0, 5),
+    ['cli', 'profile', 'schedule', 'github', 'identity'],
+  );
+  assert.equal(state.current, 'github');
+  assert.deepEqual(state.steps.find((step) => step.id === 'github')!.card.gitHub, { logins: [] });
+  assert.equal(await h.onboarding.answer('github', pick({})), 'Sign in to GitHub first, or sign in later');
+
+  // gh's sign-in, from the card, lands an account.
+  logins = ['rlark'];
+  state = await view(h);
+  assert.deepEqual(state.steps.find((step) => step.id === 'github')!.card.gitHub, { logins: ['rlark'] });
+  assert.equal(await h.onboarding.answer('github', pick({})), null);
+  state = await view(h);
+  assert.equal(state.steps.find((step) => step.id === 'github')!.summary, 'Signed in to GitHub as rlark.');
+  assert.equal(state.current, 'identity');
+  await settled(h);
+  await h.onboarding.close();
+});
+
+test('with a gh of your own, setup asks nothing about signing in', async () => {
+  const h = await harness();
+  await h.onboarding.detect();
+  assert.ok(!(await view(h)).steps.some((step) => step.id === 'github'));
+});

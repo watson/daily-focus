@@ -12,8 +12,9 @@
 import { h, type JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-import type { DashboardState, OnboardingChoice, OnboardingField, OnboardingState, OnboardingStep } from '../src/types.ts';
+import type { DashboardState, GitHubSignInState, OnboardingChoice, OnboardingField, OnboardingState, OnboardingStep } from '../src/types.ts';
 import { el } from './el.ts';
+import { gitHubSignIn } from './signin.ts';
 import type { Handlers, SetupDraft, UiState } from './types.ts';
 
 type Chosen = SetupDraft['answer'];
@@ -55,7 +56,7 @@ export function OnboardingView({ state, ui, handlers }: { state: DashboardState;
         { class: 'onboarding__thread' },
         flow.steps.map((step) => {
           if (step.id === flow.current || step.id === editing) {
-            return el('li', { key: step.id }, h(StepCard, { step, ui, handlers, current: step.id === flow.current }));
+            return el('li', { key: step.id }, h(StepCard, { step, ui, handlers, current: step.id === flow.current, signIn: state.gitHubSignIn }));
           }
           if (step.status === 'open') return null;
           return el('li', { key: step.id }, doneRow(step, handlers, ui.setupBusy.value !== null));
@@ -154,7 +155,20 @@ function baseAnswer(step: OnboardingStep): Chosen {
   };
 }
 
-function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: UiState; handlers: Handlers; current: boolean }): JSX.Element {
+function StepCard({
+  step,
+  ui,
+  handlers,
+  current,
+  signIn,
+}: {
+  step: OnboardingStep;
+  ui: UiState;
+  handlers: Handlers;
+  current: boolean;
+  /** gh's sign-in, which a card with `gitHub` holds. Absent from an older server. */
+  signIn: GitHubSignInState | undefined;
+}): JSX.Element {
   const saved = ui.setupDrafts.value.get(step.id);
   const draft = saved?.answer ?? baseAnswer(step);
   const stale = saved !== undefined && saved.version !== step.card.version;
@@ -179,7 +193,9 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
       ? 'Still looking; this fills in when it is done'
       : empty && step.card.problem?.blocking
         ? 'Fix what it says above, or decide later'
-        : null;
+        : step.card.gitHub && step.card.gitHub.logins.length === 0
+          ? 'Sign in first, or sign in later'
+          : null;
 
   return el(
     'section',
@@ -247,6 +263,9 @@ function StepCard({ step, ui, handlers, current }: { step: OnboardingStep; ui: U
         )
       : null,
     step.card.problem?.blocking ? problem(step, busy, handlers) : null,
+    step.card.gitHub && signIn
+      ? gitHubSignIn(signIn, handlers, step.card.gitHub.logins.length ? 'Sign in to another account' : 'Sign in to GitHub')
+      : null,
     el(
       'form',
       {

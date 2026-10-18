@@ -493,3 +493,23 @@ test('the button that leaves a question says what it does, and an empty objectiv
   await settle();
   assert.deepEqual(buttonLabels(empty.querySelector('.onboarding__actions')!), ['Continue']);
 });
+
+test('the GitHub step holds Continue until gh has an account, and offers another once it has', () => {
+  const signIn = { bundled: true, status: 'idle', code: null, url: null, login: null, error: null } as const;
+  const card = (logins: string[]) =>
+    step('github', { title: 'Sign in to GitHub', card: { ...step('x').card, later: 'Sign in later', gitHub: { logins } } });
+  const started: string[] = [];
+  const handlers = handlersWith({ signInToGitHub: () => started.push('start') });
+
+  const out = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([card([])], 'github'), gitHubSignIn: signIn }), ui: uiWith(), handlers }));
+  const cont = byTag(out, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement;
+  assert.equal(cont.disabled, true);
+  assert.equal(cont.title, 'Sign in first, or sign in later');
+  assert.ok(buttonLabels(out).includes('Sign in later'));
+  byTag(out, 'button').find((b) => b.textContent === 'Sign in to GitHub')!.click();
+  assert.deepEqual(started, ['start']);
+
+  const signedIn = mount(h(OnboardingView, { state: stateWith({ onboarding: flow([card(['rlark'])], 'github'), gitHubSignIn: signIn }), ui: uiWith(), handlers }));
+  assert.equal((byTag(signedIn, 'button').find((b) => b.textContent === 'Continue') as HTMLButtonElement).disabled, false);
+  assert.ok(buttonLabels(signedIn).includes('Sign in to another account'));
+});

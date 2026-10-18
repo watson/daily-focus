@@ -247,6 +247,48 @@ test('when nothing can be polled the reason says so and the last file still show
   assert.equal(view.fetchedAt, '2026-09-14T06:00:00Z');
 });
 
+test('signing in is offered for a missing login or a refused token, and not for an outage', async () => {
+  const signIn = async (cfg: Config, deps: BoardDeps): Promise<boolean> => {
+    const board = new Board(cfg, () => {}, deps);
+    await board.start();
+    return board.view([], new Date()).signIn;
+  };
+  assert.equal(await signIn(await config(), fakeDeps({ accounts: [] })), true, 'gh holds no login at all');
+  assert.equal(
+    await signIn(await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice, bob' }), fakeDeps({ tokens: { alice: 't1' }, fetches: { t1: ok('alice', []) } })),
+    true,
+    'none for one of the accounts the board reads as',
+  );
+  const refused = async (): Promise<AccountFetch> => {
+    throw new GitHubRequestError('GitHub rejected the token (401) — sign in to GitHub again', 401);
+  };
+  assert.equal(
+    await signIn(await config(), fakeDeps({ accounts: [{ login: 'alice', active: true }], tokens: { active: 't1' }, fetches: { t1: refused } })),
+    true,
+    'a token GitHub turned away',
+  );
+  const down = async (): Promise<AccountFetch> => {
+    throw new GitHubRequestError('GitHub answered 502', 502);
+  };
+  assert.equal(
+    await signIn(await config(), fakeDeps({ accounts: [{ login: 'alice', active: true }], tokens: { active: 't1' }, fetches: { t1: down } })),
+    false,
+    'an outage is no reason to sign in',
+  );
+});
+
+test("with the Mac app's own gh, nothing asks for a command nobody can run", async () => {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice' });
+  const bundled = { ...cfg, github: { ...cfg.github, ghPath: '/Applications/Daily Focus.app/Contents/Helpers/GitHub CLI/gh', ghBundled: true } };
+  const board = new Board(bundled, () => {}, fakeDeps({}));
+  await board.start();
+  assert.deepEqual(board.view([], new Date()).accounts, [{ login: 'alice', ok: false, error: 'Not signed in to GitHub as alice' }]);
+
+  const nobody = new Board({ ...bundled, github: { ...bundled.github, accounts: [] } }, () => {}, fakeDeps({ accounts: [] }));
+  await nobody.start();
+  assert.equal(nobody.view([], new Date()).reason?.message, 'Not signed in to GitHub');
+});
+
 test('a missing gh is reported as the reason', async () => {
   const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice' });
   const deps: BoardDeps = {

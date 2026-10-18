@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig, parseScope } from '../src/config.ts';
-import { layerSettings, oldDotenvWarning, readSettingsFile, settingSources } from '../src/env.ts';
+import { cliEnvironment, layerSettings, oldDotenvWarning, readSettingsFile, settingSources } from '../src/env.ts';
 
 const dirs: string[] = [];
 
@@ -178,4 +178,20 @@ test('a .env left in a checkout is named with what it held, since nothing reads 
   assert.match(warning, /Set DAILY_FOCUS_GITHUB_SCOPE on the settings page/);
   assert.match(warning, /Give --port when starting it, or set DAILY_FOCUS_PORT in the environment/);
   assert.doesNotMatch(warning, /PATH/);
+});
+
+test("the CLIs the dashboard runs get the Mac app's gh on PATH, only when it is the one in use", () => {
+  const ghPath = '/Applications/Daily Focus.app/Contents/Helpers/GitHub CLI/gh';
+  const path = ['/usr/bin', '/bin'].join(delimiter);
+  const bundled = cliEnvironment({ dataDir: '/s/work', github: { ghPath, ghBundled: true } }, { PATH: path, HOME: '/h' });
+  assert.equal(bundled.DAILY_FOCUS_DATA, '/s/work', 'the store itself');
+  assert.equal(bundled.HOME, '/h');
+  assert.equal(bundled.PATH, [path, dirname(ghPath)].join(delimiter), 'last, so nothing of the user\'s is shadowed');
+
+  const own = cliEnvironment({ dataDir: '/s/work', github: { ghPath: 'gh', ghBundled: false } }, { PATH: path });
+  assert.equal(own.PATH, path, 'a gh of their own is on PATH already');
+
+  // As Windows spells it, where a second key would leave the first in charge.
+  const windows = cliEnvironment({ dataDir: '/s/work', github: { ghPath, ghBundled: true } }, { Path: 'C:\\Windows' });
+  assert.deepEqual([windows.Path, windows.PATH], [['C:\\Windows', dirname(ghPath)].join(delimiter), undefined]);
 });

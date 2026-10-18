@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, resolve } from 'node:path';
 import { parseArgs, parseEnv } from 'node:util';
 
 import { asProfile, findStore, PROFILES, type Profile, type StoreLocation } from './stores.ts';
@@ -54,9 +54,24 @@ export function takeProfileFlag(argv: readonly string[] = process.argv.slice(2))
  * names the store itself, not the data folder the dashboard was given, so an
  * agent that honours it, as the morning prompts used to ask, works where it was
  * started.
+ *
+ * When the dashboard reads GitHub through the Mac app's own gh, there is no gh
+ * on PATH, and the prompts and `Bash(gh *)` name it by its name alone: its
+ * folder goes on the end of PATH, which holds nothing else.
  */
-export function cliEnvironment(store: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { ...env, DAILY_FOCUS_DATA: store };
+export function cliEnvironment(config: CliEnvironmentConfig, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env, DAILY_FOCUS_DATA: config.dataDir };
+  if (config.github.ghBundled) {
+    const path = Object.keys(out).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH';
+    out[path] = [out[path], dirname(config.github.ghPath)].filter(Boolean).join(delimiter);
+  }
+  return out;
+}
+
+/** What `cliEnvironment` reads of the config. */
+export interface CliEnvironmentConfig {
+  dataDir: string;
+  github: { ghPath: string; ghBundled: boolean };
 }
 
 /** The data folder the environment names, with `~` expanded. */

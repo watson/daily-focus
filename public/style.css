@@ -3759,6 +3759,51 @@ select.field__input {
   color: var(--ink-3);
 }
 
+/* Who the board reads GitHub as, and signing in again. */
+.github-account {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+.github-account .field__note {
+  margin-bottom: 10px;
+}
+
+/* gh's sign-in to GitHub, on the board, in setup and in Settings: a button, then the code to type at GitHub. */
+.signin {
+  margin: 0 0 16px;
+}
+.signin p {
+  margin: 0 0 8px;
+}
+.signin__lead {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.signin__code code {
+  display: inline-block;
+  padding: 6px 12px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+.signin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.signin__note {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.signin__error {
+  color: var(--serious);
+  font-size: 13.5px;
+}
+
 /* Unsaved settings: a bar along the bottom, since the page is long and Save belongs to all of it. */
 .settings__bar {
   position: fixed;
