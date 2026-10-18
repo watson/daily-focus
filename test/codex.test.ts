@@ -11,12 +11,14 @@ import {
   CODEX_CONNECTOR_POLICY,
   CODEX_MINIMUM,
   CodexGate,
+  codexLatestModel,
   codexVersionWarning,
   COMPUTER_USE_PLUGINS,
   computerUseOff,
+  namesWindowsSandbox,
   olderThan,
   refusalFor,
-  codexLatestModel,
+  windowsSandbox,
 } from '../src/codex.ts';
 import type { ExecFile } from '../src/shellpath.ts';
 
@@ -161,4 +163,19 @@ test("setup's Codex model is the flagship Codex lists first, and nothing when th
     }),
     null,
   );
+});
+
+test("on Windows, Codex is asked for the sandbox that needs no administrator, unless the user's config names one", () => {
+  assert.deepEqual(windowsSandbox('win32', null), ['windows.sandbox="unelevated"'], 'no config at all');
+  assert.deepEqual(windowsSandbox('win32', 'model = "gpt-6"\n[features]\nfoo = true\n'), ['windows.sandbox="unelevated"']);
+  assert.deepEqual(windowsSandbox('win32', '[windows]\nsandbox = "elevated"\n'), [], 'a [windows] table');
+  assert.deepEqual(windowsSandbox('win32', 'windows.sandbox = "unelevated"\n'), [], 'a dotted key');
+  assert.deepEqual(windowsSandbox('darwin', null), [], 'only Windows needs one chosen');
+  assert.deepEqual(windowsSandbox('linux', null), []);
+});
+
+test("a sandbox in another table, or a commented one, isn't the user's Windows choice", () => {
+  assert.equal(namesWindowsSandbox('[windows]\nallow_mxc = false\n\n[profiles.x]\nsandbox = "elevated"\n'), false);
+  assert.equal(namesWindowsSandbox('# windows.sandbox = "elevated"\nsandbox_mode = "read-only"\n'), false);
+  assert.equal(namesWindowsSandbox('[tui]\ntheme = "x"\n\n[windows]\n  sandbox="elevated"\n'), true, 'the last table, indented');
 });

@@ -39,7 +39,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 
-import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS } from './codex.ts';
+import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS, windowsSandbox } from './codex.ts';
 import type { AssistantAgent, Config } from './config.ts';
 import { cliEnvironment } from './env.ts';
 import type { ExecFile } from './shellpath.ts';
@@ -523,6 +523,7 @@ export const codexAdapter: Adapter = {
     const config = [
       'sandbox_mode="workspace-write"',
       'sandbox_workspace_write.network_access=true',
+      ...windowsSandbox(),
       ...CONNECTOR_POLICY,
       ...(drafts ? GMAIL_DRAFTS : []),
       ...codexConfig,
