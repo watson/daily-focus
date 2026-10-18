@@ -239,6 +239,33 @@ export function settled(location: StoreLocation): { dir: string; profile: Profil
   return { dir: location.dir, profile: location.profile };
 }
 
+/** How long a rename on Windows waits for a busy folder, try by try: about 13 seconds in all. */
+const BUSY_WAITS_MS = [100, 200, 400, 800, 1600, 3200, 6400];
+
+/**
+ * `rename`, tried again on Windows while the folder is busy. Windows won't rename
+ * a folder while any process has a file in it open or works inside it: a CLI
+ * session setup is still stopping, Defender scanning a file. Elsewhere a rename
+ * never waits on that, and a failure is final at once.
+ */
+export async function renameWhenFree(
+  from: string,
+  to: string,
+  platform: NodeJS.Platform = process.platform,
+  waits: readonly number[] = BUSY_WAITS_MS,
+  renameFn: typeof rename = rename,
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await renameFn(from, to);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (platform !== 'win32' || !['EBUSY', 'EPERM', 'EACCES'].includes(code) || attempt >= waits.length) throw err;
+      await new Promise((done) => setTimeout(done, waits[attempt]));
+    }
+  }
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await lstat(path);
@@ -262,7 +289,7 @@ export async function settleStore(location: StoreLocation, home: string = homedi
   if (move.kind === 'rename') {
     const to = join(root, move.to);
     if (await exists(to)) throw new Error(`could not rename ${location.dir} to ${to}: it already exists`);
-    await rename(location.dir, to);
+    await renameWhenFree(location.dir, to);
     return {
       location: { ...findStore(root, { asked: move.to, home }), given: false },
       moved: `renamed ${location.dir} to ${to}, the ${move.to} store its settings name`,
@@ -279,9 +306,9 @@ export async function settleStore(location: StoreLocation, home: string = homedi
     if (await exists(join(staging, name))) {
       throw new Error(`could not move ${join(root, name)} into ${folder}: ${join(staging, name)} is already there`);
     }
-    await rename(join(root, name), join(staging, name));
+    await renameWhenFree(join(root, name), join(staging, name));
   }
-  await rename(staging, folder);
+  await renameWhenFree(staging, folder);
   return {
     location: { ...findStore(root, { asked: profile, home }), given: location.given },
     moved: `moved the ${profile} store in ${root} into ${folder}`,

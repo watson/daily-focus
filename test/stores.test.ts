@@ -7,7 +7,7 @@ import { after, test } from 'node:test';
 
 import { loadConfig } from '../src/config.ts';
 import { startServer } from '../src/server.ts';
-import { findStore, settled, settleStore, STORE_ENTRIES } from '../src/stores.ts';
+import { findStore, renameWhenFree, settled, settleStore, STORE_ENTRIES } from '../src/stores.ts';
 
 const dirs: string[] = [];
 after(async () => {
@@ -206,4 +206,32 @@ test('a dashboard started on a store from before the folders moves it, says so o
   } finally {
     await server.close();
   }
+});
+
+/** A rename that fails with each code in turn, then succeeds, counting its tries. */
+function flakyRename(...codes: string[]) {
+  const tries = { count: 0 };
+  const fn = (async () => {
+    const code = codes[tries.count++];
+    if (code) throw Object.assign(new Error(`${code}: resource busy or locked, rename`), { code });
+  }) as unknown as typeof import('node:fs/promises').rename;
+  return { fn, tries };
+}
+
+test('on Windows, a store folder something still holds is renamed once it lets go', async () => {
+  const busy = flakyRename('EBUSY', 'EPERM');
+  await renameWhenFree('/data/work', '/data/personal', 'win32', [1, 1, 1], busy.fn);
+  assert.equal(busy.tries.count, 3);
+
+  const held = flakyRename('EBUSY', 'EBUSY', 'EBUSY', 'EBUSY');
+  await assert.rejects(renameWhenFree('/data/work', '/data/personal', 'win32', [1, 1, 1], held.fn), /EBUSY/);
+  assert.equal(held.tries.count, 4, 'gives up after its waits, so the next start carries on');
+
+  const missing = flakyRename('ENOENT');
+  await assert.rejects(renameWhenFree('/data/work', '/data/personal', 'win32', [1, 1, 1], missing.fn), /ENOENT/);
+  assert.equal(missing.tries.count, 1, 'only a busy folder is worth waiting for');
+
+  const mac = flakyRename('EBUSY');
+  await assert.rejects(renameWhenFree('/data/work', '/data/personal', 'darwin', [1, 1, 1], mac.fn), /EBUSY/);
+  assert.equal(mac.tries.count, 1, 'elsewhere a rename never waits on an open file');
 });
