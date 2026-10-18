@@ -34,7 +34,7 @@ import { CLI_NAMES, PROFILES, type CliName, type Config, type Profile } from './
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
 import { cliEnvironment, expandHome, layerSettings, type SettingSources } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
-import { launchFor } from './launch.ts';
+import { launchFor, stopProcess } from './launch.ts';
 import {
   composeSources,
   machineName,
@@ -796,9 +796,9 @@ export class Onboarding {
     const run = this.running.get(id);
     if (!run || run.abortReason !== null) return;
     run.abortReason = reason;
-    run.child.kill('SIGTERM');
+    stopProcess(run.child);
     const kill = setTimeout(() => {
-      if (run.child.exitCode === null && run.child.signalCode === null) run.child.kill('SIGKILL');
+      if (run.child.exitCode === null && run.child.signalCode === null) stopProcess(run.child, 'SIGKILL');
     }, KILL_AFTER_MS);
     kill.unref();
     void run.over.then(() => clearTimeout(kill));

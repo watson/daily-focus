@@ -59,7 +59,7 @@ import { CodexSessions, codexHome } from './codexsessions.ts';
 import { briefWritingTools, type CliName, type Config } from './config.ts';
 import { cliEnvironment } from './env.ts';
 import { writeJsonAtomic } from './fs.ts';
-import { launchFor } from './launch.ts';
+import { launchFor, stopProcess } from './launch.ts';
 import { describeTime, nextScheduledRun, resolveSchedule, scheduledRunDue } from './schedule.ts';
 import type { ExecFile } from './shellpath.ts';
 import type { AgentRun, AgentRunState, AgentStep, AgentTurn } from './types.ts';
@@ -725,7 +725,7 @@ export class AgentRunner {
   async stop(reason = 'stopped'): Promise<boolean> {
     if (!this.running) return false;
     this.running.abortReason = reason;
-    this.running.child.kill('SIGTERM');
+    stopProcess(this.running.child);
     return true;
   }
 

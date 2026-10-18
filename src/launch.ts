@@ -12,8 +12,12 @@
  * wrapper is read for the program it wraps, which is then started directly. npm
  * installs every CLI's command as such a wrapper (`cmd-shim`): Codex's runs its
  * script with Node, and Claude Code's runs its own `claude.exe`.
+ *
+ * Stopping differs too: Windows has no signals, so a CLI is stopped together with
+ * everything it started (`stopProcess`).
  */
 
+import { spawn, type ChildProcess } from 'node:child_process';
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 
@@ -80,4 +84,31 @@ export function launchFor(bin: string, args: readonly string[], platform: NodeJS
   const target = join(dirname(found), ...program.split('\\'));
   if (['.exe', '.com'].includes(extname(target).toLowerCase())) return { file: target, args: [...args] };
   return { file: process.execPath, args: [target, ...args] };
+}
+
+/**
+ * Stop `child` and everything it started. Elsewhere that is a signal, which the
+ * CLIs pass on to what they started. Windows has no signals, and `kill()` ends
+ * that one process. Node and Bun put what they start in a job that ends with
+ * them, so that is enough for Codex's npm launcher and for Claude Code, but a
+ * native CLI started directly, such as Codex's own `codex.exe`, leaves its tool
+ * servers and commands running. So there `taskkill /T` ends the whole tree, at
+ * once whichever signal was asked for, and `kill()` is the fallback: `taskkill`
+ * needs a desktop session's rights, which a service or an SSH session lacks.
+ */
+export function stopProcess(
+  child: ChildProcess,
+  signal: NodeJS.Signals = 'SIGTERM',
+  platform: NodeJS.Platform = process.platform,
+  spawnFn: typeof spawn = spawn,
+): void {
+  if (platform !== 'win32' || child.pid === undefined) {
+    child.kill(signal);
+    return;
+  }
+  const taskkill = spawnFn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+  taskkill.on('error', () => child.kill(signal));
+  taskkill.on('exit', (code) => {
+    if (code !== 0) child.kill(signal);
+  });
 }
