@@ -584,3 +584,36 @@ function handleCard() {
 }
 
 handleCard();
+
+/* ---------- The setup page's contents, following you down ---------- */
+
+function contents() {
+  const links = [...document.querySelectorAll('.toc a')];
+  if (links.length === 0) return;
+  const sections = links.map((link) => document.querySelector(link.getAttribute('href')));
+  let queued = false;
+  // The current section is the last one whose top has passed a third of the way down.
+  const mark = () => {
+    queued = false;
+    const line = innerHeight / 3;
+    let current = 0;
+    sections.forEach((section, i) => {
+      if (section.getBoundingClientRect().top <= line) current = i;
+    });
+    links.forEach((link, i) => {
+      link.classList.toggle('is-current', i === current);
+      if (i === current) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  };
+  addEventListener(
+    'scroll',
+    () => {
+      if (!queued) requestAnimationFrame(mark), (queued = true);
+    },
+    { passive: true },
+  );
+  mark();
+}
+
+contents();

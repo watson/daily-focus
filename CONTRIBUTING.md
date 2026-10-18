@@ -9,7 +9,8 @@ and `npm start` builds it once before listening.
 
 Read [AGENTS.md](AGENTS.md) before changing behavior. It covers file ownership,
 privacy, and constraints that apply across the codebase. For installation and account
-setup, use [SETUP.md](SETUP.md).
+setup, use the [setup guide](https://dailyfocus.dev/setup/), whose source is
+`site/setup/index.html`.
 
 ## Run locally
 
@@ -47,7 +48,7 @@ use the gitignored `data/` directory.
 To run your own dashboard from a checkout rather than the package, `npm start` runs
 it in the terminal, and `npm run service` keeps it running as a LaunchAgent for
 that checkout, which rebuilds the page each time it starts; run it again after
-pulling. Each `daily-focus <command>` in [SETUP.md](SETUP.md) is `npm run <command>`
+pulling. Each `daily-focus <command>` that `daily-focus --help` lists is `npm run <command>`
 here, with two differences: `build-calendar` is `build:calendar`, and flags go after
 `--`, as in `npm run audit -- --against <file>`. To build the menu bar app, see
 [The menu bar app](#the-menu-bar-app).
@@ -133,7 +134,8 @@ When changing a contract, update the documents that describe it:
 - Agent instructions belong in the prompt for the profile they apply to, or both.
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
   symlink makes changes live on the next run.
-- Settings belong in `src/config.ts`, `src/settings.ts`, and `SETUP.md`.
+- Settings belong in `src/config.ts` and `src/settings.ts`. The three launch settings,
+  which can't be on the settings page, are documented on the setup page instead.
 - Board buckets belong in server types, the client renderer, and the README.
 
 `test/docs-contract.test.ts` checks these lists for drift. Keep private focus text

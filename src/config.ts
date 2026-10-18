@@ -532,7 +532,7 @@ function assistantConfig(values: SettingValues): AssistantConfig {
  * GitHub and Atlassian CLIs, fetching a page, and the Gmail connector for drafts.
  * Broader than the assistant needs: both CLIs can write, and the whole connector
  * includes sending. Its prompt forbids both, and narrowing the list is left to
- * the user; SETUP.md shows the Gmail tools a narrower list would name.
+ * the user; the README shows the Gmail tools a narrower list would name.
  */
 export const DEFAULT_ASSISTANT_TOOLS: readonly string[] = ['Bash(gh *)', 'Bash(acli *)', 'WebFetch', 'mcp__claude_ai_Gmail'];
 

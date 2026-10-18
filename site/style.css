@@ -1809,6 +1809,293 @@ h1 span {
 }
 
 
+/* ---------- the setup page ---------- */
+
+/*
+ * The setup guide wears the same band and paper as the home page, set as a
+ * document: a contents list that follows you down the left, and one column of
+ * reading beside it. Commands sit on the band's navy, each with its Copy button,
+ * so the things to type are the darkest things on the page.
+ */
+.nav__links a[aria-current='page'] {
+  color: var(--band-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.45em;
+}
+.guide-head {
+  padding-block: 32px 72px;
+}
+.guide-head h1 {
+  margin: 0 0 20px;
+  font-size: clamp(2.4rem, 1.6rem + 2.4vw, 3.5rem);
+}
+.guide-head .lede {
+  max-width: 36em;
+}
+
+.guide {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 46rem);
+  gap: 0 80px;
+  padding-block: 72px 120px;
+}
+.toc {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+}
+.toc ol {
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--hairline);
+  list-style: none;
+}
+.toc a {
+  display: block;
+  margin-left: -1px;
+  padding: 6px 0 6px 16px;
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+  line-height: 1.4;
+  text-decoration: none;
+}
+.toc a:hover {
+  color: var(--ink-1);
+}
+.toc a.is-current {
+  border-left-color: var(--accent);
+  color: var(--ink-1);
+  font-weight: 600;
+}
+
+.guide__body section {
+  scroll-margin-top: 24px;
+}
+.guide__body section + section {
+  margin-top: 88px;
+}
+.guide__body h2 {
+  margin: 0 0 20px;
+  font-weight: 400;
+  font-size: clamp(1.75rem, 1.4rem + 1vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.guide__body h3 {
+  margin: 36px 0 10px;
+  font: 600 17px/1.4 var(--font-sans);
+  scroll-margin-top: 24px;
+}
+.guide__body p {
+  max-width: 38em;
+  margin: 0 0 16px;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.65;
+}
+.guide__body b {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+.guide__body a {
+  color: var(--ink-1);
+}
+.guide__body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  color: var(--ink-1);
+  font-size: 0.84em;
+  white-space: nowrap;
+}
+.guide__body .aside {
+  color: var(--ink-3);
+  font: 15px/1.6 var(--font-sans);
+}
+
+/* What you need: a ring for what's required, a broken ring for what isn't. */
+.needs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.needs-list li {
+  position: relative;
+  padding: 18px 0 18px 36px;
+  border-top: 1px solid var(--hairline);
+}
+.needs-list li:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+.needs-list li::before {
+  content: '';
+  position: absolute;
+  top: 23px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+}
+.needs-list li:last-child::before {
+  border-style: dashed;
+  border-color: var(--ink-3);
+}
+.guide__body .needs-list__what {
+  margin: 0 0 4px;
+  color: var(--ink-1);
+  font: 600 17px/1.4 var(--font-sans);
+}
+.guide__body .needs-list p:last-child {
+  margin: 0;
+}
+
+/* Install: the two routes side by side, each a sequence of steps. */
+.routes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 4px 0 28px;
+}
+.route {
+  padding: 24px 24px 26px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.guide__body .route h3 {
+  margin: 0 0 16px;
+}
+.steps {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+  color: var(--ink-2);
+  font: 15.5px/1.55 var(--font-sans);
+  list-style: none;
+}
+.steps li {
+  position: relative;
+  padding-left: 32px;
+  counter-increment: step;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: -2px;
+  left: 0;
+  color: var(--accent-ink);
+  font: 400 21px/1.1 var(--font-serif);
+}
+.route__download {
+  margin-top: 10px;
+}
+.steps .code {
+  margin: 10px 0 0;
+}
+
+/* A command to type, on the band's navy, with its Copy button. */
+.code {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 38em;
+  margin: 14px 0 18px;
+  padding: 6px 6px 6px 18px;
+  border-radius: 10px;
+  background: var(--band);
+  color: var(--band-ink);
+}
+.guide__body .code code {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow-x: auto;
+  background: none;
+  color: inherit;
+  font-size: 14.5px;
+  line-height: 1.7;
+  white-space: pre;
+}
+.code .button {
+  flex: none;
+  align-self: flex-start;
+  min-width: 70px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+.code--block {
+  align-items: flex-start;
+}
+.guide__body .code--block code {
+  padding-block: 4px;
+}
+
+.table {
+  margin: 8px 0 20px;
+  overflow-x: auto;
+}
+.table table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 15px/1.5 var(--font-sans);
+}
+.table th,
+.table td {
+  padding: 10px 16px 10px 0;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-2);
+  text-align: left;
+  vertical-align: top;
+}
+.table thead th {
+  padding-bottom: 8px;
+  border-top: 0;
+  color: var(--ink-3);
+  font-weight: 500;
+  font-size: 13.5px;
+}
+.table tbody tr:last-child > * {
+  border-bottom: 1px solid var(--hairline);
+}
+.table tbody th {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.table code {
+  white-space: nowrap;
+}
+
+.faq {
+  margin: 0 0 20px;
+}
+.faq div {
+  padding: 18px 0;
+  border-top: 1px solid var(--hairline);
+}
+.faq div:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+.faq dt {
+  margin-bottom: 6px;
+  color: var(--ink-1);
+  font: 600 17px/1.4 var(--font-sans);
+}
+.faq dd {
+  max-width: 38em;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
 /* ---------- narrower screens ---------- */
 
 @media (max-width: 1080px) {
@@ -1846,6 +2133,17 @@ h1 span {
   }
   .setup {
     max-width: 560px;
+  }
+  .guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .toc {
+    position: static;
+    margin-bottom: 56px;
+  }
+  .toc ol {
+    columns: 2;
+    column-gap: 32px;
   }
 }
 
@@ -1904,6 +2202,18 @@ h1 span {
   }
   .evening .evening__second {
     margin-top: 80px;
+  }
+  .guide {
+    padding-block: 48px 80px;
+  }
+  .toc {
+    display: none;
+  }
+  .routes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .guide__body section + section {
+    margin-top: 64px;
   }
 }
 

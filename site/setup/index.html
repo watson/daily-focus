@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set up Daily Focus</title>
+  <meta name="description" content="What you need, how to install Daily Focus on a Mac or with Node.js, how to keep it running, and what to do if something gets in the way.">
+  <link rel="canonical" href="https://dailyfocus.dev/setup/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dailyfocus.dev/setup/">
+  <meta property="og:title" content="Set up Daily Focus">
+  <meta property="og:description" content="Install Daily Focus, keep it running, and connect your tools.">
+  <meta property="og:image" content="https://dailyfocus.dev/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#1c2541">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="../fonts/IBMPlexSerif-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../fonts/IBMPlexSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="stylesheet" href="../style.css">
+  <script src="../main.js" defer></script>
+</head>
+<body class="guide-page">
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="band">
+  <nav class="nav wrap" aria-label="Site">
+    <a class="brand" href="../" aria-label="Daily Focus, home">
+      <svg class="brand__mark" viewBox="-50 -50 100 100" aria-hidden="true">
+        <circle r="38" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="9"/>
+        <circle r="22" fill="none" stroke="currentColor" stroke-opacity=".8" stroke-width="9"/>
+        <circle r="10" fill="var(--accent)"/>
+      </svg>
+      <span>Daily Focus</span>
+    </a>
+    <ul class="nav__links">
+      <li><a href="../#objective">How it works</a></li>
+      <li><a href="./" aria-current="page">Setup</a></li>
+      <li><a href="https://github.com/watson/daily-focus">GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+    </ul>
+  </nav>
+  <div class="guide-head wrap">
+    <h1>Set up Daily Focus</h1>
+    <p class="lede">Install it, open it, and answer a few questions. This page covers what to have ready, how to keep it running, and what to do if something gets in the way.</p>
+  </div>
+</header>
+
+<main id="main" class="guide wrap">
+  <nav class="toc" aria-label="On this page">
+    <ol>
+      <li><a href="#need">What you need</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#running">Keep it running</a></li>
+      <li><a href="#connect">Connect your tools</a></li>
+      <li><a href="#personal">A dashboard for home</a></li>
+      <li><a href="#options">Where it keeps things</a></li>
+      <li><a href="#update">Update</a></li>
+      <li><a href="#uninstall">Uninstall</a></li>
+      <li><a href="#trouble">If something gets in the way</a></li>
+    </ol>
+  </nav>
+
+  <div class="guide__body">
+    <section id="need" aria-labelledby="need-title">
+      <h2 id="need-title">What you need</h2>
+      <ul class="needs-list">
+        <li>
+          <p class="needs-list__what">Claude Code or Codex, installed and signed in</p>
+          <p>It reads your sources and writes the brief. <a href="https://code.claude.com/docs">Claude Code</a> needs a paid Claude plan. <a href="https://developers.openai.com/codex/cli">Codex</a> needs ChatGPT Plus or higher, and version 0.144.0 or newer.</p>
+        </li>
+        <li>
+          <p class="needs-list__what">A Mac with Apple silicon, or Node.js</p>
+          <p>The menu bar app needs macOS 13.5 or newer and brings everything else with it. On any other computer, you need Node.js 22.18 or newer; 24 is recommended.</p>
+        </li>
+        <li>
+          <p class="needs-list__what">If you want the boards: the GitHub and Atlassian command-line tools</p>
+          <p>The <a href="https://cli.github.com">GitHub CLI</a> for the pull request board, and the <a href="https://developer.atlassian.com/cloud/acli/guides/install-acli/">Atlassian CLI</a> for the Jira board. Daily Focus works without them.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Install</h2>
+      <div class="routes">
+        <div class="route">
+          <h3>On a Mac</h3>
+          <ol class="steps">
+            <li>Download the app.
+              <a class="button button--primary route__download" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
+            </li>
+            <li>Open the disk image, drag <b>Daily Focus</b> to Applications, and open it from there.</li>
+            <li>It lives in the menu bar, with no window or Dock icon. Click the bullseye and choose <b>Open Daily Focus</b>.</li>
+            <li>In the same menu, tick <b>Open at Login</b>, so it’s running when the brief is due.</li>
+          </ol>
+        </div>
+        <div class="route">
+          <h3>With Node.js</h3>
+          <ol class="steps">
+            <li>Run it from a terminal.
+              <div class="code"><code id="cmd-npx">npx daily-focus</code><button class="button button--primary" type="button" data-copy="cmd-npx">Copy</button></div>
+            </li>
+            <li>Your browser opens on <code>localhost:4321</code>.</li>
+            <li>Keep the terminal open: the brief is written only while Daily Focus runs. On a Mac, <a href="#running">a background service</a> keeps it running for you.</li>
+          </ol>
+        </div>
+      </div>
+      <p>Either way, Daily Focus opens on a setup screen that asks a few questions, one at a time, with the likely answer already ticked. You can change every answer later on the settings page.</p>
+      <p class="aside">To look around first, <code>npx daily-focus --demo</code> opens it on invented data, with nothing connected.</p>
+    </section>
+
+    <section id="running" aria-labelledby="running-title">
+      <h2 id="running-title">Keep it running</h2>
+      <p>The morning brief is written only while Daily Focus runs. If it wasn’t running at the time you chose, it writes the brief as soon as it starts that day. Use one of these, not both.</p>
+      <h3>With the menu bar app</h3>
+      <p>Tick <b>Open at Login</b> in its menu. The app then starts Daily Focus when you log in, and starts it again if it stops.</p>
+      <h3>As a background service on a Mac</h3>
+      <p>Without the app, install Daily Focus and let macOS run it at every login, and again after a crash:</p>
+      <div class="code code--block"><code id="cmd-service">npm install -g daily-focus
+daily-focus service</code><button class="button button--primary" type="button" data-copy="cmd-service">Copy</button></div>
+      <p>Install it globally first; the service won’t run from <code>npx</code>. Run <code>daily-focus service</code> again after updating or switching Node.js versions, and <code>daily-focus service --remove</code> to stop and remove it.</p>
+      <h3>On other computers</h3>
+      <p>Keep <code>daily-focus</code> running in a terminal, or start it with your system’s own service manager.</p>
+    </section>
+
+    <section id="connect" aria-labelledby="connect-title">
+      <h2 id="connect-title">Connect your tools</h2>
+      <p>All optional. Daily Focus reads what you’re already signed in to.</p>
+      <h3 id="github">GitHub</h3>
+      <div class="code"><code id="cmd-gh">gh auth login</code><button class="button button--primary" type="button" data-copy="cmd-gh">Copy</button></div>
+      <p>If your organisation uses SAML single sign-on, authorise the token for it, or the board reports that GitHub refused the read.</p>
+      <h3 id="jira">Jira</h3>
+      <div class="code"><code id="cmd-acli">acli jira auth login</code><button class="button button--primary" type="button" data-copy="cmd-acli">Copy</button></div>
+      <h3 id="calendar">Calendar on a Mac</h3>
+      <p>The live agenda reads Calendar.app, so a meeting moved during the day shows at once. macOS asks for calendar access the first time. The menu bar app has everything it needs. Without the app, build the calendar helper once; it needs the Xcode command line tools.</p>
+      <div class="code"><code id="cmd-cal">daily-focus build-calendar</code><button class="button button--primary" type="button" data-copy="cmd-cal">Copy</button></div>
+      <h3 id="sources">Your other sources</h3>
+      <p>The morning brief can read anything Claude Code or Codex can reach. With Codex, that’s the apps linked to your ChatGPT account. With Claude Code, add each connector to <b>Tools Claude Code may use</b> under <b>Morning agent</b> on the settings page, or the brief reports it as out of reach.</p>
+      <p>Google Tasks has no connector, so it takes a small export to Google Drive first. The <a href="https://github.com/watson/daily-focus/blob/main/apps-script/README.md">Apps Script guide</a> sets it up in a few minutes.</p>
+    </section>
+
+    <section id="personal" aria-labelledby="personal-title">
+      <h2 id="personal-title">A dashboard for home</h2>
+      <p>Daily Focus can brief your personal life too: family calendars, reminders, messages, paperwork and your own projects. Run a second one, with its own data and port, and answer <b>Your personal life</b> when its setup asks what to brief. The menu bar app runs one, so run the other as a service beside it:</p>
+      <div class="code"><code id="cmd-personal">daily-focus service --data ~/.daily-focus-personal --port 4322</code><button class="button button--primary" type="button" data-copy="cmd-personal">Copy</button></div>
+      <h3>Reach it from your other devices</h3>
+      <p>Personal sources often live on one computer, such as a Mac at home with your messages and reminders. Run Daily Focus there and reach it through <a href="https://tailscale.com/kb/1312/serve">Tailscale Serve</a>, which only your own devices can use:</p>
+      <div class="code"><code id="cmd-tailscale">tailscale serve --bg http://127.0.0.1:4321</code><button class="button button--primary" type="button" data-copy="cmd-tailscale">Copy</button></div>
+      <p>Don’t open it to your local network instead. Daily Focus has no login, and a personal brief holds your mail and messages.</p>
+    </section>
+
+    <section id="options" aria-labelledby="options-title">
+      <h2 id="options-title">Where it keeps things</h2>
+      <p>Three options say where Daily Focus keeps your data and how it listens. Give them when you start it, as flags or environment variables; a flag wins. Most people never change them. Everything else is on the settings page.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th scope="col">Flag</th><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">What it’s for</th></tr></thead>
+          <tbody>
+            <tr><td><code>--data</code></td><td><code>DAILY_FOCUS_DATA</code></td><td><code>~/.daily-focus</code></td><td>Where your briefs, notes and settings live</td></tr>
+            <tr><td><code>--port</code></td><td><code>DAILY_FOCUS_PORT</code></td><td><code>4321</code></td><td>The port it listens on</td></tr>
+            <tr><td><code>--host</code></td><td><code>DAILY_FOCUS_HOST</code></td><td><code>127.0.0.1</code></td><td>Your computer only, by default. A name given here is one more it answers to</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Commands</h3>
+      <div class="table">
+        <table>
+          <tbody>
+            <tr><th scope="row"><code>daily-focus</code></th><td>Start Daily Focus and open it in your browser</td></tr>
+            <tr><th scope="row"><code>daily-focus --demo</code></th><td>Look around on invented data; add <code>--profile personal</code> for the home version</td></tr>
+            <tr><th scope="row"><code>daily-focus service</code></th><td>Keep it running in the background on a Mac; <code>--remove</code> takes it away</td></tr>
+            <tr><th scope="row"><code>daily-focus build-calendar</code></th><td>Build the calendar helper, when you don’t use the app</td></tr>
+            <tr><th scope="row"><code>daily-focus init</code></th><td>Create the data folder with an objective and a source list to fill in by hand</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="aside"><code>daily-focus --help</code> lists every command and flag.</p>
+    </section>
+
+    <section id="update" aria-labelledby="update-title">
+      <h2 id="update-title">Update</h2>
+      <p><b>The menu bar app</b> looks for new releases a few times a day and offers each one in its menu, under <b>Updates</b>. Choose <b>Update Automatically</b> there to have them go in on their own while you’re not using it, or <b>Development Builds</b> to get every change as soon as it’s merged.</p>
+      <p><b>With Node.js</b>, <code>npx daily-focus@latest</code> runs the newest version. If you installed it globally, update it and restart the service:</p>
+      <div class="code code--block"><code id="cmd-upgrade">npm install -g daily-focus
+daily-focus service</code><button class="button button--primary" type="button" data-copy="cmd-upgrade">Copy</button></div>
+    </section>
+
+    <section id="uninstall" aria-labelledby="uninstall-title">
+      <h2 id="uninstall-title">Uninstall</h2>
+      <p><b>The menu bar app:</b> untick <b>Open at Login</b>, choose <b>Quit Daily Focus</b>, and move the app to the Trash.</p>
+      <p><b>The service:</b></p>
+      <div class="code code--block"><code id="cmd-remove">daily-focus service --remove
+npm uninstall -g daily-focus</code><button class="button button--primary" type="button" data-copy="cmd-remove">Copy</button></div>
+      <p>Your briefs, notes and settings stay in <code>~/.daily-focus</code>, and what the app downloaded in <code>~/Library/Application Support/Daily Focus</code>. Delete both folders to remove everything.</p>
+    </section>
+
+    <section id="trouble" aria-labelledby="trouble-title">
+      <h2 id="trouble-title">If something gets in the way</h2>
+      <dl class="faq">
+        <div>
+          <dt>Setup can’t find Claude Code or Codex</dt>
+          <dd>The setup screen says what’s wrong with each and the command that fixes it, such as <code>claude auth login</code> or <code>codex login</code>. If it’s installed somewhere unusual, give setup its path.</dd>
+        </div>
+        <div>
+          <dt>Daily Focus is gone after a restart</dt>
+          <dd>It was probably started in a terminal and ended with it. Use the menu bar app or <a href="#running">the background service</a> to keep it running.</dd>
+        </div>
+        <div>
+          <dt>The page doesn’t load</dt>
+          <dd>With the app, choose <b>Restart Dashboard</b> from its menu, or <b>Show Log</b> to see why. With the service, read <code>~/Library/Logs/local.daily-focus.log</code>.</dd>
+        </div>
+        <div>
+          <dt>The menu says “Run by another process”</dt>
+          <dd>A service or a terminal is running Daily Focus, and the app only watches it. Stop the other one, then quit and reopen the app.</dd>
+        </div>
+        <div>
+          <dt>Port 4321 is in use</dt>
+          <dd>Another program has it. Stop that program, or start Daily Focus on another port with <code>--port 4322</code>.</dd>
+        </div>
+        <div>
+          <dt>The GitHub or Jira board shows a warning</dt>
+          <dd>Sign in again with <code>gh auth login</code> or <code>acli jira auth login</code>. If Daily Focus can’t find the tool at all, give its path on the settings page.</dd>
+        </div>
+        <div>
+          <dt>A source is missing from the brief</dt>
+          <dd>The run’s report, behind “updated … ago” on the Today tab, names the sources it couldn’t reach. Under Claude Code, <a href="#sources">add the connector</a> to the tools it may use.</dd>
+        </div>
+      </dl>
+      <p class="aside">Still stuck? <a href="https://github.com/watson/daily-focus/issues">Open an issue</a> on GitHub.</p>
+    </section>
+  </div>
+</main>
+
+<footer class="band guide-foot">
+  <div class="footer wrap">
+    <p>Free and open source, MIT licensed.</p>
+    <ul class="footer__links">
+      <li><a href="https://github.com/watson/daily-focus">GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://www.npmjs.com/package/daily-focus">npm<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://github.com/watson/daily-focus/releases">Releases<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://github.com/sponsors/watson">Sponsor<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

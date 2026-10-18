@@ -45,9 +45,10 @@ that writes the brief (Claude Code or Codex), it looks into the rest for you, su
 as which of your calendars are work ones, so most answers are a click. Everything
 stays on the settings page afterwards.
 
-[SETUP.md](SETUP.md) covers each step, the integrations and every setting. The
-dashboard runs locally; nothing about your day leaves your machine except through
-the CLI you choose.
+The [setup guide](https://dailyfocus.dev/setup/) covers what you need, keeping the
+dashboard running, and signing in to GitHub, Jira and your calendar. The dashboard
+runs locally; nothing about your day leaves your machine except through the CLI you
+choose.
 
 ## Your day at a glance
 
@@ -109,8 +110,8 @@ as many as Jira has linked. A row that GitHub changed lists those pull requests
 under **GitHub, ahead of Jira**.
 
 Switch to **Working on** to see your in-progress tickets grouped by status,
-including ones that also need a status check. You can narrow this view in
-[SETUP.md](SETUP.md#jira).
+including ones that also need a status check. To narrow it, set **Statuses that
+mean working on it** under **Jira tickets** in the settings.
 
 **Clicking a ticket's status changes it in Jira.** The menu lists statuses seen in
 your projects; Jira may refuse a move that your workflow doesn't allow. Make
@@ -145,7 +146,7 @@ reviewer is handed back as text for you to post. It is told never to send, post,
 edit a file, and it has no checkout: fixing conflicts or a build is work for a real
 coding session, and this is for the questions you would otherwise answer by opening
 six tabs. How much of that the CLI itself enforces differs between Claude Code and
-Codex; see [What the assistant can do](SETUP.md#what-the-agent-and-the-assistant-can-do).
+Codex; see [What the agent and the assistant can do](#what-the-agent-and-the-assistant-can-do).
 
 ## The morning agent
 
@@ -162,8 +163,53 @@ open while it works.
 
 Every run is recorded. Click "updated … ago" to open the latest: its report says what
 it wrote and what it could not reach, how it got there is folded away beneath,
-and you can ask it why it did what it did, or to look again, in the same session. Earlier runs are folded away below. See
-[SETUP.md](SETUP.md#the-morning-brief).
+and you can ask it why it did what it did, or to look again, in the same session.
+Earlier runs are folded away below. When it runs is under **Morning agent** in the
+settings.
+
+## What the agent and the assistant can do
+
+Both run the Claude Code or Codex you already use, with the access it already has.
+The dashboard narrows some of that, as below, and leaves the rest to their
+instructions: the morning agent's forbid it to change anything, and the
+assistant's forbid it anything but a Gmail draft.
+
+**Under Claude Code**, the morning agent may write `items.json` and nothing else in
+the store, and the assistant may never use the file-editing tools. Beyond that, each
+may use only the tools in its list, **Tools Claude Code may use**, under **Morning
+agent** and **Assistant** in the settings. Anything else is refused rather than asked
+about, though rules in your own Claude Code settings that allow a tool still apply.
+
+Both lists start as `Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail`: GitHub,
+Jira, web pages and the claude.ai Gmail connector. Add your calendar, chat and
+document connectors to the agent's list by name, or the brief reports them as
+unreachable. The defaults are broader than reading needs: `mcp__claude_ai_Gmail`
+allows every Gmail tool, sending and deleting included, and `gh` and `acli` can
+comment, merge and move tickets as well as read. To hold the assistant to reading
+mail and drafting replies, name the Gmail tools instead of the connector:
+
+```text
+Bash(gh *),Bash(acli *),WebFetch,mcp__claude_ai_Gmail__search_threads,mcp__claude_ai_Gmail__get_thread,mcp__claude_ai_Gmail__get_message,mcp__claude_ai_Gmail__list_labels,mcp__claude_ai_Gmail__list_drafts,mcp__claude_ai_Gmail__get_draft,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__update_draft
+```
+
+For the morning agent, leave out the last two, which draft. A tool left off the list
+is refused, so if the connector renames one, you're told your mail is out of reach
+rather than have it worked around.
+
+**Under Codex**, every write through a connector (Gmail, Calendar, Drive, GitHub and
+the other apps your ChatGPT account links) is refused, except that the assistant may
+create and revise a Gmail draft. A connector tool counts as a write unless it is
+marked read-only. A tool you have told Codex to always allow, or an app with
+approval settings of its own in your Codex config, keeps them. The morning agent
+runs in Codex's workspace-write sandbox, with network access, confined to the store;
+the assistant's sandbox keeps writes to its own empty directory. A shell command
+that needs to leave the sandbox, such as `gh` switching accounts, is decided by your
+own Codex approval settings, as it would be in Codex itself. Computer use is off for
+the assistant unless you turn on **Computer use** in the settings. Before 0.144.0,
+Codex ignores the refusal of connector writes, so the dashboard won't run the agent
+or the assistant on it; before 0.149.0 it can't switch computer use off, so the
+assistant won't answer while **Computer use** is off. The page warns when yours is
+too old.
 
 ## Keyboard shortcuts
 
@@ -186,5 +232,5 @@ Press **?** in the dashboard to see the shortcuts.
 
 ## Where to go next
 
-- [Set up your dashboard](SETUP.md), including accounts, calendar, and the morning agent.
+- [Set up your dashboard](https://dailyfocus.dev/setup/), from installing it to keeping it running.
 - [Contribute](CONTRIBUTING.md), with development commands, a code map, and API reference.

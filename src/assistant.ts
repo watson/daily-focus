@@ -28,7 +28,7 @@
  *  - Claude Code gets only the tools in its list, with the editing tools denied
  *    whatever the list says. The default list includes the whole Gmail connector
  *    and the `gh` and `acli` CLIs, all of which can write; narrowing it is left
- *    to the user, and SETUP.md shows how.
+ *    to the user, and the README shows how.
  *  - Codex refuses every connector write except a Gmail draft (see `codex.ts`),
  *    and computer use unless the user turns it on. Its shell follows the user's
  *    own Codex config, so `gh` keeps working, and so can write.
