@@ -4,12 +4,14 @@
  */
 
 import assert from 'node:assert/strict';
+import type { ChildProcess, spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { findExecutable, launchFor, wrappedProgram } from '../src/launch.ts';
+import { findExecutable, launchFor, stopProcess, wrappedProgram } from '../src/launch.ts';
 
 const dirs: string[] = [];
 
@@ -99,4 +101,53 @@ test('anywhere but Windows, a program is started exactly as asked', async () => 
   await writeFile(join(npm, 'codex.cmd'), CODEX_WRAPPER);
   assert.deepEqual(launchFor('codex', ['exec'], 'darwin', npm), { file: 'codex', args: ['exec'] });
   assert.deepEqual(launchFor(join(npm, 'codex.cmd'), [], 'linux'), { file: join(npm, 'codex.cmd'), args: [] });
+});
+
+/** A child that records the signals sent to it, and a spawn that records what it was asked to start. */
+function fakes(pid: number | undefined) {
+  const signals: string[] = [];
+  const started: Array<{ file: string; args: readonly string[] }> = [];
+  const child = { pid, kill: (signal: string) => (signals.push(signal), true) } as unknown as ChildProcess;
+  const spawnFn = ((file: string, args: readonly string[]) => {
+    started.push({ file, args });
+    return new EventEmitter();
+  }) as unknown as typeof spawn;
+  return { child, spawnFn, signals, started };
+}
+
+test('a CLI is stopped with a signal, but on Windows with everything it started', () => {
+  const mac = fakes(41);
+  stopProcess(mac.child, 'SIGTERM', 'darwin', mac.spawnFn);
+  assert.deepEqual(mac.signals, ['SIGTERM']);
+  assert.deepEqual(mac.started, []);
+
+  const windows = fakes(42);
+  stopProcess(windows.child, 'SIGTERM', 'win32', windows.spawnFn);
+  assert.deepEqual(windows.started, [{ file: 'taskkill', args: ['/pid', '42', '/T', '/F'] }]);
+  assert.deepEqual(windows.signals, [], "kill() would end codex.exe and leave what it started running");
+
+  const never = fakes(undefined);
+  stopProcess(never.child, 'SIGTERM', 'win32', never.spawnFn);
+  assert.deepEqual(never.signals, ['SIGTERM'], 'a child that never started has no tree to end');
+});
+
+test("on Windows, a stop falls back to kill() when taskkill can't be started or is refused", () => {
+  const missing = fakes(43);
+  const unstarted = new EventEmitter();
+  stopProcess(missing.child, 'SIGKILL', 'win32', (() => unstarted) as unknown as typeof spawn);
+  unstarted.emit('error', new Error('spawn taskkill ENOENT'));
+  assert.deepEqual(missing.signals, ['SIGKILL']);
+
+  // As over SSH, or from a service: "ERROR: Access denied", exit 1.
+  const refused = fakes(44);
+  const denied = new EventEmitter();
+  stopProcess(refused.child, 'SIGTERM', 'win32', (() => denied) as unknown as typeof spawn);
+  denied.emit('exit', 1);
+  assert.deepEqual(refused.signals, ['SIGTERM']);
+
+  const done = fakes(45);
+  const succeeded = new EventEmitter();
+  stopProcess(done.child, 'SIGTERM', 'win32', (() => succeeded) as unknown as typeof spawn);
+  succeeded.emit('exit', 0);
+  assert.deepEqual(done.signals, [], 'nothing more to do once the tree is gone');
 });

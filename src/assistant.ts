@@ -42,7 +42,7 @@ import { createInterface } from 'node:readline';
 import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS, windowsSandbox } from './codex.ts';
 import type { AssistantAgent, Config } from './config.ts';
 import { cliEnvironment } from './env.ts';
-import { launchFor } from './launch.ts';
+import { launchFor, stopProcess } from './launch.ts';
 import type { ExecFile } from './shellpath.ts';
 import type {
   AssistantItemState,
@@ -1012,7 +1012,7 @@ export class Assistant {
     const run = this.running.get(itemId);
     if (!run) return false;
     run.abortReason = reason;
-    run.child.kill('SIGTERM');
+    stopProcess(run.child);
     return true;
   }
 
