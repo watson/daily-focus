@@ -237,7 +237,10 @@ async function main(argv: string[]): Promise<void> {
       // end of standard input, and when it goes, however it went, the end closes
       // and the dashboard stops instead of running on without it.
       if (values['exit-with-stdin']) {
-        const stop = () => process.kill(process.pid, 'SIGTERM');
+        // Emitted rather than sent: on Windows a signal a process sends itself
+        // ends it at once, skipping the shutdown that stops a run and records it.
+        // Before the server is there to shut down, there is nothing to skip.
+        const stop = () => (process.listenerCount('SIGTERM') > 0 ? process.emit('SIGTERM', 'SIGTERM') : process.exit(0));
         process.stdin.once('end', stop).once('close', stop).resume();
       }
       return start(open);
