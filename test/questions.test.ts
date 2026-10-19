@@ -30,7 +30,7 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
       { title: 'Family', source: 'iCloud', eventsToday: 1 },
       { title: 'Holidays in Denmark', source: 'Other', eventsToday: 0 },
     ],
-    calendar: { supported: true, built: true, buildCommand: 'daily-focus build-calendar' },
+    calendar: { supported: true, built: true, buildCommand: 'daily-focus build-calendar', macApp: null },
     boards: {
       github: { enabled: true, fetchedAt: '2026-10-16T08:00:00Z', reason: null },
       jira: { enabled: true, fetchedAt: null, reason: 'could not run acli' },
@@ -239,9 +239,19 @@ test('without a proposal, the calendars already set stay ticked; an unbuilt help
     calendarEntries(c).filter((e) => e.include).map((e) => e.title),
     ['Platform team'],
   );
-  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'daily-focus build-calendar' } }));
+  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'npm run build:calendar', macApp: null } }));
   assert.equal(unbuilt.problem?.blocking, false);
+  assert.equal(unbuilt.problem?.command, 'npm run build:calendar');
+  assert.equal(unbuilt.problem?.links, undefined, 'a checkout is never sent to the app');
+});
+
+test('on a Mac, the npm package offers the app for the calendar helper, before the command', () => {
+  const app = 'https://dailyfocus.dev/setup/#install';
+  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'daily-focus build-calendar', macApp: app } }));
+  assert.deepEqual(unbuilt.problem?.links, [{ label: 'Get the Mac app', url: app }]);
+  assert.match(unbuilt.problem!.message, /comes with the Mac app\. Without the app, build it/);
   assert.equal(unbuilt.problem?.command, 'daily-focus build-calendar');
+  assert.equal(unbuilt.problem?.blocking, false);
 });
 
 test('the source list is only what was chosen, and never a placeholder', () => {
@@ -297,7 +307,7 @@ test('the screen names the machine it runs on, and the calendars question asks f
 
   const withList = question('calendars').agent!;
   assert.match(withList.brief(ctx()), /Below is every calendar Calendar\.app on this Mac has/);
-  const without = ctx({ calendars: null, calendar: { supported: false, built: false, buildCommand: '' } });
+  const without = ctx({ calendars: null, calendar: { supported: false, built: false, buildCommand: '', macApp: null } });
   assert.doesNotMatch(withList.brief(without), /Below is every calendar/);
   assert.match(withList.brief(without), /List the calendars their calendar connector reaches/);
   assert.match(withList.facts!(without)!, /no list from Calendar\.app here/);

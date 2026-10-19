@@ -211,7 +211,7 @@ test('a calendar ticked because its name matches in another case can be unticked
   };
   const calendarState = {
     ...state,
-    setup: { ...state.setup, calendar: { supported: true, built: true, chosen: 1, buildCommand: 'npm run build:calendar' } },
+    setup: { ...state.setup, calendar: { supported: true, built: true, chosen: 1, buildCommand: 'npm run build:calendar', macApp: null } },
   } as unknown as DashboardState;
   const root = mount(
     h(SettingsView, {
@@ -225,4 +225,44 @@ test('a calendar ticked because its name matches in another case can be unticked
   box.checked = false;
   box.dispatchEvent(new Event('change', { bubbles: true }));
   assert.deepEqual(edits, [['DAILY_FOCUS_CALENDARS', null]]);
+});
+
+test('without the calendar helper, the npm package on a Mac points at the app before the command', () => {
+  const calendarPage: SettingsPage = {
+    ...page,
+    groups: [{ id: 'calendar', title: 'Calendar' }],
+    settings: [
+      {
+        key: 'DAILY_FOCUS_CALENDARS',
+        group: 'calendar',
+        label: 'Calendars',
+        help: 'Names.',
+        kind: 'list',
+        choices: null,
+        advanced: false,
+        value: '',
+        source: 'default',
+        fallback: 'None',
+      },
+    ],
+  };
+  const unbuilt = (macApp: string | null) =>
+    mount(
+      h(SettingsView, {
+        state: {
+          ...state,
+          setup: { ...state.setup, calendar: { supported: true, built: false, chosen: 0, buildCommand: 'daily-focus build-calendar', macApp } },
+        } as unknown as DashboardState,
+        ui: uiWith({ settings: calendarPage, texts: {} }),
+        handlers: handlersWith({}),
+      }),
+    );
+  const offered = unbuilt('https://dailyfocus.dev/setup/#install');
+  const link = offered.querySelector<HTMLAnchorElement>('.field__note a')!;
+  assert.equal(link.getAttribute('href'), 'https://dailyfocus.dev/setup/#install');
+  assert.equal(link.textContent, 'the Mac app');
+  assert.equal(offered.querySelector('.field__note code')?.textContent, 'daily-focus build-calendar');
+  const checkout = unbuilt(null);
+  assert.equal(checkout.querySelector('.field__note a'), null);
+  assert.match(checkout.querySelector('.field__note')!.textContent!, /Build it once with/);
 });

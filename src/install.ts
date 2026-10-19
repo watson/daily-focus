@@ -101,28 +101,48 @@ export function defaultGh(onPath: boolean = findExecutable('gh') !== null, exist
 }
 
 /**
- * This copy's own calendar helper, where `tools/dfcal/build.sh` puts it: in a
- * checkout, what `npm run build:calendar` built; in the npm package, the one a
- * release signed with its Developer ID. macOS keeps the calendar permission
- * against that signature, not the path, so an update to the package keeps it.
- */
-export const OWN_CALENDAR_APP = resolve(ROOT, 'tools', 'dfcal', 'build', 'Daily Focus Calendar.app');
-
-/**
- * Where `daily-focus build-calendar` puts the calendar helper, for a package that
- * carries none: outside the package, which an update replaces, and in one place
- * for every copy, since macOS keeps the calendar permission with the helper that
- * asked for it.
+ * Where `daily-focus build-calendar` puts the calendar helper: outside the
+ * package, which an update replaces, and in one place for every copy, since
+ * macOS keeps the calendar permission with the helper that asked for it.
  */
 export const USER_CALENDAR_APP = resolve(homedir(), 'Library', 'Application Support', 'Daily Focus', 'Daily Focus Calendar.app');
 
 /**
- * The calendar helper to use when Settings names none: the one the Mac app
- * carries, then this copy's own, then the one `daily-focus build-calendar` built.
- * This copy's own comes first of the last two so that it matches the dashboard
- * reading it, however old the one built by hand is. With none of them, this
- * copy's own place is where to build one.
+ * Where to get the Mac app, which runs the dashboard from the menu bar, carries
+ * the calendar helper and updates itself. On a Mac, that is the way to run Daily
+ * Focus; the npm package is for Linux and Windows, and for anyone who would rather
+ * run it themselves.
  */
-export function defaultCalendarApp(exists: (path: string) => boolean = existsSync, app: string | null = APP_CALENDAR_APP): string {
-  return [app, OWN_CALENDAR_APP, USER_CALENDAR_APP].find((path): path is string => path !== null && exists(path)) ?? OWN_CALENDAR_APP;
+export const MAC_APP_URL = 'https://dailyfocus.dev/setup/#install';
+
+/**
+ * Whether to point at the Mac app: true for the npm package on a Mac, run by
+ * anything but the app. Never for a checkout, which is someone working on Daily
+ * Focus itself.
+ */
+export function offerMacApp(platform: string = process.platform, packaged: boolean = PACKAGED, inApp: boolean = APP_CALENDAR_APP !== null): boolean {
+  return platform === 'darwin' && packaged && !inApp;
+}
+
+/**
+ * What the dashboard says as it starts from a terminal, about a better way to
+ * run it: on a Mac, the app. Elsewhere, from npx, an install of its own under
+ * the system's service manager, since npm replaces or clears npx's copy.
+ */
+export function startAdvice(macApp: boolean = offerMacApp(), inNpx: boolean = IN_NPX_CACHE): string[] {
+  if (macApp) {
+    return [
+      'On a Mac, the Daily Focus app runs this for you from the menu bar. It starts',
+      'at login, brings your calendar into the agenda, and updates itself:',
+      MAC_APP_URL,
+    ];
+  }
+  if (inNpx) {
+    return [
+      'Running from npx. To keep it running in the background, install it with',
+      'npm install -g daily-focus and start it from your service manager:',
+      'https://dailyfocus.dev/setup/#running',
+    ];
+  }
+  return [];
 }
