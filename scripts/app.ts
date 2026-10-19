@@ -6,10 +6,8 @@
  *
  * The dashboard inside the app is exactly what `npm publish` would ship: this
  * packs it, unpacks the tarball, and hands that to `macos/build.sh`, so the app
- * can never carry a file the package doesn't, or miss one it does. The one
- * exception is the calendar helper, which the app carries once, in
- * `Contents/Helpers`. Any arguments go to the build script. See `macos/build.sh`
- * for signing and notarisation.
+ * can never carry a file the package doesn't, or miss one it does. Any arguments
+ * go to the build script. See `macos/build.sh` for signing and notarisation.
  */
 
 import { execFile } from 'node:child_process';

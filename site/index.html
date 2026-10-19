@@ -47,13 +47,13 @@
       <h1 id="title"><span>Everything that came in,</span> <span>edited down to what matters today.</span></h1>
       <p class="lede">Every morning, Daily Focus uses AI to read everything that came in, from mail and calendar to pull requests, tickets and chat. It leaves out the noise, ranks the rest against the goal you’re working toward, and puts what must move today at the top.</p>
       <div class="cta">
+        <a class="button button--primary" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
         <div class="command">
           <code id="hero-command">npx daily-focus</code>
-          <button class="button button--primary" type="button" data-copy="hero-command">Copy</button>
+          <button class="button button--band" type="button" data-copy="hero-command">Copy</button>
         </div>
-        <a class="button button--band" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
       </div>
-      <p class="cta__note">Free and open source. It runs on your computer, on the Claude or ChatGPT plan you already pay for.</p>
+      <p class="cta__note">Free and open source. It runs on your computer, on the Claude or ChatGPT plan you already pay for. On Linux or Windows, run the command with Node.js.</p>
     </div>
 
     <!--
@@ -480,20 +480,20 @@
       <div class="install__ways">
         <ul class="ways" aria-labelledby="install">
           <li class="way">
-            <h3>From a terminal</h3>
-            <div class="command command--band">
-              <code id="cmd-real">npx daily-focus</code>
-              <button class="button button--primary" type="button" data-copy="cmd-real">Copy</button>
-            </div>
-            <p>Opens the dashboard in your browser, on a setup screen that asks a few questions, one at a time, with the likely answer already ticked. Claude Code or Codex looks into the rest, like which calendars are work ones. Needs Node.js 22.18 or newer.</p>
-          </li>
-          <li class="way">
             <h3>On a Mac</h3>
-            <a class="button button--band button--wide" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
+            <a class="button button--primary button--wide" href="https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg">Download for Mac</a>
             <p>A menu bar app that starts the dashboard at login, shows how old the brief is, and tells you when a new one arrives. Node.js comes with it. Needs Apple silicon and macOS 13.5 or newer.</p>
           </li>
+          <li class="way">
+            <h3>On Linux or Windows</h3>
+            <div class="command command--band">
+              <code id="cmd-real">npx daily-focus</code>
+              <button class="button button--band" type="button" data-copy="cmd-real">Copy</button>
+            </div>
+            <p>Run it from a terminal, with Node.js 22.18 or newer. It works on a Mac too, if you’d rather run it yourself.</p>
+          </li>
         </ul>
-        <p class="needs">Either way, you need Claude Code on a paid Claude plan, or Codex on ChatGPT Plus or higher. GitHub, Jira and the macOS calendar are optional. The <a href="setup/">setup guide</a> covers each step. To look around on invented data first, run <code>npx daily-focus --demo</code>.</p>
+        <p class="needs">Either way, Daily Focus opens on a setup screen that asks a few questions, one at a time, with the likely answer already ticked. Claude Code or Codex looks into the rest, like which calendars are work ones. You need Claude Code on a paid Claude plan, or Codex on ChatGPT Plus or higher. GitHub, Jira and the macOS calendar are optional. The <a href="setup/">setup guide</a> covers each step. To look around on invented data first, run <code>npx daily-focus --demo</code>.</p>
       </div>
 
       <figure class="setup">

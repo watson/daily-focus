@@ -1,7 +1,8 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { DEFAULT_DATA_DIR, expandHome, loadSettings, SETTINGS_FILE, type SettingValues } from './env.ts';
-import { APP_GH, defaultCalendarApp, defaultGh } from './install.ts';
+import { APP_CALENDAR_APP, APP_GH, defaultGh, USER_CALENDAR_APP } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 import { PROFILES, type Profile } from './stores.ts';
 
@@ -85,9 +86,9 @@ export interface CalendarConfig {
   /** Minutes between reads while a browser is watching. */
   pollMinutes: number;
   /**
-   * The helper bundle: the one the Mac app carries, else this copy's own (the
-   * package's, or a checkout's `npm run build:calendar`), else the one
-   * `daily-focus build-calendar` installs for every copy.
+   * The helper bundle: the one `daily-focus build-calendar` installs for every
+   * copy, when it exists, otherwise the one a checkout's `npm run build:calendar`
+   * builds in place.
    */
   appPath: string;
 }
@@ -468,7 +469,13 @@ function calendarConfig(values: SettingValues): CalendarConfig {
     names: nameListSetting('DAILY_FOCUS_CALENDARS', values),
     addresses: nameListSetting('DAILY_FOCUS_CALENDAR_ADDRESSES', values),
     pollMinutes,
-    appPath: expandHome((values.DAILY_FOCUS_CALENDAR_APP ?? '').trim() || defaultCalendarApp()),
+    // What the user set, then the helper the Mac app carries, then the one
+    // `daily-focus build-calendar` installs, then a checkout's own build.
+    appPath: expandHome(
+      (values.DAILY_FOCUS_CALENDAR_APP ?? '').trim() ||
+        [APP_CALENDAR_APP, USER_CALENDAR_APP].find((path): path is string => path !== null && existsSync(path)) ||
+        resolve(import.meta.dirname, '..', 'tools/dfcal/build/Daily Focus Calendar.app'),
+    ),
   };
 }
 

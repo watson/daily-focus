@@ -79,13 +79,11 @@ if [ -n "$app_source" ]; then
   plutil -replace DFAppSource -string "$app_source" "$app/Contents/Info.plist"
 fi
 
-# Apple silicon only, as is the app's Node: Intel Macs stopped at macOS 26, and
-# carrying Node for both would double the download for them.
+# Apple silicon only, as is everything in the app: Intel Macs stopped at macOS 26,
+# and carrying Node for both would double the download for them.
 swiftc -O -target arm64-apple-macos13.5 -o "$app/Contents/MacOS/Daily Focus" "$here"/DailyFocus/*.swift
 
-# The calendar helper is the exception. Once signed, the Release workflow puts the
-# same one in the npm package, which Intel Macs run too.
-sh "$repo/tools/dfcal/build.sh" --release "$app/Contents/Helpers"
+sh "$repo/tools/dfcal/build.sh" --app "$app/Contents/Helpers"
 
 # The app's icon and the disk image's background, drawn by code in this repo.
 swiftc -O -o "$build/artwork" "$here/Artwork/main.swift"
@@ -179,10 +177,6 @@ if [ -n "$server" ]; then
   plutil -replace CFBundleShortVersionString -string "$version" "$dashboard/Contents/Info.plist"
   plutil -replace CFBundleVersion -string "$version" "$dashboard/Contents/Info.plist"
   ditto "$server" "$dashboard/Contents/Resources/server"
-  # A package packed from a checkout may carry that checkout's own build of the
-  # calendar helper. The app has its own, in Contents/Helpers, which the dashboard
-  # finds first, and code macOS could run doesn't belong among the app's resources.
-  rm -rf "$app/Contents/Resources/server/tools/dfcal/build" "$dashboard/Contents/Resources/server/tools/dfcal/build"
 else
   echo "no --server: the app runs whatever DAILY_FOCUS_APP_SERVER_ENTRY names"
 fi

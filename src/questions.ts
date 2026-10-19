@@ -57,7 +57,7 @@ export interface QuestionContext {
    * machine has no Calendar.app, or the list hasn't been read yet.
    */
   calendars: CalendarListing[] | string | null;
-  calendar: { supported: boolean; built: boolean; buildCommand: string };
+  calendar: { supported: boolean; built: boolean; buildCommand: string; macApp: string | null };
   boards: { github: BoardHealth; jira: BoardHealth };
   /** Every setting's value in effect now, from wherever it came. */
   current: Readonly<Record<string, string>>;
@@ -596,11 +596,16 @@ const calendars: Question = {
   card(ctx) {
     const entries = calendarEntries(ctx);
     const proposal = proposalOf(ctx, 'calendars');
+    // On a Mac, the app is the way to run Daily Focus, and it comes with the
+    // helper, so the npm package offers the app before the command.
+    const { macApp } = ctx.calendar;
     const problem =
       ctx.calendar.supported && !ctx.calendar.built
         ? {
-            message:
-              'The live agenda reads Calendar.app through a small helper, built once with this command. Until then it uses the brief’s events, so this list is from your calendar account.',
+            message: macApp
+              ? 'The live agenda reads Calendar.app through a small helper that comes with the Mac app. Without the app, build it once with this command, which needs the Xcode command line tools. Until then it uses the brief’s events, so this list is from your calendar account.'
+              : 'The live agenda reads Calendar.app through a small helper, built once with this command. Until then it uses the brief’s events, so this list is from your calendar account.',
+            ...(macApp ? { links: [{ label: 'Get the Mac app', url: macApp }] } : {}),
             command: ctx.calendar.buildCommand,
             blocking: false,
           }

@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { Item } from './types.ts';
-import { command } from './install.ts';
+import { command, MAC_APP_URL, offerMacApp } from './install.ts';
 
 const run = promisify(execFile);
 
@@ -224,8 +224,9 @@ export async function runHelper(appPath: string, selfAddresses: readonly string[
     await stat(appPath);
   } catch {
     throw new CalendarHelperError(
-      `the calendar helper isn't built at ${appPath} — run ${command('build-calendar')}, ` +
-        'or point DAILY_FOCUS_CALENDAR_APP at an existing build',
+      `the calendar helper isn't built at ${appPath} — ` +
+        (offerMacApp() ? `the Mac app comes with it (${MAC_APP_URL}); without the app, ` : '') +
+        `run ${command('build-calendar')}, or point DAILY_FOCUS_CALENDAR_APP at an existing build`,
     );
   }
 

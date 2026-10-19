@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { after, test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { appCalendarApp, appGh, command, defaultCalendarApp, defaultGh, OWN_CALENDAR_APP, ranDirectly, USER_CALENDAR_APP } from '../src/install.ts';
+import { appCalendarApp, appGh, command, defaultGh, MAC_APP_URL, offerMacApp, ranDirectly, startAdvice } from '../src/install.ts';
 
 const execute = promisify(execFile);
 const cli = resolve(import.meta.dirname, '../src/cli.ts');
@@ -181,14 +181,23 @@ test("the Mac app's calendar helper is found beside its Node, wherever the dashb
   assert.equal(appCalendarApp('/opt/homebrew/bin/node', update), null, 'an update run by hand, outside the app');
 });
 
-test("the package's own calendar helper wins over one built by hand, and the app's over both", () => {
-  const app = '/Applications/Daily Focus.app/Contents/Helpers/Daily Focus Calendar.app';
-  const has = (...paths: string[]) => (path: string) => paths.includes(path);
-  assert.equal(defaultCalendarApp(has(app, OWN_CALENDAR_APP, USER_CALENDAR_APP), app), app);
-  assert.equal(defaultCalendarApp(has(OWN_CALENDAR_APP, USER_CALENDAR_APP), app), OWN_CALENDAR_APP, 'an app without its helper');
-  assert.equal(defaultCalendarApp(has(OWN_CALENDAR_APP, USER_CALENDAR_APP), null), OWN_CALENDAR_APP, 'whatever was built by hand');
-  assert.equal(defaultCalendarApp(has(USER_CALENDAR_APP), null), USER_CALENDAR_APP, 'a package without one');
-  assert.equal(defaultCalendarApp(has(), null), OWN_CALENDAR_APP, 'none: where to build one');
+test('the npm package on a Mac points at the Mac app, and nothing else does', () => {
+  assert.equal(offerMacApp('darwin', true, false), true, 'the package, run from a terminal or a service');
+  assert.equal(offerMacApp('darwin', true, true), false, 'the package inside the app');
+  assert.equal(offerMacApp('darwin', false, false), false, 'a checkout');
+  assert.equal(offerMacApp('linux', true, false), false);
+  assert.equal(offerMacApp('win32', true, false), false);
+});
+
+test('starting from a terminal, a Mac is pointed at the app, and npx elsewhere at an install of its own', () => {
+  const mac = startAdvice(true, true);
+  assert.ok(mac.includes(MAC_APP_URL), 'a link to the app');
+  assert.ok(!mac.join(' ').includes('npm install'), 'and no other way, from npx or not');
+  assert.deepEqual(startAdvice(true, false), mac);
+  const npx = startAdvice(false, true).join(' ');
+  assert.match(npx, /npm install -g daily-focus/);
+  assert.doesNotMatch(npx, /daily-focus service/, 'the service is a LaunchAgent, for a Mac');
+  assert.deepEqual(startAdvice(false, false), [], 'an install of its own, or a checkout');
 });
 
 test("the Mac app's gh is used only when there is none on PATH", { skip: process.platform === 'win32' && "the Mac app's paths" }, () => {

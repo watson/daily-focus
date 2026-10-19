@@ -162,7 +162,7 @@ export function renderNotes(options: { version: string; previous: string | null;
   if (other.length) sections.push(['### Other Changes', '', ...other.map((commit) => entry(commit, commit.description))].join('\n'));
   if (!sections.length) sections.push('No user-facing changes.');
 
-  const install = `Download **Daily-Focus.dmg** below for the menu bar app (Apple silicon, macOS 13.5 or newer), or run \`npx daily-focus@${version}\`.`;
+  const install = `On a Mac, download **Daily-Focus.dmg** below for the menu bar app (Apple silicon, macOS 13.5 or newer). On Linux or Windows, run \`npx daily-focus@${version}\`.`;
   // Only a stable release is notarised; see .github/workflows/release.yml.
   const unnotarised =
     'This development build is signed but not notarised, so macOS refuses to open it at first: open it once, then allow it under System Settings → Privacy & Security → Open Anyway.';

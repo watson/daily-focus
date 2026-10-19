@@ -377,9 +377,9 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_CALENDAR_APP',
     group: 'calendar',
     label: 'Path to the calendar helper',
-    help: 'Only needed to use a helper other than the one Daily Focus comes with.',
+    help: 'Only needed to use a helper other than the Mac app’s, or the one built for this computer.',
     kind: 'text',
-    fallback: always('The one Daily Focus comes with'),
+    fallback: always('The Mac app’s, or the built copy'),
     advanced: true,
   },
 
