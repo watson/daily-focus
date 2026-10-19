@@ -10,9 +10,9 @@
     <script>
       /*
        * Applied before first paint so a dark-mode user never sees a white flash,
-       * and so the toggle's three icons have a state to key off in that paint too.
-       * It has to live here rather than in the bundle: the bundle is fetched after
-       * this document is already on screen.
+       * and so the theme button's icon is right in that paint too. It has to
+       * live here rather than in the bundle: the bundle is fetched after this
+       * document is already on screen.
        *
        * Only the two explicit modes are ever stored. Anything else — nothing yet,
        * a value from an older build, a hand-edited one — stamps `system`, which

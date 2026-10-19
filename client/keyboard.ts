@@ -68,16 +68,20 @@ export function installKeyboard(handlers: Handlers): void {
 
     if (event.key === 'Escape') {
       const typing = event.target instanceof HTMLElement && event.target.matches('input, textarea, select');
-      if (ui.view.value === 'settings' && !typing && !ui.detailFor.value) {
-        handlers.closeSettings();
-        return;
-      }
+      // A menu first, whatever is under it: the header's theme menu opens on
+      // Settings too, and Escape there must close it, not the page.
       if (ui.menuFor.value || ui.statusFor.value) {
         batch(() => {
           ui.menuFor.value = null;
           ui.statusFor.value = null;
         });
-      } else if (ui.detailFor.value) {
+        return;
+      }
+      if (ui.view.value === 'settings' && !typing && !ui.detailFor.value) {
+        handlers.closeSettings();
+        return;
+      }
+      if (ui.detailFor.value) {
         // Second press: the panel is closed only once the smaller things are.
         setDetailFor(ui, null);
       }

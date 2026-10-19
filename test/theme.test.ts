@@ -1,34 +1,42 @@
 /**
- * Dark mode follows the OS until the toggle is pressed, and the toggle can always
- * hand it back.
+ * Dark mode follows the OS until a mode is picked, and the menu can always hand
+ * it back.
  *
  * The in-app override was removed once, and the bug that removed it is the thing
  * this file exists to keep out: the toggle stored light or dark, the page
  * re-stamped that choice before every paint, and a machine set to follow the clock
  * stayed pinned to whichever mode had been chosen once, months earlier. What makes
- * an override safe to offer again is that `system` is a state in the cycle rather
+ * an override safe to offer again is that `system` is one of the choices rather
  * than the absence of one — it pins no scheme, stores nothing, and so cannot go
  * stale.
  *
- * The second reason it was removed was not a bug but a look: one press in three
- * changes no colour at all, since `system` renders identically to whichever mode
+ * The second reason it was removed was not a bug but a look: picking `system`
+ * can change no colour at all, since it renders identically to whichever mode
  * the OS is already in, and a control that appears dead gets pressed again. The
- * compensation is that the button reports the state, so a press is always visible
- * even when the page is not — which makes "every state has its own glyph" a rule
- * and not a decoration.
+ * menu answers that by checking the choice in force. The button shows the other
+ * mode, the one the page is not in, worked out from the scheme the page renders
+ * in rather than the choice, so under `system` it is the opposite of the OS.
  *
  * Both rules span three files and live in none of them, which is why they are
  * asserted here rather than left to a reviewer to notice. The stamp is read from
- * `index.html`, where it has to run before the bundle is fetched; the cycle and
- * the glyphs from `client/theme.ts`, where the toggle lives.
+ * `index.html`, where it has to run before the bundle is fetched; the choices
+ * and the glyphs from `client/theme.ts`, where the menu lives; which glyph the
+ * button shows from the stylesheet.
  */
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
+import { h } from 'preact';
+
+// Imported ahead of the client, for the document it installs.
+import { byClass, handlersWith, mount, mountOne, settle, uiWith } from './dom.ts';
+import { BUTTON_GLYPHS, THEME_MENU, THEME_MODES, ThemeToggle } from '../client/theme.ts';
+import type { ThemeMode } from '../client/types.ts';
+
 const read = (name: string) => readFile(new URL(`../public/${name}`, import.meta.url), 'utf8');
-/** The toggle lives in the client source now; the bundle it becomes is not tracked. */
+/** The menu lives in the client source now; the bundle it becomes is not tracked. */
 const theme = () => readFile(new URL('../client/theme.ts', import.meta.url), 'utf8');
 
 /** Run `index.html`'s pre-paint stamp against a given `localStorage`. */
@@ -99,23 +107,100 @@ test('the pre-paint stamp trusts only the two explicit modes', async () => {
   assert.equal(stamp(html, 'sepia'), 'system');
 });
 
-test('every state in the cycle has its own glyph, so no press is invisible', async () => {
-  const [css, app] = await Promise.all([read('style.css'), theme()]);
+test('the button shows the mode the page is not in, even under the system', async () => {
+  const css = await read('style.css');
+  assert.deepEqual([...THEME_MODES], ['light', 'dark', 'system']);
 
-  const cycle = /const THEME_CYCLE = \[([^\]]+)\]/.exec(app);
-  assert.ok(cycle, 'the cycle is no longer where this test can read it');
-  const states = [...(cycle[1] ?? '').matchAll(/'([a-z]+)'/g)].map((match) => match[1]);
-  assert.deepEqual(states, ['system', 'light', 'dark']);
+  // The sun and the moon, never System's screen: the button shows a mode to go to.
+  const icons = byClass(mountOne(h(ThemeToggle, { ui: uiWith(), handlers: handlersWith() })), 'theme-toggle__icon');
+  assert.deepEqual(
+    icons.map((icon) => icon.dataset.themeIcon),
+    [...BUTTON_GLYPHS],
+  );
+  assert.deepEqual([...BUTTON_GLYPHS], ['light', 'dark']);
 
-  for (const state of states) {
-    assert.match(app, new RegExp(`'data-theme-icon': '${state}'`), `no ${state} glyph`);
-    assert.match(
-      css,
-      new RegExp(`:root\\[data-theme='${state}'\\] [^,{]*\\[data-theme-icon='${state}'\\]`),
-      `the ${state} glyph is never shown`,
-    );
-    assert.match(app, new RegExp(`${state}:`), `the ${state} state goes unlabelled`);
+  // Picked by the scheme the page renders in, which under `system` is the OS's:
+  // the moon on a light page, the sun on a dark one.
+  assert.match(css, /\.theme-toggle__icon\[data-theme-icon='dark'\] \{\s*stroke: light-dark\(currentColor, transparent\);/);
+  assert.match(css, /\.theme-toggle__icon\[data-theme-icon='light'\] \{\s*stroke: light-dark\(transparent, currentColor\);/);
+  // Keyed to the choice instead, `system` would show one glyph whatever the OS says.
+  assert.doesNotMatch(css, /data-theme='[a-z]+'\][^{]*\.theme-toggle__icon/, 'the icon is keyed to the choice, not the rendering');
+});
+
+/** The button and, when `open`, the menu, rendered for `mode`; and what the handlers were asked. */
+function renderMenu(mode: ThemeMode, open: boolean) {
+  const calls: string[] = [];
+  const ui = uiWith({ theme: mode, menuFor: open ? THEME_MENU : null });
+  const handlers = handlersWith({
+    toggleMenu: (id) => calls.push(`toggleMenu ${id}`),
+    setTheme: (picked) => calls.push(`setTheme ${picked}`),
+  });
+  const root = mount(h(ThemeToggle, { ui, handlers }));
+  const button = root.querySelector<HTMLButtonElement>('#theme-toggle')!;
+  const items = [...root.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+  return { root, button, items, calls };
+}
+
+test('the button names the state and opens a menu rather than cycling', () => {
+  const { button, items, calls } = renderMenu('system', false);
+  assert.equal(button.getAttribute('aria-label'), 'Theme: following the system');
+  assert.equal(button.getAttribute('aria-haspopup'), 'menu');
+  assert.equal(button.getAttribute('aria-expanded'), 'false');
+  assert.equal(items.length, 0, 'closed, there is no menu');
+
+  button.click();
+  assert.deepEqual(calls, [`toggleMenu ${THEME_MENU}`]);
+});
+
+test('the menu offers all three, checks the one in force, and picks by name', () => {
+  const { root, button, items, calls } = renderMenu('dark', true);
+  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  assert.equal(root.querySelector('[role="menu"]')?.getAttribute('aria-label'), 'Theme');
+  assert.deepEqual(
+    items.map((item) => item.textContent),
+    ['Light', 'Dark', 'System'],
+  );
+  assert.deepEqual(
+    items.map((item) => item.getAttribute('aria-checked')),
+    ['false', 'true', 'false'],
+  );
+  // Each choice carries a glyph of its own beside the check every row has.
+  for (const item of items) {
+    assert.equal(byClass(item, 'menu__check').length, 1);
+    assert.equal(byClass(item, 'menu__glyph').length, 1);
   }
+
+  items[2]!.click();
+  assert.deepEqual(calls, ['setTheme system']);
+});
+
+test('the menu starts on the choice in force and walks with the arrow keys', () => {
+  const { items } = renderMenu('light', true);
+  assert.equal(document.activeElement, items[0], 'focus starts on the checked choice');
+
+  const press = (key: string) =>
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  press('ArrowDown');
+  assert.equal(document.activeElement, items[1]);
+  press('End');
+  assert.equal(document.activeElement, items[2]);
+  press('ArrowDown');
+  assert.equal(document.activeElement, items[0], 'and wraps round');
+  press('ArrowUp');
+  assert.equal(document.activeElement, items[2]);
+});
+
+test('a click anywhere else closes the menu; a click in it or on its button does not', async () => {
+  const { button, items, calls } = renderMenu('dark', true);
+  const pointer = (target: Element) => target.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+
+  pointer(items[0]!);
+  pointer(button);
+  assert.deepEqual(calls, []);
+
+  pointer(document.body);
+  await settle();
+  assert.deepEqual(calls, [`toggleMenu ${THEME_MENU}`]);
 });
 
 test('choosing the system clears the override rather than recording one', async () => {

@@ -79,7 +79,10 @@ export interface UiState {
   clickedId: Signal<string | null>;
   /** Rows with an action in flight, shown as pending until the server answers. */
   pending: Signal<ReadonlySet<string>>;
-  /** Which row has its snooze or park menu open: on its card, or under `PANEL_PREFIX` in the panel. */
+  /**
+   * Which row has its snooze or park menu open: on its card, or under
+   * `PANEL_PREFIX` in the panel. Or `THEME_MENU`, while the header's is open.
+   */
   menuFor: Signal<string | null>;
   /**
    * Which ticket has its status menu open, keyed as `menuFor` is. Separate from
@@ -219,7 +222,8 @@ export interface Handlers {
   dismissAgentRun(id: string): void;
   /** Null forgets the key: the fold is back at its default. */
   toggleMessage(key: string, open: boolean | null): void;
-  toggleTheme(): void;
+  /** Light, dark or the system's, from the header's menu, which the choice closes. */
+  setTheme(mode: ThemeMode): void;
   openHelp(): void;
   hideToast(): void;
   /** Go to the settings page, scrolled to a section when one is named. */

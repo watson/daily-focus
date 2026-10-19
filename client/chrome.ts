@@ -80,7 +80,7 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
           // it was opened from, as a toggle should.
           onClick: () => (ui.view.value === 'settings' ? handlers.closeSettings() : handlers.openSettings()),
         },
-        // Drawn, not a ⚙ character, which sits smaller than the theme toggle's
+        // Drawn, not a ⚙ character, which sits smaller than the theme button's
         // icons at the same font size. Same size and stroke as those.
         el(
           'svg',
