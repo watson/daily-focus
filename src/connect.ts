@@ -12,8 +12,15 @@
  *   account signed in as its active one.
  * - acli's `jira auth login --web` opens the browser itself, on Atlassian's
  *   consent page, and waits for it to come back to a server of its own on
- *   localhost, so the browser has to be on this machine. Should it want a
- *   terminal after that, the page says which command to run in one.
+ *   localhost, so the browser has to be on this machine. Then it asks, in a
+ *   terminal prompt, which of the user's sites to sign in to, the one they
+ *   picked on that page. Its prompts draw themselves into a pipe and take keys
+ *   from one, so the page reads the sites off what it drew, asks the user, and
+ *   types the answer: Down as many times as it takes, then Enter. With one site
+ *   there is nothing to ask. On Windows its prompts read keys from a console and
+ *   refuse a pipe ("failed to capture input"), so there it runs in a window of
+ *   its own, where the user picks the site, and its status says how that went.
+ *   Should it fail anyway, the page says which command to run in a terminal.
  *
  * Either way the CLI keeps the session where it always does, so a terminal's
  * gh or acli sees the same one, and so do the boards, the agent and the
@@ -25,7 +32,7 @@ import { promisify } from 'node:util';
 
 import type { Config } from './config.ts';
 import { listGhAccounts } from './github.ts';
-import { launchFor, stopProcess } from './launch.ts';
+import { findExecutable, launchFor, stopProcess } from './launch.ts';
 import { fetchTool, realFetchDeps, resolveTool, type FetchDeps, type ToolName } from './tools.ts';
 import type { ConnectionState, Service } from './types.ts';
 
@@ -53,6 +60,8 @@ export interface ConnectionDeps {
   onConnected(): void;
   spawnFn?: typeof spawn;
   fetchDeps?: FetchDeps;
+  /** Which platform's way to sign in: a test runs either on any. */
+  platform?: NodeJS.Platform;
 }
 
 /** The setting for the service's CLI, and where fetched CLIs live. */
@@ -75,12 +84,12 @@ export class Connection {
     this.#config = config;
     this.#deps = deps;
     this.#spawn = deps.spawnFn ?? spawn;
-    this.#state = { status: 'idle', code: null, url: null, login: null, error: null, command: null };
+    this.#state = { status: 'idle', choices: null, inWindow: false, code: null, url: null, login: null, error: null, command: null };
   }
 
-  /** Whether it is fetching or waiting: a restart would throw the work away. */
+  /** Whether it is fetching or waiting on the user: a restart would throw the work away. */
   get busy(): boolean {
-    return this.#state.status === 'fetching' || this.#state.status === 'starting' || this.#state.status === 'waiting';
+    return ['fetching', 'starting', 'waiting', 'choosing'].includes(this.#state.status);
   }
 
   /** Which copy of the CLI is in use, looked at now. */
@@ -106,7 +115,7 @@ export class Connection {
   }
 
   async #connect(again: boolean): Promise<void> {
-    this.#set({ status: 'starting', code: null, url: null, login: null, error: null, command: null });
+    this.#set({ status: 'starting', choices: null, inWindow: false, code: null, url: null, login: null, error: null, command: null });
     let cli = this.#cli();
     if (!cli.found) {
       this.#set({ status: 'fetching' });
@@ -153,11 +162,14 @@ export class Connection {
   #signIn(path: string): Promise<void> {
     const args = LOGIN[this.#service];
     const command = [path, ...args].map((word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `"${word}"`)).join(' ');
+    if (this.#service === 'jira' && (this.#deps.platform ?? process.platform) === 'win32') return this.#signInInWindow(path, command);
     return new Promise((settle) => {
       let child: ChildProcess;
       try {
         const launch = launchFor(path, args);
-        child = this.#spawn(launch.file, launch.args, { env: this.#env(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+        // acli is typed into, to answer which site; gh is asked nothing.
+        const input = this.#service === 'jira' ? 'pipe' : 'ignore';
+        child = this.#spawn(launch.file, launch.args, { env: this.#env(), stdio: [input, 'pipe', 'pipe'], windowsHide: true });
       } catch (err) {
         this.#end('failed', (err as Error).message);
         return settle();
@@ -166,12 +178,23 @@ export class Connection {
       // Both streams for what it is waiting on; what went wrong is on stderr, apart from acli's spinner.
       let said = '';
       let complained = '';
+      // Where in what it said the site question last answered was, so a redraw isn't asked twice.
+      let asked = -1;
       child.stderr?.on('data', (chunk: Buffer | string) => (complained += chunk.toString()));
       const read = (chunk: Buffer | string): void => {
         said += chunk.toString();
         const login = /Logged in as\s+(\S+)/.exec(said)?.[1] ?? null;
         if (login) this.#state = { ...this.#state, login };
-        if (this.#service !== 'github') return;
+        if (this.#service === 'jira') {
+          const prompt = sitePrompt(said);
+          if (prompt && prompt.at > asked && this.#state.status !== 'choosing') {
+            asked = prompt.at;
+            // One site is the one chosen in the browser: nothing to ask.
+            if (prompt.sites.length === 1) child.stdin?.write('\r');
+            else this.#set({ status: 'choosing', choices: prompt.sites });
+          }
+          return;
+        }
         const code = deviceCode(said);
         if (code && this.#state.code !== code) {
           const url = /(https:\/\/\S+\/login\/device)\b/.exec(said)?.[1] ?? DEVICE_URL;
@@ -193,11 +216,12 @@ export class Connection {
       child.once('close', (code) => {
         if (this.#child !== child) return;
         this.#child = null;
-        if (code === 0) {
+        // Cancelled is cancelled, whatever the CLI made of being stopped.
+        if (this.#cancelled) {
+          this.#end('idle', null);
+        } else if (code === 0) {
           this.#end('done', null);
           this.#deps.onConnected();
-        } else if (this.#cancelled) {
-          this.#end('idle', null);
         } else {
           this.#end('failed', lastWords(complained) || lastWords(said) || `it exited with ${code}`, command);
         }
@@ -207,14 +231,81 @@ export class Connection {
   }
 
   /**
+   * acli's sign-in in a console window of its own, on Windows: PowerShell starts
+   * it there and waits for it. Its exit code only says the window closed, so its
+   * status says whether that left a session. The path is quoted as PowerShell
+   * quotes, and the script goes encoded, so no character in it is read twice.
+   */
+  #signInInWindow(path: string, command: string): Promise<void> {
+    const found = findExecutable(path) ?? path;
+    const script =
+      `$p = Start-Process -FilePath '${found.replace(/'/g, "''")}' -ArgumentList ${LOGIN.jira.map((arg) => `'${arg}'`).join(',')} -Wait -PassThru; ` +
+      'exit $p.ExitCode';
+    return new Promise((settle) => {
+      let child: ChildProcess;
+      try {
+        child = this.#spawn(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+          { env: this.#env(), stdio: 'ignore', windowsHide: true },
+        );
+      } catch (err) {
+        this.#end('failed', (err as Error).message);
+        return settle();
+      }
+      this.#child = child;
+      this.#set({ status: 'waiting', inWindow: true });
+      this.#timer = setTimeout(() => void this.cancel(), SIGN_IN_TIMEOUT_MS);
+      this.#timer.unref();
+      child.once('error', (err: NodeJS.ErrnoException) => {
+        if (this.#child !== child) return;
+        this.#child = null;
+        this.#end('failed', err.message, command);
+        settle();
+      });
+      child.once('close', () => {
+        if (this.#child !== child) return;
+        this.#child = null;
+        if (this.#cancelled) {
+          this.#end('idle', null);
+          return settle();
+        }
+        void this.#signedIn(path).then((signedIn) => {
+          if (signedIn) {
+            this.#end('done', null);
+            this.#deps.onConnected();
+          } else {
+            this.#end('failed', 'the window closed before acli had signed in', command);
+          }
+          settle();
+        });
+      });
+    });
+  }
+
+  /**
+   * Answer acli's question of which site, with one of those it offered: the one
+   * the user chose on Atlassian's page. Its list starts on the first, so that
+   * many Downs and an Enter. The reason when there is no such question now.
+   */
+  choose(choice: string): string | null {
+    const index = this.#state.status === 'choosing' ? (this.#state.choices ?? []).indexOf(choice) : -1;
+    if (index === -1 || !this.#child?.stdin) return `${choice} isn't one of the sites to choose from now`;
+    this.#child.stdin.write(`${'\x1b[B'.repeat(index)}\r`);
+    this.#set({ status: 'waiting', choices: null });
+    return null;
+  }
+
+  /**
    * Stop connecting. A code or a consent page the page showed stops working with
    * it. Resolves once it has stopped, so a reply built after it shows the button
-   * again rather than something that no longer works.
+   * again rather than something that no longer works. Killed, not asked: acli
+   * takes being asked to stop as choosing whichever site is highlighted.
    */
   cancel(): Promise<void> {
     if (!this.busy) return Promise.resolve();
     this.#cancelled = true;
-    if (this.#child) stopProcess(this.#child, 'SIGTERM', process.platform, this.#spawn);
+    if (this.#child) stopProcess(this.#child, 'SIGKILL', process.platform, this.#spawn);
     return this.#done;
   }
 
@@ -232,8 +323,37 @@ export class Connection {
   #end(status: 'done' | 'failed' | 'idle', error: string | null, command: string | null = null): void {
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
-    this.#set({ status, code: null, url: null, error, command });
+    this.#set({ status, choices: null, inWindow: false, code: null, url: null, error, command });
   }
+}
+
+/**
+ * acli's question of which site to sign in to, when it has drawn one: the sites,
+ * in the order it lists them, and where in `said` the question is. Drawn as its
+ * prompts all are, a bar down the left and `>` at the highlighted option:
+ *
+ *   ┃ Select the site to login
+ *   ┃ > acme.atlassian.net
+ *   ┃   acme-sandbox.atlassian.net
+ *
+ *   ↑ up • ↓ down • / filter • enter submit
+ *
+ * Only once it has drawn the keys line under the list, so a list arriving in
+ * pieces isn't taken for a shorter one.
+ */
+export function sitePrompt(said: string): { sites: string[]; at: number } | null {
+  const plain = said.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  const at = plain.lastIndexOf('Select the site to login');
+  if (at === -1) return null;
+  const after = plain.slice(at).split(/\r?\n/).slice(1);
+  const sites: string[] = [];
+  for (const line of after.map((each) => each.replace(/^\r+/, ''))) {
+    const option = /^┃ (?:> |  )(\S.*?)\s*$/.exec(line);
+    if (!option) break;
+    sites.push(option[1]!);
+  }
+  if (sites.length === 0 || !/enter submit/.test(plain.slice(at))) return null;
+  return { sites, at };
 }
 
 /**

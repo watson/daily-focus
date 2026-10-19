@@ -67,6 +67,33 @@ export function connectionView(
     );
   }
 
+  if (connection.status === 'choosing' && connection.choices) {
+    return el(
+      'div',
+      { class: 'connect', role: 'status' },
+      el('p', { class: 'connect__lead' }, `Which site did you choose on ${MAKER[service]}’s page?`),
+      el(
+        'p',
+        { class: 'connect__actions' },
+        connection.choices.map((choice) =>
+          el('button', { type: 'button', class: 'button', key: choice, onClick: () => handlers.chooseConnect(service, choice) }, choice),
+        ),
+      ),
+      el('p', { class: 'connect__note' }, 'Pick the same one here to finish signing in.'),
+      el('p', { class: 'connect__actions' }, cancel),
+    );
+  }
+
+  if (connection.status === 'waiting' && connection.inWindow) {
+    return el(
+      'div',
+      { class: 'connect', role: 'status' },
+      el('p', { class: 'connect__lead connect__busy' }, `Finish in the window that opened: approve on ${MAKER[service]}’s page, then pick the same site there.`),
+      el('p', { class: 'connect__note' }, 'This page carries on when the window closes.'),
+      el('p', { class: 'connect__actions' }, cancel),
+    );
+  }
+
   if (connection.status === 'waiting') {
     return el(
       'div',
@@ -105,5 +132,5 @@ export function connectionView(
 
 /** Whether a connection is at work, which shows it even where its button wouldn't be. */
 export function connecting(connection: ConnectionState | undefined): boolean {
-  return connection !== undefined && ['fetching', 'starting', 'waiting'].includes(connection.status);
+  return connection !== undefined && ['fetching', 'starting', 'waiting', 'choosing'].includes(connection.status);
 }

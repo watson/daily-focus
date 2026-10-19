@@ -755,7 +755,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
-    if ((path === '/api/connect' || path === '/api/connect/cancel') && req.method === 'POST') {
+    if ((path === '/api/connect' || path === '/api/connect/cancel' || path === '/api/connect/choose') && req.method === 'POST') {
       const body = await readJsonObject(req, res);
       if (!body) return;
       const service = body.service;
@@ -763,7 +763,14 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         sendJSON(res, 400, { error: '"service" must be github or jira' });
         return;
       }
-      if (path === '/api/connect') {
+      if (path === '/api/connect/choose') {
+        // Which of acli's sites: the one the user chose on Atlassian's page.
+        const refused = connections[service].choose(typeof body.choice === 'string' ? body.choice : '');
+        if (refused) {
+          sendJSON(res, 409, { error: refused });
+          return;
+        }
+      } else if (path === '/api/connect') {
         // The demo's boards answer from its sample world; a real connection
         // would be the one thing in it that reached outside.
         if (options.integrations?.github || options.integrations?.jira) {

@@ -14,6 +14,7 @@ import { h } from 'preact';
 
 import { buttonLabels, byClass, byTag, handlersWith, mount, mountOne, uiWith } from './dom.ts';
 import { renderBoard, renderPullRow } from '../client/board.ts';
+import { connectionView } from '../client/connect.ts';
 import { formatTime } from '../client/format.ts';
 import { resolveBoard } from '../src/prs.ts';
 import type { Action, BoardRow, BoardState, DashboardState, PullRequest } from '../src/types.ts';
@@ -322,7 +323,7 @@ test('while it reads, when it failed, and when the day is spent, the row says so
 test('a board connecting would fix offers it, and shows the code to enter once gh has one', () => {
   const reason = { message: 'Not signed in to GitHub', detail: '', since: NOW.toISOString(), attempts: 1, retryAt: null, retrying: false };
   const board = { enabled: true, reason, failures: [], fetchedAt: null, warnings: [], scope: [], rows: [], connect: true } as unknown as BoardState;
-  const idle = { cli: { found: true, fetched: true }, status: 'idle', code: null, url: null, login: null, error: null, command: null } as const;
+  const idle = { cli: { found: true, fetched: true }, status: 'idle', choices: null, inWindow: false, code: null, url: null, login: null, error: null, command: null } as const;
   const jira = { ...idle, cli: { found: false, fetched: false } };
   const started: string[] = [];
   const handlers = handlersWith({ connect: (service) => started.push(`connect ${service}`), copy: (text) => started.push(`copy ${text}`) });
@@ -360,4 +361,25 @@ test('a board connecting would fix offers it, and shows the code to enter once g
   assert.match(failed.textContent ?? '', /That didn’t work: expired_token/);
   assert.equal(failed.querySelector('.connect__command code')?.textContent, 'gh auth login --web');
   assert.ok(buttonLabels(failed).includes('Try again'));
+});
+
+test("acli's question of which site is asked as buttons, one per site it offers", () => {
+  const chose: string[] = [];
+  const handlers = handlersWith({ chooseConnect: (service, choice) => chose.push(`${service} ${choice}`) });
+  const choosing = {
+    cli: { found: true, fetched: true },
+    status: 'choosing',
+    choices: ['acme.atlassian.net', 'acme-sandbox.atlassian.net'],
+    inWindow: false,
+    code: null,
+    url: null,
+    login: null,
+    error: null,
+    command: null,
+  } as const;
+  const node = mountOne(connectionView('jira', { ...choosing, choices: [...choosing.choices] }, handlers));
+  assert.match(node.textContent ?? '', /Which site did you choose on Atlassian’s page\?/);
+  assert.deepEqual(buttonLabels(node), ['acme.atlassian.net', 'acme-sandbox.atlassian.net', 'Cancel']);
+  byTag(node, 'button').find((b) => b.textContent === 'acme-sandbox.atlassian.net')!.click();
+  assert.deepEqual(chose, ['jira acme-sandbox.atlassian.net']);
 });

@@ -476,7 +476,15 @@ export interface ConnectionState {
    * it in a terminal, so the page is the only place to sign it in.
    */
   cli: { found: boolean; fetched: boolean };
-  status: 'idle' | 'fetching' | 'starting' | 'waiting' | 'done' | 'failed';
+  status: 'idle' | 'fetching' | 'starting' | 'waiting' | 'choosing' | 'done' | 'failed';
+  /** While `choosing`: the Atlassian sites acli asks to pick from, the one chosen in the browser among them. */
+  choices: string[] | null;
+  /**
+   * While `waiting`: the CLI asks its questions in a window of its own, where the
+   * user answers them. acli on Windows, whose prompts take keys from a console
+   * and from nothing else.
+   */
+  inWindow: boolean;
   /** The one-time code GitHub's device page asks for. */
   code: string | null;
   url: string | null;

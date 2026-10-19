@@ -84,6 +84,11 @@ export function postConnect(service: Service, again = false): Promise<DashboardS
   return post('/api/connect', { service, again });
 }
 
+/** Answer which of the sites the CLI offers: the one chosen in the browser. */
+export function postConnectChoose(service: Service, choice: string): Promise<DashboardState> {
+  return post('/api/connect/choose', { service, choice });
+}
+
 /** Stop connecting, which throws away a code or consent page shown. Resolves once it has stopped. */
 export function postConnectCancel(service: Service): Promise<DashboardState> {
   return post('/api/connect/cancel', { service });

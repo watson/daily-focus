@@ -495,7 +495,7 @@ test('the button that leaves a question says what it does, and an empty objectiv
 });
 
 test('GitHub and Jira are rows to tick; a ticked one that is not connected connects right there, and holds Continue', () => {
-  const idle = { cli: { found: false, fetched: false }, status: 'idle', code: null, url: null, login: null, error: null, command: null } as const;
+  const idle = { cli: { found: false, fetched: false }, status: 'idle', choices: null, inWindow: false, code: null, url: null, login: null, error: null, command: null } as const;
   const connections = { github: idle, jira: idle };
   const services = (accounts: { github: string | null; jira: string | null }) =>
     step('services', {
