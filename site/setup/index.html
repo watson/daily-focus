@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Set up Daily Focus</title>
-  <meta name="description" content="What you need, how to install Daily Focus on a Mac or with Node.js, how to keep it running, and what to do if something gets in the way.">
+  <meta name="description" content="What you need, how to install Daily Focus on a Mac, Linux or Windows, how to keep it running, and what to do if something gets in the way.">
   <link rel="canonical" href="https://dailyfocus.dev/setup/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://dailyfocus.dev/setup/">
@@ -71,7 +71,7 @@
         </li>
         <li>
           <p class="needs-list__what">A Mac with Apple silicon, or Node.js</p>
-          <p>The menu bar app needs macOS 13.5 or newer and brings everything else with it. On any other computer, you need Node.js 22.18 or newer; 24 is recommended.</p>
+          <p>The menu bar app needs macOS 13.5 or newer and brings everything else with it. On Linux or Windows, or to run Daily Focus yourself on a Mac, you need Node.js 22.18 or newer; 24 is recommended.</p>
         </li>
         <li>
           <p class="needs-list__what">GitHub and Jira, only if you use them</p>
@@ -95,16 +95,17 @@
           </ol>
         </div>
         <div class="route">
-          <h3>With Node.js</h3>
+          <h3>On Linux or Windows</h3>
           <ol class="steps">
-            <li>Run it from a terminal.
+            <li>Run it from a terminal, with Node.js.
               <div class="code"><code id="cmd-npx">npx daily-focus</code><button class="button button--primary" type="button" data-copy="cmd-npx">Copy</button></div>
             </li>
             <li>Your browser opens on <code>localhost:4321</code>.</li>
-            <li>Keep the terminal open: the brief is written only while Daily Focus runs. On a Mac, <a href="#running">a background service</a> keeps it running for you.</li>
+            <li>Keep the terminal open: the brief is written only while Daily Focus runs. To run it in the background, see <a href="#running">Keep it running</a>.</li>
           </ol>
         </div>
       </div>
+      <p>The Node.js steps work on a Mac too, if you’d rather run Daily Focus yourself. The app is the easier way there: it keeps Daily Focus running, brings the live agenda from Calendar.app, and updates itself.</p>
       <p>Either way, Daily Focus opens on a setup screen that asks a few questions, one at a time, with the likely answer already ticked. You can change every answer later on the settings page.</p>
     </section>
 
@@ -113,13 +114,13 @@
       <p>The morning brief is written only while Daily Focus runs. If it wasn’t running at the time you chose, it writes the brief as soon as it starts that day. Use one of these, not both.</p>
       <h3>With the menu bar app</h3>
       <p>Tick <b>Open at Login</b> in its menu. The app then starts Daily Focus when you log in, and starts it again if it stops.</p>
-      <h3>As a background service on a Mac</h3>
-      <p>Without the app, install Daily Focus and let macOS run it at every login, and again after a crash:</p>
+      <h3>On Linux or Windows</h3>
+      <p>Keep <code>daily-focus</code> running in a terminal, or install it with <code>npm install -g daily-focus</code> and start <code>daily-focus --no-open</code> with your system’s own service manager, such as a systemd user service.</p>
+      <h3>On a Mac without the app</h3>
+      <p>Install Daily Focus and let macOS run it at every login, and again after a crash:</p>
       <div class="code code--block"><code id="cmd-service">npm install -g daily-focus
 daily-focus service</code><button class="button button--primary" type="button" data-copy="cmd-service">Copy</button></div>
       <p>Install it globally first; the service won’t run from <code>npx</code>. Run <code>daily-focus service</code> again after updating or switching Node.js versions, and <code>daily-focus service --remove</code> to stop and remove it.</p>
-      <h3>On other computers</h3>
-      <p>Keep <code>daily-focus</code> running in a terminal, or start it with your system’s own service manager.</p>
     </section>
 
     <section id="connect" aria-labelledby="connect-title">
@@ -134,7 +135,8 @@ daily-focus service</code><button class="button button--primary" type="button" d
       <div class="code"><code id="cmd-acli">acli jira auth login --web</code><button class="button button--primary" type="button" data-copy="cmd-acli">Copy</button></div>
       <p>For Jira in the brief, an Atlassian connector in Claude Code or Codex works as well.</p>
       <h3 id="calendar">Calendar on a Mac</h3>
-      <p>The live agenda reads Calendar.app, so a meeting moved during the day shows at once. macOS asks for calendar access the first time.</p>
+      <p>The live agenda reads Calendar.app, so a meeting moved during the day shows at once. The menu bar app comes with everything it needs, and macOS asks for calendar access the first time. Without the app, build the calendar helper once; it needs the Xcode command line tools.</p>
+      <div class="code"><code id="cmd-cal">daily-focus build-calendar</code><button class="button button--primary" type="button" data-copy="cmd-cal">Copy</button></div>
       <h3 id="sources">Your other sources</h3>
       <p>The morning brief can read anything Claude Code or Codex can reach. With Codex, that’s the apps linked to your ChatGPT account. With Claude Code, add each connector to <b>Tools Claude Code may use</b> under <b>Morning agent</b> on the settings page, or the brief reports it as out of reach.</p>
       <p>Google Tasks has no connector, so it takes a small export to Google Drive first. The <a href="https://github.com/watson/daily-focus/blob/main/apps-script/README.md">Apps Script guide</a> sets it up in a few minutes.</p>
@@ -144,7 +146,7 @@ daily-focus service</code><button class="button button--primary" type="button" d
       <h2 id="personal-title">A dashboard for home</h2>
       <p>Daily Focus can brief your personal life too: family calendars, reminders, messages, paperwork and your own projects. Run a second dashboard for the other profile, on its own port. Both keep their data in the same folder, one in <code>~/.daily-focus/work</code> and the other in <code>~/.daily-focus/personal</code>.</p>
       <p><b>With the menu bar app</b>, choose <b>Add a Personal Dashboard</b> from its menu, or <b>Add a Work Dashboard</b> if the first one briefs your personal life. It opens on its own setup screen, and the menu then shows both.</p>
-      <p><b>Without the app</b>, run the second as a service beside the first, here a personal one:</p>
+      <p><b>Without the app</b>, start a second dashboard with the other profile and a port of its own. On a Mac, run it as a service beside the first, here a personal one:</p>
       <div class="code"><code id="cmd-personal">daily-focus service --profile personal --port 4322</code><button class="button button--primary" type="button" data-copy="cmd-personal">Copy</button></div>
       <h3>Reach it from your other devices</h3>
       <p>Personal sources often live on one computer, such as a Mac at home with your messages and reminders. Run Daily Focus there and reach it through <a href="https://tailscale.com/kb/1312/serve">Tailscale Serve</a>, which only your own devices can use:</p>
@@ -171,7 +173,8 @@ daily-focus service</code><button class="button button--primary" type="button" d
         <table>
           <tbody>
             <tr><th scope="row"><code>daily-focus</code></th><td>Start Daily Focus and open it in your browser</td></tr>
-            <tr><th scope="row"><code>daily-focus service</code></th><td>Keep it running in the background on a Mac; <code>--remove</code> takes it away</td></tr>
+            <tr><th scope="row"><code>daily-focus service</code></th><td>Keep it running in the background on a Mac without the app; <code>--remove</code> takes it away</td></tr>
+            <tr><th scope="row"><code>daily-focus build-calendar</code></th><td>Build the calendar helper, on a Mac without the app</td></tr>
             <tr><th scope="row"><code>daily-focus init</code></th><td>Create the data folder with an objective and a source list to fill in by hand</td></tr>
           </tbody>
         </table>

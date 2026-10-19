@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { CLI_NAMES, type CliName, type Config } from './config.ts';
-import { command } from './install.ts';
+import { command, MAC_APP_URL, offerMacApp } from './install.ts';
 import { findExecutable } from './launch.ts';
 import { resolveTool } from './tools.ts';
 import type { SetupState } from './types.ts';
@@ -118,6 +118,7 @@ export async function setupState(config: Config): Promise<SetupState> {
       built: supported && (await exists(config.calendar.appPath)),
       chosen: config.calendar.names.length,
       buildCommand: command('build-calendar'),
+      macApp: offerMacApp() ? MAC_APP_URL : null,
     },
   };
 }

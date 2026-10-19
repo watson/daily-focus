@@ -42,7 +42,7 @@ function stateWith(overrides: Partial<DashboardState> = {}): DashboardState {
       profile: 'work',
       sources: { exists: true, placeholders: 0 },
       clis: { claude: '/usr/local/bin/claude', codex: null },
-      calendar: { supported: false, built: false, chosen: 0, buildCommand: 'daily-focus build-calendar' },
+      calendar: { supported: false, built: false, chosen: 0, buildCommand: 'daily-focus build-calendar', macApp: null },
     },
     onboarding: null,
     ...overrides,

@@ -1045,8 +1045,10 @@ export interface SetupState {
   /**
    * The live agenda: whether this machine can have one, whether the helper is
    * built, how many calendars are chosen, and the command that builds the helper.
+   * `macApp` is where to get the Mac app, which comes with the helper, offered
+   * before the command when the npm package runs on a Mac; null otherwise.
    */
-  calendar: { supported: boolean; built: boolean; chosen: number; buildCommand: string };
+  calendar: { supported: boolean; built: boolean; chosen: number; buildCommand: string; macApp: string | null };
 }
 
 /**

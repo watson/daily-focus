@@ -1,11 +1,17 @@
 # Daily Focus
 
 A personal dashboard for deciding what to work on today. Keep it in a pinned tab
-for your priorities, meetings, open pull requests, and Jira tickets.
+for your priorities, meetings, open pull requests, and Jira tickets. See how it
+works at [dailyfocus.dev](https://dailyfocus.dev).
 
-![Daily Focus showing an objective, top priorities, and today's agenda with fictional sample data](docs/images/daily-focus.png)
+[![Daily Focus showing an objective, top priorities, and today's agenda with fictional sample data](docs/images/daily-focus.png)](https://dailyfocus.dev)
 
 *The Today tab with fictional sample data.*
+
+**On a Mac, [download the app](https://github.com/watson/daily-focus/releases/latest/download/Daily-Focus.dmg)**
+instead of using npm. It runs Daily Focus from the menu bar and brings everything
+it needs. The npm package is for Linux and Windows, and for running Daily Focus
+yourself.
 
 A morning agent gathers updates from your connected tools and writes a short brief.
 You set the objective; the agent helps you choose work that moves it forward.
@@ -31,9 +37,10 @@ with it.
 
 To use your own data on a Mac, download `Daily-Focus.dmg` from the
 [latest release](https://github.com/watson/daily-focus/releases/latest) and drag the
-app to Applications. It lives in the menu bar, keeps the dashboard running, tells
-you when a new brief arrives, and updates itself. It carries everything it needs,
-Node.js included. On any other computer, or to run it from a terminal:
+app to Applications. It needs Apple silicon and macOS 13.5 or newer. It lives in
+the menu bar, keeps the dashboard running, tells you when a new brief arrives, and
+updates itself. It carries everything it needs, Node.js and the calendar helper for
+the live agenda included. On Linux or Windows, or to run it yourself on a Mac:
 
 ```sh
 npx daily-focus
@@ -232,5 +239,6 @@ Press **?** in the dashboard to see the shortcuts.
 
 ## Where to go next
 
+- [See how it works](https://dailyfocus.dev), at dailyfocus.dev.
 - [Set up your dashboard](https://dailyfocus.dev/setup/), from installing it to keeping it running.
 - [Contribute](CONTRIBUTING.md), with development commands, a code map, and API reference.

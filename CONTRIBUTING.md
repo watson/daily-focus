@@ -121,7 +121,7 @@ versions and release notes come from, so CI checks it.
 | `client/` | The page: Preact components, view state, keyboard controls, and browser API calls |
 | `public/` | The page shell, the stylesheet, the two typefaces it serves itself (`fonts/`, so nothing is fetched from a third party), and the built bundle |
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
-| `tools/dfcal/` | The macOS calendar helper, which the app and the npm package carry built and signed |
+| `tools/dfcal/` | The macOS calendar helper, which the app carries built and signed, and `build-calendar` builds without it |
 | `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
 | `prompts/` | The briefing agent's instructions, the assistant's, and setup's |
 | `apps-script/` | Optional Google Tasks export |
@@ -225,14 +225,12 @@ Two things follow from the bundle:
 Check what ships with `npm pack --dry-run`. Publishing is the Release workflow's
 job, below; the version in `package.json` is a placeholder it stamps.
 
-The package carries the calendar helper too, at `tools/dfcal/build/`, where a
-checkout's `npm run build:calendar` puts it (`OWN_CALENDAR_APP` in
-`src/install.ts`), so nobody needs the Xcode command line tools for the live
-agenda, with the app or without. A release puts there the copy it signed for the
-app, after `npm pack`: the signing certificate reaches the keychain only once the
-last npm package has run. A pack from a checkout carries whatever that checkout
-last built, or no helper, and `daily-focus build-calendar` is for a package
-without one.
+The package is for Linux and Windows, and for running Daily Focus yourself. On a
+Mac, the app is the way to run it, so the package points there wherever it runs
+outside the app (`offerMacApp` in `src/install.ts`): as it starts in a terminal,
+and where the live agenda needs the calendar helper, on the setup screen and the
+settings page. It carries the helper's sources, for `daily-focus build-calendar`,
+but never a build of it.
 
 ## The menu bar app
 
@@ -246,16 +244,14 @@ project:
 npm run app -- --test
 ```
 
-That packs the npm package and puts exactly what it ships inside the app, less any
-calendar helper in it. It adds its own calendar helper, and Node.js at the version
-in `macos/node-version`: the official Apple silicon release, checked against
-nodejs.org's checksums and cached in `macos/build/`. The app is Apple silicon only,
-except the helper, which is built for Intel Macs and macOS 11 too because the npm
-package carries the same one. To move to a newer Node, change that file. It
-carries neither gh nor acli: the dashboard fetches them for a user who connects
-GitHub or Jira (`src/tools.ts`). Everything others wrote goes into one
-`Acknowledgements.txt`, which the app shows from its menu: Node's licence and the
-package's `dist/third-party-licenses.txt`. It draws the icon and
+That packs the npm package and puts exactly what it ships inside the app. It adds
+the calendar helper, and Node.js at the version in `macos/node-version`: the official
+Apple silicon release, checked against nodejs.org's checksums and cached in
+`macos/build/`. The app is Apple silicon only, throughout. To move to a newer Node,
+change that file. It carries neither gh nor acli: the dashboard fetches them for a
+user who connects GitHub or Jira (`src/tools.ts`). Everything others wrote goes
+into one `Acknowledgements.txt`, which the app shows from its menu: Node's licence
+and the package's `dist/third-party-licenses.txt`. It draws the icon and
 the disk image's background (`macos/Artwork/main.swift`), signs everything, runs the
 app's self-test, and makes `Daily-Focus.dmg` with dmgbuild (`macos/dmg-settings.py`),
 which needs Python 3.10 or newer.
@@ -328,11 +324,11 @@ own. One that fails isn't tried on its own again; it is offered by notification.
 `.github/workflows/release.yml` makes every release, from main, and main only
 moves by pull request. Each one is a tag, a GitHub release holding the release
 notes, `Daily-Focus.dmg`, `Daily-Focus-App.zip` and `Daily-Focus-Dashboard.zip`,
-all signed, and the same version on npm, with the app's signed calendar helper in
-it. The package it publishes carries `daily-focus.appSource`, the last commit to
-change the app (`macos/` and `tools/dfcal/`), stamped at build time and never
-committed. The app replaces itself with a newer release's only when that differs
-from its own, since otherwise only the dashboard changed:
+all signed, and the same version on npm. The package it publishes carries
+`daily-focus.appSource`, the last commit to change the app (`macos/` and
+`tools/dfcal/`), stamped at build time and never committed. The app replaces itself
+with a newer release's only when that differs from its own, since otherwise only the
+dashboard changed:
 
 - Every push to main is a development build, such as `0.2.0-dev.3`: a GitHub
   prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest. Its

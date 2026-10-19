@@ -381,6 +381,17 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
   const calendar = state.setup?.calendar;
   if (!calendar?.supported) return null;
   if (!calendar.built) {
+    if (calendar.macApp) {
+      return el(
+        'p',
+        { class: 'field__note' },
+        'The live agenda needs the calendar helper, which comes with ',
+        el('a', { href: calendar.macApp, target: '_blank', rel: 'noopener' }, 'the Mac app'),
+        '. Without the app, build it once with ',
+        el('code', null, calendar.buildCommand),
+        ', and allow calendar access when macOS asks.',
+      );
+    }
     return el(
       'p',
       { class: 'field__note' },

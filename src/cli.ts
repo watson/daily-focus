@@ -17,14 +17,14 @@
  */
 
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { cp, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, promisify } from 'node:util';
 
 import { launchProfile } from './env.ts';
-import { IN_NPX_CACHE, OWN_CALENDAR_APP, packageVersion, ROOT, USER_CALENDAR_APP } from './install.ts';
+import { MAC_APP_URL, offerMacApp, packageVersion, ROOT, startAdvice, USER_CALENDAR_APP } from './install.ts';
 import { asProfile, PROFILES } from './stores.ts';
 import type { RunOptions } from './server.ts';
 
@@ -41,7 +41,7 @@ Usage
   daily-focus audit [--against <items.json>]
                                    check the current brief against the contract
   daily-focus seed [--force]       write a sample brief to the store
-  daily-focus build-calendar       build the macOS calendar helper, for a copy without one
+  daily-focus build-calendar       build the calendar helper, on a Mac without the app
 
 Options
   --data <dir>      the data folder, with a store in it per profile
@@ -118,20 +118,13 @@ async function start(open: boolean, onStarted?: (url: string) => void, options: 
 
 /**
  * Build the calendar helper and put it where every copy looks for it, outside
- * the package, which an update replaces. A release's package carries the helper
- * built and signed, so this is for one that doesn't, such as a package packed
- * from a checkout. The script needs the Xcode command line tools.
+ * the package, which an update replaces. The script needs the Xcode command line
+ * tools. The package carries no helper built: on a Mac the app is the way to run
+ * Daily Focus, and it carries its own, so this is for running it yourself.
  */
 async function buildCalendar(): Promise<void> {
   if (process.platform !== 'darwin') {
     console.log('The calendar helper reads Calendar.app, so it is macOS-only. Nothing to build.');
-    return;
-  }
-  // The dashboard looks for this copy's own helper before the one built here, so
-  // building another would change nothing.
-  if (existsSync(OWN_CALENDAR_APP)) {
-    console.log(`This copy of Daily Focus carries its calendar helper, at ${OWN_CALENDAR_APP}. Nothing to build.`);
-    console.log('Choose calendars in its settings, and allow access when macOS asks.');
     return;
   }
   // Built in a temporary copy of its sources: a global install may well be owned
@@ -144,6 +137,7 @@ async function buildCalendar(): Promise<void> {
       process.stdout.write(stdout);
     } catch (err) {
       console.error((err as { stderr?: string }).stderr?.trim() || (err as Error).message);
+      if (offerMacApp()) console.error(`\nThe Mac app comes with the helper built, and needs no developer tools: ${MAC_APP_URL}`);
       process.exitCode = 1;
       return;
     }
@@ -229,9 +223,10 @@ async function main(argv: string[]): Promise<void> {
       if (values.demo) return demo(open, values.profile);
       // Refused before anything starts, rather than by the server once it has.
       launchProfile();
-      if (IN_NPX_CACHE) {
-        console.log('  Running from npx. To keep it running in the background, install it:');
-        console.log('  npm install -g daily-focus, then daily-focus service.\n');
+      // Said to someone at a terminal, and never into a service's log.
+      if (process.stdout.isTTY) {
+        const advice = startAdvice();
+        if (advice.length > 0) console.log(`${advice.map((line) => `  ${line}`).join('\n')}\n`);
       }
       // For an app that runs the dashboard as its child: the app holds the other
       // end of standard input, and when it goes, however it went, the end closes

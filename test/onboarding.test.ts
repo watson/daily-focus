@@ -102,7 +102,7 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
     profile: 'work',
     sources: { exists: false, placeholders: 0 },
     clis: { claude: bin, codex: null },
-    calendar: { supported: true, built: true, chosen: 0, buildCommand: 'daily-focus build-calendar' },
+    calendar: { supported: true, built: true, chosen: 0, buildCommand: 'daily-focus build-calendar', macApp: null },
   };
   h.detections = 0;
   h.report = { claude: { path: bin, version: '2.1.300', onPath: true, ready: true, problem: null, fix: null }, codex: MISSING_CODEX };
@@ -149,7 +149,7 @@ const NEW: SetupState = {
   profile: 'work',
   sources: { exists: false, placeholders: 0 },
   clis: { claude: null, codex: null },
-  calendar: { supported: true, built: true, chosen: 0, buildCommand: '' },
+  calendar: { supported: true, built: true, chosen: 0, buildCommand: '', macApp: null },
 };
 
 async function view(h: Harness): Promise<OnboardingState> {
