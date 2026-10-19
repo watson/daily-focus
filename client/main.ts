@@ -16,8 +16,8 @@ import { RUN_PREFIX, availableViews, detailRow, detailRun, setDetailFor, state, 
 import { stampedTheme } from './theme.ts';
 import { ZONE_CHECK_MS, browserZone, watchZone } from './zone.ts';
 
-// The stamp in index.html ran before first paint; the toggle's label starts
-// from what it decided.
+// The stamp in index.html ran before first paint; the theme button's label
+// starts from what it decided.
 ui.theme.value = stampedTheme();
 
 // Dates and clock times use the dashboard's zone; see `setCalendarZone`. An

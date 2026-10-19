@@ -434,7 +434,8 @@ export function renderSnoozeMenu(
 }
 
 /**
- * The frame every row menu opens in: this one, and the ticket board's status menu.
+ * The frame every menu opens in: this one, the ticket board's status menu, and
+ * the header's theme menu.
  *
  * A popover, shown as it mounts, so the browser draws it in the top layer rather
  * than inside the card. Inside the card it was part of the ticket board's
@@ -452,12 +453,12 @@ export function renderSnoozeMenu(
  * list reordered under an open menu would otherwise close it while its row still
  * says it is open.
  */
-export function Menu({ class: className, children }: { class: string; children?: ComponentChildren }): JSX.Element {
+export function Menu({ class: className, label, children }: { class: string; label?: string; children?: ComponentChildren }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const node = ref.current;
     // The test DOM has no popovers; there the menu simply renders in place.
     if (node?.showPopover && !node.matches(':popover-open')) node.showPopover();
   });
-  return el('div', { class: className, role: 'menu', popover: 'manual', ref }, children);
+  return el('div', { class: className, role: 'menu', 'aria-label': label, popover: 'manual', ref }, children);
 }

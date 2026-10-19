@@ -68,7 +68,7 @@ since you completed something that advanced your objective.
 - Leave a **Note** for the next brief, such as "already replied on Slack".
 
 You can undo item actions except notes. The page updates as new data arrives, and
-the theme button switches between system, light, and dark mode.
+the theme button opens a menu to pick light or dark mode, or follow the system.
 
 ## The pull request board
 

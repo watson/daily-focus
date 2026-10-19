@@ -19,7 +19,7 @@ import {
   state,
   ui,
 } from './state.ts';
-import { applyTheme, nextTheme } from './theme.ts';
+import { applyTheme } from './theme.ts';
 import type { ActionExtra, FocusField, Handlers, SettingsPage, SetupDraft, TextEditor, TextName, TicketMode, View } from './types.ts';
 
 /* ---------- small things ---------- */
@@ -894,11 +894,12 @@ export const handlers: Handlers = {
     else next.set(key, open);
     ui.messageOpen.value = next;
   },
-  toggleTheme: () => {
-    const mode = nextTheme(ui.theme.value);
-    applyTheme(mode);
-    ui.theme.value = mode;
-  },
+  setTheme: (mode) =>
+    batch(() => {
+      applyTheme(mode);
+      ui.theme.value = mode;
+      closeMenus();
+    }),
   openHelp: () => (document.getElementById('help') as HTMLDialogElement | null)?.showModal(),
   hideToast,
   openSettings,
