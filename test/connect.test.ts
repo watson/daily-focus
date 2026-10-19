@@ -11,12 +11,19 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { after, test } from 'node:test';
+import { after, test as nodeTest } from 'node:test';
 
 import { Connection, deviceCode, sitePrompt } from '../src/connect.ts';
 import type { FetchDeps } from '../src/tools.ts';
 import type { Service } from '../src/types.ts';
 import { fakeCli, quoted } from './fakecli.ts';
+
+/**
+ * Each test here waits on CLIs that wait on their input, so one that goes wrong
+ * hangs rather than fails: limited, it fails with its name instead of stalling
+ * the run until CI gives up on it.
+ */
+const test = (name: string, fn: () => Promise<void> | void) => nodeTest(name, { timeout: 30_000 }, fn);
 
 const dirs: string[] = [];
 
@@ -305,11 +312,21 @@ test("acli's site question is read once it is all drawn", () => {
 test("on Windows acli signs in in a window of its own, and its status says how that went", async () => {
   const acli = await fake('jira');
   const started: { file: string; args: string[] }[] = [];
-  const windows: EventEmitter[] = [];
+  const windows: (EventEmitter & { pid: number })[] = [];
   // PowerShell, as far as the test needs it: what it was asked to start, and a window that closes on cue.
+  // And taskkill, which Windows stops it with: the window it names closes.
   const spawnFn = ((file: string, args: string[]) => {
+    if (file === 'taskkill') {
+      const pid = Number(args[args.indexOf('/pid') + 1]);
+      const killer = new EventEmitter();
+      setImmediate(() => {
+        windows.find((window) => window.pid === pid)?.emit('close', null);
+        killer.emit('exit', 0);
+      });
+      return killer;
+    }
     started.push({ file, args });
-    const window = Object.assign(new EventEmitter(), { pid: 4242, kill: () => window.emit('close', null) });
+    const window = Object.assign(new EventEmitter(), { pid: 4242 + windows.length, kill: () => window.emit('close', null) });
     windows.push(window);
     return window;
   }) as unknown as typeof spawn;

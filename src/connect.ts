@@ -305,7 +305,7 @@ export class Connection {
   cancel(): Promise<void> {
     if (!this.busy) return Promise.resolve();
     this.#cancelled = true;
-    if (this.#child) stopProcess(this.#child, 'SIGKILL', process.platform, this.#spawn);
+    if (this.#child) stopProcess(this.#child, 'SIGKILL', this.#deps.platform ?? process.platform, this.#spawn);
     return this.#done;
   }
 
