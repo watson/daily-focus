@@ -140,7 +140,6 @@ const start =
   platform() === 'darwin'
     ? `\`${command('service')}\` to run the board in the background`
     : `\`${PACKAGED ? 'daily-focus' : 'npm start'}\` to open the board`;
-const demo = PACKAGED ? 'daily-focus --demo' : 'npm run demo';
 
 section(next.length > 0 ? 'Next' : 'Nothing to do');
 if (next.length === 0) {
@@ -158,9 +157,9 @@ if (next.length === 0) {
     console.log(`  ${next.length + 1}. ${start}, and open it to choose the CLI that writes the brief.`);
     // Never `npm run seed` here. This is the real store, and the agent's first run
     // carries every open task in the previous items.json forward, so sample tasks
-    // would become the user's work. The README's demo seeds a throwaway store.
+    // would become the user's work.
     console.log(
-      `\n  \x1b[2mThe two files can be written in the dashboard too: until the first brief,\n  Today walks through everything it needs. To look around before an agent\n  has run, try \`${demo}\`. It shows sample data from a throwaway store, so\n  nothing lands in this one.\x1b[0m`,
+      `\n  \x1b[2mThe two files can be written in the dashboard too: until the first brief,\n  Today walks through everything it needs.\x1b[0m`,
     );
   } else {
     console.log(

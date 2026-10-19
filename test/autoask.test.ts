@@ -14,10 +14,10 @@ import { after, test } from 'node:test';
 
 import { RESTARTED } from '../src/assistant.ts';
 import { actionOf, AutoAsk, autoKeys, type AutoAssistant } from '../src/autoask.ts';
+import type { BoardDeps } from '../src/board.ts';
 import { loadConfig } from '../src/config.ts';
-import { demoIntegrations } from '../src/demo.ts';
 import { startServer } from '../src/server.ts';
-import type { AssistantTurn, BoardRow, CourtReason } from '../src/types.ts';
+import type { AssistantTurn, BoardRow, CourtReason, PullRequest } from '../src/types.ts';
 import { fakeCli, quoted } from './fakecli.ts';
 
 const NOW = new Date('2026-10-16T12:00:00Z');
@@ -231,6 +231,48 @@ after(async () => {
   await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
+/** GitHub as the board reads it: one pull request red, and one with a comment since your push. */
+function gitHub(now: Date): BoardDeps {
+  const ago = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
+  const pull = (number: number, overrides: Partial<PullRequest>): PullRequest => ({
+    id: `github:pr:acme/webapp#${number}`,
+    account: 'me',
+    repo: 'acme/webapp',
+    number,
+    title: `Change ${number}`,
+    url: `https://github.com/acme/webapp/pull/${number}`,
+    isDraft: false,
+    createdAt: ago(96),
+    readyAt: ago(96),
+    updatedAt: ago(3),
+    headRef: `me/change-${number}`,
+    baseRef: 'main',
+    reviewDecision: 'REVIEW_REQUIRED',
+    checks: 'success',
+    failingChecks: [],
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'BLOCKED',
+    pendingChecks: [],
+    cancelledChecks: [],
+    autoMerge: false,
+    requestedReviewers: [],
+    reviews: [],
+    headSha: `${number}abc`,
+    lastActivityByYou: ago(24),
+    lastActivityByOthers: null,
+    ...overrides,
+  });
+  const pulls = [
+    pull(3402, { checks: 'failure', failingChecks: ['unit-tests'], mergeStateStatus: 'UNSTABLE', requestedReviewers: ['eli'], lastActivityByYou: ago(3) }),
+    pull(3398, { lastActivityByOthers: { at: ago(3), login: 'dana', kind: 'comment' } }),
+  ];
+  return {
+    listAccounts: async () => [{ login: 'me', active: true }],
+    token: async () => 'token',
+    fetch: async () => ({ login: 'me', pulls, warnings: [], orgs: {}, rateLimitRemaining: null }),
+  };
+}
+
 test('the dashboard asks ahead on its own once the board has read, each question once', async () => {
   const root = await mkdtemp(join(tmpdir(), 'daily-focus-autoask-'));
   dirs.push(root);
@@ -257,10 +299,9 @@ test('the dashboard asks ahead on its own once the board has read, each question
   );
   const server = await startServer(
     { PATH: process.env.PATH, HOME: process.env.HOME, DAILY_FOCUS_DATA: root, DAILY_FOCUS_PORT: '0', DAILY_FOCUS_HOST: '127.0.0.1' },
-    { integrations: demoIntegrations('work') },
+    { integrations: { github: gitHub(new Date()) } },
   );
   try {
-    // The demo's board has one pull request red and one with a comment since your push.
     const started = async () =>
       (await readFile(join(store, 'assistant.jsonl'), 'utf8').catch(() => ''))
         .split('\n')

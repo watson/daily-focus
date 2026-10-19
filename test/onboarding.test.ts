@@ -93,7 +93,6 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
     launch: { DAILY_FOCUS_DATA: dataDir },
     store: { root: dataDir, profile: asProfile(h.settings.DAILY_FOCUS_PROFILE) ?? 'work', dir: dataDir, given: false, move: null, problem: null },
     settings: h.settings,
-    fixed: {},
     settingsPath: join(dataDir, 'settings.json'),
     settingsError: null,
   });

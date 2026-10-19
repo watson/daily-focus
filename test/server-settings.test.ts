@@ -15,13 +15,12 @@ let server: StartedServer | null = null;
 let url = '';
 let restarts = 0;
 
-/** Never let a test reach for gh, the calendar or acli. Fixed, as the demo fixes what would run something. */
-const FIXED = { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_CALENDAR: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_STALE_AFTER_HOURS: '30' };
+/** Never let a test reach for gh, the calendar or acli: saved in the store, as the settings page would. */
+const SAVED = { DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_CALENDAR: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_STALE_AFTER_HOURS: '30' };
 
 /** What `runServer` does, minus the process: close this one, start the next on the same environment. */
 async function start(profile?: Profile): Promise<void> {
   server = await startServer(env, {
-    fixed: FIXED,
     onRestart: () => {
       restarts++;
       const previous = server;
@@ -47,6 +46,8 @@ before(async () => {
     DAILY_FOCUS_PORT: '0',
     DAILY_FOCUS_HOST: '127.0.0.1',
   };
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(join(dataDir, 'settings.json'), JSON.stringify(SAVED));
   await start();
 });
 
@@ -74,7 +75,9 @@ test('the settings page sees every setting, where it came from, and what the def
   const agent = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_AGENT');
   assert.deepEqual([agent.value, agent.source, agent.fallback], [null, 'default', 'Off']);
   const stale = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_STALE_AFTER_HOURS');
-  assert.deepEqual([stale.value, stale.source], ['30', 'fixed']);
+  assert.deepEqual([stale.value, stale.source], ['30', 'settings']);
+  const profile = settings.settings.find((s: { key: string }) => s.key === 'DAILY_FOCUS_PROFILE');
+  assert.deepEqual([profile.value, profile.source], ['work', 'fixed'], "the store's folder says it");
   assert.ok(!settings.settings.some((s: { key: string }) => s.key === 'DAILY_FOCUS_DATA'), 'the store path is not on the page');
   assert.equal(settings.restart, null);
 });
@@ -83,11 +86,11 @@ test('a bad value is refused and nothing is written', async () => {
   const res = await post('/api/settings', { values: { DAILY_FOCUS_ASSISTANT: 'gpt' } });
   assert.equal(res.status, 400);
   assert.match((await json(res)).error, /DAILY_FOCUS_ASSISTANT/);
-  await assert.rejects(readFile(join(dataDir, 'settings.json')), { code: 'ENOENT' });
+  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), SAVED);
 
-  const locked = await post('/api/settings', { values: { DAILY_FOCUS_STALE_AFTER_HOURS: '50' } });
+  const locked = await post('/api/settings', { values: { DAILY_FOCUS_PROFILE: 'personal' } });
   assert.equal(locked.status, 400);
-  assert.match((await json(locked)).error, /fixed/);
+  assert.match((await json(locked)).error, /chosen at setup/);
 });
 
 test('a saved setting lands in the store and takes effect after the restart it asks for', async () => {
@@ -96,7 +99,7 @@ test('a saved setting lands in the store and takes effect after the restart it a
 
   const res = await post('/api/settings', { values: { DAILY_FOCUS_ASSISTANT: 'claude' } });
   assert.equal(res.status, 200);
-  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), { DAILY_FOCUS_ASSISTANT: 'claude' });
+  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'settings.json'), 'utf8')), { ...SAVED, DAILY_FOCUS_ASSISTANT: 'claude' });
 
   await restarted(1);
   const after = await json(await fetch(`${url}/api/state`));
@@ -201,13 +204,14 @@ test("the morning agent's clock waits for the first brief, which comes from the 
   await writeFile(
     join(store, 'work', 'settings.json'),
     JSON.stringify({
+      ...SAVED,
       DAILY_FOCUS_AGENT: 'codex',
       DAILY_FOCUS_AGENT_AT: '00:00',
       DAILY_FOCUS_AGENT_DAYS: '0-6',
       DAILY_FOCUS_AGENT_BIN: '/usr/bin/false',
     }),
   );
-  const due = await startServer({ ...env, DAILY_FOCUS_DATA: store }, { fixed: FIXED });
+  const due = await startServer({ ...env, DAILY_FOCUS_DATA: store });
   try {
     await new Promise((done) => setTimeout(done, 200));
     const state = await json(await fetch(`${due.url}/api/state`));

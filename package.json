@@ -45,7 +45,6 @@
     "start": "node src/server.ts",
     "prestart": "node scripts/build.ts",
     "dev": "node scripts/dev.ts",
-    "demo": "node scripts/build.ts && node src/cli.ts --demo",
     "build": "node scripts/build.ts",
     "init": "node scripts/init.ts",
     "service": "node scripts/service.ts",

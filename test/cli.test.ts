@@ -26,7 +26,6 @@ test('the CLI says its version and how to use it', async () => {
   const { stdout: version } = await run(process.execPath, [cli, '--version']);
   assert.match(version.trim(), /^\d+\.\d+\.\d+/);
   const { stdout: help } = await run(process.execPath, [cli, '--help']);
-  assert.match(help, /daily-focus --demo/);
   assert.match(help, /daily-focus service \[--remove\]/);
 });
 
@@ -87,8 +86,11 @@ test('with --exit-with-stdin, the dashboard stops when whatever holds its input 
   }
 });
 
-test('the demo honours --profile, and fills its boards from sample data rather than gh and acli', async () => {
-  const child = spawn(process.execPath, [cli, '--demo', '--no-open', '--port', '0', '--profile', 'personal'], {
+test('--profile picks the store, and settings left exported in a shell are not read', async () => {
+  const store = await mkdtemp(join(tmpdir(), 'daily-focus-profile-'));
+  await mkdir(join(store, 'personal'));
+  await writeFile(join(store, 'personal', 'settings.json'), JSON.stringify({ DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_CALENDAR: 'off' }));
+  const child = spawn(process.execPath, [cli, '--data', store, '--no-open', '--port', '0', '--profile', 'personal'], {
     // Settings left exported in a shell, which nothing reads any more.
     env: { ...process.env, DAILY_FOCUS_HOST: '127.0.0.1', DAILY_FOCUS_JIRA: 'on', DAILY_FOCUS_AGENT: 'codex' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -108,36 +110,19 @@ test('the demo honours --profile, and fills its boards from sample data rather t
       child.stdout.on('data', read);
       child.stderr.on('data', read);
     });
-    type State = {
+    const state = (await (await fetch(`${url}/api/state`)).json()) as {
       setup: { profile: string };
       tickets: { enabled: boolean };
-      board: { fetchedAt: string | null; rows: unknown[] };
-      items: { source: string }[];
-      agentRun: { enabled: boolean; runs: unknown[] };
+      agentRun: { enabled: boolean };
     };
-    let state = (await (await fetch(`${url}/api/state`)).json()) as State;
-    for (let i = 0; i < 100 && state.board.fetchedAt === null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      state = (await (await fetch(`${url}/api/state`)).json()) as State;
-    }
     assert.equal(state.setup.profile, 'personal');
     assert.equal(state.tickets.enabled, false, 'the personal profile has no Jira, whatever the environment says');
-    assert.equal(state.agentRun.enabled, false, 'nothing runs in the demo');
-    assert.ok(state.agentRun.runs.length > 0, 'but the runs it would have made are there to read');
-    assert.ok(state.board.rows.length > 0, 'the pull request board is filled from sample data');
-    assert.ok(state.items.some((item) => item.source === 'eboks'), 'the personal brief');
+    assert.equal(state.agentRun.enabled, false, 'nor an agent the environment names');
   } finally {
     child.kill('SIGTERM');
     await new Promise((done) => child.once('exit', done));
+    await rm(store, { recursive: true, force: true });
   }
-});
-
-test('the demo refuses a profile it does not have, before making a store', async () => {
-  await assert.rejects(run(process.execPath, [cli, '--demo', '--no-open', '--profile', 'home']), (err: { code?: number; stderr?: string }) => {
-    assert.equal(err.code, 1);
-    assert.match(err.stderr ?? '', /^daily-focus: --profile must be one of work, personal/);
-    return true;
-  });
 });
 
 test('a flag that belongs to another command is refused, not dropped', async () => {
@@ -145,7 +130,6 @@ test('a flag that belongs to another command is refused, not dropped', async () 
     ['seed', '--remove'],
     ['service', '--force'],
     ['init', '--no-open'],
-    ['audit', '--demo'],
     ['init', '--exit-with-stdin'],
     ['build-calendar', '--profile', 'personal'],
   ]) {

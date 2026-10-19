@@ -135,10 +135,10 @@ test('a blank launch variable means the default', async () => {
   assert.match(sources.settingsPath, /\.daily-focus[\\/]work[\\/]settings\.json$/);
 });
 
-test('a fixed setting wins over the saved one, and a blank saved one is the default', async () => {
+test('a blank saved setting is the default', async () => {
   const dir = await store({ DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_END: ' ' });
-  const values = layerSettings(settingSources({ DAILY_FOCUS_DATA: dir }, { DAILY_FOCUS_AGENT: 'off' }));
-  assert.equal(values.DAILY_FOCUS_AGENT, 'off');
+  const values = layerSettings(settingSources({ DAILY_FOCUS_DATA: dir }));
+  assert.equal(values.DAILY_FOCUS_AGENT, 'claude');
   assert.equal(values.DAILY_FOCUS_WORK_END, undefined);
 });
 

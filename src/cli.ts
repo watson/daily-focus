@@ -3,8 +3,6 @@
  * `daily-focus`, the command the npm package installs.
  *
  *   npx daily-focus                  start the dashboard and open it
- *   npx daily-focus --demo           look around with sample data, in a throwaway store
- *                                    (--profile personal for the other half of a life)
  *   daily-focus service [--remove]   keep it running in the background on macOS
  *   daily-focus init | audit | seed | build-calendar
  *
@@ -26,7 +24,6 @@ import { parseArgs, promisify } from 'node:util';
 import { launchProfile } from './env.ts';
 import { MAC_APP_URL, offerMacApp, packageVersion, ROOT, startAdvice, USER_CALENDAR_APP } from './install.ts';
 import { asProfile, PROFILES } from './stores.ts';
-import type { RunOptions } from './server.ts';
 
 const run = promisify(execFile);
 
@@ -34,8 +31,6 @@ const HELP = `Daily Focus: a dashboard for deciding what to work on today.
 
 Usage
   daily-focus [options]            start the dashboard and open it in your browser
-  daily-focus --demo               look around with sample data, in a throwaway store;
-                                   add --profile personal to see the personal profile
   daily-focus service [--remove]   keep it running in the background (macOS)
   daily-focus init                 create the store with templates to edit by hand
   daily-focus audit [--against <items.json>]
@@ -78,39 +73,10 @@ function shouldOpen(flag: boolean): boolean {
   return flag && process.stdout.isTTY === true && !process.env.CI;
 }
 
-/**
- * The demo: the dashboard on a throwaway store holding a few weeks' worth of
- * sample data for one profile, with the boards answered from sample worlds
- * rather than gh and acli, and nothing that runs an agent, so every screen can
- * be looked at before anything is set up. See `demo.ts`. The store is deleted
- * on the way out.
- */
-async function demo(open: boolean, profile: string | undefined): Promise<void> {
-  const { DEMO_FIXED, demoEnv, demoIntegrations, demoProfile, writeDemoStore } = await import('./demo.ts');
-  // Checked before the store exists, so a typo costs nothing.
-  const chosen = demoProfile(profile);
-  const root = await mkdtemp(join(tmpdir(), 'daily-focus-demo-'));
-  process.on('exit', () => rmSync(root, { recursive: true, force: true }));
-  // One clock for the store and the boards: the assistant's answers ahead in the
-  // store are keyed by when the sample reviews came in, which the boards date.
-  const now = new Date();
-  await writeDemoStore(join(root, chosen), chosen, now);
-  await start(
-    open,
-    (url) => {
-      console.log(`\n  The demo is at ${url}, with sample data in a throwaway store (the ${chosen} profile).`);
-      console.log('  Nothing is connected and nothing runs. Stop it with Ctrl+C; the store goes with it.\n');
-    },
-    { env: demoEnv(process.env, root, chosen), fixed: DEMO_FIXED, integrations: demoIntegrations(chosen, now) },
-  );
-}
-
-async function start(open: boolean, onStarted?: (url: string) => void, options: Omit<RunOptions, 'onStarted'> = {}): Promise<void> {
+async function start(open: boolean): Promise<void> {
   const { runServer } = await import('./server.ts');
   await runServer({
-    ...options,
     onStarted: (url) => {
-      onStarted?.(url);
       if (shouldOpen(open)) openInBrowser(url);
     },
   });
@@ -164,7 +130,6 @@ async function main(argv: string[]): Promise<void> {
       profile: { type: 'string' },
       open: { type: 'boolean', default: true },
       'exit-with-stdin': { type: 'boolean' },
-      demo: { type: 'boolean' },
       remove: { type: 'boolean' },
       force: { type: 'boolean' },
       against: { type: 'string' },
@@ -188,8 +153,7 @@ async function main(argv: string[]): Promise<void> {
   if (values.data !== undefined) process.env.DAILY_FOCUS_DATA = values.data;
   if (values.port !== undefined) process.env.DAILY_FOCUS_PORT = values.port;
   if (values.host !== undefined) process.env.DAILY_FOCUS_HOST = values.host;
-  // The demo's profile is its own, kept out of the environment it passes on.
-  if (values.profile !== undefined && !values.demo) {
+  if (values.profile !== undefined) {
     if (!asProfile(values.profile)) throw new Error(`--profile must be one of ${PROFILES.join(', ')}, got ${JSON.stringify(values.profile)}`);
     process.env.DAILY_FOCUS_PROFILE = values.profile;
   }
@@ -202,7 +166,6 @@ async function main(argv: string[]): Promise<void> {
   // would otherwise be dropped without a word: `seed --remove` would seed.
   const only: Record<string, readonly string[]> = {
     profile: ['start', 'init', 'service', 'audit', 'seed'],
-    demo: ['start'],
     'exit-with-stdin': ['start'],
     open: ['start'],
     remove: ['service'],
@@ -220,7 +183,6 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case undefined:
     case 'start':
-      if (values.demo) return demo(open, values.profile);
       // Refused before anything starts, rather than by the server once it has.
       launchProfile();
       // Said to someone at a terminal, and never into a service's log.
