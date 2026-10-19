@@ -116,9 +116,9 @@ async function harness(saved: Record<string, string> = {}, reply: unknown = PROP
     readSources: sources,
     setup: async () => setup,
     identity: async () => ({ name: 'Robin Lark', login: 'rlark', logins: ['rlark'], email: 'robin@example.com' }),
-    boards: async () => ({
-      github: { enabled: true, fetchedAt: '2026-10-16T08:00:00Z', reason: null },
-      jira: { enabled: true, fetchedAt: '2026-10-16T08:00:00Z', reason: null },
+    services: async () => ({
+      github: { enabled: true, connected: true, account: 'rlark' },
+      jira: { enabled: true, connected: false, account: null },
     }),
     listCalendars: async () => [
       { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 3 },
@@ -176,7 +176,7 @@ const PLAIN: Record<string, OnboardingAnswer> = {
   cli: pick({ cli: ['claude'] }),
   schedule: pick({ at: ['07:00'], days: ['1-5'] }),
   identity: { later: true },
-  boards: pick({ boards: [] }),
+  services: pick({ services: [] }),
   calendars: pick({ calendars: [] }),
   objective: pick({}, { objective: '', blocker: '' }),
 };
@@ -202,7 +202,7 @@ test('a new store opens looking for the CLIs, and runs nothing until the screen 
   assert.equal(state.current, 'cli');
   assert.deepEqual(
     state.steps.map((step) => step.id),
-    ['cli', 'profile', 'identity', 'boards', 'calendars', 'objective'],
+    ['cli', 'profile', 'services', 'identity', 'calendars', 'objective'],
     'no schedule until there is an agent',
   );
   const cli = state.steps[0]!;
@@ -342,8 +342,8 @@ test('the finish saves everything at once, writes the two files, and asks for th
   assert.match((await h.onboarding.finish() as { error: string }).error, /answer/, 'not before every question is answered');
 
   await h.onboarding.answer('schedule', pick({ at: ['06:30'], days: ['1-5'] }));
+  await h.onboarding.answer('services', pick({ services: ['github'] }));
   await h.onboarding.answer('identity', pick({ github: ['rlark'] }, { name: 'Robin Lark', email: 'robin@northwind.example' }));
-  await h.onboarding.answer('boards', pick({ boards: ['github'] }));
   await h.onboarding.answer('calendars', pick({ calendars: ['live:robin@northwind.example:Robin Lark'] }));
   await h.onboarding.answer('objective', pick({}, { objective: 'Ship the reliability fix' }));
   assert.equal((await view(h)).current, null, 'only the finish is left');
@@ -583,12 +583,10 @@ test('an answer comes back before the sessions it starts have started, so the ne
   assert.equal((await h.calls()).length, 3, 'each question started once, though two answers asked');
 });
 
-test("with the Mac app's own gh, setup signs in to GitHub before asking who you are, and waits for an account", async () => {
+test('GitHub and Jira are asked about before who you are, and a ticked one has to be connected first', async () => {
   const h = await harness();
-  let logins: string[] = [];
-  h.deps.identity = async () => ({ name: null, login: logins[0] ?? null, logins, email: null });
-  const config = loadConfig(h.values);
-  h.onboarding = new Onboarding({ ...config, github: { ...config.github, ghBundled: true } }, h.deps);
+  let jira = { enabled: true, connected: false, account: null as string | null };
+  h.deps.services = async () => ({ github: { enabled: true, connected: true, account: 'rlark' }, jira });
   await h.onboarding.detect();
   assert.equal(await h.onboarding.answer('profile', pick({ profile: ['work'] })), null);
   assert.equal(await h.onboarding.answer('schedule', PLAIN.schedule!), null);
@@ -596,26 +594,33 @@ test("with the Mac app's own gh, setup signs in to GitHub before asking who you 
   let state = await view(h);
   assert.deepEqual(
     state.steps.map((step) => step.id).slice(0, 5),
-    ['cli', 'profile', 'schedule', 'github', 'identity'],
+    ['cli', 'profile', 'schedule', 'services', 'identity'],
   );
-  assert.equal(state.current, 'github');
-  assert.deepEqual(state.steps.find((step) => step.id === 'github')!.card.gitHub, { logins: [] });
-  assert.equal(await h.onboarding.answer('github', pick({})), 'Sign in to GitHub first, or sign in later');
+  assert.equal(state.current, 'services');
+  assert.deepEqual(state.steps.find((step) => step.id === 'services')!.card.connections, [
+    { service: 'github', account: 'rlark' },
+    { service: 'jira', account: null },
+  ]);
+  assert.equal(await h.onboarding.answer('services', pick({ services: ['github', 'jira'] })), 'Connect Jira first, or untick it');
 
-  // gh's sign-in, from the card, lands an account.
-  logins = ['rlark'];
+  // Connecting it, from the card.
+  jira = { enabled: true, connected: true, account: 'robin@northwind.example' };
+  assert.equal(await h.onboarding.answer('services', pick({ services: ['github', 'jira'] })), null);
   state = await view(h);
-  assert.deepEqual(state.steps.find((step) => step.id === 'github')!.card.gitHub, { logins: ['rlark'] });
-  assert.equal(await h.onboarding.answer('github', pick({})), null);
-  state = await view(h);
-  assert.equal(state.steps.find((step) => step.id === 'github')!.summary, 'Signed in to GitHub as rlark.');
+  assert.equal(state.steps.find((step) => step.id === 'services')!.summary, 'You use GitHub (rlark) and Jira (robin@northwind.example).');
   assert.equal(state.current, 'identity');
   await settled(h);
   await h.onboarding.close();
 });
 
-test('with a gh of your own, setup asks nothing about signing in', async () => {
+test('leaving GitHub out leaves its accounts out of who you are', async () => {
   const h = await harness();
   await h.onboarding.detect();
-  assert.ok(!(await view(h)).steps.some((step) => step.id === 'github'));
+  assert.equal(await h.onboarding.answer('profile', pick({ profile: ['work'] })), null);
+  const identity = async () => (await view(h)).steps.find((step) => step.id === 'identity')!;
+  assert.equal((await identity()).card.choices[0]?.label, 'Your GitHub accounts', 'on by default');
+  assert.equal(await h.onboarding.answer('services', pick({ services: [] })), null);
+  assert.deepEqual((await identity()).card.choices, []);
+  await settled(h);
+  await h.onboarding.close();
 });

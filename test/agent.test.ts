@@ -119,13 +119,13 @@ test('the settings the agent reads are in the store before it starts, the wrappe
   const runner = new AgentRunner(plain, { onChange: () => {} });
   await runner.run();
   await settle(runner);
-  assert.deepEqual(JSON.parse(await readFile(join(plain.dataDir, '.seen-settings'), 'utf8')), { searchTrash: false });
+  assert.deepEqual(JSON.parse(await readFile(join(plain.dataDir, '.seen-settings'), 'utf8')), { searchTrash: false, github: true, jira: true });
 
   const trash = await makeConfig([THREAD, SAID('Done.'), DONE], { DAILY_FOCUS_AGENT_SEARCH_TRASH: 'on' }, seen);
   const other = new AgentRunner(trash, { onChange: () => {} });
   await other.run();
   await settle(other);
-  assert.deepEqual(JSON.parse(await readFile(join(trash.dataDir, '.seen-settings'), 'utf8')), { searchTrash: true });
+  assert.deepEqual(JSON.parse(await readFile(join(trash.dataDir, '.seen-settings'), 'utf8')), { searchTrash: true, github: true, jira: true });
   const argv = (await readFile(join(trash.dataDir, '.argv'), 'utf8')).trimEnd().split('\n');
   assert.equal(argv.slice(argv.indexOf('Run my morning brief for today.')).join('\n'), agentPrompt(displayPath(trash.promptFile)));
 });

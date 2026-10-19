@@ -8,13 +8,13 @@
  * since saving them restarts nothing.
  */
 
-import { h, type JSX } from 'preact';
+import { h, type ComponentChild, type JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import type { SettingView } from '../src/settings.ts';
-import type { DashboardState } from '../src/types.ts';
+import type { DashboardState, Service } from '../src/types.ts';
 import { el } from './el.ts';
-import { gitHubSignIn } from './signin.ts';
+import { connectionView } from './connect.ts';
 import type { CalendarName, Handlers, TextEditor, TextName, UiState, View } from './types.ts';
 
 /** The views Settings can return to, by the names their tabs carry. */
@@ -64,7 +64,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
             el('h3', { class: 'settings-card__title', id: `settings-${group.id}-title` }, group.title),
             plain.map((setting) => settingField(setting, draft, handlers)),
             group.id === 'calendar' ? calendarPicker(state, ui, handlers, page.settings) : null,
-            group.id === 'github' ? gitHubAccount(state, handlers) : null,
+            group.id === 'github' || group.id === 'jira' ? serviceAccount(group.id, state, handlers) : null,
             advanced.length > 0
               ? el(
                   'details',
@@ -445,29 +445,71 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
   );
 }
 
-/* ---------- GitHub ---------- */
+/* ---------- GitHub and Jira ---------- */
 
 /**
- * Who the board reads GitHub as, and a way to sign in again: the only way for
- * the copy of gh Daily Focus brings, and a way round the terminal for any other.
+ * Which copy of a service's CLI is in use, for the line above its button. The
+ * rule is the same in each case, said from where the user stands: one they
+ * installed is used, and Daily Focus has its own only for want of one. One of
+ * their own they also sign in themselves, with `command`: signing it in again
+ * from here would switch its account and replace its token under them.
  */
-function gitHubAccount(state: DashboardState, handlers: Handlers): JSX.Element | null {
+const WHERE: Record<Service, { missing: string; fetched: string; own: string; signIn: string; command: string }> = {
+  github: {
+    missing: 'If you install the GitHub CLI yourself, Daily Focus uses it. Otherwise it gets its own copy when you connect.',
+    fetched: 'Daily Focus uses its own copy of the GitHub CLI. If you install it yourself, it uses yours instead.',
+    own: 'Daily Focus uses the GitHub CLI you already have installed.',
+    signIn: 'To sign in again or as another account, run',
+    command: 'gh auth login',
+  },
+  jira: {
+    missing: 'If you install the Atlassian CLI yourself, Daily Focus uses it. Otherwise it gets its own copy when you connect.',
+    fetched: 'Daily Focus uses its own copy of the Atlassian CLI. If you install it yourself, it uses yours instead.',
+    own: 'Daily Focus uses the Atlassian CLI you already have installed.',
+    signIn: 'To sign in again or as another account, run',
+    command: 'acli jira auth login --web',
+  },
+};
+
+/**
+ * Who the board reads a service as, and a way to connect it or sign in again.
+ * The page signs in again only for a CLI Daily Focus fetched, which has no
+ * terminal to do it in; one of the user's own is theirs to sign in, and the note
+ * says how. Connecting stays for both while nobody is signed in.
+ */
+function serviceAccount(service: Service, state: DashboardState, handlers: Handlers): JSX.Element | null {
   // Absent from a server older than the page.
-  const signIn = state.gitHubSignIn;
-  if (!signIn) return null;
-  const logins = state.board.accounts.filter((account) => account.ok).map((account) => account.login);
+  const connection = state.connections?.[service];
+  if (!connection) return null;
+  const accounts =
+    service === 'github'
+      ? state.board.accounts.filter((account) => account.ok).map((account) => account.login)
+      : state.tickets.account && !state.tickets.reason
+        ? [state.tickets.account]
+        : [];
+  const where = WHERE[service];
+  const own = connection.cli.found && !connection.cli.fetched;
+  const signedIn = accounts.length > 0;
   return el(
     'div',
-    { class: 'github-account' },
+    { class: 'service-account' },
     el(
       'p',
       { class: 'field__note' },
-      signIn.bundled ? 'There’s no GitHub CLI installed, so Daily Focus uses its own. ' : 'Daily Focus signs in through your GitHub CLI, gh. ',
-      logins.length ? `The board reads as ${logins.join(', ')}. ` : '',
-      'gh switches to whichever account you sign in as.',
+      signedIn ? ['Signed in as ', ...accountNames(service, accounts), '. '] : null,
+      !connection.cli.found ? where.missing : connection.cli.fetched ? where.fetched : where.own,
+      own && signedIn ? [' ', where.signIn, ' ', el('code', null, where.command), '.'] : null,
     ),
-    gitHubSignIn(signIn, handlers, logins.length ? 'Sign in again' : 'Sign in to GitHub'),
+    own && signedIn ? null : connectionView(service, connection, handlers, signedIn ? { label: 'Sign in again', again: true } : {}),
   );
+}
+
+/** The accounts, set apart from the words around them: a GitHub login as GitHub writes it, with an @. */
+function accountNames(service: Service, accounts: readonly string[]): ComponentChild[] {
+  return accounts.flatMap((account, i) => [
+    i === 0 ? '' : i === accounts.length - 1 ? ' and ' : ', ',
+    el('strong', { class: 'service-account__name', key: account }, service === 'github' ? `@${account}` : account),
+  ]);
 }
 
 /* ---------- saving ---------- */

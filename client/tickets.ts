@@ -4,6 +4,7 @@ import { h, type ComponentChild, type JSX } from 'preact';
 
 import type { DashboardState, InProgressTicket, LinkedPull, TicketBoardState, TicketRow } from '../src/types.ts';
 import { banner } from './banners.ts';
+import { connecting, connectionView } from './connect.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatDay, formatTime, relativeTime } from './format.ts';
@@ -171,6 +172,9 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
       ),
     );
   }
+  // Under what failed, when connecting is what fixes it: fetching acli, or signing it in.
+  const connection = state.connections?.jira;
+  if (connection && (board.connect || connecting(connection))) parts.push(connectionView('jira', connection, handlers));
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
   if (mode === 'working') parts.push(...workingOnView(board, inProgress, state, ui, handlers));

@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 
 import { DEFAULT_DATA_DIR, expandHome, loadSettings, SETTINGS_FILE, type SettingValues } from './env.ts';
-import { APP_CALENDAR_APP, APP_GH, defaultGh, USER_CALENDAR_APP } from './install.ts';
+import { APP_CALENDAR_APP, USER_CALENDAR_APP } from './install.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
-import { PROFILES, type Profile } from './stores.ts';
+import { PROFILES, TOOLS_FOLDER, type Profile } from './stores.ts';
 
 export { PROFILES, type Profile };
 
@@ -45,14 +45,12 @@ export interface GitHubConfig {
   mergeGateChecks: readonly string[];
   /** Minutes between polls while a browser is watching. */
   pollMinutes: number;
-  /** The gh binary. Overridable because a launchd job's PATH rarely has Homebrew on it. */
-  ghPath: string;
   /**
-   * Whether `ghPath` is the copy the Mac app carries, because Settings names no
-   * gh and there is none on PATH. Nobody can type `gh auth login` for that one,
-   * so the page signs in for it, and the CLIs the dashboard runs get it on PATH.
+   * The gh binary as set, or `gh` when it isn't, which `resolveTool` looks for on
+   * PATH and then among the CLIs Daily Focus fetched. Overridable because a
+   * launchd job's PATH rarely has Homebrew on it.
    */
-  ghBundled: boolean;
+  ghPath: string;
 }
 
 /**
@@ -255,6 +253,11 @@ export interface Config {
   profile: Profile;
   /** Directory holding items.json and actions.jsonl. */
   dataDir: string;
+  /**
+   * Where the CLIs Daily Focus fetched for the user live: one folder in the data
+   * folder, beside the stores, which both profiles share. See `tools.ts`.
+   */
+  toolsDir: string;
   itemsFile: string;
   actionsFile: string;
   /** The standing objective, in the user's words, saved from the dashboard or by hand. */
@@ -446,15 +449,13 @@ function gitHubConfig(values: SettingValues): GitHubConfig {
   if (pollMinutes < 1) {
     throw new Error(`DAILY_FOCUS_GITHUB_POLL_MINUTES must be at least 1, got ${pollMinutes}`);
   }
-  const ghPath = expandHome((values.DAILY_FOCUS_GH ?? '').trim() || defaultGh());
   return {
     enabled: flagSetting('DAILY_FOCUS_GITHUB', true, values),
     accounts: listSetting('DAILY_FOCUS_GITHUB_ACCOUNTS', values),
     scope: parseScope(listSetting('DAILY_FOCUS_GITHUB_SCOPE', values)),
     mergeGateChecks: nameListSetting('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', values),
     pollMinutes,
-    ghPath,
-    ghBundled: APP_GH !== null && ghPath === APP_GH,
+    ghPath: expandHome((values.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
   };
 }
 
@@ -663,6 +664,9 @@ export function loadConfig(values: SettingValues = loadSettings()): Config {
   return {
     profile,
     dataDir,
+    // The data folder holds the stores, a folder per profile; a store from before
+    // the folders is the data folder itself, until it is moved.
+    toolsDir: resolve((PROFILES as readonly string[]).includes(basename(dataDir)) ? dirname(dataDir) : dataDir, TOOLS_FOLDER),
     itemsFile: resolve(dataDir, 'items.json'),
     actionsFile: resolve(dataDir, 'actions.jsonl'),
     focusFile: resolve(dataDir, 'focus.md'),

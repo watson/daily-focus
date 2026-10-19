@@ -430,6 +430,7 @@ function boardState(overrides: Record<string, unknown> = {}): TicketBoardState {
     fetchedAt: null,
     fetching: false,
     account: null,
+    connect: false,
     projects: [],
     warnings: [],
     pollMinutes: 15,

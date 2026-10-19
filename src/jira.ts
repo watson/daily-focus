@@ -48,7 +48,9 @@ const ACLI_ENV = { ...process.env, NO_COLOR: '1' };
 export class AcliMissingError extends Error {
   constructor(acliPath: string) {
     super(
-      `could not run \`${acliPath}\` — install the Atlassian CLI or set DAILY_FOCUS_ACLI to its path`,
+      acliPath === 'acli'
+        ? "The Atlassian CLI isn't installed. Connect Jira to get it"
+        : `could not run \`${acliPath}\` — check the path to acli in Settings`,
     );
     this.name = 'AcliMissingError';
   }

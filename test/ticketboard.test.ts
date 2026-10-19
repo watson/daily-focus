@@ -256,7 +256,7 @@ test('a first read that fails leaves no rows and the plain reason', async () => 
 
 test('no acli and no session both say what to do, and offer the off switch', async () => {
   for (const [error, expected] of [
-    [new AcliMissingError('acli'), /install the Atlassian CLI/],
+    [new AcliMissingError('acli'), /The Atlassian CLI isn't installed\. Connect Jira to get it/],
     [new AcliAuthError('acli has no Jira session (expired) — run `acli jira auth login`'), /acli jira auth login/],
   ] as const) {
     const cfg = await config();
@@ -274,6 +274,7 @@ test('no acli and no session both say what to do, and offer the off switch', asy
     assert.match(state.reason?.message ?? '', /DAILY_FOCUS_JIRA=off/);
     // The account line would contradict the banner sitting next to it.
     assert.equal(state.account, null);
+    assert.equal(state.connect, true, 'connecting Jira fixes either');
     board.stop();
   }
 });

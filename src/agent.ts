@@ -119,6 +119,10 @@ export function agentPrompt(promptPath: string): string {
 export function agentSettings(config: Config): Record<string, unknown> {
   return {
     searchTrash: config.agent.searchTrash,
+    // GitHub and Jira are optional, and off means the user doesn't use them:
+    // the brief leaves them out rather than reporting them unreachable.
+    github: config.github.enabled,
+    jira: config.jira.enabled,
   };
 }
 

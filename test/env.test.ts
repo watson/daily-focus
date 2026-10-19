@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { loadConfig, parseScope } from '../src/config.ts';
@@ -180,18 +180,19 @@ test('a .env left in a checkout is named with what it held, since nothing reads 
   assert.doesNotMatch(warning, /PATH/);
 });
 
-test("the CLIs the dashboard runs get the Mac app's gh on PATH, only when it is the one in use", () => {
-  const ghPath = '/Applications/Daily Focus.app/Contents/Helpers/GitHub CLI/gh';
+test('the CLIs the dashboard runs get the gh and acli it fetched on PATH, last, once there are any', () => {
+  const toolsDir = join('/data', 'tools');
+  const fetched = join(toolsDir, 'bin');
   const path = ['/usr/bin', '/bin'].join(delimiter);
-  const bundled = cliEnvironment({ dataDir: '/s/work', github: { ghPath, ghBundled: true } }, { PATH: path, HOME: '/h' });
-  assert.equal(bundled.DAILY_FOCUS_DATA, '/s/work', 'the store itself');
-  assert.equal(bundled.HOME, '/h');
-  assert.equal(bundled.PATH, [path, dirname(ghPath)].join(delimiter), 'last, so nothing of the user\'s is shadowed');
+  const some = cliEnvironment({ dataDir: '/data/work', toolsDir }, { PATH: path, HOME: '/h' }, (dir) => dir === fetched);
+  assert.equal(some.DAILY_FOCUS_DATA, '/data/work', 'the store itself');
+  assert.equal(some.HOME, '/h');
+  assert.equal(some.PATH, [path, fetched].join(delimiter), "last, so nothing of the user's is shadowed");
 
-  const own = cliEnvironment({ dataDir: '/s/work', github: { ghPath: 'gh', ghBundled: false } }, { PATH: path });
-  assert.equal(own.PATH, path, 'a gh of their own is on PATH already');
+  const none = cliEnvironment({ dataDir: '/data/work', toolsDir }, { PATH: path }, () => false);
+  assert.equal(none.PATH, path, 'nothing fetched, nothing added');
 
   // As Windows spells it, where a second key would leave the first in charge.
-  const windows = cliEnvironment({ dataDir: '/s/work', github: { ghPath, ghBundled: true } }, { Path: 'C:\\Windows' });
-  assert.deepEqual([windows.Path, windows.PATH], [['C:\\Windows', dirname(ghPath)].join(delimiter), undefined]);
+  const windows = cliEnvironment({ dataDir: '/data/work', toolsDir }, { Path: 'C:\\Windows' }, () => true);
+  assert.deepEqual([windows.Path, windows.PATH], [['C:\\Windows', fetched].join(delimiter), undefined]);
 });

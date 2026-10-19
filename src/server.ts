@@ -21,7 +21,7 @@ import { codexVersionWarning } from './codex.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
 import { faviconSvg } from './favicon.ts';
-import { GitHubSignIn } from './ghsignin.ts';
+import { Connection } from './connect.ts';
 import { refusal } from './guard.ts';
 import { Onboarding } from './onboarding.ts';
 import { describeLink, linkStore, storeLinkWarning } from './links.ts';
@@ -31,7 +31,7 @@ import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
 import { findStore, settleStore, type Profile } from './stores.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
-import type { Action, ActionType, DashboardState } from './types.ts';
+import type { Action, ActionType, DashboardState, Service } from './types.ts';
 import { ACTION_TYPES } from './validate.ts';
 import { TimeZoneKeeper, validZone } from './zone.ts';
 
@@ -330,19 +330,24 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   const calendar = new CalendarBoard(config, () => void broadcast());
   const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
 
-  // gh's browser sign-in, which only a click starts. A new login is news to
-  // what reads through gh: the board looks again, and setup asks gh afresh who
-  // the user is. The ticket board's check against GitHub catches up on its next read.
-  const gitHubSignIn = new GitHubSignIn(config.github, {
-    onChange: () => {
-      void broadcast();
-      restartWhenIdle();
-    },
-    onSignedIn: () => {
-      forgetIdentity();
-      void board.refresh();
-    },
-  });
+  // Connecting GitHub or Jira, which only a click starts: fetching the CLI if
+  // need be, then signing it in. A new session is news to what reads through
+  // it: the board looks again, and for GitHub setup asks gh afresh who the user
+  // is. The ticket board's check against GitHub catches up on its next read.
+  const connectionChanged = (): void => {
+    void broadcast();
+    restartWhenIdle();
+  };
+  const connections: Record<Service, Connection> = {
+    github: new Connection('github', config, {
+      onChange: connectionChanged,
+      onConnected: () => {
+        forgetIdentity();
+        void board.refresh();
+      },
+    }),
+    jira: new Connection('jira', config, { onChange: connectionChanged, onConnected: () => void tickets.refresh() }),
+  };
 
   // Runs a CLI on request and broadcasts as its answer streams in. It writes
   // nothing to the store but its own log: what the assistant says stays in the
@@ -396,15 +401,29 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     readSources,
     setup: () => setupState(config),
     identity: () => detectIdentity(config),
-    boards: async () => {
+    // What each board found on its last read, or what a connection made since:
+    // a board switched off reads nothing, so only connecting can tell.
+    services: async () => {
       const actions = await store.readActions();
       const now = new Date();
-      const health = (view: { enabled: boolean; fetchedAt: string | null; reason: { message: string } | null }) => ({
-        enabled: view.enabled,
-        fetchedAt: view.fetchedAt,
-        reason: view.reason?.message ?? null,
-      });
-      return { github: health(board.view(actions, now)), jira: health(tickets.view(actions, now)) };
+      const pulls = board.view(actions, now);
+      const jira = tickets.view(actions, now);
+      const github = connections.github.view();
+      const atlassian = connections.jira.view();
+      const signedIn = pulls.accounts.find((account) => account.ok)?.login ?? null;
+      const ticketsAccount = jira.reason ? null : jira.account;
+      return {
+        github: {
+          enabled: config.github.enabled,
+          connected: signedIn !== null || github.status === 'done',
+          account: signedIn ?? github.login,
+        },
+        jira: {
+          enabled: config.jira.enabled,
+          connected: ticketsAccount !== null || atlassian.status === 'done',
+          account: ticketsAccount ?? atlassian.login,
+        },
+      };
     },
     listCalendars: async () => {
       const facts = await runHelper(config.calendar.appPath, []);
@@ -475,7 +494,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   }
 
   function restartWhenIdle(): void {
-    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy || onboarding.busy || gitHubSignIn.busy) return;
+    if (restart !== 'waiting' || restarting || agent.busy || assistant.busy || onboarding.busy) return;
+    if (connections.github.busy || connections.jira.busy) return;
     restarting = true;
     // After the reply that asked for it has gone out.
     setImmediate(() => options.onRestart?.());
@@ -502,7 +522,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     return {
       ...state,
       board: pulls,
-      gitHubSignIn: gitHubSignIn.view(),
+      connections: { github: connections.github.view(), jira: connections.jira.view() },
       tickets: tickets.view(actions, now),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
@@ -690,7 +710,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (
       restart === 'waiting' &&
       req.method === 'POST' &&
-      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/github/sign-in'].includes(path)
+      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/connect'].includes(path)
     ) {
       sendJSON(res, 409, { error: 'the dashboard is restarting to apply new settings; try again in a moment' });
       return;
@@ -735,22 +755,34 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
-    if (path === '/api/github/sign-in' && req.method === 'POST') {
-      // The demo's boards answer from its sample world; a real sign-in would be
-      // the one thing in it that reached outside.
-      if (options.integrations?.github) {
-        sendJSON(res, 409, { error: 'the demo signs in to nothing' });
+    if ((path === '/api/connect' || path === '/api/connect/cancel' || path === '/api/connect/choose') && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      const service = body.service;
+      if (service !== 'github' && service !== 'jira') {
+        sendJSON(res, 400, { error: '"service" must be github or jira' });
         return;
       }
-      gitHubSignIn.start();
-      sendState(res, await buildState());
-      return;
-    }
-
-    if (path === '/api/github/sign-in/cancel' && req.method === 'POST') {
-      // Waits for gh to go, so the reply can't land after the broadcast that
-      // says so and put a dead code back on the page.
-      await gitHubSignIn.cancel();
+      if (path === '/api/connect/choose') {
+        // Which of acli's sites: the one the user chose on Atlassian's page.
+        const refused = connections[service].choose(typeof body.choice === 'string' ? body.choice : '');
+        if (refused) {
+          sendJSON(res, 409, { error: refused });
+          return;
+        }
+      } else if (path === '/api/connect') {
+        // The demo's boards answer from its sample world; a real connection
+        // would be the one thing in it that reached outside.
+        if (options.integrations?.github || options.integrations?.jira) {
+          sendJSON(res, 409, { error: 'the demo connects to nothing' });
+          return;
+        }
+        connections[service].start(body.again === true);
+      } else {
+        // Waits for it to stop, so the reply can't land after the broadcast
+        // that says so and put a dead code back on the page.
+        await connections[service].cancel();
+      }
       sendState(res, await buildState());
       return;
     }
@@ -1204,7 +1236,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     board.stop();
     calendar.stop();
     tickets.stop();
-    gitHubSignIn.stop();
+    connections.github.stop();
+    connections.jira.stop();
     await assistant.close();
     await agent.close();
     await onboarding.close();

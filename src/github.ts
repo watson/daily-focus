@@ -53,7 +53,11 @@ const GH_ENV = { ...process.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER:
 /** gh itself couldn't be run: not installed, or not where we were told. */
 export class GhMissingError extends Error {
   constructor(ghPath: string) {
-    super(`could not run \`${ghPath}\` — install the GitHub CLI or set DAILY_FOCUS_GH to its path`);
+    super(
+      ghPath === 'gh'
+        ? "The GitHub CLI isn't installed. Connect GitHub to get it, or set DAILY_FOCUS_GITHUB=off"
+        : `could not run \`${ghPath}\` — check the path to gh in Settings`,
+    );
     this.name = 'GhMissingError';
   }
 }

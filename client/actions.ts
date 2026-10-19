@@ -8,7 +8,7 @@
 
 import { batch } from '@preact/signals';
 
-import type { ActionType, BoardRow, DashboardState, ItemStatus, OnboardingAnswer, TicketRow } from '../src/types.ts';
+import type { ActionType, BoardRow, DashboardState, ItemStatus, OnboardingAnswer, Service, TicketRow } from '../src/types.ts';
 import * as api from './api.ts';
 import {
   AGENT_RUN_SEEN_KEY,
@@ -299,12 +299,12 @@ async function refreshBoard(): Promise<void> {
   }
 }
 
-/** Sign in to GitHub through gh, or stop waiting on it. The code arrives over the live feed. */
-async function gitHubSignIn(start: boolean): Promise<void> {
+/** Connect GitHub or Jira, or stop connecting. Its progress arrives over the live feed. */
+async function connect(service: Service, start: boolean, again = false): Promise<void> {
   try {
-    adoptState(await (start ? api.postGitHubSignIn() : api.postGitHubSignInCancel()));
+    adoptState(await (start ? api.postConnect(service, again) : api.postConnectCancel(service)));
   } catch (err) {
-    showToast(`Could not ${start ? 'start signing in' : 'stop signing in'}: ${(err as Error).message}`);
+    showToast(`Could not ${start ? 'connect' : 'stop connecting'}: ${(err as Error).message}`);
   }
 }
 
@@ -876,8 +876,10 @@ export const handlers: Handlers = {
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
   refreshCalendar: () => void refreshCalendar(),
-  signInToGitHub: () => void gitHubSignIn(true),
-  cancelGitHubSignIn: () => void gitHubSignIn(false),
+  connect: (service, again) => void connect(service, true, again),
+  cancelConnect: (service) => void connect(service, false),
+  chooseConnect: (service, choice) =>
+    void api.postConnectChoose(service, choice).then(adoptState, (err: unknown) => showToast(`Could not choose ${choice}: ${(err as Error).message}`)),
   ask: (id, body) => void ask(id, body),
   stopAssistant: (id) => void stopAssistant(id),
   copy: (text) => void copy(text),

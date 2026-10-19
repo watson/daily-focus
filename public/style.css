@@ -3295,6 +3295,27 @@ body[data-onboarding='true'] #app {
   color: var(--ink-3);
   font-size: 13px;
 }
+/* GitHub and Jira on setup's card: a row each, saying whether it is connected, with its connection under it when ticked. */
+.onboarding__service + .onboarding__service {
+  border-top: 1px solid var(--hairline);
+}
+.onboarding__service > .onboarding__option {
+  padding: 12px 16px;
+}
+.onboarding__connected {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--good-ink);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.onboarding__connected::before {
+  content: '✓ ';
+}
+/* Under the row's words, not its box. */
+.onboarding__service-connect {
+  padding: 0 16px 4px 46px;
+}
 .onboarding__none {
   margin: 0;
   padding: 12px 16px;
@@ -3811,27 +3832,62 @@ select.field__input {
   color: var(--ink-3);
 }
 
-/* Who the board reads GitHub as, and signing in again. */
-.github-account {
+/* Who a board reads GitHub or Jira as, and connecting it or signing in again. */
+.service-account {
   padding: 12px 0;
   border-top: 1px solid var(--rule);
 }
-.github-account .field__note {
+.service-account .field__note {
   margin-bottom: 10px;
 }
+/* A command in a setting's note, as the brief's items show code. */
+.field__note code {
+  padding: 1px 4px;
+  background: var(--surface-sunken);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+/* A name, set apart from the words around it, and from a command, which is code. */
+.service-account__name {
+  color: var(--ink-1);
+  font-weight: 600;
+}
 
-/* gh's sign-in to GitHub, on the board, in setup and in Settings: a button, then the code to type at GitHub. */
-.signin {
+/* Connecting GitHub or Jira, on the boards, in setup and in Settings: a button, then what is happening. */
+.connect {
   margin: 0 0 16px;
 }
-.signin p {
+.connect p {
   margin: 0 0 8px;
 }
-.signin__lead {
+.connect__lead {
   color: var(--ink-2);
   font-size: 14px;
 }
-.signin__code code {
+/* Waiting on something elsewhere: a slow pulse says it hasn't stalled. */
+.connect__busy::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+  animation: connect-pulse 1.4s ease-in-out infinite;
+}
+@keyframes connect-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connect__busy::before {
+    animation: none;
+  }
+}
+.connect__code code {
   display: inline-block;
   padding: 6px 12px;
   background: var(--surface-sunken);
@@ -3841,19 +3897,28 @@ select.field__input {
   letter-spacing: 0.08em;
   user-select: all;
 }
-.signin__actions {
+.connect__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.signin__note {
+.connect__note {
   color: var(--ink-3);
   font-size: 13px;
 }
-.signin__error {
+.connect__error {
   color: var(--serious);
   font-size: 13.5px;
+}
+.connect__command pre {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-x: auto;
 }
 
 /* Unsaved settings: a bar along the bottom, since the page is long and Save belongs to all of it. */

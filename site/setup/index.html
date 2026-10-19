@@ -74,8 +74,8 @@
           <p>The menu bar app needs macOS 13.5 or newer and brings everything else with it. On Linux or Windows, or to run Daily Focus yourself on a Mac, you need Node.js 22.18 or newer; 24 is recommended.</p>
         </li>
         <li>
-          <p class="needs-list__what">If you use GitHub or Jira: their command-line tools</p>
-          <p>The <a href="https://cli.github.com">GitHub CLI</a> lets the morning brief read your pull requests and review requests, and gives you the Pull requests tab. The menu bar app brings its own if you don’t have it. The <a href="https://developer.atlassian.com/cloud/acli/guides/install-acli/">Atlassian CLI</a> gives you the Jira tickets tab; for Jira in the brief, an Atlassian connector in Claude Code or Codex does as well. Skip whichever you don’t use.</p>
+          <p class="needs-list__what">GitHub and Jira, only if you use them</p>
+          <p>Setup asks. Tick one and Daily Focus connects it: it reads through the <a href="https://cli.github.com">GitHub CLI</a> or the <a href="https://developer.atlassian.com/cloud/acli/guides/install-acli/">Atlassian CLI</a>, uses yours if you have it, and otherwise gets it from GitHub or Atlassian for you. Leave both unticked if you use neither.</p>
         </li>
       </ul>
     </section>
@@ -127,12 +127,13 @@ daily-focus service</code><button class="button button--primary" type="button" d
       <h2 id="connect-title">Connect your tools</h2>
       <p>All optional. Daily Focus reads what you’re already signed in to.</p>
       <h3 id="github">GitHub</h3>
-      <p>If you have the GitHub CLI, Daily Focus uses it. Sign in once in a terminal:</p>
+      <p>Tick GitHub in setup and choose <b>Connect GitHub</b>. Daily Focus uses your own GitHub CLI if you have one, and otherwise gets it from GitHub. Then it shows a code to enter on GitHub. To sign in again later, or as another account, use <b>Sign in again</b> under <b>Pull requests</b> on the settings page. In a terminal, this does the same:</p>
       <div class="code"><code id="cmd-gh">gh auth login</code><button class="button button--primary" type="button" data-copy="cmd-gh">Copy</button></div>
-      <p>If you don’t, the menu bar app uses its own copy, and setup asks you to sign in to GitHub in your browser. To sign in again later, or as another account, use the sign-in button under <b>Pull requests</b> on the settings page.</p>
       <p>If your organisation uses SAML single sign-on, authorise the token for it, or the board reports that GitHub refused the read.</p>
       <h3 id="jira">Jira</h3>
-      <div class="code"><code id="cmd-acli">acli jira auth login</code><button class="button button--primary" type="button" data-copy="cmd-acli">Copy</button></div>
+      <p>Tick Jira in setup and choose <b>Connect Jira</b>. Daily Focus uses your own Atlassian CLI if you have one, and otherwise gets it from Atlassian. Atlassian’s sign-in then opens in your browser, which has to be the one on the computer running Daily Focus. Once you approve, Daily Focus asks which site you chose there; on Windows a small window asks instead. In a terminal, this does the same:</p>
+      <div class="code"><code id="cmd-acli">acli jira auth login --web</code><button class="button button--primary" type="button" data-copy="cmd-acli">Copy</button></div>
+      <p>For Jira in the brief, an Atlassian connector in Claude Code or Codex works as well.</p>
       <h3 id="calendar">Calendar on a Mac</h3>
       <p>The live agenda reads Calendar.app, so a meeting moved during the day shows at once. The menu bar app comes with everything it needs, and macOS asks for calendar access the first time. Without the app, build the calendar helper once; it needs the Xcode command line tools.</p>
       <div class="code"><code id="cmd-cal">daily-focus build-calendar</code><button class="button button--primary" type="button" data-copy="cmd-cal">Copy</button></div>
@@ -227,7 +228,7 @@ npm uninstall -g daily-focus</code><button class="button button--primary" type="
         </div>
         <div>
           <dt>The GitHub or Jira board shows a warning</dt>
-          <dd>Sign in again: to GitHub under <b>Pull requests</b> on the settings page, or with <code>gh auth login</code>; to Jira with <code>acli jira auth login</code>. If Daily Focus can’t find the tool at all, give its path on the settings page.</dd>
+          <dd>Choose <b>Connect</b> under the warning, or <b>Sign in again</b> under <b>Pull requests</b> or <b>Jira tickets</b> on the settings page. If you don’t use it, turn it off there. If Daily Focus can’t find a tool you installed yourself, give its path on the settings page.</dd>
         </div>
         <div>
           <dt>A source is missing from the brief</dt>

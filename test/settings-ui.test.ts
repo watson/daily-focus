@@ -266,3 +266,51 @@ test('without the calendar helper, the npm package on a Mac points at the app be
   assert.equal(checkout.querySelector('.field__note a'), null);
   assert.match(checkout.querySelector('.field__note')!.textContent!, /Build it once with/);
 });
+
+test("GitHub's note says who it is signed in as, and only the copy Daily Focus got is signed in again from here", () => {
+  const githubPage: SettingsPage = { ...page, groups: [{ id: 'github', title: 'Pull requests' }], settings: [] };
+  const connection = (cli: { found: boolean; fetched: boolean }) => ({
+    cli,
+    status: 'idle',
+    choices: null,
+    inWindow: false,
+    code: null,
+    url: null,
+    login: null,
+    error: null,
+    command: null,
+  });
+  const card = (cli: { found: boolean; fetched: boolean }, logins: string[]) =>
+    mount(
+      h(SettingsView, {
+        state: {
+          ...state,
+          board: { accounts: logins.map((login) => ({ login, ok: true, error: null })) },
+          tickets: { account: null, reason: null },
+          connections: { github: connection(cli), jira: connection(cli) },
+        } as unknown as DashboardState,
+        ui: uiWith({ settings: githubPage, texts: {} }),
+        handlers: handlersWith({}),
+      }),
+    ).querySelector('.service-account')!;
+  const note = (block: Element) => block.querySelector('.field__note')!.textContent;
+  const buttons = (block: Element) => [...block.querySelectorAll('button')].map((b) => b.textContent);
+
+  const fetched = card({ found: true, fetched: true }, ['rlark']);
+  assert.equal(note(fetched), 'Signed in as @rlark. Daily Focus uses its own copy of the GitHub CLI. If you install it yourself, it uses yours instead.');
+  assert.equal(fetched.querySelector('.service-account__name')?.textContent, '@rlark', 'the login set apart from the words');
+  assert.deepEqual(buttons(fetched), ['Sign in again']);
+
+  const own = card({ found: true, fetched: false }, ['rlark', 'robin-home']);
+  assert.equal(
+    note(own),
+    'Signed in as @rlark and @robin-home. Daily Focus uses the GitHub CLI you already have installed. To sign in again or as another account, run gh auth login.',
+  );
+  assert.equal(own.querySelector('.field__note code')?.textContent, 'gh auth login');
+  assert.deepEqual(buttons(own), [], 'yours is yours to sign in');
+  assert.deepEqual(buttons(card({ found: true, fetched: false }, [])), ['Connect GitHub'], 'connecting stays while nobody is signed in');
+
+  const missing = card({ found: false, fetched: false }, []);
+  assert.equal(note(missing), 'If you install the GitHub CLI yourself, Daily Focus uses it. Otherwise it gets its own copy when you connect.');
+  assert.deepEqual(buttons(missing), ['Connect GitHub']);
+});

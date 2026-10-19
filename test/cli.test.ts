@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { after, test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { appCalendarApp, appGh, command, defaultGh, MAC_APP_URL, offerMacApp, ranDirectly, startAdvice } from '../src/install.ts';
+import { appCalendarApp, command, MAC_APP_URL, offerMacApp, ranDirectly, startAdvice } from '../src/install.ts';
 
 const execute = promisify(execFile);
 const cli = resolve(import.meta.dirname, '../src/cli.ts');
@@ -198,16 +198,4 @@ test('starting from a terminal, a Mac is pointed at the app, and npx elsewhere a
   assert.match(npx, /npm install -g daily-focus/);
   assert.doesNotMatch(npx, /daily-focus service/, 'the service is a LaunchAgent, for a Mac');
   assert.deepEqual(startAdvice(false, false), [], 'an install of its own, or a checkout');
-});
-
-test("the Mac app's gh is used only when there is none on PATH", { skip: process.platform === 'win32' && "the Mac app's paths" }, () => {
-  const app = '/Applications/Daily Focus.app';
-  const gh = `${app}/Contents/Helpers/GitHub CLI/gh`;
-  assert.equal(appGh(`${app}/Contents/Helpers/node`, `${app}/Contents/Resources/server`), gh, 'in a folder of its own, beside the Node');
-  assert.equal(appGh('/opt/homebrew/bin/node', '/Users/x/code/daily-focus'), null, 'no app at all');
-  const has = (...paths: string[]) => (path: string) => paths.includes(path);
-  assert.equal(defaultGh(true, has(gh), gh), 'gh', "the user's own wins");
-  assert.equal(defaultGh(false, has(gh), gh), gh, "none on PATH: the app's");
-  assert.equal(defaultGh(false, has(), gh), 'gh', 'an app from before it carried one');
-  assert.equal(defaultGh(false, has(), null), 'gh', 'the npm package, which never does');
 });
