@@ -3788,6 +3788,19 @@ select.field__input {
 .service-account .field__note {
   margin-bottom: 10px;
 }
+/* A command in a setting's note, as the brief's items show code. */
+.field__note code {
+  padding: 1px 4px;
+  background: var(--surface-sunken);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+/* A name, set apart from the words around it, and from a command, which is code. */
+.service-account__name {
+  color: var(--ink-1);
+  font-weight: 600;
+}
 
 /* Connecting GitHub or Jira, on the boards, in setup and in Settings: a button, then what is happening. */
 .connect {
