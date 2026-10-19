@@ -150,12 +150,6 @@ export interface SettingSources {
   store: StoreLocation;
   /** The store's `settings.json`. */
   settings: Readonly<Record<string, string>>;
-  /**
-   * Settings the code that started the dashboard holds over the store's, which the
-   * settings page shows and can't change. Only the demo has any, and tests: the
-   * ones that would run a CLI or reach outside, so nothing switches them on.
-   */
-  fixed: Readonly<Record<string, string>>;
   settingsPath: string;
   /** Why `settings.json` couldn't be used, when it couldn't. */
   settingsError: string | null;
@@ -170,7 +164,6 @@ export interface SettingSources {
  */
 export function settingSources(
   env: NodeJS.ProcessEnv = process.env,
-  fixed: Readonly<Record<string, string>> = {},
   store: StoreLocation = findStore(dataRoot(env), { asked: launchProfile(env) }),
 ): SettingSources {
   const launch: Record<string, string> = {};
@@ -180,14 +173,13 @@ export function settingSources(
   }
   const settingsPath = resolve(store.dir, SETTINGS_FILE);
   const { values, error } = readSettingsFile(settingsPath);
-  return { launch, store, settings: values, fixed, settingsPath, settingsError: error };
+  return { launch, store, settings: values, settingsPath, settingsError: error };
 }
 
 /**
  * The values the dashboard configures itself from: the store, then the launch
- * settings, then what is fixed, then the store's settings. A blank saved value
- * is no value: `config.ts` reads one as the default, and the settings page
- * shows it so.
+ * settings, then the store's settings. A blank saved value is no value:
+ * `config.ts` reads one as the default, and the settings page shows it so.
  *
  * `config.ts` reads `DAILY_FOCUS_DATA` as the store itself, so the data folder
  * the dashboard was given is replaced here by the store found in it, and the
@@ -200,7 +192,6 @@ export function layerSettings(sources: SettingSources, settings: Readonly<Record
   }
   return {
     ...kept,
-    ...sources.fixed,
     ...sources.launch,
     DAILY_FOCUS_DATA: sources.store.dir,
     [PROFILE_SETTING]: sources.store.profile,

@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -57,8 +57,13 @@ test('the package credits every npm package its bundles carry, and the fonts', a
   assert.match(text, /Permission is hereby granted/, 'with the licences themselves');
 });
 
-test('installed under node_modules, the demo starts and serves the sample brief', async () => {
-  const child = spawn(process.execPath, [join(pkg, 'dist/cli.js'), '--demo', '--no-open', '--port', '0'], {
+test('installed under node_modules, the dashboard starts and serves a seeded brief', async () => {
+  const data = join(home, 'seeded');
+  await mkdir(join(data, 'work'), { recursive: true });
+  // Nothing that reaches outside, saved in the store as the settings page would.
+  await writeFile(join(data, 'work', 'settings.json'), JSON.stringify({ DAILY_FOCUS_GITHUB: 'off', DAILY_FOCUS_JIRA: 'off', DAILY_FOCUS_CALENDAR: 'off' }));
+  await run(process.execPath, [join(pkg, 'dist/cli.js'), 'seed', '--data', data], { cwd: home });
+  const child = spawn(process.execPath, [join(pkg, 'dist/cli.js'), '--data', data, '--no-open', '--port', '0'], {
     cwd: home,
     env: { ...process.env, PATH: process.env.PATH, HOME: home },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -79,22 +84,9 @@ test('installed under node_modules, the demo starts and serves the sample brief'
       child.stderr.on('data', read);
       child.on('exit', (code) => fail(new Error(`exited ${code}:\n${output}`)));
     });
-    type State = {
-      items: unknown[];
-      setup: { needed: boolean };
-      board: { fetchedAt: string | null; rows: unknown[] };
-      tickets: { fetchedAt: string | null; rows: unknown[] };
-    };
-    let state = (await (await fetch(`${url}/api/state`)).json()) as State;
+    const state = (await (await fetch(`${url}/api/state`)).json()) as { items: unknown[]; setup: { needed: boolean } };
     assert.ok(state.items.length > 5);
     assert.equal(state.setup.needed, false);
-    // The boards fill in the background, from the bundled sample worlds.
-    for (let i = 0; i < 100 && (state.board.fetchedAt === null || state.tickets.fetchedAt === null); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      state = (await (await fetch(`${url}/api/state`)).json()) as State;
-    }
-    assert.ok(state.board.rows.length > 0, 'the pull request board is filled');
-    assert.ok(state.tickets.rows.length > 0, 'and so is the ticket board');
     assert.equal((await fetch(`${url}/app.js`)).status, 200, 'the page is shipped built');
     const health = (await (await fetch(`${url}/api/health`)).json()) as { dataDir: string };
     const prompt = await readFile(join(health.dataDir, 'prompt.md'), 'utf8');
@@ -108,6 +100,6 @@ test('installed under node_modules, the demo starts and serves the sample brief'
 test('installed under node_modules, the commands name themselves as the CLI', async () => {
   const store = join(home, 'store');
   const { stdout } = await run(process.execPath, [join(pkg, 'dist/cli.js'), 'init', '--data', store], { cwd: home });
-  assert.match(stdout, /daily-focus (service|--demo)/);
+  assert.match(stdout, /`daily-focus( service)?`/);
   assert.doesNotMatch(stdout, /npm run/);
 });

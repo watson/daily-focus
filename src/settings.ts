@@ -417,7 +417,7 @@ export const SETTINGS: readonly SettingDef[] = [
 
 const BY_KEY = new Map(SETTINGS.map((def) => [def.key, def]));
 
-/** Where the value in effect came from: the page shows it, and locks a fixed one. */
+/** Where the value in effect came from: the page shows it, and locks a fixed one, which only the profile is. */
 export type SettingSource = 'fixed' | 'settings' | 'default';
 
 export interface SettingView {
@@ -458,7 +458,7 @@ export function describeSettings(sources: SettingSources): SettingsView {
   const profile = profileOf(sources);
   const settings = SETTINGS.map((def): SettingView => {
     // The store's folder says it, so it is shown but never changed here.
-    const fixed = def.key === PROFILE_SETTING ? sources.store.profile : present(sources.fixed, def.key);
+    const fixed = def.key === PROFILE_SETTING ? sources.store.profile : null;
     const saved = present(sources.settings, def.key);
     const [value, source]: [string | null, SettingSource] =
       fixed !== null ? [fixed, 'fixed'] : saved !== null ? [saved, 'settings'] : [null, 'default'];
@@ -485,9 +485,10 @@ export type SettingsChange = Readonly<Record<string, string | null>>;
  * Apply `change` to the store's settings, or say why not. Nothing is written
  * here; the caller saves what comes back.
  *
- * A fixed value can't be changed from the page, since it would still win, and
- * a save that changes nothing on screen would read as broken. The candidate is
- * checked by building the config from it exactly as the next start will.
+ * A launch setting can't be changed from the page, since the value given at
+ * launch would still win, and a save that changes nothing on screen would read
+ * as broken. The candidate is checked by building the config from it exactly as
+ * the next start will.
  *
  * The profile is saved only by the setup screen's finish (`setup`), and only
  * when none was given at launch: the next start renames the store's folder to
@@ -516,9 +517,6 @@ export function applySettingsChange(
     }
     if (!BY_KEY.has(key)) return { error: `${key} is not a setting` };
     if (raw !== null && typeof raw !== 'string') return { error: `${key} must be text, or null for the default` };
-    if (present(sources.fixed, key) !== null) {
-      return { error: `${key} is fixed in this dashboard, so it can't be changed here` };
-    }
     const value = raw?.trim() ?? '';
     if (value === '') delete next[key];
     else next[key] = value;

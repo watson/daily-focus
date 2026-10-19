@@ -100,12 +100,11 @@ test('every setting is a field in its group, with its default as the empty choic
   assert.equal(root.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_AGENT_BIN')!.placeholder, 'Found on PATH');
 });
 
-test('a fixed value is shown but locked, and says why; a saved one is just its value', () => {
+test('a fixed value is shown but locked; a saved one is just its value', () => {
   const root = render();
   const start = root.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_WORK_START')!;
   assert.equal(start.disabled, true);
   assert.equal(start.value, '10');
-  assert.match(start.closest('.field')!.textContent!, /Fixed in the demo/);
   const free = root.querySelector<HTMLElement>('#setting-DAILY_FOCUS_FREE_WINDOWS')!;
   assert.equal(free.getAttribute('aria-disabled'), 'false');
   assert.equal(free.querySelector('[aria-checked=true]')!.textContent, 'Off', '"false" saved by hand reads as off');

@@ -3,9 +3,9 @@
  *
  *   npm run seed
  *
- * The brief itself is `src/sample.ts`, which the CLI's demo shows too, and it
- * follows the store's profile: a personal store gets the personal brief, and
- * `--profile personal` picks that store in the data folder.
+ * The brief itself is `src/sample.ts`, and it follows the store's profile: a
+ * personal store gets the personal brief, and `--profile personal` picks that
+ * store in the data folder.
  *
  * **It refuses to replace an existing `items.json`.** Against a live store that
  * would destroy a real brief, and since the agent recovers each item's `firstSeen`

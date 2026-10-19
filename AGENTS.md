@@ -59,9 +59,7 @@ home folder, never merged. Scripts read a store wherever it lies and never move 
 The CLIs the dashboard runs get `DAILY_FOCUS_DATA` set to the store itself
 (`cliEnvironment`), since at launch it names the data folder.
 Integration caches use a sibling temporary file and rename; they store facts, not
-computed board classifications. The demo (`src/demo.ts`) is the one exception to
-all of this: it writes every one of those files into its own throwaway store before
-the server starts, and refuses a store that already has a brief.
+computed board classifications.
 
 `npm run seed` writes a sample brief. It refuses to replace an existing `items.json`
 unless given `--force`; never pass `--force` against a real store. Always give it a

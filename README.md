@@ -20,27 +20,13 @@ account. GitHub and Jira boards refresh throughout the day.
 
 ## Try it
 
-You'll need Node.js 22.18 or newer. Node 24 is recommended.
-
-```sh
-npx daily-focus --demo
-```
-
-That opens the dashboard on sample data in a throwaway store, so you can explore
-without connecting anything: a morning brief with an objective behind it, open pull
-requests and Jira tickets on their boards, the morning agent's reports, and a few
-conversations with the assistant, all invented. Nothing is connected and nothing
-runs; the boards are answered from the sample data, and moving a ticket's status
-moves it there. Add `--profile personal` to see the other profile, which briefs
-home, family and paperwork instead of work. Stop it with Ctrl+C, and the store goes
-with it.
-
-To use your own data on a Mac, download `Daily-Focus.dmg` from the
+On a Mac, download `Daily-Focus.dmg` from the
 [latest release](https://github.com/watson/daily-focus/releases/latest) and drag the
 app to Applications. It needs Apple silicon and macOS 13.5 or newer. It lives in
 the menu bar, keeps the dashboard running, tells you when a new brief arrives, and
 updates itself. It carries everything it needs, Node.js and the calendar helper for
-the live agenda included. On Linux or Windows, or to run it yourself on a Mac:
+the live agenda included. On Linux or Windows, or to run it yourself on a Mac, you'll
+need Node.js 22.18 or newer (Node 24 is recommended):
 
 ```sh
 npx daily-focus

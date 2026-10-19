@@ -437,9 +437,8 @@ objective();
 
 /* ---------- The assistant, replayed ---------- */
 
-// What the assistant did for Mara on each quick action: its steps, how long the
-// panel says it worked, and its answer. The draft is the demo's own turn on this
-// thread (src/demo.ts); the other two are written to the same thread.
+// What the assistant did for Mara on each quick action, all on the same thread:
+// its steps, how long the panel says it worked, and its answer.
 const ASKS = {
   draft: {
     label: 'Draft a reply',

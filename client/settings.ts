@@ -358,16 +358,12 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
     });
   }
 
-  // Only the demo fixes any setting, and only what would run something.
-  const note = locked ? 'Fixed in the demo, so that nothing in it runs.' : null;
-
   return el(
     'div',
     { class: 'field', key: setting.key, 'data-changed': String(draft.has(setting.key)) },
     el('label', { class: 'field__label', for: id }, setting.label),
     input,
     el('p', { class: 'field__help' }, setting.help),
-    note ? el('p', { class: 'field__note' }, note) : null,
   );
 }
 
@@ -401,7 +397,7 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
     );
   }
   const setting = settings.find((entry) => entry.key === 'DAILY_FOCUS_CALENDARS');
-  if (!setting || setting.source === 'fixed') return null;
+  if (!setting) return null;
   const chosen = shownValue(setting, ui.settingsDraft.value)
     .split(',')
     .map((name) => name.trim())

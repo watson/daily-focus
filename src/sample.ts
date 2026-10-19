@@ -1,13 +1,12 @@
 /**
  * A realistic sample brief for each profile, dated relative to `now` so the agenda
  * and the "now" marker always look sensible whenever it is written. Used by
- * `npm run seed` and by the demo (see `demo.ts`, which adds everything around
- * it), and the best worked example of the payload shape: see
+ * `npm run seed`, and the best worked example of the payload shape: see
  * `schema/items.schema.json` and the morning prompts for the rules.
  *
  * Every name, account, ticket and letter in it is invented. The two briefs are
  * one person's two halves — Mara Lindqvist at Acme by day, at home after — so
- * the demo of either profile tells one coherent story.
+ * either profile's sample tells one coherent story.
  */
 
 import type { Profile } from './config.ts';
@@ -20,7 +19,7 @@ function timeOn(now: Date, hour: number, minute = 0): string {
 }
 
 /** A local date key some days from today. */
-export function dateFromNow(now: Date, days: number): string {
+function dateFromNow(now: Date, days: number): string {
   return localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + days));
 }
 
@@ -29,7 +28,7 @@ export function dateFromNow(now: Date, days: number): string {
  * when it is earlier than that, so a dashboard looked at before dawn never shows
  * a brief from the future.
  */
-export function sampleGeneratedAt(now: Date): string {
+function sampleGeneratedAt(now: Date): string {
   const morning = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 6, 36).getTime();
   const earlier = now.getTime() - 4 * 60_000;
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 10).getTime();

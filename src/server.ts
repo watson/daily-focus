@@ -211,9 +211,8 @@ export interface StartedServer {
 }
 
 /**
- * What the two boards talk to, when it isn't gh and acli. The demo hands over
- * its sample worlds here (see `demo.ts`); everything else leaves it unset and
- * gets the real ones.
+ * What the two boards talk to, when it isn't gh and acli: a test hands over its
+ * own. A real start leaves it unset and gets the real ones.
  */
 export interface Integrations {
   github?: BoardDeps;
@@ -229,8 +228,6 @@ export interface ServerOptions {
    */
   onRestart?: () => void;
   integrations?: Integrations;
-  /** Settings held over the store's: the demo's, so nothing in it runs. See `SettingSources`. */
-  fixed?: Readonly<Record<string, string>>;
   /** Reads the Mac's zone; a test passes its own so it can move it. */
   readSystemZone?: () => Promise<string | null>;
   /**
@@ -246,8 +243,8 @@ const MOVED_NOTICE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Start listening. `env` is the environment the launch settings are read from,
- * the real one unless a test or the demo passes its own; every other setting
- * comes from the store's settings, or from `options.fixed`.
+ * the real one unless a test passes its own; every other setting comes from the
+ * store's settings.
  */
 export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOptions = {}): Promise<StartedServer> {
   // Everything a setting can come from, read again whenever the settings page
@@ -262,10 +259,10 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // Worth a word on the page: the store isn't where it always was. A new store
   // renamed after setup's answer is no news to anyone.
   const movedAt = found.move?.kind === 'into-folder' ? new Date() : null;
-  const readSources = (): SettingSources => settingSources(processEnv, options.fixed, location);
+  const readSources = (): SettingSources => settingSources(processEnv, location);
   const { config, warnings: configWarnings } = configure(readSources());
   if (location.problem) configWarnings.push(location.problem);
-  // Only on a real start: a test or the demo has no business with a checkout's .env.
+  // Only on a real start: a test has no business with a checkout's .env.
   const dotenvWarning = env ? null : oldDotenvWarning();
   if (dotenvWarning) configWarnings.push(dotenvWarning);
   for (const warning of configWarnings) console.warn(`[daily-focus] ${warning}`);
@@ -771,12 +768,6 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
           return;
         }
       } else if (path === '/api/connect') {
-        // The demo's boards answer from its sample world; a real connection
-        // would be the one thing in it that reached outside.
-        if (options.integrations?.github || options.integrations?.jira) {
-          sendJSON(res, 409, { error: 'the demo connects to nothing' });
-          return;
-        }
         connections[service].start(body.again === true);
       } else {
         // Waits for it to stop, so the reply can't land after the broadcast
@@ -1311,10 +1302,6 @@ export class PortInUseError extends Error {
 
 export interface RunOptions {
   onStarted?: (url: string) => void;
-  /** The environment to read the launch settings from, in place of the real one: the demo's names its store. */
-  env?: NodeJS.ProcessEnv;
-  integrations?: Integrations;
-  fixed?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -1333,10 +1320,8 @@ export async function runServer(options: RunOptions = {}): Promise<void> {
   let profile: Profile | undefined;
 
   async function start(): Promise<void> {
-    current = await startServer(options.env, {
+    current = await startServer(undefined, {
       onRestart: () => void restart(),
-      integrations: options.integrations,
-      fixed: options.fixed,
       profile,
     });
   }

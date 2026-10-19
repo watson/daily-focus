@@ -15,7 +15,7 @@ after(async () => {
 });
 
 /** A store whose folder follows the profile its settings name, as it does after the restart a save asks for; `given` as `--profile` would. */
-function sources(layers: Partial<Pick<SettingSources, 'settings' | 'fixed'>> & { given?: Profile } = {}): SettingSources {
+function sources(layers: Partial<Pick<SettingSources, 'settings'>> & { given?: Profile } = {}): SettingSources {
   const settings = layers.settings ?? {};
   const profile = layers.given ?? asProfile(settings.DAILY_FOCUS_PROFILE) ?? 'work';
   const root = '/tmp/daily-focus-settings-test';
@@ -23,7 +23,6 @@ function sources(layers: Partial<Pick<SettingSources, 'settings' | 'fixed'>> & {
     launch: { DAILY_FOCUS_DATA: root },
     store: { root, profile, dir: `${root}/${profile}`, given: layers.given !== undefined, move: null, problem: null },
     settings,
-    fixed: layers.fixed ?? {},
     settingsPath: `${root}/${profile}/settings.json`,
     settingsError: null,
   };
@@ -43,14 +42,9 @@ test('every setting belongs to a group the page shows, once', () => {
 });
 
 test('each value says where it came from', () => {
-  const all = describeSettings(
-    sources({
-      settings: { DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_START: '8' },
-      fixed: { DAILY_FOCUS_WORK_START: '10' },
-    }),
-  );
+  const all = describeSettings(sources({ settings: { DAILY_FOCUS_AGENT: 'claude', DAILY_FOCUS_WORK_START: '8' } }));
   assert.deepEqual([view(all, 'DAILY_FOCUS_AGENT').value, view(all, 'DAILY_FOCUS_AGENT').source], ['claude', 'settings']);
-  assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_START').value, view(all, 'DAILY_FOCUS_WORK_START').source], ['10', 'fixed']);
+  assert.deepEqual([view(all, 'DAILY_FOCUS_WORK_START').value, view(all, 'DAILY_FOCUS_WORK_START').source], ['8', 'settings']);
   assert.deepEqual([view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').value, view(all, 'DAILY_FOCUS_MIN_FREE_WINDOW').source], [null, 'default']);
   // The store's folder says it, so the page shows it and can't change it.
   assert.deepEqual([view(all, 'DAILY_FOCUS_PROFILE').value, view(all, 'DAILY_FOCUS_PROFILE').source], ['work', 'fixed']);
@@ -123,8 +117,6 @@ test('what the page cannot change is refused by name', () => {
     const applied = applySettingsChange(sources(), change);
     assert.ok('error' in applied && pattern.test(applied.error), JSON.stringify(change));
   }
-  const fixed = applySettingsChange(sources({ fixed: { DAILY_FOCUS_AGENT: 'off' } }), { DAILY_FOCUS_AGENT: 'claude' });
-  assert.ok('error' in fixed && /fixed/.test(fixed.error));
 });
 
 test('saved settings are sorted, so the file reads the way the page does', async () => {
