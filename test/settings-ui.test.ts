@@ -266,3 +266,40 @@ test('without the calendar helper, the npm package on a Mac points at the app be
   assert.equal(checkout.querySelector('.field__note a'), null);
   assert.match(checkout.querySelector('.field__note')!.textContent!, /Build it once with/);
 });
+
+test("GitHub's note says who it is signed in as, and that a CLI you install yourself is the one used", () => {
+  const githubPage: SettingsPage = { ...page, groups: [{ id: 'github', title: 'Pull requests' }], settings: [] };
+  const connection = (cli: { found: boolean; fetched: boolean }) => ({
+    cli,
+    status: 'idle',
+    choices: null,
+    inWindow: false,
+    code: null,
+    url: null,
+    login: null,
+    error: null,
+    command: null,
+  });
+  const note = (cli: { found: boolean; fetched: boolean }, logins: string[]) =>
+    mount(
+      h(SettingsView, {
+        state: {
+          ...state,
+          board: { accounts: logins.map((login) => ({ login, ok: true, error: null })) },
+          tickets: { account: null, reason: null },
+          connections: { github: connection(cli), jira: connection(cli) },
+        } as unknown as DashboardState,
+        ui: uiWith({ settings: githubPage, texts: {} }),
+        handlers: handlersWith({}),
+      }),
+    ).querySelector('.service-account .field__note')!.textContent;
+  assert.equal(
+    note({ found: true, fetched: true }, ['rlark']),
+    'Signed in as rlark. Daily Focus uses its own copy of the GitHub CLI. If you install it yourself, it uses yours instead.',
+  );
+  assert.equal(note({ found: true, fetched: false }, ['rlark']), 'Signed in as rlark. Daily Focus uses the GitHub CLI you installed.');
+  assert.equal(
+    note({ found: false, fetched: false }, []),
+    'If you install the GitHub CLI yourself, Daily Focus uses it. Otherwise it gets its own copy when you connect.',
+  );
+});

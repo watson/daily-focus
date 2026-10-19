@@ -447,17 +447,21 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
 
 /* ---------- GitHub and Jira ---------- */
 
-/** Which CLI a service is read through, in each case, for the line above its button. */
+/**
+ * Which copy of a service's CLI is in use, for the line above its button. The
+ * rule is the same in each case, said from where the user stands: one they
+ * installed is used, and Daily Focus has its own only for want of one.
+ */
 const WHERE: Record<Service, { missing: string; fetched: string; own: string }> = {
   github: {
-    missing: 'The GitHub CLI isn’t installed; connecting gets it from GitHub. ',
-    fetched: 'Daily Focus reads GitHub through the GitHub CLI, which it got for you. ',
-    own: 'Daily Focus reads GitHub through your own GitHub CLI, gh. ',
+    missing: 'If you install the GitHub CLI yourself, Daily Focus uses it. Otherwise it gets its own copy when you connect.',
+    fetched: 'Daily Focus uses its own copy of the GitHub CLI. If you install it yourself, it uses yours instead.',
+    own: 'Daily Focus uses the GitHub CLI you installed.',
   },
   jira: {
-    missing: 'The Atlassian CLI isn’t installed; connecting gets it from Atlassian. ',
-    fetched: 'Daily Focus reads Jira through the Atlassian CLI, which it got for you. ',
-    own: 'Daily Focus reads Jira through your own Atlassian CLI, acli. ',
+    missing: 'If you install the Atlassian CLI yourself, Daily Focus uses it. Otherwise it gets its own copy when you connect.',
+    fetched: 'Daily Focus uses its own copy of the Atlassian CLI. If you install it yourself, it uses yours instead.',
+    own: 'Daily Focus uses the Atlassian CLI you installed.',
   },
 };
 
@@ -483,9 +487,8 @@ function serviceAccount(service: Service, state: DashboardState, handlers: Handl
     el(
       'p',
       { class: 'field__note' },
+      accounts.length ? `Signed in as ${accounts.join(', ')}. ` : '',
       where,
-      accounts.length ? `It reads as ${accounts.join(', ')}. ` : '',
-      service === 'github' ? 'gh switches to whichever account you sign in as.' : '',
     ),
     connectionView(service, connection, handlers, accounts.length ? { label: 'Sign in again', again: true } : {}),
   );
