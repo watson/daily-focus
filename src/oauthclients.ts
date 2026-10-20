@@ -12,5 +12,5 @@ import type { OAuthClients } from './calendarproviders.ts';
 
 export const OAUTH_CLIENTS: OAuthClients = {
   google: { id: '764541614043-975bpndfu2pg23eql5rehlsq4vk5l3c8.apps.googleusercontent.com', secret: '' },
-  microsoft: { id: '' },
+  microsoft: { id: '0ee3236b-66aa-47cb-8ec6-cffc8504c175' },
 };
