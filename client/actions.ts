@@ -8,7 +8,7 @@
 
 import { batch } from '@preact/signals';
 
-import type { ActionType, BoardRow, DashboardState, ItemStatus, OnboardingAnswer, Service, TicketRow } from '../src/types.ts';
+import type { ActionType, BoardRow, CalendarProvider, DashboardState, ItemStatus, OnboardingAnswer, Service, TicketRow } from '../src/types.ts';
 import * as api from './api.ts';
 import {
   AGENT_RUN_SEEN_KEY,
@@ -689,6 +689,23 @@ async function listCalendars(): Promise<void> {
   }
 }
 
+/** Off to the provider's page; the callback page brings the browser back. */
+async function connectCalendar(provider: CalendarProvider, returnTo: string, reconnect: string | null): Promise<void> {
+  const { url } = await api.postCalendarConnect(provider, returnTo, reconnect);
+  location.assign(url);
+}
+
+async function disconnectCalendar(id: string): Promise<void> {
+  try {
+    adoptState(await api.postCalendarDisconnect(id));
+    // What was listed came partly from the account just gone.
+    ui.calendars.value = null;
+    showToast('Calendar account disconnected');
+  } catch (err) {
+    showToast(`Could not disconnect: ${(err as Error).message}`);
+  }
+}
+
 /* ---------- the setup screen ---------- */
 
 /** One request about a setup step at a time; its buttons wait for it. */
@@ -920,6 +937,8 @@ export const handlers: Handlers = {
   reloadText: (name) => void loadText(name),
   saveObjective: (objective, blocker) => void saveObjective(objective, blocker),
   listCalendars: () => void listCalendars(),
+  connectCalendar,
+  disconnectCalendar: (id) => void disconnectCalendar(id),
   answerSetup: (step, answer) => void answerSetup(step, answer),
   editSetupDraft: (step, answer, version) => {
     if (answer === null) return forgetDraft(step);

@@ -42,7 +42,7 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar-accounts.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
 | User, through the dashboard's editors, the setup screen, or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
@@ -59,7 +59,9 @@ home folder, never merged. Scripts read a store wherever it lies and never move 
 The CLIs the dashboard runs get `DAILY_FOCUS_DATA` set to the store itself
 (`cliEnvironment`), since at launch it names the data folder.
 Integration caches use a sibling temporary file and rename; they store facts, not
-computed board classifications.
+computed board classifications. The calendar is the exception: what the live agenda
+reads stays in memory, since the store is the morning agent's folder, and
+`calendar.json`, where an older version kept it, is deleted at start.
 
 `npm run seed` writes a sample brief. It refuses to replace an existing `items.json`
 unless given `--force`; never pass `--force` against a real store. Always give it a
@@ -117,6 +119,17 @@ run it again with `--remove` afterwards.
   asks only when none is. The dashboard owns
   the questions (`src/questions.ts`); a session only fills one in, in the JSON its
   schema fixes, and never decides what is asked or writes anything.
+- Off a Mac, the live agenda reads Google and Microsoft accounts the user connects
+  (`src/calendaraccounts.ts`), on the apps in `src/oauthclients.ts`, whose consent
+  screens point at dailyfocus.dev's privacy policy and terms. Keep it to what the
+  policy says: read-only scopes, signing in only from a click, the refresh token
+  sealed by the operating system (`src/calendarvault.ts`), and what is read held
+  in memory, never given to the agent, the assistant or setup's sessions, not even
+  calendar names: Google's terms for calendar data hold us to that. Disconnecting
+  asks Google to revoke the sign-in, the one request besides `transitionTicket`
+  that changes anything elsewhere. Change what it reads only with the policy, at
+  `site/privacy/`. Never commit Google's client secret: the package build writes it
+  in from `GOOGLE_CLIENT_SECRET` (`src/oauthclients.ts`).
 - The assistant may read anything and create or revise a Gmail draft; it must never
   send, post, or edit. It runs in an empty directory, so keep that a property of the
   process: no checkout, no worktree, no repository path setting. Work that needs one

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { CalendarBoard, readCalendarFile, type CalendarDeps } from '../src/calendarboard.ts';
+import { CalendarBoard, type CalendarDeps } from '../src/calendarboard.ts';
 import { CalendarHelperError, type CalendarFacts } from '../src/calendar.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 
@@ -35,8 +35,8 @@ function facts(events: CalendarFacts['events'] = [], title = 'Work'): CalendarFa
 
 const event = { externalId: 'a', calendarId: 'cal-1', title: 'standup', start: '2026-09-17T09:00:00+02:00' };
 
-function deps(impl: CalendarDeps['run']): CalendarDeps {
-  return { run: impl };
+function deps(impl: CalendarDeps['read'], ready: string | null = null): CalendarDeps {
+  return { read: impl, ready: () => ready, where: 'Calendar.app' };
 }
 
 test('does nothing at all until a calendar is named', async () => {
@@ -49,8 +49,10 @@ test('does nothing at all until a calendar is named', async () => {
   assert.equal(state.problem, null, 'an unconfigured feature is not a broken one');
 });
 
-test('a successful read is live, and is written to the cache for next time', async () => {
+test('a successful read is live, and is kept in memory only', async () => {
   const cfg = await config();
+  // What an older Daily Focus left in the store, which is the morning agent's folder.
+  await writeFile(cfg.calendarFile, JSON.stringify(facts([event])));
   const board = new CalendarBoard(cfg, () => {}, deps(async () => facts([event])));
   await board.start();
 
@@ -58,9 +60,44 @@ test('a successful read is live, and is written to the cache for next time', asy
   assert.equal(state.live, true);
   assert.deepEqual(state.events.map((e) => e.title), ['standup']);
   assert.equal(state.problem, null);
+  await assert.rejects(stat(cfg.calendarFile), 'nothing read from a calendar is left where Claude Code or Codex could read it');
+});
 
-  const cached = await readCalendarFile(cfg.calendarFile);
-  assert.deepEqual(cached?.events.length, 1);
+test('with nothing to read from yet, it says why, and neither reads nor fails', async () => {
+  let reads = 0;
+  const board = new CalendarBoard(
+    await config(),
+    () => {},
+    deps(async () => {
+      reads++;
+      return facts([event]);
+    }, 'No Google or Microsoft calendar is connected.'),
+  );
+  await board.start();
+
+  const state = board.state();
+  assert.equal(reads, 0);
+  assert.equal(state.live, false);
+  assert.equal(state.failure, null);
+  assert.equal(state.problem, 'No Google or Microsoft calendar is connected.');
+});
+
+test('an account that failed while others read stays live, and says which', async () => {
+  const board = new CalendarBoard(
+    await config({ DAILY_FOCUS_CALENDAR_ADDRESSES: '' }),
+    () => {},
+    deps(async () => ({ ...facts([event]), selfKnown: true, problems: ['Google (alex@example.com) needs connecting again.'] })),
+  );
+  await board.start();
+
+  const state = board.state();
+  assert.equal(state.live, true);
+  assert.deepEqual(state.events.map((e) => e.title), ['standup']);
+  assert.match(state.failure?.message ?? '', /alex@example\.com/);
+  assert.ok(
+    !state.warnings.some((w) => /declined/.test(w)),
+    'connected accounts say which reply is the user’s, so no addresses are needed',
+  );
 });
 
 test('a day with no meetings is live and empty, not a failure', async () => {

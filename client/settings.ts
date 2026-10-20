@@ -14,6 +14,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { SettingView } from '../src/settings.ts';
 import type { DashboardState, Service } from '../src/types.ts';
 import { el } from './el.ts';
+import { calendarAccountsView } from './calendaraccounts.ts';
 import { connectionView } from './connect.ts';
 import type { CalendarName, Handlers, TextEditor, TextName, UiState, View } from './types.ts';
 
@@ -370,11 +371,21 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
 /* ---------- calendars ---------- */
 
 /**
- * The calendars on this Mac, to tick rather than type: Calendar.app's spelling
- * is the one that matters, and it is not always the one you would guess.
+ * The calendars on this Mac, or off one in the accounts connected, to tick
+ * rather than type: their spelling is the one that matters, and it is not
+ * always the one you would guess.
  */
 function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, settings: readonly SettingView[]): JSX.Element | null {
   const calendar = state.setup?.calendar;
+  // Off a Mac: the accounts first, with a way to connect one; the list once one is.
+  if (calendar?.source === 'accounts') {
+    return el(
+      'div',
+      null,
+      calendarAccountsView(state.calendarAccounts, handlers, { returnTo: '/#settings-calendar', disconnect: true }),
+      calendar.built ? calendarList(ui, handlers, settings, 'List your calendars') : null,
+    );
+  }
   if (!calendar?.supported) return null;
   if (!calendar.built) {
     if (calendar.macApp) {
@@ -396,6 +407,11 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
       ', and allow calendar access when macOS asks.',
     );
   }
+  return calendarList(ui, handlers, settings, 'List the calendars on this Mac');
+}
+
+/** The calendars there are, each ticked when the setting names it. */
+function calendarList(ui: UiState, handlers: Handlers, settings: readonly SettingView[], label: string): JSX.Element | null {
   const setting = settings.find((entry) => entry.key === 'DAILY_FOCUS_CALENDARS');
   if (!setting) return null;
   const chosen = shownValue(setting, ui.settingsDraft.value)
@@ -413,7 +429,7 @@ function calendarPicker(state: DashboardState, ui: UiState, handlers: Handlers, 
   return el(
     'div',
     { class: 'calendar-picker' },
-    el('button', { type: 'button', class: 'button', onClick: () => handlers.listCalendars() }, 'List the calendars on this Mac'),
+    el('button', { type: 'button', class: 'button', onClick: () => handlers.listCalendars() }, label),
     typeof listed === 'string' ? el('p', { class: 'settings-card__warning' }, listed) : null,
     Array.isArray(listed)
       ? el(

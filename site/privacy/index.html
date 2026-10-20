@@ -43,7 +43,7 @@
   <div class="guide-head wrap">
     <h1>Privacy policy</h1>
     <p class="lede">Daily Focus runs on your own computer. This page says what it reads, where it keeps it, and what it never does with it.</p>
-    <p class="guide-head__date">Last updated 19 October 2026</p>
+    <p class="guide-head__date">Last updated 20 October 2026</p>
   </div>
 </header>
 
@@ -67,7 +67,7 @@
       <ul class="plain-list">
         <li>Daily Focus is an app on your own computer. There’s no hosted Daily Focus service, no account with us, no analytics and no tracking.</li>
         <li>What it reads stays on your computer, except what Claude Code or Codex reads and sends to Anthropic or OpenAI under your own account with them.</li>
-        <li>Your calendar is read only to show today’s agenda. Daily Focus never sends it to us or to any AI, and never modifies it.</li>
+        <li>Your calendar is read only to show today’s agenda. Daily Focus never sends it to us, never gives a Google or Microsoft calendar to any AI, and never modifies a calendar.</li>
       </ul>
     </section>
 
@@ -94,7 +94,7 @@
       <h2 id="calendars-title">Your calendar</h2>
       <p>The dashboard can show today’s agenda live from your calendar, so a meeting moved or declined during the day shows at once. It reads the calendar in one of two ways:</p>
       <ul class="plain-list">
-        <li><b>On a Mac</b>, from Calendar.app, through a small helper that comes with Daily Focus. macOS asks for your permission first, and your calendar never leaves your Mac.</li>
+        <li><b>On a Mac</b>, from Calendar.app, through a small helper that comes with Daily Focus. macOS asks for your permission first. During setup, Claude Code or Codex is shown the names of your calendars, the accounts they’re on, and how many events each has today, so it can suggest which ones to tick; nothing else from Calendar.app goes to them.</li>
         <li><b>On Windows and Linux</b>, from a Google or Microsoft account you connect. Daily Focus asks Google or Microsoft for read-only access, and you approve it on their own sign-in page.</li>
       </ul>
       <h3>What it reads</h3>
@@ -106,11 +106,12 @@
       <h3>What it does with it</h3>
       <p>It shows those events in the agenda on your dashboard and works out your free time around them. That is the only use.</p>
       <h3>Where it keeps it, and for how long</h3>
-      <p>Only on your computer. The last read of today’s events is kept in the data folder and replaced at every read, so it never holds more than today. Other people’s addresses on an invitation are not kept; only your own answer is.</p>
+      <p>Only on your computer, and only in memory while Daily Focus runs: it never writes your events to disk, and each read replaces the last, so it never holds more than today. Other people’s addresses on an invitation aren’t kept; only your own answer is.</p>
       <p>For a Google or Microsoft account, the sign-in token it issues is kept encrypted, with your operating system’s protection for your user account, until you disconnect. Daily Focus talks to Google or Microsoft directly from your computer, over an encrypted connection, and nothing passes through us.</p>
       <h3>What it never does</h3>
       <ul class="plain-list">
-        <li>It never sends your calendar anywhere: not to us, and not to Claude Code, Codex or any other AI.</li>
+        <li>It never sends your calendar to us or to anyone else.</li>
+        <li>It never gives anything it read from a Google or Microsoft account to Claude Code, Codex or any other AI, not even a calendar’s name.</li>
         <li>It never uses your calendar, or any data from Google Workspace APIs, to develop, improve or train AI or machine-learning models.</li>
         <li>It never uses it for advertising or to judge creditworthiness, and never sells it.</li>
         <li>It never creates, modifies or deletes anything in your calendar.</li>
@@ -118,7 +119,7 @@
       <p>Daily Focus’s use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
       <h3>Turning it off</h3>
       <p><b>On a Mac</b>, turn off <b>Live agenda</b> under <b>Calendar</b> on the settings page, or withdraw the helper’s access in System Settings, under <b>Privacy &amp; Security</b>, <b>Calendars</b>.</p>
-      <p><b>For a Google or Microsoft account</b>, choose <b>Disconnect</b> under <b>Calendar</b> on the settings page. Daily Focus deletes the token and the events it read, and asks Google or Microsoft to revoke its access. You can also remove its access yourself, in your <a href="https://myaccount.google.com/connections">Google Account</a>, your <a href="https://account.live.com/consent/Manage">Microsoft account</a>, or, for a work or school account, at <a href="https://myapps.microsoft.com">My Apps</a>.</p>
+      <p><b>For a Google or Microsoft account</b>, choose <b>Disconnect</b> under <b>Calendar</b> on the settings page. Daily Focus deletes the token and forgets the events it read. It asks Google to revoke its access too; Microsoft gives apps no way to do that. You can remove its access yourself, in your <a href="https://myaccount.google.com/connections">Google Account</a>, your <a href="https://account.live.com/consent/Manage">Microsoft account</a>, or, for a work or school account, at <a href="https://myapps.microsoft.com">My Apps</a>.</p>
     </section>
 
     <section id="services" aria-labelledby="services-title">

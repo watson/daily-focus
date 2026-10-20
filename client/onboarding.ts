@@ -13,6 +13,7 @@ import { h, type JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import type {
+  CalendarAccountsState,
   ConnectionState,
   DashboardState,
   OnboardingCard,
@@ -23,6 +24,7 @@ import type {
   Service,
 } from '../src/types.ts';
 import { el } from './el.ts';
+import { calendarAccountsView } from './calendaraccounts.ts';
 import { connectionView, SERVICE_NAME } from './connect.ts';
 import type { Handlers, SetupDraft, UiState } from './types.ts';
 
@@ -65,7 +67,18 @@ export function OnboardingView({ state, ui, handlers }: { state: DashboardState;
         { class: 'onboarding__thread' },
         flow.steps.map((step) => {
           if (step.id === flow.current || step.id === editing) {
-            return el('li', { key: step.id }, h(StepCard, { step, ui, handlers, current: step.id === flow.current, connections: state.connections }));
+            return el(
+              'li',
+              { key: step.id },
+              h(StepCard, {
+                step,
+                ui,
+                handlers,
+                current: step.id === flow.current,
+                connections: state.connections,
+                calendarAccounts: state.calendarAccounts,
+              }),
+            );
           }
           if (step.status === 'open') return null;
           return el('li', { key: step.id }, doneRow(step, handlers, ui.setupBusy.value !== null));
@@ -170,6 +183,7 @@ function StepCard({
   handlers,
   current,
   connections,
+  calendarAccounts,
 }: {
   step: OnboardingStep;
   ui: UiState;
@@ -177,6 +191,8 @@ function StepCard({
   current: boolean;
   /** Connecting GitHub and Jira, which a card with `connections` holds. Absent from an older server. */
   connections: Record<Service, ConnectionState> | undefined;
+  /** The calendar accounts a card with `calendarAccounts` shows, off a Mac. Absent from an older server. */
+  calendarAccounts: CalendarAccountsState | undefined;
 }): JSX.Element {
   const saved = ui.setupDrafts.value.get(step.id);
   const draft = saved?.answer ?? baseAnswer(step);
@@ -283,6 +299,8 @@ function StepCard({
           handlers.answerSetup(step.id, draft);
         },
       },
+      // Off a Mac, the accounts the list below comes from, and a way to connect one.
+      step.card.calendarAccounts ? calendarAccountsView(calendarAccounts, handlers, { returnTo: '/', disconnect: false }) : null,
       // Fields first: a card with both asks for the few words before the list.
       step.card.fields.length
         ? el(

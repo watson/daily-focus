@@ -18,7 +18,10 @@ import type { CliName, Profile } from './config.ts';
 import type { Identity } from './setup.ts';
 import type { OnboardingCard, OnboardingChoice, OnboardingField, OnboardingOption, Service } from './types.ts';
 
-/** A calendar Calendar.app has, with how many events it has today, which is evidence for free. */
+/**
+ * A calendar Calendar.app has, with how many events it has today, which is
+ * evidence for free; or one a connected account lists, with no count.
+ */
 export interface CalendarListing {
   title: string;
   source: string;
@@ -51,11 +54,12 @@ export interface QuestionContext {
   clis: CliReport | null;
   identity: Identity;
   /**
-   * What Calendar.app has. A string is why it couldn't say; null when this
-   * machine has no Calendar.app, or the list hasn't been read yet.
+   * What Calendar.app has, or off a Mac what the connected accounts list. A
+   * string is why it couldn't say; null when there is nothing to read it from,
+   * or the list hasn't been read yet.
    */
   calendars: CalendarListing[] | string | null;
-  calendar: { supported: boolean; built: boolean; buildCommand: string; macApp: string | null };
+  calendar: { supported: boolean; built: boolean; buildCommand: string; macApp: string | null; source: 'calendar-app' | 'accounts' };
   services: Record<Service, ServiceHealth>;
   /** Whether each service is in use: the answer about them when given, else its switch. */
   uses: Record<Service, boolean>;
@@ -510,6 +514,12 @@ interface CalendarEntry {
   briefName: string;
   note: string;
   include: boolean;
+  /**
+   * The setup session named it, from its own connector, and the account it is on:
+   * what the source list may say of it. Null for one only a connected account
+   * listed, whose name and account never go to the agent; see `sharedList`.
+   */
+  named: { title: string; account: string } | null;
 }
 
 const HOLIDAYS = 'Holidays';
@@ -544,6 +554,7 @@ export function calendarEntries(ctx: QuestionContext): CalendarEntry[] {
       briefName: verdict?.briefName ?? '',
       note: verdict?.note ?? '',
       include: verdict ? verdict.include : configured.has(key),
+      named: verdict ? { title: verdict.title, account: verdict.account } : null,
     });
   }
   for (const verdict of verdicts) {
@@ -557,10 +568,22 @@ export function calendarEntries(ctx: QuestionContext): CalendarEntry[] {
       briefName: verdict.briefName,
       note: verdict.note,
       include: verdict.include,
+      named: { title: verdict.title, account: verdict.account },
     });
   }
   // Holidays last, the user's own accounts first, in the order Calendar.app listed them.
   return entries.sort((a, b) => Number(a.group === HOLIDAYS) - Number(b.group === HOLIDAYS));
+}
+
+/**
+ * Whether the session looking into the calendar question is shown the list:
+ * only Calendar.app's, on the user's own Mac. What a connected Google or
+ * Microsoft account lists never goes to Claude Code or Codex, as the privacy
+ * policy promises and Google's terms for calendar data ask. The card still
+ * matches the session's picks, from its own connector, to that list by name.
+ */
+function sharedList(ctx: QuestionContext): boolean {
+  return ctx.calendar.source === 'calendar-app' && Array.isArray(ctx.calendars);
 }
 
 /** The calendars chosen, whichever kind: values that aren't an entry are names the user typed. */
@@ -584,8 +607,12 @@ const calendars: Question = {
     // On a Mac, the app is the way to run Daily Focus, and it comes with the
     // helper, so the npm package offers the app before the command.
     const { macApp } = ctx.calendar;
-    const problem =
-      ctx.calendar.supported && !ctx.calendar.built
+    const accounts = ctx.calendar.source === 'accounts';
+    const problem = accounts
+      ? typeof ctx.calendars === 'string'
+        ? { message: `Your connected calendars couldn't be listed: ${ctx.calendars}`, command: null, blocking: false }
+        : null
+      : ctx.calendar.supported && !ctx.calendar.built
         ? {
             message: macApp
               ? 'The live agenda reads Calendar.app through a small helper that comes with the Mac app. Without the app, build it once with this command, which needs the Xcode command line tools. Until then it uses the brief’s events, so this list is from your calendar account.'
@@ -608,6 +635,7 @@ const calendars: Question = {
           { multiple: true, custom: 'Add a calendar by name' },
         ),
       ],
+      ...(accounts ? { calendarAccounts: true } : {}),
     });
   },
   summary(answer, ctx) {
@@ -625,9 +653,16 @@ const calendars: Question = {
   },
   sources(answer, ctx) {
     const { entries, typed } = chosenCalendars(answer, ctx);
-    const line = (entry: CalendarEntry) => `- ${ticked(entry.briefName || entry.title)}${entry.group !== HOLIDAYS && entry.group ? ` (${entry.group})` : ''}`;
-    const own = [...entries.filter((entry) => !entry.holiday).map(line), ...typed.map((name) => `- ${ticked(name)}`)];
-    const holidays = entries.filter((entry) => entry.holiday).map(line);
+    // The source list is the agent's to read. Off a Mac, it says of a calendar
+    // only what the setup session found itself, never what an account listed.
+    const said = ctx.calendar.source === 'accounts' ? entries.filter((entry) => entry.named !== null) : entries;
+    const line = (entry: CalendarEntry) => {
+      const name = entry.briefName || (ctx.calendar.source === 'accounts' ? entry.named!.title : entry.title);
+      const account = ctx.calendar.source === 'accounts' ? entry.named!.account : entry.group;
+      return `- ${ticked(name)}${!entry.holiday && account ? ` (${account})` : ''}`;
+    };
+    const own = [...said.filter((entry) => !entry.holiday).map(line), ...typed.map((name) => `- ${ticked(name)}`)];
+    const holidays = said.filter((entry) => entry.holiday).map(line);
     return [
       ...(own.length ? [{ heading: 'Calendars', body: `Query these, and treat their events as blocking time:\n\n${own.join('\n')}` }] : []),
       ...(holidays.length
@@ -638,7 +673,7 @@ const calendars: Question = {
   agent: {
     brief: (ctx) =>
       `Which calendars the user's ${ctx.profile} brief should read. ` +
-      (Array.isArray(ctx.calendars)
+      (sharedList(ctx)
         ? 'Below is every calendar Calendar.app on this Mac has, with the account it is on and how many events it has today. '
         : 'List the calendars their calendar connector reaches. ') +
       'Include ' +
@@ -650,10 +685,12 @@ const calendars: Question = {
       "birthdays, and shared calendars that are mostly other people's events. If you can reach their calendar " +
       'through a connector, look at the coming week for evidence, and give `briefName`, the name the connector ' +
       'uses where it differs from Calendar.app’s. ' +
-      (Array.isArray(ctx.calendars) ? 'List every calendar from the list below, and any your connector has that Calendar.app does not. ' : '') +
+      (sharedList(ctx) ? 'List every calendar from the list below, and any your connector has that Calendar.app does not. ' : '') +
       '`note` is a few words shown under the name, such as ' +
       '"Your primary calendar" or "12 of your meetings this week", or empty.',
     facts(ctx) {
+      // What connected accounts list stays with the dashboard; see `sharedList`.
+      if (ctx.calendar.source === 'accounts') return 'There is no list of calendars here, so work from your calendar connector alone.';
       if (typeof ctx.calendars === 'string') return `Calendar.app could not be read (${ctx.calendars}), so work from your calendar connector alone.`;
       if (!Array.isArray(ctx.calendars)) return 'There is no list from Calendar.app here, so work from your calendar connector alone.';
       if (ctx.calendars.length === 0) return 'Calendar.app has no calendars.';

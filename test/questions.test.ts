@@ -29,7 +29,7 @@ function ctx(overrides: Partial<QuestionContext> = {}): QuestionContext {
       { title: 'Family', source: 'iCloud', eventsToday: 1 },
       { title: 'Holidays in Denmark', source: 'Other', eventsToday: 0 },
     ],
-    calendar: { supported: true, built: true, buildCommand: 'daily-focus build-calendar', macApp: null },
+    calendar: { supported: true, built: true, buildCommand: 'daily-focus build-calendar', macApp: null, source: 'calendar-app' },
     services: {
       github: { enabled: true, connected: true, account: 'rlark' },
       jira: { enabled: true, connected: false, account: null },
@@ -265,7 +265,7 @@ test('without a proposal, the calendars already set stay ticked; an unbuilt help
     calendarEntries(c).filter((e) => e.include).map((e) => e.title),
     ['Platform team'],
   );
-  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'npm run build:calendar', macApp: null } }));
+  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'npm run build:calendar', macApp: null, source: 'calendar-app' } }));
   assert.equal(unbuilt.problem?.blocking, false);
   assert.equal(unbuilt.problem?.command, 'npm run build:calendar');
   assert.equal(unbuilt.problem?.links, undefined, 'a checkout is never sent to the app');
@@ -273,7 +273,7 @@ test('without a proposal, the calendars already set stay ticked; an unbuilt help
 
 test('on a Mac, the npm package offers the app for the calendar helper, before the command', () => {
   const app = 'https://dailyfocus.dev/setup/#install';
-  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'daily-focus build-calendar', macApp: app } }));
+  const unbuilt = question('calendars').card(ctx({ calendars: null, calendar: { supported: true, built: false, buildCommand: 'daily-focus build-calendar', macApp: app, source: 'calendar-app' } }));
   assert.deepEqual(unbuilt.problem?.links, [{ label: 'Get the Mac app', url: app }]);
   assert.match(unbuilt.problem!.message, /comes with the Mac app\. Without the app, build it/);
   assert.equal(unbuilt.problem?.command, 'daily-focus build-calendar');
@@ -333,10 +333,55 @@ test('the screen names the machine it runs on, and the calendars question asks f
 
   const withList = question('calendars').agent!;
   assert.match(withList.brief(ctx()), /Below is every calendar Calendar\.app on this Mac has/);
-  const without = ctx({ calendars: null, calendar: { supported: false, built: false, buildCommand: '', macApp: null } });
+  const without = ctx({ calendars: null, calendar: { supported: false, built: false, buildCommand: '', macApp: null, source: 'accounts' } });
   assert.doesNotMatch(withList.brief(without), /Below is every calendar/);
   assert.match(withList.brief(without), /List the calendars their calendar connector reaches/);
-  assert.match(withList.facts!(without)!, /no list from Calendar\.app here/);
+  assert.match(withList.facts!(without)!, /no list of calendars here/);
+});
+
+test('off a Mac, the card lists the connected accounts’ calendars, and the session is never shown them', () => {
+  const listed = [
+    { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 0 },
+    { title: 'Family', source: 'robin@personal.example', eventsToday: 0 },
+  ];
+  const accounts = ctx({ calendars: listed, calendar: { supported: true, built: true, buildCommand: '', macApp: null, source: 'accounts' } });
+  const calendars = question('calendars');
+
+  const card = calendars.card(accounts);
+  assert.equal(card.calendarAccounts, true, 'the card shows the accounts, with a way to connect one');
+  assert.deepEqual(
+    card.choices[0]!.options.map((option) => [option.label, option.group]),
+    [['Robin Lark', 'robin@northwind.example'], ['Family', 'robin@personal.example']],
+  );
+  // Google's terms for calendar data, and the privacy policy: none of it to Claude Code or Codex.
+  for (const said of [calendars.agent!.brief(accounts), calendars.agent!.facts!(accounts) ?? '']) {
+    assert.doesNotMatch(said, /Robin Lark|Family|robin@/);
+  }
+  assert.equal(calendars.card(ctx()).calendarAccounts, undefined, 'on a Mac, Calendar.app is the list');
+});
+
+test('off a Mac, the source list names only calendars the session found itself, never what an account listed', () => {
+  const listed = [
+    { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 0 },
+    { title: 'Family', source: 'robin@personal.example', eventsToday: 0 },
+  ];
+  const accounts = ctx({
+    calendars: listed,
+    calendar: { supported: true, built: true, buildCommand: '', macApp: null, source: 'accounts' },
+    proposals: {
+      calendars: {
+        why: '',
+        calendars: [{ title: 'Robin Lark', account: 'Northwind', include: true, holiday: false, briefName: 'primary', note: '' }],
+      },
+    },
+  });
+  const calendars = question('calendars');
+  const answer = { choices: { calendars: ['live:robin@northwind.example:Robin Lark', 'live:robin@personal.example:Family'] }, fields: {} };
+
+  const written = calendars.sources!(answer, accounts).map((section) => section.body).join('\n');
+  assert.match(written, /`primary` \(Northwind\)/, 'the session’s own name for it, and its own word for the account');
+  assert.doesNotMatch(written, /Family|robin@/, 'only an account listed Family, so the agent isn’t told of it');
+  assert.deepEqual(calendars.settings!(answer, accounts), { DAILY_FOCUS_CALENDARS: 'Robin Lark, Family' }, 'the live agenda still reads both');
 });
 
 test('the profile is asked only when nothing has settled it', () => {

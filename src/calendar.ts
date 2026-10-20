@@ -52,11 +52,18 @@ export interface RawCalendar {
   source?: unknown;
 }
 
-/** The helper's whole payload, or the refusal it writes instead. */
+/** The helper's whole payload, or the refusal it writes instead; also what connected accounts read. */
 export interface CalendarFacts {
   generatedAt: string;
   calendars: { id: string; title: string; source: string }[];
   events: RawCalendarEvent[];
+  /**
+   * Connected accounts say which reply is the user's own on every event, so the
+   * addresses the helper needs to find it aren't needed.
+   */
+  selfKnown?: boolean;
+  /** Accounts that couldn't be read this time, each said in a sentence; their last good read stands in. */
+  problems?: string[];
 }
 
 export interface CalendarSelection {

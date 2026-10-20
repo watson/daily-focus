@@ -1,6 +1,6 @@
 /** Everything that talks to the server. */
 
-import type { DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
+import type { CalendarProvider, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
 import type { CalendarName, SettingsPage, TextName } from './types.ts';
 
 async function stateFrom(res: Response, what: string): Promise<DashboardState> {
@@ -199,6 +199,16 @@ export function postObjective(objective: string, blocker: string): Promise<Dashb
 /** The calendars Calendar.app has. Launches the helper, which may ask for access the first time. */
 export function postListCalendars(): Promise<{ calendars: CalendarName[] }> {
   return postJson<{ calendars: CalendarName[] }>('/api/calendars/list', {});
+}
+
+/** Start connecting a calendar account: where to send the browser, on the provider's sign-in page. */
+export function postCalendarConnect(provider: CalendarProvider, returnTo: string, reconnect: string | null): Promise<{ url: string }> {
+  return postJson<{ url: string }>('/api/calendar/accounts/connect', { provider, returnTo, reconnect });
+}
+
+/** Disconnect a calendar account: its sign-in forgotten, and Google asked to revoke it. */
+export function postCalendarDisconnect(id: string): Promise<DashboardState> {
+  return post('/api/calendar/accounts/disconnect', { id });
 }
 
 /** Answer a setup step, or put it off. Rejects with the server's reason when the answer can't be saved. */

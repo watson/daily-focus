@@ -165,7 +165,7 @@ export interface OnboardingDeps {
   identity(): Promise<Identity>;
   /** How GitHub and Jira stand: switched on, connected, and as whom. */
   services(): Promise<Record<Service, ServiceHealth>>;
-  /** Calendar.app's calendars; throws with why it couldn't list them. */
+  /** Calendar.app's calendars, or off a Mac the connected accounts'; throws with why it couldn't list them. */
   listCalendars(): Promise<CalendarListing[]>;
   /** Whether these settings would be accepted, without saving them: the reason when not. */
   checkSettings(values: Record<string, string | null>): string | null;
@@ -440,6 +440,20 @@ export class Onboarding {
     const said = [...record.conversation, { from: 'you' as const, text: text.trim() }];
     await this.ask(question, ctx, resume ? request : `${await this.firstMessage(question, ctx)}\n\n${request}`, resume, said);
     return null;
+  }
+
+  /**
+   * A calendar account was connected or disconnected, off a Mac: list the
+   * calendars afresh for the card that shows them. A click started it, so the
+   * accounts may be asked.
+   */
+  async calendarsChanged(): Promise<void> {
+    await this.load();
+    this.calendars = null;
+    this.listed = null;
+    if (!this.file || this.file.finishedAt) return;
+    await this.context({ listCalendars: true });
+    this.deps.onChange();
   }
 
   /**

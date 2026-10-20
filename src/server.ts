@@ -11,8 +11,11 @@ import { dataRoot, launchProfile, layerSettings, oldDotenvWarning, settingSource
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
 import { Board, type BoardDeps } from './board.ts';
-import { CalendarBoard } from './calendarboard.ts';
+import { CalendarBoard, helperDeps, type CalendarDeps } from './calendarboard.ts';
 import { runHelper } from './calendar.ts';
+import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.ts';
+import { CALLBACK_PATH, type OAuthClients } from './calendarproviders.ts';
+import { OAUTH_CLIENTS } from './oauthclients.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
@@ -62,6 +65,83 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 /** How often the morning agent's clock checks whether a run is due. */
 const AGENT_CLOCK_MS = 30_000;
+
+/**
+ * Where Google or Microsoft sends the browser back after a calendar sign-in.
+ * A GET, so it changes nothing itself (`guard.ts`): its script takes the answer
+ * out of the address, posts it to `/api/calendar/accounts/finish` as JSON, says
+ * how that went, and goes back to where the sign-in started.
+ */
+const CALLBACK_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Connecting your calendar · Daily Focus</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f4ef; color: #1c2541;
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 32rem; padding: 32px; }
+  h1 { margin: 0 0 12px; font-size: 1.4rem; font-weight: 600; }
+  p { margin: 0 0 12px; }
+  a { color: inherit; }
+  code { display: block; margin: 0 0 12px; padding: 10px 12px; border-radius: 6px; background: #e9e5db; font-size: 13px; word-break: break-all; }
+  [hidden] { display: none; }
+  @media (prefers-color-scheme: dark) { body { background: #12172b; color: #e8e6e1; } code { background: #232a45; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Connecting your calendar…</h1>
+  <p id="message"></p>
+  <code id="admin" hidden></code>
+  <p><a id="back" href="/">Back to Daily Focus</a></p>
+</main>
+<script>
+(async () => {
+  const params = new URLSearchParams(location.search);
+  // Out of the address bar and the history: the code is good for one sign-in.
+  history.replaceState(null, '', location.pathname);
+  const show = (title, message) => {
+    document.getElementById('title').textContent = title;
+    document.getElementById('message').textContent = message;
+  };
+  let result;
+  try {
+    const res = await fetch('/api/calendar/accounts/finish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        state: params.get('state') || '',
+        code: params.get('code') || '',
+        error: params.get('error') || '',
+        errorDescription: params.get('error_description') || '',
+      }),
+    });
+    result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Daily Focus answered ' + res.status);
+  } catch (err) {
+    show('That didn’t work', 'Daily Focus couldn’t finish connecting: ' + err.message);
+    return;
+  }
+  document.getElementById('back').href = result.returnTo || '/';
+  if (result.connected) {
+    show('Connected', result.connected + ' is connected. Taking you back to Daily Focus…');
+    setTimeout(() => location.replace(result.returnTo || '/'), 1200);
+    return;
+  }
+  show('Not connected', result.error || 'The sign-in didn’t finish.');
+  if (result.adminUrl) {
+    const admin = document.getElementById('admin');
+    admin.textContent = result.adminUrl;
+    admin.hidden = false;
+  }
+})();
+</script>
+</body>
+</html>
+`;
 
 function sendJSON(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -217,6 +297,8 @@ export interface StartedServer {
 export interface Integrations {
   github?: BoardDeps;
   jira?: TicketBoardDeps;
+  /** Calendar accounts off a Mac: the provider APIs, the vault and the registered apps, for a test to supply. */
+  calendarAccounts?: CalendarAccountsDeps & { clients?: OAuthClients };
 }
 
 export interface ServerOptions {
@@ -324,7 +406,20 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     },
     options.integrations?.github,
   );
-  const calendar = new CalendarBoard(config, () => void broadcast());
+  // Off a Mac, the live agenda reads the Google and Microsoft accounts the user
+  // connects here; on one, Calendar.app through the helper.
+  const calendarAccounts = new CalendarAccounts(
+    config.calendarAccountsFile,
+    config.dataDir,
+    options.integrations?.calendarAccounts?.clients ?? OAUTH_CLIENTS,
+    () => void broadcast(),
+    options.integrations?.calendarAccounts,
+  );
+  await calendarAccounts.load();
+  const calendarSource: CalendarDeps = calendarAccounts.offered
+    ? { read: () => calendarAccounts.read(config.calendar.names), ready: () => calendarAccounts.ready, where: 'your connected calendars' }
+    : helperDeps(config);
+  const calendar = new CalendarBoard(config, () => void broadcast(), calendarSource);
   const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
 
   // Connecting GitHub or Jira, which only a click starts: fetching the CLI if
@@ -396,7 +491,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     },
     probeCli: (path) => probeCli(path, null, false),
     readSources,
-    setup: () => setupState(config),
+    setup: () => setupState(config, calendarAccounts.view()),
     identity: () => detectIdentity(config),
     // What each board found on its last read, or what a connection made since:
     // a board switched off reads nothing, so only connecting can tell.
@@ -423,6 +518,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       };
     },
     listCalendars: async () => {
+      if (calendarAccounts.offered) return calendarAccounts.listCalendars();
       const facts = await runHelper(config.calendar.appPath, []);
       const today = new Map<string, number>();
       for (const event of facts.events) {
@@ -513,13 +609,14 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       // A link that can't be read is no reason to withhold the page.
       storeLinkWarning(config).catch(() => null),
     ]);
-    const setup = await setupState(config);
+    const setup = await setupState(config, calendarAccounts.view());
     const pulls = board.view(actions, now);
     const onboardingState = await onboarding.view(setup);
     return {
       ...state,
       board: pulls,
       connections: { github: connections.github.view(), jira: connections.jira.view() },
+      calendarAccounts: calendarAccounts.view(),
       tickets: tickets.view(actions, now),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
@@ -707,7 +804,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (
       restart === 'waiting' &&
       req.method === 'POST' &&
-      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/connect'].includes(path)
+      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/connect', '/api/calendar/accounts/connect'].includes(path)
     ) {
       sendJSON(res, 409, { error: 'the dashboard is restarting to apply new settings; try again in a moment' });
       return;
@@ -805,6 +902,68 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         await clockTick();
       }
       sendState(res, await buildState());
+      return;
+    }
+
+    // Connecting a calendar account off a Mac, which only a click starts: where
+    // to send the browser, on the provider's own sign-in page.
+    if (path === '/api/calendar/accounts/connect' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      if (body.provider !== 'google' && body.provider !== 'microsoft') {
+        sendJSON(res, 400, { error: '"provider" must be google or microsoft' });
+        return;
+      }
+      try {
+        const reconnect = typeof body.reconnect === 'string' ? body.reconnect : null;
+        sendJSON(res, 200, { url: calendarAccounts.begin(body.provider, req.headers.host ?? '', body.returnTo, reconnect) });
+      } catch (err) {
+        sendJSON(res, 409, { error: (err as Error).message });
+      }
+      return;
+    }
+
+    // What the provider sent back, posted by the page at the callback address,
+    // which itself changes nothing: see `CALLBACK_PAGE`.
+    if (path === '/api/calendar/accounts/finish' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      if (typeof body.state !== 'string') {
+        sendJSON(res, 400, { error: '"state" is required' });
+        return;
+      }
+      const text = (value: unknown) => (typeof value === 'string' && value !== '' ? value : undefined);
+      const result = await calendarAccounts.finish({
+        state: body.state,
+        code: text(body.code),
+        error: text(body.error),
+        errorDescription: text(body.errorDescription),
+      });
+      if (result.connected) {
+        void calendar.refresh();
+        void onboarding.calendarsChanged();
+      }
+      sendJSON(res, 200, result);
+      return;
+    }
+
+    if (path === '/api/calendar/accounts/disconnect' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      if (typeof body.id !== 'string') {
+        sendJSON(res, 400, { error: '"id" is required' });
+        return;
+      }
+      await calendarAccounts.disconnect(body.id);
+      void calendar.refresh();
+      void onboarding.calendarsChanged();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === CALLBACK_PATH && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+      res.end(CALLBACK_PAGE);
       return;
     }
 
@@ -1161,6 +1320,16 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     // access, and only a POST is kept from other sites by the guard.
     if (path === '/api/calendars/list' && req.method === 'POST') {
       try {
+        if (calendarAccounts.offered) {
+          const listed = await calendarAccounts.listCalendars();
+          const seen = new Set<string>();
+          const calendars = listed
+            .filter((entry) => !seen.has(`${entry.title}\n${entry.source}`) && seen.add(`${entry.title}\n${entry.source}`))
+            .map(({ title, source }) => ({ title, source }))
+            .sort((a, b) => a.title.localeCompare(b.title));
+          sendJSON(res, 200, { calendars });
+          return;
+        }
         const facts = await runHelper(config.calendar.appPath, []);
         const seen = new Set<string>();
         const calendars = facts.calendars
