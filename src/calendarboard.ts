@@ -3,6 +3,13 @@
  * the same shape: read once at startup, then only while a browser is watching,
  * keeping the last good answer when a read fails.
  *
+ * It reads Calendar.app through the helper on a Mac, and the connected Google
+ * and Microsoft accounts elsewhere (`calendaraccounts.ts`). Either way what it
+ * reads stays in memory: a calendar written into the store would sit in the
+ * folder the morning agent works in, and the privacy policy promises the
+ * calendar never reaches Claude Code or Codex. A restart shows the brief's
+ * events until the first read, which takes seconds.
+ *
  * Simpler than the board in one way — the calendar is local, so there is no rate
  * limit to respect and no network to back off from — and stricter in another. An
  * empty answer has two meanings here. A day with no meetings is empty, and so is
@@ -14,22 +21,28 @@
  */
 
 import type { Config } from './config.ts';
-import { CalendarHelperError, parseCalendarFacts, runHelper, selectEvents, type CalendarFacts } from './calendar.ts';
+import { CalendarHelperError, runHelper, selectEvents, type CalendarFacts } from './calendar.ts';
 import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
-import { writeJsonAtomic } from './fs.ts';
 import type { CalendarState } from './types.ts';
 
-import { readFile } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 
 /** Never re-read more often than this once reads start failing. */
 const MAX_BACKOFF_MS = 15 * 60_000;
 
-/** What the poller talks to, gathered so a test can supply its own. */
+/** Where the poller reads from, gathered so a test can supply its own. */
 export interface CalendarDeps {
-  run(appPath: string, addresses: readonly string[]): Promise<CalendarFacts>;
+  read(): Promise<CalendarFacts>;
+  /** Why there is nothing to read from yet, such as no account connected; null when there is. */
+  ready(): string | null;
+  /** Where the calendars are, for the page's sentences: "Calendar.app". */
+  where: string;
 }
 
-const realDeps: CalendarDeps = { run: runHelper };
+/** Calendar.app, through the helper: what a Mac reads. */
+export function helperDeps(config: Config): CalendarDeps {
+  return { read: () => runHelper(config.calendar.appPath, config.calendar.addresses), ready: () => null, where: 'Calendar.app' };
+}
 
 export class CalendarBoard {
   readonly #config: Config;
@@ -49,7 +62,7 @@ export class CalendarBoard {
   #stopped = false;
   #lastReadAt = 0;
 
-  constructor(config: Config, onChange: () => void, deps: CalendarDeps = realDeps) {
+  constructor(config: Config, onChange: () => void, deps: CalendarDeps = helperDeps(config)) {
     this.#config = config;
     this.#deps = deps;
     this.#onChange = onChange;
@@ -64,10 +77,13 @@ export class CalendarBoard {
     return this.#config.calendar.enabled && this.#config.calendar.names.length > 0;
   }
 
-  /** Load the last good read off disk, then read once regardless of audience. */
+  /**
+   * Read once regardless of audience. An older Daily Focus kept its last read
+   * in the store, which is the morning agent's folder, so it goes first.
+   */
   async start(): Promise<void> {
+    await rm(this.#config.calendarFile, { force: true }).catch(() => {});
     if (!this.enabled) return;
-    this.#facts = await readCalendarFile(this.#config.calendarFile);
     await this.refresh();
   }
 
@@ -92,6 +108,8 @@ export class CalendarBoard {
   /** Read now. Joins a read already running rather than starting a second. Never rejects. */
   async refresh(): Promise<void> {
     if (!this.enabled || this.#stopped) return;
+    // Nothing to read from yet: the state says so, and there's no failure to back off from.
+    if (this.#deps.ready() !== null) return this.#onChange();
     if (this.#reading) return this.#reading;
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
@@ -115,19 +133,23 @@ export class CalendarBoard {
   }
 
   async #read(): Promise<void> {
-    const { appPath, addresses } = this.#config.calendar;
     try {
-      const facts = await this.#deps.run(appPath, addresses);
+      const facts = await this.#deps.read();
       this.#facts = facts;
-      this.#failure = null;
-      this.#streak = null;
-      await writeJsonAtomic(this.#config.calendarFile, facts);
+      // Some accounts read and some didn't: theirs stand in from the last read, and the failure says which.
+      if (facts.problems?.length) {
+        this.#failure = { message: facts.problems.join(' '), detail: '' };
+        this.#streak = extend(this.#streak);
+      } else {
+        this.#failure = null;
+        this.#streak = null;
+      }
     } catch (err) {
       this.#streak = extend(this.#streak);
-      const message =
-        err instanceof CalendarHelperError
-          ? err.message
-          : `could not read the calendar: ${(err as Error).message}`;
+      // Without its full stop: the sentence after it says what is shown instead.
+      const message = (
+        err instanceof CalendarHelperError ? err.message : `could not read the calendar: ${(err as Error).message}`
+      ).replace(/\.$/, '');
       // A failed read keeps the previous answer, exactly as a failed account keeps
       // its rows on the board. Say so either way — a stale agenda that looks fresh
       // is the thing worth avoiding.
@@ -144,6 +166,10 @@ export class CalendarBoard {
   state(): CalendarState {
     if (!this.enabled) {
       return { events: [], live: false, fetchedAt: null, problem: null, failure: null, warnings: [] };
+    }
+    const notReady = this.#deps.ready();
+    if (notReady !== null) {
+      return { events: [], live: false, fetchedAt: null, problem: notReady, failure: null, warnings: [] };
     }
     const reading = this.#reading !== null;
     const failure = this.#failure
@@ -165,11 +191,11 @@ export class CalendarBoard {
     const warnings = [...this.#warnings];
     if (unmatched.length > 0) {
       warnings.push(
-        `No calendar named ${unmatched.map((n) => `"${n}"`).join(', ')}. ` +
-          `Check DAILY_FOCUS_CALENDARS against the names in Calendar.app.`,
+        `No calendar named ${unmatched.map((n) => `"${n}"`).join(', ')} in ${this.#deps.where}. ` +
+          `Choose again under Calendar on the settings page.`,
       );
     }
-    if (this.#config.calendar.addresses.length === 0) {
+    if (this.#config.calendar.addresses.length === 0 && !this.#facts.selfKnown) {
       warnings.push(
         'DAILY_FOCUS_CALENDAR_ADDRESSES is unset, so meetings you declined still show and still block time.',
       );
@@ -182,8 +208,7 @@ export class CalendarBoard {
         events: [],
         live: false,
         fetchedAt: this.#facts.generatedAt,
-        problem:
-          'None of the configured calendars exist in Calendar.app, so the brief’s events are being shown instead.',
+        problem: `None of the configured calendars exist in ${this.#deps.where}, so the brief’s events are being shown instead.`,
         failure,
         warnings,
       };
@@ -211,14 +236,5 @@ export class CalendarBoard {
       void this.refresh();
     }, this.#dueIn() || this.#intervalMs());
     this.#timer.unref?.();
-  }
-}
-
-/** Read the cache back defensively; it is a cache, so losing it costs one read. */
-export async function readCalendarFile(path: string): Promise<CalendarFacts | null> {
-  try {
-    return parseCalendarFacts(JSON.parse(await readFile(path, 'utf8')));
-  } catch {
-    return null;
   }
 }

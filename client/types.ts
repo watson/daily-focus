@@ -6,7 +6,7 @@
 
 import type { Signal } from '@preact/signals';
 import type { SettingsView } from '../src/settings.ts';
-import type { ActionType, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
+import type { ActionType, CalendarProvider, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
 
 export type View = 'today' | 'board' | 'tickets' | 'settings';
 
@@ -246,6 +246,9 @@ export interface Handlers {
   reloadText(name: TextName): void;
   saveObjective(objective: string, blocker: string): void;
   listCalendars(): void;
+  /** Go to the provider's sign-in page to connect a calendar account; rejects with why not, staying on this page. */
+  connectCalendar(provider: CalendarProvider, returnTo: string, reconnect: string | null): Promise<void>;
+  disconnectCalendar(id: string): void;
   /** Answer a setup step, or put it off with `{ later: true }`. */
   answerSetup(step: string, answer: OnboardingAnswer): void;
   /** Change a setup card without answering it; null throws the change away. */

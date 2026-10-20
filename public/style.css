@@ -3832,6 +3832,44 @@ select.field__input {
   color: var(--ink-3);
 }
 
+/* Off a Mac: the Google and Microsoft accounts the agenda reads, and connecting one. */
+.calendar-accounts {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+.onboarding__form .calendar-accounts {
+  margin-bottom: 16px;
+  padding-top: 0;
+  border-top: 0;
+}
+.calendar-accounts p {
+  margin: 0 0 8px;
+}
+.calendar-accounts__list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.calendar-accounts__account + .calendar-accounts__account {
+  margin-top: 10px;
+}
+.calendar-accounts__provider {
+  color: var(--ink-3);
+}
+.calendar-accounts__connect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* What connecting reads, said before the provider's page: Google asks for it there. */
+.calendar-accounts__ask {
+  padding: 12px 14px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
 /* Who a board reads GitHub or Jira as, and connecting it or signing in again. */
 .service-account {
   padding: 12px 0;

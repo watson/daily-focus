@@ -64,7 +64,9 @@ export interface GitHubConfig {
 }
 
 /**
- * How the agenda reaches Calendar.app. See `calendar.ts` and `calendarboard.ts`.
+ * How the agenda reaches the calendar: Calendar.app on a Mac, connected Google
+ * and Microsoft accounts elsewhere. See `calendar.ts`, `calendaraccounts.ts` and
+ * `calendarboard.ts`.
  *
  * The brief is written once at dawn, so a meeting declined at eleven leaves a gap
  * the dashboard cannot see. This is the live read that closes it; when it is off,
@@ -74,8 +76,8 @@ export interface CalendarConfig {
   /** `DAILY_FOCUS_CALENDAR=off` turns the live read off; the brief's events are used. */
   enabled: boolean;
   /**
-   * Calendar names exactly as **Calendar.app** spells them, which is not always how
-   * the briefing agent's source list spells them — the two reach the same calendars
+   * Calendar names exactly as **Calendar.app**, or the connected account, spells
+   * them, which is not always how the briefing agent's source list spells them — the two reach the same calendars
    * through different accounts. Deliberately not read from `sources.md`: that file
    * is the agent's, the server has never opened it, and the two lists answer
    * different questions now that neither depends on the other.
@@ -86,7 +88,8 @@ export interface CalendarConfig {
   names: readonly string[];
   /**
    * The user's own addresses, used to find their own reply among an event's
-   * attendees. Needed because `isCurrentUser` is false for every attendee of every
+   * attendees in Calendar.app; connected accounts say which reply is the user's
+   * themselves. Needed because `isCurrentUser` is false for every attendee of every
    * event on a Google account synced through Calendar.app, so an address is the
    * only reliable way to tell a meeting you declined from one you're going to.
    */
@@ -326,8 +329,13 @@ export interface Config {
   pullsFile: string;
   /** The live agenda. */
   calendar: CalendarConfig;
-  /** Where calendar.json lives: the last good calendar read, written by the server. */
+  /**
+   * Where an older Daily Focus kept its last calendar read. Removed at start:
+   * the read is kept in memory now, out of the morning agent's folder.
+   */
   calendarFile: string;
+  /** The calendar accounts connected off a Mac: who each is, and its sealed sign-in. */
+  calendarAccountsFile: string;
   /** The Jira ticket board. */
   jira: JiraConfig;
   /** Where tickets.json lives: the board's last good read, written by the server. */
@@ -723,6 +731,7 @@ export function loadConfig(values: SettingValues = loadSettings()): Config {
     archiveDir: resolve(dataDir, 'archive'),
     pullsFile: resolve(dataDir, 'prs.json'),
     calendarFile: resolve(dataDir, 'calendar.json'),
+    calendarAccountsFile: resolve(dataDir, 'calendar-accounts.json'),
     ticketsFile: resolve(dataDir, 'tickets.json'),
     timeZoneFile: resolve(dataDir, 'timezone.json'),
     port: boundedSetting('DAILY_FOCUS_PORT', 4321, 0, 65535, values),

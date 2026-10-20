@@ -473,6 +473,33 @@ export interface BoardRow extends PullRequest {
 /** The optional services the dashboard reads through a CLI: GitHub through gh, Jira through acli. */
 export type Service = 'github' | 'jira';
 
+/** Where a connected calendar account is, off a Mac: see `calendaraccounts.ts`. */
+export type CalendarProvider = 'google' | 'microsoft';
+
+/** One connected calendar account, as every tab may see it: never its token. */
+export interface CalendarAccountView {
+  id: string;
+  provider: CalendarProvider;
+  email: string;
+  /** Why its last read failed, when it did: a sign-in to renew, say. */
+  problem: string | null;
+}
+
+/**
+ * Calendar accounts connected for the live agenda, on a computer without
+ * Calendar.app. Signing in starts only from a click, and goes through the
+ * provider's own page in the browser on this computer.
+ */
+export interface CalendarAccountsState {
+  /** Whether this computer reads its calendar through accounts at all: not on a Mac. */
+  offered: boolean;
+  /** The providers this copy of Daily Focus can sign in to. */
+  providers: CalendarProvider[];
+  /** Why no account can be connected on this computer, when none can. */
+  unavailable: string | null;
+  accounts: CalendarAccountView[];
+}
+
 /**
  * Connecting a service from the page, which fetches its CLI when there is none
  * and signs it in; see `connect.ts`. `waiting` once it waits on the user in the
@@ -972,6 +999,8 @@ export interface DashboardState {
   board: BoardState;
   /** Connecting GitHub and Jira from the page; see `connect.ts`. */
   connections: Record<Service, ConnectionState>;
+  /** Calendar accounts for the live agenda off a Mac. Absent from an older server. */
+  calendarAccounts?: CalendarAccountsState;
   /** The Jira ticket board. Present even when off, for the same reason. */
   tickets: TicketBoardState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
@@ -1058,7 +1087,19 @@ export interface SetupState {
    * `macApp` is where to get the Mac app, which comes with the helper, offered
    * before the command when the npm package runs on a Mac; null otherwise.
    */
-  calendar: { supported: boolean; built: boolean; chosen: number; buildCommand: string; macApp: string | null };
+  calendar: {
+    supported: boolean;
+    built: boolean;
+    chosen: number;
+    buildCommand: string;
+    macApp: string | null;
+    /**
+     * Where the live agenda reads: Calendar.app through the helper on a Mac,
+     * connected accounts elsewhere. Off a Mac, `supported` is whether an account
+     * can be connected and `built` whether one is.
+     */
+    source: 'calendar-app' | 'accounts';
+  };
 }
 
 /**
@@ -1125,6 +1166,12 @@ export interface OnboardingCard {
    * ticked one is connected.
    */
   connections?: { service: Service; account: string | null }[];
+  /**
+   * The calendar card off a Mac: the Google and Microsoft accounts the live
+   * agenda reads, drawn above the list from `DashboardState.calendarAccounts`,
+   * with a way to connect one. What they list joins the card once connected.
+   */
+  calendarAccounts?: boolean;
   /** What Continue says while every field is empty, where that is a way to answer: "Continue without one". */
   empty?: string;
 }

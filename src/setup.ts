@@ -17,7 +17,7 @@ import { CLI_NAMES, type CliName, type Config } from './config.ts';
 import { command, MAC_APP_URL, offerMacApp } from './install.ts';
 import { findExecutable } from './launch.ts';
 import { resolveTool } from './tools.ts';
-import type { SetupState } from './types.ts';
+import type { CalendarAccountsState, SetupState } from './types.ts';
 
 const run = promisify(execFile);
 
@@ -95,16 +95,18 @@ export async function firstBriefPending(config: Config): Promise<boolean> {
 
 /**
  * What the setup screen and Today's first-brief card need that the rest of the
- * state doesn't already say.
+ * state doesn't already say. `accounts` is how calendar accounts stand off a
+ * Mac, where they are what the live agenda reads.
  */
-export async function setupState(config: Config): Promise<SetupState> {
+export async function setupState(config: Config, accounts?: CalendarAccountsState): Promise<SetupState> {
   let sources: string | null = null;
   try {
     sources = await readFile(config.sourcesFile, 'utf8');
   } catch {
     sources = null;
   }
-  const supported = process.platform === 'darwin';
+  // Accounts say for themselves whether they are offered here: everywhere but a Mac.
+  const helper = accounts ? !accounts.offered : process.platform === 'darwin';
   return {
     // The file, not whether it parsed: a brief that is there but broken is a
     // problem for its banner to report, not a store to set up from scratch. The
@@ -113,13 +115,23 @@ export async function setupState(config: Config): Promise<SetupState> {
     profile: config.profile,
     sources: { exists: sources !== null, placeholders: sources === null ? 0 : placeholdersIn(sources) },
     clis: await findClis(config),
-    calendar: {
-      supported,
-      built: supported && (await exists(config.calendar.appPath)),
-      chosen: config.calendar.names.length,
-      buildCommand: command('build-calendar'),
-      macApp: offerMacApp() ? MAC_APP_URL : null,
-    },
+    calendar: helper
+      ? {
+          supported: true,
+          built: await exists(config.calendar.appPath),
+          chosen: config.calendar.names.length,
+          buildCommand: command('build-calendar'),
+          macApp: offerMacApp() ? MAC_APP_URL : null,
+          source: 'calendar-app',
+        }
+      : {
+          supported: accounts !== undefined && accounts.providers.length > 0 && accounts.unavailable === null,
+          built: (accounts?.accounts.length ?? 0) > 0,
+          chosen: config.calendar.names.length,
+          buildCommand: command('build-calendar'),
+          macApp: null,
+          source: 'accounts',
+        },
   };
 }
 

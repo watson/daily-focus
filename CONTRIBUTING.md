@@ -100,6 +100,9 @@ versions and release notes come from, so CI checks it.
 | `src/links.ts` | Linking the prompt, schema and assistant's instructions into the store at every start, and noticing when something repoints them |
 | `src/focus.ts`, `src/archive.ts` | Objective privacy and progress history |
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
+| `src/calendaraccounts.ts`, `src/calendarproviders.ts`, `client/calendaraccounts.ts` | Off a Mac: signing in to Google and Microsoft from the page, and reading today's events from them |
+| `src/calendarvault.ts` | Where a calendar account's sign-in is kept: sealed by DPAPI on Windows, in the keyring on Linux |
+| `src/oauthclients.ts` | The apps Daily Focus is registered as with Google and Microsoft |
 | `src/zone.ts`, `client/zone.ts` | The dashboard's time zone: the one the browser last reported, or the Mac's when it moves |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
 | `src/tools.ts` | Fetching gh and acli from their makers for a user without them, checked, into the data folder's `tools/` |
@@ -189,7 +192,11 @@ free of side effects, since only `POST` is checked for its content type.
 | `GET /api/text/focus`, `GET /api/text/sources` | The whole file for its editor, private part included, with its version and the template a new one starts from. Never part of `/api/state` |
 | `POST /api/text/focus`, `POST /api/text/sources` | `{text, version}`. Saves only if the file is still at `version`; otherwise `409` with what is there now |
 | `POST /api/focus/objective` | `{objective, blocker}`. Sets the two frontmatter fields and keeps the rest of `focus.md`; returns fresh state |
-| `POST /api/calendars/list` | The calendars Calendar.app has, for the settings page to choose from. A `POST` because it launches the helper, which may ask for access |
+| `POST /api/calendars/list` | The calendars Calendar.app has, or off a Mac the connected accounts, for the settings page to choose from. A `POST` because it launches the helper, which may ask for access |
+| `POST /api/calendar/accounts/connect` | `{provider, returnTo, reconnect?}`. Starts a Google or Microsoft sign-in: `{url}`, the provider's page, which sends the browser back to `/oauth/callback`. `409` from anywhere but this computer, or where no sign-in can be kept safely |
+| `GET /oauth/callback` | The page the provider sends the browser back to. It changes nothing itself: its script posts what came back to `finish` |
+| `POST /api/calendar/accounts/finish` | `{state, code?, error?, errorDescription?}`. Finishes the sign-in `connect` started, once: `{returnTo, connected?, error?, adminUrl?}` |
+| `POST /api/calendar/accounts/disconnect` | `{id}`. Forgets the account's sign-in, and asks Google to revoke it; Microsoft offers no way to. Returns fresh state |
 | `GET /api/status` | The few facts the menu bar app shows: brief age, open items, the morning agent's last run, setup and restart, the version, and whether a restart would stop the agent or the assistant |
 | `GET /api/health` | Server health check |
 

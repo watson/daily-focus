@@ -184,7 +184,7 @@ test("the server, the client and the README agree on the ticket board's courts",
  */
 test('AGENTS.md names the brief, action log, and integration caches', async () => {
   const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
-  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'tickets.json', 'copies.json']) {
+  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'calendar-accounts.json', 'tickets.json', 'copies.json']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
   }
 });
