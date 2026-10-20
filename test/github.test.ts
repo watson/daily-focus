@@ -163,7 +163,7 @@ test('the individual checks outrank the rollup summary, and the failing ones are
   assert.deepEqual(summarizeChecks(null), { checks: null, failing: [], pending: [], cancelled: [] });
 });
 
-test('the unfinished checks keep their names, kinds and links', () => {
+test('the unfinished checks keep their names, kinds, links and descriptions', () => {
   const { pending } = summarizeChecks({
     state: 'PENDING',
     contexts: {
@@ -175,21 +175,29 @@ test('the unfinished checks keep their names, kinds and links', () => {
           status: 'IN_PROGRESS',
           conclusion: null,
           detailsUrl: 'https://github.com/acme/webapp/runs/4821',
+          title: ' 1 pending: 2 approvals missing ',
         },
         // STALE is neither a pass nor a fail, so it is still outstanding.
-        { __typename: 'CheckRun', name: 'flaky-suite', status: 'COMPLETED', conclusion: 'STALE' },
-        { __typename: 'StatusContext', context: 'ci/deploy', state: 'PENDING', targetUrl: 'https://ci.example.com/42' },
-        { __typename: 'StatusContext', context: 'ci/queued', state: 'EXPECTED' },
+        { __typename: 'CheckRun', name: 'flaky-suite', status: 'COMPLETED', conclusion: 'STALE', title: '' },
+        { __typename: 'StatusContext', context: 'ci/deploy', state: 'PENDING', targetUrl: 'https://ci.example.com/42', description: 'Deploying' },
+        { __typename: 'StatusContext', context: 'ci/queued', state: 'EXPECTED', description: null },
         // Neither of these is waiting on anything, so neither is listed.
         { __typename: 'CheckRun', name: 'unit-tests', status: 'COMPLETED', conclusion: 'SUCCESS' },
         { __typename: 'StatusContext', context: 'ci/lint', state: 'FAILURE' },
       ],
     },
   });
+  // The line GitHub shows beside each name comes along, trimmed, when there is one.
   assert.deepEqual(pending, [
-    { name: 'policy/merge-gate', kind: 'check-run', detailsUrl: 'https://github.com/acme/webapp/runs/4821', checkRunId: 4821 },
+    {
+      name: 'policy/merge-gate',
+      kind: 'check-run',
+      detailsUrl: 'https://github.com/acme/webapp/runs/4821',
+      checkRunId: 4821,
+      description: '1 pending: 2 approvals missing',
+    },
     { name: 'flaky-suite', kind: 'check-run', detailsUrl: null },
-    { name: 'ci/deploy', kind: 'status-context', detailsUrl: 'https://ci.example.com/42' },
+    { name: 'ci/deploy', kind: 'status-context', detailsUrl: 'https://ci.example.com/42', description: 'Deploying' },
     { name: 'ci/queued', kind: 'status-context', detailsUrl: null },
   ]);
 });

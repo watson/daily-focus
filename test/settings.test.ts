@@ -85,6 +85,7 @@ test('a value the dashboard would refuse to start with is refused before it is s
     ['DAILY_FOCUS_MIN_FREE_WINDOW', 'lots'],
     ['DAILY_FOCUS_AGENT_DAYS', 'weekdays'],
     ['DAILY_FOCUS_PROFILE', 'holiday'],
+    ['DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS', '(unclosed'],
   ] as const) {
     const applied = applySettingsChange(sources({ settings: { DAILY_FOCUS_AGENT: 'codex' } }), { [key]: value });
     assert.ok('error' in applied, `${key}=${value} should be refused`);

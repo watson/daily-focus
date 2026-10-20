@@ -14,7 +14,7 @@
  * instead, while the page that can fix it is still open.
  */
 
-import { loadConfig, PROFILES, type Profile } from './config.ts';
+import { DEFAULT_MERGE_GATE_REVIEWS, loadConfig, PROFILES, type Profile } from './config.ts';
 import { layerSettings, LAUNCH_SETTINGS, PROFILE_SETTING, type SettingSources } from './env.ts';
 import { asProfile } from './stores.ts';
 import { writeJsonAtomic } from './fs.ts';
@@ -254,9 +254,18 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS',
     group: 'github',
     label: 'Merge gate checks',
-    help: "Exact names of checks that stand for a repository's whole merge policy, comma-separated. Pending ones get their own bucket.",
+    help: "Exact names of checks that stand for a repository's whole merge policy, comma-separated. Pending ones get their own bucket, unless the gate's title says only approvals are missing.",
     kind: 'list',
     fallback: always('None'),
+    advanced: true,
+  },
+  {
+    key: 'DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS',
+    group: 'github',
+    label: 'Gate title for missing approvals',
+    help: 'A regular expression for a merge gate title that means approvals are all it still wants, matched against the whole title, ignoring case. A pull request whose pending gates all match waits on reviewers instead. Off leaves every pending gate in its own bucket.',
+    kind: 'text',
+    fallback: always(DEFAULT_MERGE_GATE_REVIEWS),
     advanced: true,
   },
   {

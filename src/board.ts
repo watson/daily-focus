@@ -188,7 +188,8 @@ export class Board {
     let rows: BoardState['rows'] = [];
     if (this.enabled) {
       try {
-        rows = resolveBoard(this.#file?.pulls ?? [], actions, now, this.#config.github.mergeGateChecks);
+        const { mergeGateChecks, mergeGateReviews } = this.#config.github;
+        rows = resolveBoard(this.#file?.pulls ?? [], actions, now, mergeGateChecks, mergeGateReviews);
       } catch (err) {
         warnings.push(`Could not judge the pull requests on file: ${(err as Error).message}`);
       }
@@ -466,6 +467,7 @@ function namedChecks(value: unknown): PendingCheck[] {
       detailsUrl: typeof entry.detailsUrl === 'string' && /^https?:\/\//i.test(entry.detailsUrl) ? entry.detailsUrl : null,
     };
     if (typeof entry.checkRunId === 'number') check.checkRunId = entry.checkRunId;
+    if (typeof entry.description === 'string' && entry.description !== '') check.description = entry.description;
     return [check];
   });
 }

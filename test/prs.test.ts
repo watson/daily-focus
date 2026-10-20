@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { DEFAULT_MERGE_GATE_REVIEWS, mergeGateReviewPattern } from '../src/config.ts';
 import { NUDGE_AFTER_MS, STALE_DRAFT_AFTER_MS, countBoard, deriveDecision, judge, resolveBoard } from '../src/prs.ts';
 import type { Action, PendingCheck, PullRequest } from '../src/types.ts';
 
@@ -59,6 +60,8 @@ function approved(overrides: Partial<PullRequest> = {}): PullRequest {
 }
 
 const GATES = ['policy/merge-gate', 'repository-policy'];
+/** The gate wording that ships as the default, so the tests read what users get. */
+const REVIEWS = mergeGateReviewPattern(DEFAULT_MERGE_GATE_REVIEWS);
 
 test('a draft is a draft, and goes stale after a fortnight untouched', () => {
   const fresh = judge(pr({ isDraft: true, lastActivityByYou: daysAgo(3) }), NOW, null);
@@ -395,6 +398,86 @@ test('a merge queue dropping an entry whose gate never cleared stays the gate\'s
   const verdictRed = judge(red, NOW, null, GATES);
   assert.equal(verdictRed.court, 'you');
   assert.deepEqual(verdictRed.reasons, [{ kind: 'ci-failing' }]);
+});
+
+test('a gate that says only approvals are missing waits on reviewers, with the gate as its reason', () => {
+  // The shape that prompted this: GitHub's branch protection is satisfied by the
+  // one approval it asks for, the gate wants another, and says so beside its name.
+  const gate = pending('policy/merge-gate', { detailsUrl: 'https://github.com/acme/webapp/runs/9', description: '1 pending: 1 approval missing' });
+  const short = approved({ mergeStateStatus: 'BLOCKED', checks: 'pending', pendingChecks: [gate] });
+
+  const verdict = judge(short, NOW, null, GATES, REVIEWS);
+  assert.equal(verdict.court, 'reviewers');
+  assert.equal(verdict.decision, 'APPROVED', "GitHub's own decision is still what the row reports");
+  assert.deepEqual(verdict.reasons, [{ kind: 'merge-gate', checks: [gate] }]);
+  assert.equal(verdict.since, daysAgo(2), 'the wait runs from your last push, as for any reviewer wait');
+  assert.equal(verdict.nudge, true, 'two days without the approval is time to ask');
+  assert.equal(judge(short, NOW, hoursAgo(1), GATES, REVIEWS).nudgedAt, hoursAgo(1), 'and Nudged holds it back like any other');
+
+  // The gate's whole list is approvals, however many, with or without the count in front.
+  for (const description of ['1 pending: 3 approvals missing', '2 approvals missing', '1 Pending: 1 Approval Missing']) {
+    const many = approved({ mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate', { description })] });
+    assert.equal(judge(many, NOW, null, GATES, REVIEWS).court, 'reviewers', description);
+  }
+
+  // A review it wants outranks anything else still running, as GitHub's own does.
+  const running = approved({
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [pending('integration-tests'), gate],
+  });
+  assert.equal(judge(running, NOW, null, GATES, REVIEWS).court, 'reviewers');
+
+  // GitHub asking for a review as well: the same court, and the gate still says why.
+  const both = pr({ reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED', pendingChecks: [gate] });
+  assert.deepEqual(judge(both, NOW, null, GATES, REVIEWS).reasons, [{ kind: 'merge-gate', checks: [gate] }]);
+
+  // Not configured as a gate, the description decides nothing: it is a check like any other.
+  assert.equal(judge(short, NOW, null, [], REVIEWS).court, 'checks');
+});
+
+test('the wording is configuration: another gate\'s reads with its own pattern, and off reads none', () => {
+  const gate = pending('policy/merge-gate', { description: 'Awaiting review from 2 owners' });
+  const gated = approved({ mergeStateStatus: 'BLOCKED', checks: 'pending', pendingChecks: [gate] });
+  assert.equal(judge(gated, NOW, null, GATES, REVIEWS).court, 'gate', 'the default knows nothing of this wording');
+  assert.equal(judge(gated, NOW, null, GATES, mergeGateReviewPattern(String.raw`awaiting review from \d+ owners?`)).court, 'reviewers');
+
+  // Off: every pending gate keeps its own bucket, whatever it says.
+  const short = approved({ mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate', { description: '1 pending: 1 approval missing' })] });
+  assert.equal(judge(short, NOW, null, GATES, null).court, 'gate');
+  assert.equal(judge(short, NOW, null, GATES).court, 'gate', 'and off is what judge assumes when not told');
+});
+
+test('a gate that says anything besides approvals, or nothing, stays with the gate', () => {
+  for (const description of [
+    '2 issues: unsigned commits, 2 approvals missing',
+    'Waiting for the pipeline',
+    'approvals missing',
+    '1 pending: 1 approval missing, then more',
+    undefined,
+  ]) {
+    const gated = approved({ mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate', description ? { description } : {})] });
+    assert.equal(judge(gated, NOW, null, GATES, REVIEWS).court, 'gate', String(description));
+  }
+
+  // Two gates pending, and only one of them waiting on reviewers: the other's
+  // reasons are unknown, so the row is the gates' business.
+  const split = approved({
+    mergeStateStatus: 'BLOCKED',
+    pendingChecks: [
+      pending('policy/merge-gate', { description: '1 pending: 1 approval missing' }),
+      pending('repository-policy', { description: 'Evaluating' }),
+    ],
+  });
+  assert.equal(judge(split, NOW, null, GATES, REVIEWS).court, 'gate');
+
+  // Your move still comes first: a gate wanting approvals doesn't hide red CI.
+  const red = approved({
+    checks: 'failure',
+    failingChecks: ['unit-tests'],
+    pendingChecks: [pending('policy/merge-gate', { description: '1 pending: 1 approval missing' })],
+  });
+  assert.equal(judge(red, NOW, null, GATES, REVIEWS).court, 'you');
 });
 
 test('a configured pending gate outranks a merge state GitHub briefly calls clean', () => {

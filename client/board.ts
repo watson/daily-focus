@@ -26,8 +26,11 @@ const COURT_TITLE = {
 
 const COURT_ORDER = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'draft'] as const;
 
-/** The courts whose rows carry a reason worth printing under the title. */
-const COURTS_WITH_REASONS = new Set<string>(['you', 'gate', 'checks']);
+/**
+ * The courts whose rows carry a reason worth printing under the title. A
+ * reviewers row has one only when a merge gate is what wants the review.
+ */
+const COURTS_WITH_REASONS = new Set<string>(['you', 'reviewers', 'gate', 'checks']);
 
 export function BoardView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
   return renderBoard(state, ui, handlers);
@@ -187,7 +190,7 @@ function renderPullMeta(row: BoardRow, state: DashboardState, now: Date): JSX.El
   if (row.decision === 'APPROVED') pill('pill pill--good', 'approved');
   if (row.decision === 'CHANGES_REQUESTED') pill('pill pill--overdue', 'changes requested');
   if (row.checks === 'failure') pill('pill pill--overdue', 'CI failing');
-  else if (row.checks === 'pending') pill('pill', 'checks running');
+  else if (row.checks === 'pending' && !onlyGatesPending(row)) pill('pill', 'checks running');
   if (row.mergeable === 'CONFLICTING') pill('pill pill--overdue', 'conflicts');
   if (row.autoMerge) pill('pill pill--good', 'auto-merge on');
   if (row.nudge) pill('pill pill--age', 'time to ask');
@@ -292,9 +295,9 @@ function describeReason(reason: CourtReason, row: BoardRow, now: Date): Componen
     case 'activity':
       return [`@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${relativeTime(reason.at, now)}`];
     case 'merge-gate':
-      // Deliberately says nothing about what the gate is waiting for. Its rules
-      // are the repository's, not ours, and the link is where they are readable.
-      return reason.checks?.length ? ['merge policy pending: ', ...checkNames(reason.checks)] : ['merge policy pending'];
+      // What the gate is waiting for, only in its own words. Its rules are the
+      // repository's, not ours, and the link is where they are readable.
+      return reason.checks?.length ? ['merge policy pending: ', ...checkNames(reason.checks, true)] : ['merge policy pending'];
     case 'checks-pending':
       return reason.checks?.length ? ['still running: ', ...checkNames(reason.checks)] : ['checks are still running'];
     case 'merge-blocked':
@@ -320,8 +323,11 @@ function waitedFor(since: string, now: Date): string {
   return `${Math.round(hours / 24)} days`;
 }
 
-/** Pending check names, linked where GitHub gave somewhere to look. At most three. */
-function checkNames(checks: readonly PendingCheck[]): ComponentChild[] {
+/**
+ * Pending check names, linked where GitHub gave somewhere to look. At most three.
+ * `described` adds the line GitHub shows beside each, the way it shows it there.
+ */
+function checkNames(checks: readonly PendingCheck[], described = false): ComponentChild[] {
   const parts: ComponentChild[] = [];
   for (const check of checks.slice(0, 3)) {
     if (parts.length > 0) parts.push(', ');
@@ -330,9 +336,21 @@ function checkNames(checks: readonly PendingCheck[]): ComponentChild[] {
         ? el('a', { href: check.detailsUrl, target: '_blank', rel: 'noopener noreferrer' }, check.name)
         : check.name,
     );
+    if (described && check.description) parts.push(` — ${check.description}`);
   }
   if (checks.length > 3) parts.push(` and ${checks.length - 3} more`);
   return parts;
+}
+
+/**
+ * Whether the merge gates the reasons name are all that is unfinished, in which
+ * case "checks running" would only repeat the reason. Pending checks that weren't
+ * read, under a summary saying pending, aren't known to be gates.
+ */
+function onlyGatesPending(row: BoardRow): boolean {
+  const pending = row.pendingChecks ?? [];
+  const gates = new Set(row.reasons.flatMap((reason) => (reason.kind === 'merge-gate' ? (reason.checks ?? []) : [])).map((check) => check.name));
+  return pending.length > 0 && pending.every((check) => gates.has(check.name));
 }
 
 function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.Element {
