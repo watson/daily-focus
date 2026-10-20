@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy · Daily Focus</title>
+  <meta name="description" content="What Daily Focus reads, where it keeps it, and what it never does with it, your calendar included.">
+  <link rel="canonical" href="https://dailyfocus.dev/privacy/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dailyfocus.dev/privacy/">
+  <meta property="og:title" content="Daily Focus privacy policy">
+  <meta property="og:description" content="Daily Focus runs on your own computer. Here is what it reads and where it goes.">
+  <meta property="og:image" content="https://dailyfocus.dev/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#1c2541">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="../fonts/IBMPlexSerif-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../fonts/IBMPlexSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="stylesheet" href="../style.css">
+  <script src="../main.js" defer></script>
+</head>
+<body class="guide-page">
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="band">
+  <nav class="nav wrap" aria-label="Site">
+    <a class="brand" href="../" aria-label="Daily Focus, home">
+      <svg class="brand__mark" viewBox="-50 -50 100 100" aria-hidden="true">
+        <circle r="38" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="9"/>
+        <circle r="22" fill="none" stroke="currentColor" stroke-opacity=".8" stroke-width="9"/>
+        <circle r="10" fill="var(--accent)"/>
+      </svg>
+      <span>Daily Focus</span>
+    </a>
+    <ul class="nav__links">
+      <li><a href="../#objective">How it works</a></li>
+      <li><a href="../setup/">Setup</a></li>
+      <li><a href="https://github.com/watson/daily-focus">GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+    </ul>
+  </nav>
+  <div class="guide-head wrap">
+    <h1>Privacy policy</h1>
+    <p class="lede">Daily Focus runs on your own computer. This page says what it reads, where it keeps it, and what it never does with it.</p>
+    <p class="guide-head__date">Last updated 19 October 2026</p>
+  </div>
+</header>
+
+<main id="main" class="guide wrap">
+  <nav class="toc" aria-label="On this page">
+    <ol>
+      <li><a href="#short">In short</a></li>
+      <li><a href="#who">Who makes it</a></li>
+      <li><a href="#computer">On your computer</a></li>
+      <li><a href="#ai">Claude Code and Codex</a></li>
+      <li><a href="#calendars">Your calendar</a></li>
+      <li><a href="#services">Other services</a></li>
+      <li><a href="#site">This website</a></li>
+      <li><a href="#changes">Changes and contact</a></li>
+    </ol>
+  </nav>
+
+  <div class="guide__body">
+    <section id="short" aria-labelledby="short-title">
+      <h2 id="short-title">In short</h2>
+      <ul class="plain-list">
+        <li>Daily Focus is an app on your own computer. There’s no hosted Daily Focus service, no account with us, no analytics and no tracking.</li>
+        <li>What it reads stays on your computer, except what Claude Code or Codex reads and sends to Anthropic or OpenAI under your own account with them.</li>
+        <li>Your calendar is read only to show today’s agenda. Daily Focus never sends it to us or to any AI, and never modifies it.</li>
+      </ul>
+    </section>
+
+    <section id="who" aria-labelledby="who-title">
+      <h2 id="who-title">Who makes it</h2>
+      <p>Daily Focus is made by <a href="https://wa.tson.dk/">Thomas Watson</a>, an independent developer in Denmark. There’s no company behind it. It is free and open source under the MIT licence, so you can read <a href="https://github.com/watson/daily-focus">all of its code</a>, including everything this page describes.</p>
+      <p>In this policy, “we” means Thomas Watson.</p>
+    </section>
+
+    <section id="computer" aria-labelledby="computer-title">
+      <h2 id="computer-title">On your computer</h2>
+      <p>Daily Focus keeps everything in its data folder on your computer, a folder named <code>.daily-focus</code> in your home folder unless you choose another: your briefs, your notes, its settings, and the last read of each thing it shows. The dashboard is a page your browser opens from your own computer, at <code>localhost</code>.</p>
+      <p>We never receive any of it. We run no server for Daily Focus to send it to, and it sends no usage data, crash reports or analytics anywhere.</p>
+      <p>To remove it all, delete the data folder. On a Mac, the menu bar app also keeps what it downloaded in <code>~/Library/Application Support/Daily Focus</code>.</p>
+    </section>
+
+    <section id="ai" aria-labelledby="ai-title">
+      <h2 id="ai-title">Claude Code and Codex</h2>
+      <p>The morning brief and the assistant are written by Claude Code or Codex, whichever you chose, running on your computer under your own account with Anthropic or OpenAI. Daily Focus gives it its instructions, your objective and source list, and the item you ask about. Claude Code or Codex then reads your sources through its own connectors and sends what it reads to Anthropic or OpenAI to write its answer. The assistant can save an email draft for you to review; it never sends one.</p>
+      <p>That exchange is between you and them, under your agreement with them: see <a href="https://www.anthropic.com/legal/privacy">Anthropic’s privacy policy</a> and <a href="https://openai.com/policies/privacy-policy/">OpenAI’s privacy policy</a>. We don’t see it.</p>
+    </section>
+
+    <section id="calendars" aria-labelledby="calendars-title">
+      <h2 id="calendars-title">Your calendar</h2>
+      <p>The dashboard can show today’s agenda live from your calendar, so a meeting moved or declined during the day shows at once. It reads the calendar in one of two ways:</p>
+      <ul class="plain-list">
+        <li><b>On a Mac</b>, from Calendar.app, through a small helper that comes with Daily Focus. macOS asks for your permission first, and your calendar never leaves your Mac.</li>
+        <li><b>On Windows and Linux</b>, from a Google or Microsoft account you connect. Daily Focus asks Google or Microsoft for read-only access, and you approve it on their own sign-in page.</li>
+      </ul>
+      <h3>What it reads</h3>
+      <ul class="plain-list">
+        <li>The names of your calendars, so you can choose which ones count.</li>
+        <li>Today’s events on the calendars you choose: the title, when it starts and ends, whether it lasts all day, whether it shows you as busy or free, your own answer to the invitation, whether it was cancelled, and its meeting link.</li>
+        <li>For a Google or Microsoft account, its email address, to label the account in Daily Focus.</li>
+      </ul>
+      <h3>What it does with it</h3>
+      <p>It shows those events in the agenda on your dashboard and works out your free time around them. That is the only use.</p>
+      <h3>Where it keeps it, and for how long</h3>
+      <p>Only on your computer. The last read of today’s events is kept in the data folder and replaced at every read, so it never holds more than today. Other people’s addresses on an invitation are not kept; only your own answer is.</p>
+      <p>For a Google or Microsoft account, the sign-in token it issues is kept encrypted, with your operating system’s protection for your user account, until you disconnect. Daily Focus talks to Google or Microsoft directly from your computer, over an encrypted connection, and nothing passes through us.</p>
+      <h3>What it never does</h3>
+      <ul class="plain-list">
+        <li>It never sends your calendar anywhere: not to us, and not to Claude Code, Codex or any other AI.</li>
+        <li>It never uses your calendar, or any data from Google Workspace APIs, to develop, improve or train AI or machine-learning models.</li>
+        <li>It never uses it for advertising or to judge creditworthiness, and never sells it.</li>
+        <li>It never creates, modifies or deletes anything in your calendar.</li>
+      </ul>
+      <p>Daily Focus’s use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+      <h3>Turning it off</h3>
+      <p><b>On a Mac</b>, turn off <b>Live agenda</b> under <b>Calendar</b> on the settings page, or withdraw the helper’s access in System Settings, under <b>Privacy &amp; Security</b>, <b>Calendars</b>.</p>
+      <p><b>For a Google or Microsoft account</b>, choose <b>Disconnect</b> under <b>Calendar</b> on the settings page. Daily Focus deletes the token and the events it read, and asks Google or Microsoft to revoke its access. You can also remove its access yourself, in your <a href="https://myaccount.google.com/connections">Google Account</a>, your <a href="https://account.live.com/consent/Manage">Microsoft account</a>, or, for a work or school account, at <a href="https://myapps.microsoft.com">My Apps</a>.</p>
+    </section>
+
+    <section id="services" aria-labelledby="services-title">
+      <h2 id="services-title">Other services</h2>
+      <p>Daily Focus reaches these only when you’ve turned them on, and only for the reason given. Each sees what any visitor would see, such as your IP address, under its own privacy policy.</p>
+      <ul class="plain-list">
+        <li><b>GitHub and Jira</b>, through the GitHub and Atlassian command-line tools and your own sign-in, to show your pull requests and tickets. The one thing Daily Focus ever changes there is a Jira ticket’s status, when you click to move it.</li>
+        <li><b>GitHub and Atlassian downloads</b>, when you connect GitHub or Jira without their tools installed, to fetch those tools from their makers.</li>
+        <li><b>npm and GitHub releases</b>, which the menu bar app checks a few times a day for updates, and downloads them from.</li>
+      </ul>
+    </section>
+
+    <section id="site" aria-labelledby="site-title">
+      <h2 id="site-title">This website</h2>
+      <p>dailyfocus.dev sets no cookies and runs no analytics or third-party scripts. It is hosted on GitHub Pages, and GitHub may log the IP address of each visit for security, as its <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">privacy statement</a> describes.</p>
+    </section>
+
+    <section id="changes" aria-labelledby="changes-title">
+      <h2 id="changes-title">Changes and contact</h2>
+      <p>If this policy changes, the new version is posted here with a new date, and every earlier version is in the <a href="https://github.com/watson/daily-focus/commits/main/site/privacy/index.html">site’s history on GitHub</a>.</p>
+      <p>Questions about your data, or anything on this page: write to <a href="mailto:support@dailyfocus.dev">support@dailyfocus.dev</a>.</p>
+    </section>
+  </div>
+</main>
+
+<footer class="band guide-foot">
+  <div class="footer wrap">
+    <p>Free and open source, MIT licensed.</p>
+    <ul class="footer__links">
+      <li><a href="./" aria-current="page">Privacy</a></li>
+      <li><a href="../terms/">Terms</a></li>
+      <li><a href="https://github.com/watson/daily-focus">GitHub<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://www.npmjs.com/package/daily-focus">npm<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://github.com/watson/daily-focus/releases">Releases<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+      <li><a href="https://github.com/sponsors/watson">Sponsor<svg class="ext" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.5 2.5l-7 7"/></svg></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>
