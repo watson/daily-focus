@@ -306,6 +306,12 @@ export interface PendingCheck {
   detailsUrl: string | null;
   /** Check runs only. The key an output lookup would cache under, if one is ever added. */
   checkRunId?: number;
+  /**
+   * The line GitHub shows beside the name: a check run's output title, a status's
+   * description. Absent when it gave none, and on a cache from before it was kept.
+   * For a merge gate this is the policy's own account of what it still wants.
+   */
+  description?: string;
 }
 
 /** Something a person other than the author did on a pull request. */
@@ -401,7 +407,8 @@ export interface PullsFile {
  * - `you`        changes requested, CI red, conflicts, a stale branch, or someone
  *                acted after you did.
  * - `ready`      approved, nothing red, and GitHub says the merge would work.
- * - `reviewers`  waiting on a review, or on a re-review since your last push.
+ * - `reviewers`  waiting on a review, or on a re-review since your last push,
+ *                including one a pending gate says is all it is missing.
  * - `gate`       a check the user named as the repository's aggregate merge-policy
  *                decision hasn't finished. Nobody here knows whose move that is —
  *                the gate's own rules are private to whatever implements them.
@@ -420,7 +427,10 @@ export interface CourtReason {
     | 'conflicts'
     | 'activity'
     | 'behind'
-    /** A configured merge gate is pending; `checks` names it. */
+    /**
+     * A configured merge gate is pending; `checks` names it. In the reviewers
+     * court, the gate says approvals are all it is missing.
+     */
     | 'merge-gate'
     /** Ordinary checks are still running; `checks` names them when GitHub said. */
     | 'checks-pending'

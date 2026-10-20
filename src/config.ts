@@ -38,11 +38,21 @@ export interface GitHubConfig {
    * check and let that check speak for all of it. Such a check pending means the
    * merge is refused, but says nothing about whose action is missing — reviewers',
    * the author's, or an automated system's — so the board gives it a bucket of its
-   * own rather than guessing. Which names those are is a property of the user's
-   * repositories, never of this project: nothing is recognised unless it is
-   * configured here, and an empty list simply means no row gets that treatment.
+   * own rather than guessing, unless its title matches `mergeGateReviews`. Which
+   * names those are is a property of the user's repositories, never of this
+   * project: nothing is recognised unless it is configured here, and an empty
+   * list simply means no row gets that treatment.
    */
   mergeGateChecks: readonly string[];
+  /**
+   * A pending gate's title that means approvals are all it still wants, matched
+   * against the whole title and ignoring case. A row whose pending gates all
+   * match waits on reviewers instead of on the gate. Null when switched off.
+   *
+   * It reads only the checks named in `mergeGateChecks`, so its default does
+   * nothing until a gate is named. See `DEFAULT_MERGE_GATE_REVIEWS`.
+   */
+  mergeGateReviews: RegExp | null;
   /** Minutes between polls while a browser is watching. */
   pollMinutes: number;
   /**
@@ -437,6 +447,38 @@ export function parseScope(entries: readonly string[]): string[] {
   return qualifiers;
 }
 
+/**
+ * The wording one widely used gate gives its title when approvals are all it
+ * still wants: "1 pending: 2 approvals missing", or "2 approvals missing". A
+ * title with anything else in its list ("2 issues: unsigned commits, 2 approvals
+ * missing") doesn't match, and stays with the gate.
+ */
+export const DEFAULT_MERGE_GATE_REVIEWS = String.raw`(\d+ [a-z]+: )?\d+ approvals? missing`;
+
+/**
+ * A gate-title pattern as the board matches it: the whole title, ignoring case.
+ *
+ * Compiled on its own before it is anchored, because only a pattern that stands
+ * alone has balanced parentheses: `a)|(b` would otherwise escape the anchors and
+ * match inside any title.
+ */
+export function mergeGateReviewPattern(source: string): RegExp {
+  new RegExp(source);
+  return new RegExp(`^(?:${source})$`, 'i');
+}
+
+/** `DEFAULT_MERGE_GATE_REVIEWS` when unset or empty; `off` reads no gate's title. */
+function gateReviewsSetting(name: string, values: SettingValues): RegExp | null {
+  const raw = stringSetting(name, '', values);
+  if (raw === '') return mergeGateReviewPattern(DEFAULT_MERGE_GATE_REVIEWS);
+  if (raw.toLowerCase() === 'off') return null;
+  try {
+    return mergeGateReviewPattern(raw);
+  } catch (error) {
+    throw new Error(`${name} must be a regular expression, or off: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 /** An on/off switch; unset or empty means `fallback`. */
 function flagSetting(name: string, fallback: boolean, values: SettingValues): boolean {
   const flag = (values[name] ?? '').trim().toLowerCase();
@@ -454,6 +496,7 @@ function gitHubConfig(values: SettingValues): GitHubConfig {
     accounts: listSetting('DAILY_FOCUS_GITHUB_ACCOUNTS', values),
     scope: parseScope(listSetting('DAILY_FOCUS_GITHUB_SCOPE', values)),
     mergeGateChecks: nameListSetting('DAILY_FOCUS_GITHUB_MERGE_GATE_CHECKS', values),
+    mergeGateReviews: gateReviewsSetting('DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS', values),
     pollMinutes,
     ghPath: expandHome((values.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
   };

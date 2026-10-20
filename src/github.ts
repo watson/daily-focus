@@ -295,6 +295,10 @@ const CHECKS_BATCH_SIZE = 6;
  * the run it replaced on the commit, and the workflow it belongs to plus its run
  * and attempt numbers are the only things that say which of two runs of a name is
  * the live one. See `latestChecks`.
+ *
+ * `title` and `description` are the line GitHub shows beside a check's name, kept
+ * for the unfinished ones: it is where a merge gate says what it still wants.
+ * Few checks set one, and asking costs six of the largest first pages about 4%.
  */
 const CHECK_CONTEXTS = `
   totalCount
@@ -302,10 +306,10 @@ const CHECK_CONTEXTS = `
   nodes {
     __typename
     ... on CheckRun {
-      databaseId name status conclusion detailsUrl startedAt completedAt
+      databaseId name status conclusion detailsUrl startedAt completedAt title
       checkSuite { app { id } workflowRun { databaseId runNumber runAttempt workflow { id } } }
     }
-    ... on StatusContext { context state targetUrl createdAt }
+    ... on StatusContext { context state targetUrl createdAt description }
   }`;
 
 const SEARCH_QUERY = `
@@ -505,11 +509,13 @@ export interface RawCheck {
   startedAt?: string | null;
   completedAt?: string | null;
   checkSuite?: RawCheckSuite | null;
+  title?: string | null;
   /** StatusContext */
   context?: string;
   state?: string;
   targetUrl?: string | null;
   createdAt?: string | null;
+  description?: string | null;
 }
 
 /**
@@ -569,6 +575,14 @@ const PASSED_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'NEUTRAL', '
 /** Only http(s) links are kept, so a `javascript:` details URL can never reach the DOM. */
 function safeUrl(url: string | null | undefined): string | null {
   return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
+}
+
+/** A named check, with the line GitHub shows beside it when there is one. */
+function namedCheck(name: string, kind: PendingCheck['kind'], url: string | null | undefined, description: string | null | undefined): PendingCheck {
+  const check: PendingCheck = { name, kind, detailsUrl: safeUrl(url) };
+  const said = typeof description === 'string' ? description.trim() : '';
+  if (said !== '') check.description = said;
+  return check;
 }
 
 /**
@@ -707,7 +721,7 @@ export function summarizeChecks(
   for (const node of nodes) {
     if (node.__typename === 'CheckRun') {
       const name = node.name ?? 'unnamed check';
-      const waiting: PendingCheck = { name, kind: 'check-run', detailsUrl: safeUrl(node.detailsUrl) };
+      const waiting = namedCheck(name, 'check-run', node.detailsUrl, node.title);
       if (typeof node.databaseId === 'number') waiting.checkRunId = node.databaseId;
       if (node.status !== 'COMPLETED' || !node.conclusion) {
         pending.push(waiting);
@@ -735,7 +749,7 @@ export function summarizeChecks(
         derived = worse(derived, 'success');
       } else {
         // PENDING and EXPECTED, plus anything unrecognised: not finished.
-        pending.push({ name, kind: 'status-context', detailsUrl: safeUrl(node.targetUrl) });
+        pending.push(namedCheck(name, 'status-context', node.targetUrl, node.description));
         derived = worse(derived, 'pending');
       }
     }

@@ -16,6 +16,7 @@ import { buttonLabels, byClass, byTag, handlersWith, mount, mountOne, uiWith } f
 import { renderBoard, renderPullRow } from '../client/board.ts';
 import { connectionView } from '../client/connect.ts';
 import { formatTime } from '../client/format.ts';
+import { DEFAULT_MERGE_GATE_REVIEWS, mergeGateReviewPattern } from '../src/config.ts';
 import { resolveBoard } from '../src/prs.ts';
 import type { Action, BoardRow, BoardState, DashboardState, PullRequest } from '../src/types.ts';
 
@@ -25,6 +26,7 @@ const NOW = new Date('2026-09-15T12:00:00Z');
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
 
 const GATES = ['policy/merge-gate'];
+const REVIEWS = mergeGateReviewPattern(DEFAULT_MERGE_GATE_REVIEWS);
 
 const STATE = { now: NOW.toISOString() } as unknown as DashboardState;
 const UI = uiWith();
@@ -62,7 +64,7 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
 
 /** One rendered row, judged the way the server would judge it. */
 function render(overrides: Partial<PullRequest>, actions: Action[] = []): { row: BoardRow; node: HTMLElement } {
-  const [row] = resolveBoard([pr(overrides)], actions, NOW, GATES);
+  const [row] = resolveBoard([pr(overrides)], actions, NOW, GATES, REVIEWS);
   assert.ok(row);
   return { row, node: mountOne(renderPullRow(row, STATE, UI, HANDLERS)) };
 }
@@ -96,9 +98,52 @@ test("a gate row names the check, links GitHub's details page, and offers no nud
       .map((pill) => pill.textContent)
       .join(' | '),
   );
+  // The gate is the only thing unfinished, and the reason already names it.
+  assert.ok(!byClass(node, 'pill').some((pill) => pill.textContent === 'checks running'));
 
   // The board has no idea whose action the gate needs, so it suggests nobody.
   assert.deepEqual(buttonLabels(node), ['Park']);
+});
+
+test('a gate wanting only approvals waits on reviewers, saying so in its own words', () => {
+  const { row, node } = render({
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [
+      {
+        name: 'policy/merge-gate',
+        kind: 'check-run',
+        detailsUrl: 'https://github.com/acme/webapp/runs/4821',
+        description: '1 pending: 1 approval missing',
+      },
+    ],
+  });
+  assert.equal(row.court, 'reviewers');
+
+  const reason = byClass(node, 'item__reason')[0];
+  assert.equal(reason?.textContent, 'merge policy pending: policy/merge-gate — 1 pending: 1 approval missing');
+  assert.equal((byTag(reason!, 'a')[0] as HTMLAnchorElement | undefined)?.href, 'https://github.com/acme/webapp/runs/4821');
+
+  // The gate is the only thing unfinished, and the reason already says so.
+  const pills = byClass(node, 'pill').map((pill) => pill.textContent);
+  assert.ok(!pills.includes('checks running'), pills.join(' | '));
+  assert.ok(pills.includes('approved'), "GitHub's own decision still shows");
+  assert.ok(pills.includes('time to ask'), pills.join(' | '));
+
+  // Unlike a gate row, there is somebody to ask.
+  assert.ok(buttonLabels(node).includes('Nudged'), buttonLabels(node).join(' | '));
+
+  // Anything else still running keeps its pill.
+  const running = render({
+    mergeStateStatus: 'BLOCKED',
+    checks: 'pending',
+    pendingChecks: [
+      { name: 'integration-tests', kind: 'check-run', detailsUrl: null },
+      { name: 'policy/merge-gate', kind: 'check-run', detailsUrl: null, description: '1 pending: 1 approval missing' },
+    ],
+  });
+  assert.equal(running.row.court, 'reviewers');
+  assert.ok(byClass(running.node, 'pill').some((pill) => pill.textContent === 'checks running'));
 });
 
 test('a cancelled check is shown on the row in every court, and moves none of them', () => {

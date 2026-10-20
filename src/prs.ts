@@ -66,6 +66,23 @@ export function matchMergeGates(pr: PullRequest, gates: readonly string[]): Pend
   return (pr.pendingChecks ?? []).filter((check) => gates.includes(check.name));
 }
 
+/**
+ * Whether every pending gate says, in the line GitHub shows beside its name, that
+ * approvals are all it is waiting for. `reviews` is `mergeGateReviews`, already
+ * anchored to the whole title; null reads no title at all.
+ *
+ * A gate's rules are its own, and its pending state alone says nothing about
+ * whose move it is. Its own words can: a gate that wants reviewers it hasn't
+ * heard from is a review still required, whatever `reviewDecision` says, since
+ * GitHub's branch protection may ask for less than the gate does. A wording the
+ * pattern doesn't match, or none at all, leaves the row with the gate. That is
+ * the safe miss: the row stays where it would have been anyway.
+ */
+function gatesWantOnlyApprovals(gate: readonly PendingCheck[], reviews: RegExp | null): boolean {
+  if (!reviews || gate.length === 0) return false;
+  return gate.every((check) => reviews.test(check.description ?? ''));
+}
+
 /** The newest review in a given state, or undefined. */
 function newest(pr: PullRequest, state: string): { login: string; at: string } | undefined {
   return pr.reviews.filter((review) => review.state === state).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
@@ -82,7 +99,8 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *
  * `gates` are the configured merge-gate check names, from `mergeGateChecks`.
  * Nothing is a gate by default — the list arrives from the user's private config,
- * and an empty one simply leaves those rows in `checks`.
+ * and an empty one simply leaves those rows in `checks`. `reviews` is the gate
+ * title meaning only approvals are missing, from `mergeGateReviews`.
  *
  * The order the questions are asked in is the whole design, so it is written out
  * rather than left implicit:
@@ -90,14 +108,21 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *   1. drafts, which ask nothing of anyone
  *   2. anything only you can fix — a verdict against you, red CI, a conflict, a
  *      stale branch, or somebody having spoken after you
- *   3. a review GitHub itself still requires, which outranks any check
+ *   3. a review GitHub itself still requires, or one a pending gate says it is
+ *      missing and nothing else, which outranks any check
  *   4. a configured merge gate that hasn't finished
  *   5. GitHub reporting the merge blocked without naming an unfinished check
  *   6. GitHub reporting an ordinary check wait or an unstable merge
  *   7. ready, which needs GitHub to agree the merge would work
  *   8. otherwise, waiting on reviewers
  */
-export function judge(pr: PullRequest, now: Date, nudgedAt: string | null, gates: readonly string[] = []): Judgement {
+export function judge(
+  pr: PullRequest,
+  now: Date,
+  nudgedAt: string | null,
+  gates: readonly string[] = [],
+  reviews: RegExp | null = null,
+): Judgement {
   const decision = deriveDecision(pr);
   // `?? null`: a pull read back from an older file may lack the key entirely.
   const you = pr.lastActivityByYou ?? null;
@@ -158,10 +183,15 @@ export function judge(pr: PullRequest, now: Date, nudgedAt: string | null, gates
 
   // GitHub's own "a review is still required" outranks every check, including a
   // gate: a gate that is waiting for that same approval would otherwise hide the
-  // one thing a person can act on. Outstanding `requestedReviewers` deliberately
-  // do not count — GitHub keeps asking long after the required approvals landed.
-  if (decision !== 'REVIEW_REQUIRED') {
-    const gate = matchMergeGates(pr, gates);
+  // one thing a person can act on. So does a gate saying approvals are all it is
+  // missing, for the same reason; the row carries the gate as its reason, since
+  // the gate's link is where it says whose approval. Outstanding
+  // `requestedReviewers` deliberately do not count — GitHub keeps asking long
+  // after the required approvals landed.
+  const gate = matchMergeGates(pr, gates);
+  const gateReview = gatesWantOnlyApprovals(gate, reviews);
+  if (gateReview) reasons.push({ kind: 'merge-gate', checks: gate });
+  if (decision !== 'REVIEW_REQUIRED' && !gateReview) {
     if (gate.length > 0) return settled('gate', { kind: 'merge-gate', checks: gate });
 
     // Named when GitHub returned the contexts, and deliberately unnamed when it
@@ -226,21 +256,22 @@ export function judge(pr: PullRequest, now: Date, nudgedAt: string | null, gates
  * brief may raise "CI failing on #3402" and the user may mark that done, but #3402
  * is still open, and this board shows what is open.
  *
- * `gates` is `github.mergeGateChecks` — private configuration rather than a fact
- * about the pull request, which is why the match happens here and never reaches
- * `prs.json`.
+ * `gates` is `github.mergeGateChecks`, and `reviews` is `github.mergeGateReviews`
+ * — configuration rather than facts about the pull request, which is why the
+ * match happens here and never reaches `prs.json`.
  */
 export function resolveBoard(
   pulls: readonly PullRequest[],
   actions: readonly Action[],
   now: Date,
   gates: readonly string[] = [],
+  reviews: RegExp | null = null,
 ): BoardRow[] {
   const folded = foldActionLog(actions, now);
 
   const rows = pulls.map((pr): BoardRow => {
     const log = folded.get(canonicalId(pr.id));
-    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates);
+    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates, reviews);
 
     const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes: log?.notes ?? [] };
     if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;

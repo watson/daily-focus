@@ -53,6 +53,39 @@ test('merge gate names are split on commas only, trimmed and deduplicated', () =
   assert.deepEqual(gates('Policy/Merge-Gate'), ['Policy/Merge-Gate']);
 });
 
+test('the gate title for missing approvals has a default, matches whole titles, and can be switched off', () => {
+  const reviews = (raw?: string) =>
+    loadConfig({ DAILY_FOCUS_DATA: '/tmp/x', ...(raw === undefined ? {} : { DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS: raw }) }).github
+      .mergeGateReviews;
+
+  for (const fallback of [reviews(), reviews(''), reviews('  ')]) {
+    assert.ok(fallback);
+    assert.ok(fallback.test('1 pending: 2 approvals missing'));
+    assert.ok(fallback.test('1 approval missing'));
+    assert.ok(fallback.test('1 PENDING: 1 APPROVAL MISSING'), 'case is ignored');
+    assert.ok(!fallback.test('2 issues: unsigned commits, 2 approvals missing'), 'anything else in the list keeps the gate');
+    assert.ok(!fallback.test('1 approval missing.'), 'the whole title has to match');
+  }
+
+  // One of the user's own: anchored for them, so a pattern can't match inside a longer title.
+  const own = reviews('awaiting \\d+ owners?');
+  assert.ok(own?.test('Awaiting 2 owners'));
+  assert.ok(!own?.test('Awaiting 2 owners, and CI'));
+
+  assert.equal(reviews('off'), null);
+  assert.equal(reviews('OFF'), null);
+});
+
+test('a gate title pattern that does not compile, or would escape its anchors, refuses to start', () => {
+  for (const raw of ['(unclosed', 'a)|(b', '[z-a]']) {
+    assert.throws(
+      () => loadConfig({ DAILY_FOCUS_DATA: '/tmp/x', DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS: raw }),
+      /DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS must be a regular expression, or off/,
+      raw,
+    );
+  }
+});
+
 test('accounts and scope are lists, and the scope becomes search qualifiers', () => {
   const config = loadConfig({
     DAILY_FOCUS_DATA: '/tmp/x',
