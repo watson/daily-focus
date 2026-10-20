@@ -115,7 +115,7 @@ test('a work account its organisation must approve first gets the page to send a
   assert.match(result.error ?? '', /IT admin/);
   const admin = new URL(result.adminUrl ?? '');
   assert.equal(admin.searchParams.get('client_id'), 'microsoft-client');
-  assert.match(admin.searchParams.get('scope') ?? '', /Calendars\.ReadBasic/);
+  assert.match(admin.searchParams.get('scope') ?? '', /Calendars\.Read\b/);
 });
 
 test('reads today’s events from the named calendars of every account, and asks Google for no one else’s address', async () => {

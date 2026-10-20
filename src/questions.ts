@@ -514,6 +514,12 @@ interface CalendarEntry {
   briefName: string;
   note: string;
   include: boolean;
+  /**
+   * The setup session named it, from its own connector, and the account it is on:
+   * what the source list may say of it. Null for one only a connected account
+   * listed, whose name and account never go to the agent; see `sharedList`.
+   */
+  named: { title: string; account: string } | null;
 }
 
 const HOLIDAYS = 'Holidays';
@@ -548,6 +554,7 @@ export function calendarEntries(ctx: QuestionContext): CalendarEntry[] {
       briefName: verdict?.briefName ?? '',
       note: verdict?.note ?? '',
       include: verdict ? verdict.include : configured.has(key),
+      named: verdict ? { title: verdict.title, account: verdict.account } : null,
     });
   }
   for (const verdict of verdicts) {
@@ -561,6 +568,7 @@ export function calendarEntries(ctx: QuestionContext): CalendarEntry[] {
       briefName: verdict.briefName,
       note: verdict.note,
       include: verdict.include,
+      named: { title: verdict.title, account: verdict.account },
     });
   }
   // Holidays last, the user's own accounts first, in the order Calendar.app listed them.
@@ -645,9 +653,16 @@ const calendars: Question = {
   },
   sources(answer, ctx) {
     const { entries, typed } = chosenCalendars(answer, ctx);
-    const line = (entry: CalendarEntry) => `- ${ticked(entry.briefName || entry.title)}${entry.group !== HOLIDAYS && entry.group ? ` (${entry.group})` : ''}`;
-    const own = [...entries.filter((entry) => !entry.holiday).map(line), ...typed.map((name) => `- ${ticked(name)}`)];
-    const holidays = entries.filter((entry) => entry.holiday).map(line);
+    // The source list is the agent's to read. Off a Mac, it says of a calendar
+    // only what the setup session found itself, never what an account listed.
+    const said = ctx.calendar.source === 'accounts' ? entries.filter((entry) => entry.named !== null) : entries;
+    const line = (entry: CalendarEntry) => {
+      const name = entry.briefName || (ctx.calendar.source === 'accounts' ? entry.named!.title : entry.title);
+      const account = ctx.calendar.source === 'accounts' ? entry.named!.account : entry.group;
+      return `- ${ticked(name)}${!entry.holiday && account ? ` (${account})` : ''}`;
+    };
+    const own = [...said.filter((entry) => !entry.holiday).map(line), ...typed.map((name) => `- ${ticked(name)}`)];
+    const holidays = said.filter((entry) => entry.holiday).map(line);
     return [
       ...(own.length ? [{ heading: 'Calendars', body: `Query these, and treat their events as blocking time:\n\n${own.join('\n')}` }] : []),
       ...(holidays.length

@@ -360,6 +360,30 @@ test('off a Mac, the card lists the connected accounts’ calendars, and the ses
   assert.equal(calendars.card(ctx()).calendarAccounts, undefined, 'on a Mac, Calendar.app is the list');
 });
 
+test('off a Mac, the source list names only calendars the session found itself, never what an account listed', () => {
+  const listed = [
+    { title: 'Robin Lark', source: 'robin@northwind.example', eventsToday: 0 },
+    { title: 'Family', source: 'robin@personal.example', eventsToday: 0 },
+  ];
+  const accounts = ctx({
+    calendars: listed,
+    calendar: { supported: true, built: true, buildCommand: '', macApp: null, source: 'accounts' },
+    proposals: {
+      calendars: {
+        why: '',
+        calendars: [{ title: 'Robin Lark', account: 'Northwind', include: true, holiday: false, briefName: 'primary', note: '' }],
+      },
+    },
+  });
+  const calendars = question('calendars');
+  const answer = { choices: { calendars: ['live:robin@northwind.example:Robin Lark', 'live:robin@personal.example:Family'] }, fields: {} };
+
+  const written = calendars.sources!(answer, accounts).map((section) => section.body).join('\n');
+  assert.match(written, /`primary` \(Northwind\)/, 'the session’s own name for it, and its own word for the account');
+  assert.doesNotMatch(written, /Family|robin@/, 'only an account listed Family, so the agent isn’t told of it');
+  assert.deepEqual(calendars.settings!(answer, accounts), { DAILY_FOCUS_CALENDARS: 'Robin Lark, Family' }, 'the live agenda still reads both');
+});
+
 test('the profile is asked only when nothing has settled it', () => {
   const profile = questionById('profile')!;
   assert.equal(profile.applies?.(ctx()), true);

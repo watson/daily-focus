@@ -330,7 +330,9 @@ const MICROSOFT_SCOPES = [
   'email',
   'offline_access',
   'https://graph.microsoft.com/User.Read',
-  'https://graph.microsoft.com/Calendars.ReadBasic',
+  // Read-only, and no more than the fields asked for are read. Not ReadBasic,
+  // though it would do: Outlook.com refuses every calendar read made with it.
+  'https://graph.microsoft.com/Calendars.Read',
 ];
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -346,7 +348,7 @@ export function adminConsentUrl(clientId: string): string {
   const url = new URL('https://login.microsoftonline.com/organizations/v2.0/adminconsent');
   url.search = new URLSearchParams({
     client_id: clientId,
-    scope: 'https://graph.microsoft.com/Calendars.ReadBasic https://graph.microsoft.com/User.Read',
+    scope: 'https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/User.Read',
     redirect_uri: `http://localhost${CALLBACK_PATH}`,
   }).toString();
   return url.toString();

@@ -71,7 +71,7 @@ export function fakeProviders(opts: { googleScopes?: string; rotate?: boolean; d
             provider === 'google'
               ? (opts.googleScopes ??
                 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly')
-              : 'https://graph.microsoft.com/Calendars.ReadBasic https://graph.microsoft.com/User.Read openid profile email',
+              : 'https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/User.Read openid profile email',
           id_token:
             provider === 'google'
               ? jwt({ sub: 'g-123', email: 'robin@personal.example' })
