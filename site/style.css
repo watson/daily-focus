@@ -1917,6 +1917,27 @@ h1 span {
   font: 15px/1.6 var(--font-sans);
 }
 
+/* The privacy policy and terms: a date under the lede, and lists set as prose. */
+.guide-head__date {
+  margin: 16px 0 0;
+  color: var(--band-muted);
+  font: 14px/1.5 var(--font-sans);
+}
+.plain-list {
+  max-width: 38em;
+  margin: 0 0 16px;
+  padding-left: 1.2em;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.65;
+}
+.plain-list li + li {
+  margin-top: 8px;
+}
+.plain-list li::marker {
+  color: var(--accent);
+}
+
 /* What you need: a ring for what's required, a broken ring for what isn't. */
 .needs-list {
   margin: 0;
