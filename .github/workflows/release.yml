@@ -97,6 +97,9 @@ jobs:
       - name: Pack the package and write the release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          # Google's client secret for the calendar sign-in, which the package
+          # build writes in (src/oauthclients.ts); without it, Google isn't offered.
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           mkdir -p "$RUNNER_TEMP/release" "$RUNNER_TEMP/server"
           npm pack --pack-destination "$RUNNER_TEMP/release"

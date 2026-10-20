@@ -128,7 +128,8 @@ run it again with `--remove` afterwards.
   calendar names: Google's terms for calendar data hold us to that. Disconnecting
   asks Google to revoke the sign-in, the one request besides `transitionTicket`
   that changes anything elsewhere. Change what it reads only with the policy, at
-  `site/privacy/`.
+  `site/privacy/`. Never commit Google's client secret: the package build writes it
+  in from `GOOGLE_CLIENT_SECRET` (`src/oauthclients.ts`).
 - The assistant may read anything and create or revise a Gmail draft; it must never
   send, post, or edit. It runs in an empty directory, so keep that a property of the
   process: no checkout, no worktree, no repository path setting. Work that needs one

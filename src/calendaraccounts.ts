@@ -174,9 +174,11 @@ export class CalendarAccounts {
     return this.#accounts.length;
   }
 
-  /** The providers this copy has an app registered with. */
+  /** The providers this copy can sign in to: an app registered with each, and for Google its secret, which only a release build has. */
   #providers(): CalendarProvider[] {
-    return (['google', 'microsoft'] as const).filter((name) => this.#clients[name].id !== '');
+    return (['google', 'microsoft'] as const).filter(
+      (name) => this.#clients[name].id !== '' && (name !== 'google' || this.#clients.google.secret !== ''),
+    );
   }
 
   /** The vault, found once there is one; until then, why there isn't. */

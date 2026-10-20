@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import type { OAuthClients } from '../src/calendarproviders.ts';
 import type { Vault } from '../src/calendarvault.ts';
 
-export const CLIENTS: OAuthClients = { google: { id: 'google-client', secret: '' }, microsoft: { id: 'microsoft-client' } };
+export const CLIENTS: OAuthClients = { google: { id: 'google-client', secret: 'google-secret' }, microsoft: { id: 'microsoft-client' } };
 
 /** A vault that seals by reversing, so a test can see the file holds no token as it is. */
 export function fakeVault(): Vault & { forgotten: string[] } {
@@ -55,6 +55,10 @@ export function fakeProviders(opts: { googleScopes?: string; rotate?: boolean; d
     const headers = new Headers(init?.headers);
     calls.push({ url, form, auth: headers.get('authorization') });
     const token = (provider: string) => {
+      // As Google does, even for a desktop app using PKCE.
+      if (provider === 'google' && form?.get('client_secret') !== 'google-secret') {
+        return json({ error: 'invalid_request', error_description: 'client_secret is missing.' }, 400);
+      }
       if (form?.get('grant_type') === 'authorization_code') {
         const expected = challenges.get(form.get('code') ?? '');
         const got = createHash('sha256').update(form.get('code_verifier') ?? '').digest('base64url');

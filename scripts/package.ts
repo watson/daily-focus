@@ -40,6 +40,9 @@ const server = await build({
   legalComments: 'none',
   metafile: true,
   logLevel: 'warning',
+  // Google's client secret for the calendar sign-in, kept out of git as its
+  // policy asks; see `src/oauthclients.ts`. Without it, Google isn't offered.
+  define: { __GOOGLE_CLIENT_SECRET__: JSON.stringify(process.env.GOOGLE_CLIENT_SECRET ?? '') },
 });
 
 // What the page's bundle reads, asked again of esbuild without writing it: the

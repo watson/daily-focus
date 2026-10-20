@@ -78,12 +78,13 @@ test('only from this computer, and only where a sign-in can be kept safely', asy
   assert.throws(() => noKeyring.begin('google', 'localhost:4321', '/'), /no keyring/);
   assert.equal(noKeyring.view().unavailable, 'no keyring');
 
-  const unregistered = new CalendarAccounts(await accountsFile(), '/stores/work', { google: { id: '', secret: '' }, microsoft: { id: 'm' } }, () => {}, {
+  // Run from a checkout, the package build hasn't written in Google's secret, which Google insists on.
+  const fromSource = new CalendarAccounts(await accountsFile(), '/stores/work', { google: { id: 'g', secret: '' }, microsoft: { id: 'm' } }, () => {}, {
     vault: () => fakeVault(),
     platform: 'win32',
   });
-  assert.deepEqual(unregistered.view().providers, ['microsoft']);
-  assert.throws(() => unregistered.begin('google', 'localhost:4321', '/'), /can’t sign in to Google/);
+  assert.deepEqual(fromSource.view().providers, ['microsoft']);
+  assert.throws(() => fromSource.begin('google', 'localhost:4321', '/'), /can’t sign in to Google/);
 
   const mac = new CalendarAccounts(await accountsFile(), '/stores/work', CLIENTS, () => {}, { platform: 'darwin' });
   assert.equal(mac.view().offered, false, 'a Mac reads Calendar.app instead');

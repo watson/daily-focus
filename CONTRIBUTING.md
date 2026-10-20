@@ -102,7 +102,7 @@ versions and release notes come from, so CI checks it.
 | `src/agenda.ts`, `src/calendar.ts`, `src/calendarboard.ts` | Free time, calendar reads, and polling |
 | `src/calendaraccounts.ts`, `src/calendarproviders.ts`, `client/calendaraccounts.ts` | Off a Mac: signing in to Google and Microsoft from the page, and reading today's events from them |
 | `src/calendarvault.ts` | Where a calendar account's sign-in is kept: sealed by DPAPI on Windows, in the keyring on Linux |
-| `src/oauthclients.ts` | The apps Daily Focus is registered as with Google and Microsoft |
+| `src/oauthclients.ts` | The apps Daily Focus is registered as with Google and Microsoft. Google's client secret stays out of git: the package build writes it in from `GOOGLE_CLIENT_SECRET`, a secret of the Release workflow, so a dashboard run from a checkout offers only Microsoft |
 | `src/zone.ts`, `client/zone.ts` | The dashboard's time zone: the one the browser last reported, or the Mac's when it moves |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads, PR classification, and polling |
 | `src/tools.ts` | Fetching gh and acli from their makers for a user without them, checked, into the data folder's `tools/` |
