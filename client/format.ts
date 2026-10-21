@@ -123,7 +123,7 @@ export function addDays(key: string, days: number): string {
  *
  * The clamp is the whole reason this isn't a one-liner: `Date.UTC(y, m + 1, 31)`
  * for the 31st of January is the 3rd of March, because the day overflows February
- * and rolls on. A park set from the last day of a long month would quietly land
+ * and rolls on. A snooze set from the last day of a long month would quietly land
  * days into the month after the one it named.
  */
 export function addMonths(key: string, months: number): string {

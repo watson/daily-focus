@@ -1558,7 +1558,7 @@ body[data-view='today']:has(.today__masthead) .failure__detail {
 }
 
 /*
- * The theme menu, hung from the button's right edge as the park menu is from
+ * The theme menu, hung from the button's right edge as the snooze menu is from
  * its own. A row is a check, the choice's glyph, and its name; every row keeps
  * the check's gutter, so the glyphs line up and the check is the only thing
  * that moves.
@@ -2273,7 +2273,7 @@ body[data-view='settings'] .layout {
 }
 
 /*
- * Hung from the pill's left edge, where the park menu hangs from its button's
+ * Hung from the pill's left edge, where the snooze menu hangs from its button's
  * right: the pill sits in the row's left gutter, so each menu opens toward the
  * middle of its own row.
  */
@@ -2672,10 +2672,11 @@ body[data-flyout='open'] .layout__side {
 }
 
 /*
- * A ticket's status and park, laid out as on its row: the status at the left,
- * the park at the right, so each menu opens into the panel rather than out over
- * the list. Under the close button too, so the park lines up with it. A child
- * combinator, because the park menu's own Set button is a `.button` in here.
+ * A ticket's status and snooze, laid out as on its row: the status at the left,
+ * the snooze at the right, so each menu opens into the panel rather than out
+ * over the list. Under the close button too, so the snooze lines up with it. A
+ * child combinator, because the snooze menu's own Set button is a `.button` in
+ * here.
  */
 .flyout__actions {
   grid-column: 1 / -1;

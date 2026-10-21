@@ -148,7 +148,7 @@ export function describeRow(row: DetailRow): RowFacts {
 
 /**
  * What the row's card lets you do to it, where the panel offers it too: a
- * ticket's status and park. The status lives there rather than beside the
+ * ticket's status and snooze. The status lives there rather than beside the
  * source, since on a ticket it is the control that changes it.
  */
 function rowControls(row: DetailRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element | null {

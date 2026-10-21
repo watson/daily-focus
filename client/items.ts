@@ -345,11 +345,11 @@ function renderActions(item: ResolvedItem, ui: UiState, handlers: Handlers): JSX
 }
 
 /**
- * The park / snooze menu.
+ * The snooze menu, on brief items and board rows alike.
  *
  * `indefinite` offers "until the agent decides", which is a brief item's escape
  * hatch and deliberately not a board's: `foldActionLog` keeps a dateless snooze
- * parked forever, and a board row hidden forever with nothing to say so is the
+ * snoozed forever, and a board row hidden forever with nothing to say so is the
  * failure these boards exist to avoid.
  *
  * `longRange` adds months and quarters, for the boards where something can
@@ -393,7 +393,7 @@ export function renderSnoozeMenu(
         label,
         // Only the long ones show the date they resolve to. You know what date
         // next Tuesday is; you do not know what date three months out is, and a
-        // park that long is worth being sure about before clicking it.
+        // snooze that long is worth being sure about before clicking it.
         dated ? el('span', { class: 'menu__when' }, formatShortDay(until)) : null,
       ),
     ),

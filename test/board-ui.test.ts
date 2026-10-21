@@ -102,7 +102,7 @@ test("a gate row names the check, links GitHub's details page, and offers no nud
   assert.ok(!byClass(node, 'pill').some((pill) => pill.textContent === 'checks running'));
 
   // The board has no idea whose action the gate needs, so it suggests nobody.
-  assert.deepEqual(buttonLabels(node), ['Park']);
+  assert.deepEqual(buttonLabels(node), ['Snooze']);
 });
 
 test('a gate wanting only approvals waits on reviewers, saying so in its own words', () => {
@@ -188,7 +188,7 @@ test('a check row lists what is still running, without inventing a link', () => 
   const reason = byClass(node, 'item__reason')[0];
   assert.match(reason?.textContent ?? '', /still running: integration-tests, ci\/deploy/);
   assert.equal(byTag(reason!, 'a').length, 0, 'GitHub gave nowhere to look, so nothing is linked');
-  assert.deepEqual(buttonLabels(node), ['Park']);
+  assert.deepEqual(buttonLabels(node), ['Snooze']);
 });
 
 test('a blocked merge with nothing pending is not presented as a check wait', () => {
@@ -219,7 +219,7 @@ test('only a row waiting on reviewers is offered the nudge', () => {
     requestedReviewers: ['carol'],
   });
   assert.equal(row.court, 'reviewers');
-  assert.deepEqual(buttonLabels(node), ['Nudged', 'Park']);
+  assert.deepEqual(buttonLabels(node), ['Nudged', 'Snooze']);
   assert.equal(byClass(node, 'item__reason').length, 0, 'waiting on a review needs no explaining');
 });
 
@@ -239,7 +239,7 @@ test('a nudged row says when it was nudged and when it comes back, and offers no
   // A day after the nudge: tomorrow, at the clock time it was pressed.
   assert.ok(pills.includes(`nudged 3 h ago, back tomorrow ${formatTime(hoursAgo(3))}`), pills.join(' | '));
   assert.ok(!pills.includes('time to ask'));
-  assert.deepEqual(buttonLabels(node), ['Park']);
+  assert.deepEqual(buttonLabels(node), ['Snooze']);
 });
 
 test('nudged rows sit in a section of their own, below the reviewers they wait on', () => {
@@ -267,7 +267,7 @@ test('a ready row is plain: no reason, no nudge', () => {
   const { row, node } = render({});
   assert.equal(row.court, 'ready');
   assert.equal(byClass(node, 'item__reason').length, 0);
-  assert.deepEqual(buttonLabels(node), ['Park']);
+  assert.deepEqual(buttonLabels(node), ['Snooze']);
 });
 
 test('a reason kind this client has never heard of is skipped, not printed half', () => {

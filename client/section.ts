@@ -48,7 +48,7 @@ export function section<T extends { id: string }>(
  *
  * Whether it is open is kept in `ui.openDrawers` under `key`, and the element is
  * told so on every render. The element would remember on its own now that a
- * render keeps it, but a drawer that came and went — parked rows appearing after
+ * render keeps it, but a drawer that came and went — snoozed rows appearing after
  * a refresh — would come back shut, and the keyboard's scan of visible rows reads
  * the same fact off the element. One place to keep it is the page's.
  */

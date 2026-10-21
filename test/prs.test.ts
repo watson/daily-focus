@@ -272,10 +272,10 @@ test('the board honours snooze, nudges and notes from the log, and ignores done 
   assert.equal(byNumber.get(4)?.status, 'snoozed');
   assert.equal(byNumber.get(4)?.snoozedUntil, '2026-10-01');
 
-  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 4, gate: 0, blocked: 0, checks: 0, draft: 0, parked: 1 });
+  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 4, gate: 0, blocked: 0, checks: 0, draft: 0, snoozed: 1 });
 });
 
-test('an expired snooze reopens, and a dateless one parks indefinitely', () => {
+test('an expired snooze reopens, and a dateless one stays snoozed indefinitely', () => {
   const pulls = [pr({ id: 'github:pr:acme/webapp#1', number: 1 }), pr({ id: 'github:pr:acme/webapp#2', number: 2 })];
   const actions: Action[] = [
     { id: 'github:pr:acme/webapp#1', action: 'snooze', at: daysAgo(3), until: '2026-09-14' },
@@ -610,5 +610,5 @@ test('the counts cover every court the board can render', () => {
     NOW,
     GATES,
   );
-  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, blocked: 1, checks: 1, draft: 1, parked: 0 });
+  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, blocked: 1, checks: 1, draft: 1, snoozed: 0 });
 });

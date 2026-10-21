@@ -200,12 +200,12 @@ test('the order Jira returned survives within a court', () => {
 
 const at = (iso: string) => iso;
 
-test('a snooze parks a row and carries its date', () => {
+test('a snooze sets a row aside and carries its date', () => {
   const actions: Action[] = [{ id: 'jira:PROJ-1', action: 'snooze', at: at('2026-09-22T08:00:00Z'), until: '2026-09-30' }];
   const rows = resolveTickets([settled], actions, NOW);
   assert.equal(rows[0]?.status, 'snoozed');
   assert.equal(rows[0]?.snoozedUntil, '2026-09-30');
-  assert.deepEqual(countTickets(rows), { settled: 0, started: 0, idle: 0, parked: 1 });
+  assert.deepEqual(countTickets(rows), { settled: 0, started: 0, idle: 0, snoozed: 1 });
 });
 
 test('an expired snooze is open again', () => {
@@ -244,8 +244,8 @@ test('an action is matched to a ticket through the canonical id', () => {
   assert.equal(resolveTickets([settled], actions, NOW)[0]?.status, 'snoozed');
 });
 
-/** A park was about a complaint. When the complaint goes, so does the row. */
-test('a parked ticket that no longer looks wrong is dropped rather than left in the drawer', () => {
+/** A snooze was about a complaint. When the complaint goes, so does the row. */
+test('a snoozed ticket that no longer looks wrong is dropped rather than left in the drawer', () => {
   const actions: Action[] = [{ id: 'jira:PROJ-1', action: 'snooze', at: at('2026-09-22T08:00:00Z'), until: '2026-09-30' }];
   const fixed = { ...settled, workflowStatus: 'Done', statusCategory: 'done' as const };
   assert.deepEqual(resolveTickets([fixed], actions, NOW), []);
@@ -255,10 +255,10 @@ test('the hold list reaches judge through resolveTickets', () => {
   assert.deepEqual(resolveTickets([{ ...idle, workflowStatus: 'Blocked' }], [], NOW, ['Blocked']), []);
 });
 
-test('counts add up per court, with parked counted once and only once', () => {
+test('counts add up per court, with snoozed counted once and only once', () => {
   const actions: Action[] = [{ id: 'jira:PROJ-3', action: 'snooze', at: at('2026-09-22T08:00:00Z'), until: '2026-09-30' }];
   const rows = resolveTickets([settled, started, idle, healthy], actions, NOW);
-  assert.deepEqual(countTickets(rows), { settled: 1, started: 1, idle: 0, parked: 1 });
+  assert.deepEqual(countTickets(rows), { settled: 1, started: 1, idle: 0, snoozed: 1 });
 });
 
 
@@ -372,15 +372,16 @@ test('notes reach Working on, matched through the canonical id', () => {
 });
 
 /**
- * A park is about a complaint, and Working on makes none. So a ticket parked in a
- * court is parked there and still listed here, and nothing of the park follows it.
+ * A snooze is about a complaint, and Working on makes none. So a ticket snoozed in
+ * a court is snoozed there and still listed here, and nothing of the snooze
+ * follows it.
  */
-test('a park neither hides a ticket from Working on nor follows it in', () => {
+test('a snooze neither hides a ticket from Working on nor follows it in', () => {
   const actions: Action[] = [{ id: 'jira:PROJ-3', action: 'snooze', at: at('2026-09-22T08:00:00Z'), until: '2026-09-30' }];
-  assert.equal(resolveTickets([idle], actions, NOW)[0]?.status, 'snoozed', 'parked in its court');
+  assert.equal(resolveTickets([idle], actions, NOW)[0]?.status, 'snoozed', 'snoozed in its court');
   const [entry] = resolveInProgress([idle], actions, NOW);
   assert.ok(entry, 'and still in Working on');
-  assert.ok(!('status' in entry), 'Working on carries no park status');
+  assert.ok(!('status' in entry), 'Working on carries no snooze status');
   assert.ok(!('snoozedUntil' in entry), 'nor the date of one');
   assert.ok(!('court' in entry), 'and no court, which is how the client tells the two kinds of row apart');
 });

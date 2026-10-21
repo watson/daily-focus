@@ -146,7 +146,7 @@ export function installKeyboard(handlers: Handlers): void {
 
     const item = selectedItem();
     if (!item) return;
-    // A board row — pull request or ticket — can be parked and annotated, but not
+    // A board row — pull request or ticket — can be snoozed and annotated, but not
     // done or dismissed. Both show what is still true upstream, and neither is put
     // right from here.
     const boardRow = ui.view.value !== 'today';

@@ -70,7 +70,7 @@ The second tab shows your open pull requests in seven buckets:
 | Waiting on checks | Checks are running, or GitHub reports an unstable merge. |
 | Drafts | Pull requests you haven't marked ready for review. |
 
-Park a pull request until a date, leave a note, or click **Nudged** after asking
+Snooze a pull request until a date, leave a note, or click **Nudged** after asking
 for a review. Nudged records that you asked; it doesn't send a message. The pull
 request moves to a Nudged section for a day, then goes back to Waiting on reviewers
 with "time to ask" if nobody has reviewed it. Completing a task about a pull
@@ -91,8 +91,8 @@ view has three buckets:
 | In flight with nothing linked | The ticket is in progress with no linked pull request. This can be fine for work that isn't code. |
 
 Draft pull requests count as open. Closed pull requests don't prove that a ticket
-is finished, so the board leaves that decision to you. Park a reminder or leave a
-note when there's more work planned.
+is finished, so the board leaves that decision to you. Snooze the ticket until a date or
+leave a note when there's more work planned.
 
 Jira can take days to hear that a pull request merged, so the board also checks
 GitHub. It searches your open pull requests and the ones closed in the last 60

@@ -80,13 +80,13 @@ export interface UiState {
   /** Rows with an action in flight, shown as pending until the server answers. */
   pending: Signal<ReadonlySet<string>>;
   /**
-   * Which row has its snooze or park menu open: on its card, or under
+   * Which row has its snooze menu open: on its card, or under
    * `PANEL_PREFIX` in the panel. Or `THEME_MENU`, while the header's is open.
    */
   menuFor: Signal<string | null>;
   /**
    * Which ticket has its status menu open, keyed as `menuFor` is. Separate from
-   * it, so the park menu and the status menu can never be open on the same row
+   * it, so the snooze menu and the status menu can never be open on the same row
    * at once.
    */
   statusFor: Signal<string | null>;
@@ -205,7 +205,7 @@ export interface Handlers {
   setView(view: View): void;
   jumpToTicket(id: string): void;
   nudge(id: string): void;
-  unpark(id: string): void;
+  unsnooze(id: string): void;
   refreshBoard(): void;
   refreshTickets(): void;
   refreshCalendar(): void;

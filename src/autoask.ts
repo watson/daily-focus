@@ -13,7 +13,7 @@
  *  - Only the two quick actions that read and say, never one that drafts. A
  *    Gmail draft nobody asked for is a thing in the user's mailbox they did not
  *    make; an answer in the panel is not.
- *  - Only about pull requests in the "waiting on you" court and not parked,
+ *  - Only about pull requests in the "waiting on you" court and not snoozed,
  *    since those are the ones the user has to act on next.
  *  - Each state once. A key says what the answer is about — the newest review or
  *    comment, or the head commit and its failing checks — and a key that has
