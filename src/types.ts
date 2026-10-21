@@ -556,7 +556,7 @@ export interface BoardState {
    */
   connect: boolean;
   rows: BoardRow[];
-  counts: Record<Court | 'parked', number>;
+  counts: Record<Court | 'snoozed', number>;
 }
 
 /* ---------- the Jira ticket board ---------- */
@@ -594,7 +594,7 @@ export interface Ticket {
    * row and never branched on, and deliberately not called `status`: everywhere
    * else in this codebase that word means what the action log says, and a row
    * carrying both would be one assignment away from a ticket that reads as
-   * parked because Jira happens to call its column something.
+   * snoozed because Jira happens to call its column something.
    */
   workflowStatus: string;
   statusCategory: TicketStatusCategory;
@@ -698,8 +698,8 @@ export interface TicketRow extends Ticket {
  * court.
  *
  * No `court`, because the view asks no question a court answers, and no
- * `status`, because the only status a board row can take from the log is a park,
- * and a park silences a complaint. The missing `court` is also how the client
+ * `status`, because the only status a board row can take from the log is a snooze,
+ * and a snooze silences a complaint. The missing `court` is also how the client
  * tells the two kinds of row apart. Notes are carried: they are how "two more
  * repos to go" reaches the agent, and that is as true of a ticket going well as
  * of one that looks stuck.
@@ -724,7 +724,7 @@ export interface TicketBoardState {
   warnings: string[];
   pollMinutes: number;
   rows: TicketRow[];
-  counts: Record<TicketCourt | 'parked', number>;
+  counts: Record<TicketCourt | 'snoozed', number>;
   /** Every ticket in progress, by status — including ones `rows` also flags. */
   inProgress: InProgressTicket[];
   /** How many unfinished tickets were examined to produce those rows. */

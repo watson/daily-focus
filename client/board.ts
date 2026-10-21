@@ -85,9 +85,9 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
     );
   }
 
-  const parked = board.rows.filter((row) => row.status === 'snoozed');
-  if (parked.length > 0) {
-    parts.push(drawer('board:parked', `Parked (${parked.length})`, parked, state, ui, handlers, renderPullRow));
+  const snoozed = board.rows.filter((row) => row.status === 'snoozed');
+  if (snoozed.length > 0) {
+    parts.push(drawer('board:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers, renderPullRow));
   }
 
   return parts;
@@ -207,7 +207,7 @@ function renderPullMeta(row: BoardRow, state: DashboardState, now: Date): JSX.El
   }
   if (row.stale) pill('pill pill--age', 'untouched for weeks');
   if (row.status === 'snoozed') {
-    pill('pill', row.snoozedUntil ? `parked until ${relativeDay(row.snoozedUntil, now)}` : 'parked');
+    pill('pill', row.snoozedUntil ? `snoozed until ${relativeDay(row.snoozedUntil, now)}` : 'snoozed');
   }
   pills.push(...rowPills(row, state));
 
@@ -382,16 +382,16 @@ function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.
         {
           type: 'button',
           class: 'button',
-          title: 'Park this until a date',
+          title: 'Snooze this until a date',
           'aria-haspopup': 'menu',
           'aria-expanded': String(ui.menuFor.value === row.id),
           onClick: () => handlers.toggleMenu(row.id),
         },
-        'Park',
+        'Snooze',
       ),
     );
   } else {
-    buttons.push(el('button', { type: 'button', class: 'button', onClick: () => handlers.unpark(row.id) }, 'Unpark'));
+    buttons.push(el('button', { type: 'button', class: 'button', onClick: () => handlers.unsnooze(row.id) }, 'Unsnooze'));
   }
 
   return el('div', { class: 'item__actions' }, buttons);

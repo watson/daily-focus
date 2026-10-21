@@ -80,7 +80,7 @@ test('a red row calls for an explanation, keyed by its head commit and the check
   assert.deepEqual(autoKeys({ ...red, headSha: undefined }), ['explain-ci@2026-10-15T09:00:00Z:lint,unit'], 'a cache from before the head was kept');
 });
 
-test('review first, then CI; nothing for a conflict, another court, or a parked row', () => {
+test('review first, then CI; nothing for a conflict, another court, or a snoozed row', () => {
   assert.deepEqual(
     autoKeys(row({ reasons: [failing, commented], failingChecks: ['unit'] })).map(actionOf),
     ['assess-review', 'explain-ci'],

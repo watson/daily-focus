@@ -109,7 +109,7 @@ export function typeLegend(rows: readonly AnyTicketRow[]): JSX.Element | null {
  * "What here is out of sync with reality" is the one that asks for action, so it
  * is where the tab opens and what its badge counts. "What am I working on" is a
  * different frame of mind, looked for rather than acted on, and it used to sit in
- * a drawer under Parked — styled like Parked, read like overflow from the list
+ * a drawer under Snoozed — styled like Snoozed, read like overflow from the list
  * above it. So the two are separate views behind a switch, and neither is ever
  * scrolled past on the way to the other.
  */
@@ -222,7 +222,7 @@ function emptyTicketView(board: TicketBoardState, whenRead: string): JSX.Element
   );
 }
 
-/** The courts, what to do about each, and the rows parked out of them. */
+/** The courts, what to do about each, and the rows snoozed out of them. */
 function outOfSyncView(board: TicketBoardState, open: TicketRow[], state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element[] {
   const parts: JSX.Element[] = [];
   for (const court of TICKET_COURT_ORDER) {
@@ -237,9 +237,9 @@ function outOfSyncView(board: TicketBoardState, open: TicketRow[], state: Dashbo
 
   if (open.length === 0 && !board.reason) parts.push(emptyTicketView(board, 'Nothing looks mislabelled.'));
 
-  const parked = board.rows.filter((row) => row.status === 'snoozed');
-  if (parked.length > 0) {
-    parts.push(drawer('tickets:parked', `Parked (${parked.length})`, parked, state, ui, handlers, renderTicketRow));
+  const snoozed = board.rows.filter((row) => row.status === 'snoozed');
+  if (snoozed.length > 0) {
+    parts.push(drawer('tickets:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers, renderTicketRow));
   }
   return parts;
 }
@@ -306,7 +306,7 @@ export function ticketStatus(board: TicketBoardState, handlers: Handlers, mode: 
   });
 }
 
-/** Whether a row is one of the flagged kind, with a court and a park status. */
+/** Whether a row is one of the flagged kind, with a court and a snooze status. */
 function flagged(row: AnyTicketRow): row is TicketRow {
   return 'court' in row && typeof row.court === 'string';
 }
@@ -337,7 +337,7 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
       id: `ticket-${cssId(row.id)}`,
       'data-id': row.id,
       // Only a flagged row has either. One in Working on has no complaint to be
-      // filed under and nothing to be parked from, so it carries neither.
+      // filed under and nothing to be snoozed from, so it carries neither.
       ...(flagged(row) ? { 'data-status': row.status, 'data-court': row.court } : {}),
       'data-selected': String(selected),
       'data-pending': String(ui.pending.value.has(row.id)),
@@ -368,16 +368,16 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
       renderGitHubEvidence(row, now),
     ),
     renderTicketActions(row, ui, handlers),
-    ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, PARK_MENU) : null,
+    ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, SNOOZE_MENU) : null,
   );
 }
 
-/** What a ticket's park menu offers, on its card and in the panel alike. */
-const PARK_MENU = { indefinite: false, longRange: true };
+/** What a ticket's snooze menu offers, on its card and in the panel alike. */
+const SNOOZE_MENU = { indefinite: false, longRange: true };
 
 /**
  * The card's controls again, in the panel beside the list: the status on the
- * left and the park on the right, as on the card, so each menu opens toward the
+ * left and the snooze on the right, as on the card, so each menu opens toward the
  * middle of the panel. The menus open under `PANEL_PREFIX`, which keeps the
  * card's copies of these buttons closed while the panel's are open.
  */
@@ -387,8 +387,8 @@ export function renderTicketControls(row: AnyTicketRow, state: DashboardState, u
     'div',
     { class: 'flyout__actions' },
     statusControl(row, state, ui, handlers, menuKey),
-    flagged(row) ? parkButton(row, ui, handlers, menuKey) : null,
-    flagged(row) && ui.menuFor.value === menuKey ? renderSnoozeMenu(row, new Date(state.now), handlers, PARK_MENU) : null,
+    flagged(row) ? snoozeButton(row, ui, handlers, menuKey) : null,
+    flagged(row) && ui.menuFor.value === menuKey ? renderSnoozeMenu(row, new Date(state.now), handlers, SNOOZE_MENU) : null,
   );
 }
 
@@ -482,7 +482,7 @@ function renderStatusMenu(row: AnyTicketRow, offered: readonly string[], ui: UiS
 /**
  * The pills that are worth a second line because they are exceptions: a ticket
  * in Working on that is also out of sync, a pull request still open, or a row
- * someone parked. Null when there are none, which is the ordinary case and why
+ * someone snoozed. Null when there are none, which is the ordinary case and why
  * most cards are one line tall.
  */
 function renderTicketMeta(row: AnyTicketRow, state: DashboardState, handlers: Handlers): JSX.Element | null {
@@ -491,7 +491,7 @@ function renderTicketMeta(row: AnyTicketRow, state: DashboardState, handlers: Ha
   if (flag) pills.push(flag);
   if (row.hasOpenPr) pills.push(el('span', { class: 'pill pill--tag' }, 'open PR'));
   if (flagged(row) && row.status === 'snoozed' && row.snoozedUntil) {
-    pills.push(el('span', { class: 'pill pill--tag' }, `parked until ${formatDay(row.snoozedUntil)}`));
+    pills.push(el('span', { class: 'pill pill--tag' }, `snoozed until ${formatDay(row.snoozedUntil)}`));
   }
   pills.push(...rowPills(row, state));
   return pills.length > 0 ? el('div', { class: 'item__meta item__meta--extra' }, pills) : null;
@@ -537,8 +537,8 @@ function describePull(pull: LinkedPull, now: Date): string {
  * This is how the more urgent of the two views reaches the other one. The row is
  * never shown twice on one screen, so without this an In Progress ticket whose
  * pull requests have all closed would read, in Working on, as work going fine.
- * The words carry it and the colour only agrees with them. A parked row gets no
- * flag: the park asked for exactly that complaint to stay quiet until its date.
+ * The words carry it and the colour only agrees with them. A snoozed row gets no
+ * flag: the snooze asked for exactly that complaint to stay quiet until its date.
  */
 function outOfSyncFlag(row: InProgressTicket, state: DashboardState, handlers: Handlers): JSX.Element | null {
   const hit = state.tickets?.rows?.find((candidate) => candidate.id === row.id && candidate.status === 'open');
@@ -556,7 +556,7 @@ function outOfSyncFlag(row: InProgressTicket, state: DashboardState, handlers: H
 }
 
 /**
- * Park — and deliberately nothing else.
+ * Snooze — and deliberately nothing else.
  *
  * No Done: the fix is a status change in Jira, and the next read drops the row on
  * its own. No Nudged either, which the pull request board offers: there is nobody
@@ -569,29 +569,29 @@ function outOfSyncFlag(row: InProgressTicket, state: DashboardState, handlers: H
  * summary beside it is already an anchor to the same browse URL, as is `o`. The
  * one that remains is the reason `.item__title` reserves the room it does.
  *
- * A row in Working on gets no strip at all. A park silences a complaint until a
+ * A row in Working on gets no strip at all. A snooze silences a complaint until a
  * date, and nothing on that row is complaining.
  */
 function renderTicketActions(row: AnyTicketRow, ui: UiState, handlers: Handlers): JSX.Element | null {
   if (!flagged(row)) return null;
-  return el('div', { class: 'item__actions' }, parkButton(row, ui, handlers, row.id));
+  return el('div', { class: 'item__actions' }, snoozeButton(row, ui, handlers, row.id));
 }
 
-/** Park, opening its menu under `menuKey`; or Unpark, on a row already parked. */
-function parkButton(row: TicketRow, ui: UiState, handlers: Handlers, menuKey: string): JSX.Element {
+/** Snooze, opening its menu under `menuKey`; or Unsnooze, on a row already snoozed. */
+function snoozeButton(row: TicketRow, ui: UiState, handlers: Handlers, menuKey: string): JSX.Element {
   if (row.status !== 'open') {
-    return el('button', { type: 'button', class: 'button', onClick: () => handlers.unpark(row.id) }, 'Unpark');
+    return el('button', { type: 'button', class: 'button', onClick: () => handlers.unsnooze(row.id) }, 'Unsnooze');
   }
   return el(
     'button',
     {
       type: 'button',
       class: 'button',
-      title: 'Park this until a date',
+      title: 'Snooze this until a date',
       'aria-haspopup': 'menu',
       'aria-expanded': String(ui.menuFor.value === menuKey),
       onClick: () => handlers.toggleMenu(menuKey),
     },
-    'Park',
+    'Snooze',
   );
 }

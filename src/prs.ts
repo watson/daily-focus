@@ -10,7 +10,7 @@ import { laterISO, parseISO } from './time.ts';
  */
 export const NUDGE_AFTER_MS = 24 * 3_600_000;
 
-/** How long a draft may go untouched before it's flagged as parked-by-accident. */
+/** How long a draft may go untouched before it's flagged as forgotten. */
 export const STALE_DRAFT_AFTER_MS = 14 * 86_400_000;
 
 const COURT_ORDER: readonly Court[] = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'draft'];
@@ -249,7 +249,7 @@ export function judge(
  * The board: every fetched PR, judged, joined with the action log, and sorted so
  * the longest wait in each court comes first.
  *
- * Only two things in the log are honoured. A snooze parks the row until its date,
+ * Only two things in the log are honoured. A snooze sets the row aside until its date,
  * which is how a draft is deliberately shelved; `foldActionLog` has already turned
  * an expired one back into open. The newest nudge resets the nudge timer. Notes
  * are carried along to be shown. Done and dismissed are ignored on purpose: the
@@ -286,9 +286,9 @@ export function resolveBoard(
   });
 }
 
-/** How many rows sit in each court, plus the parked ones, for the badge and the headers. */
-export function countBoard(rows: readonly BoardRow[]): Record<Court | 'parked', number> {
-  const counts: Record<Court | 'parked', number> = {
+/** How many rows sit in each court, plus the snoozed ones, for the badge and the headers. */
+export function countBoard(rows: readonly BoardRow[]): Record<Court | 'snoozed', number> {
+  const counts: Record<Court | 'snoozed', number> = {
     you: 0,
     ready: 0,
     reviewers: 0,
@@ -296,10 +296,10 @@ export function countBoard(rows: readonly BoardRow[]): Record<Court | 'parked', 
     blocked: 0,
     checks: 0,
     draft: 0,
-    parked: 0,
+    snoozed: 0,
   };
   for (const row of rows) {
-    if (row.status === 'snoozed') counts.parked++;
+    if (row.status === 'snoozed') counts.snoozed++;
     else counts[row.court]++;
   }
   return counts;

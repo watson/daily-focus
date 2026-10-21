@@ -315,9 +315,9 @@ test('the action log is joined on read, without a re-read', async () => {
   const board = new TicketBoard(cfg, () => {}, fakeDeps({ fetches: [ok([ticket('PROJ-1')])] }));
   await board.start();
 
-  const parked = board.view([{ id: 'jira:PROJ-1', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }], NOW);
-  assert.equal(parked.rows[0]?.status, 'snoozed');
-  assert.equal(parked.counts.parked, 1);
+  const snoozed = board.view([{ id: 'jira:PROJ-1', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }], NOW);
+  assert.equal(snoozed.rows[0]?.status, 'snoozed');
+  assert.equal(snoozed.counts.snoozed, 1);
   assert.equal(board.view([], NOW).rows[0]?.status, 'open');
   board.stop();
 });

@@ -180,26 +180,27 @@ const PAST_TENSE: Record<ActionType, string> = {
 let lastAction: { id: string; action: ActionType } | null = null;
 
 /**
- * What a brief item was before the board parked the same id.
+ * What a brief item was before the board snoozed the same id.
  *
- * The log is shared and last-action-wins, so parking a pull request the brief had
- * already marked done turns that done into a snooze. Unparking it with a plain
- * reopen would then leave the brief item open — a finished task resurrected by a
- * gesture on another tab. So unpark restores what the park replaced. Kept in
- * memory only: after a reload the plain reopen is the best that can be done.
+ * The log is shared and last-action-wins, so snoozing a pull request on the board
+ * that the brief had already marked done turns that done into a snooze. Taking
+ * the snooze back with a plain reopen would then leave the brief item open — a
+ * finished task resurrected by a gesture on another tab. So `undo` restores what
+ * the snooze replaced. Kept in memory only: after a reload the plain reopen is
+ * the best that can be done.
  */
-const parkedFrom = new Map<string, 'done' | 'dismiss'>();
+const snoozedFrom = new Map<string, 'done' | 'dismiss'>();
 
-/** The action that takes a park back: the status it replaced, or a plain reopen. */
-function unpark(id: string): Promise<void> {
-  const restore = parkedFrom.get(id);
-  parkedFrom.delete(id);
+/** The action that takes one back: the status a board snooze replaced, or a plain reopen. */
+function undo(id: string): Promise<void> {
+  const restore = snoozedFrom.get(id);
+  snoozedFrom.delete(id);
   return applyAction(id, restore ?? 'reopen');
 }
 
 /** Take back the last action, for the `u` key. A reopen has nothing to take back. */
 export function undoLast(): void {
-  if (lastAction && lastAction.action !== 'reopen') void unpark(lastAction.id);
+  if (lastAction && lastAction.action !== 'reopen') void undo(lastAction.id);
 }
 
 /** A note or a nudge: something said about an item, which leaves its status alone. */
@@ -242,15 +243,15 @@ async function applyAction(id: string, action: ActionType, extra: ActionExtra = 
     addPending(id);
     if (!current) return;
     const item = current.items.find((candidate) => candidate.id === id);
-    // The board only ever parks and unparks. The same id may be a brief item too,
-    // and the log is shared, so a park from the board is a snooze on that item as
-    // well — deliberately, so the agent leaves the PR alone until the date. What
-    // the park replaces is remembered so unparking can put it back.
+    // The board only ever snoozes and unsnoozes. The same id may be a brief item
+    // too, and the log is shared, so a snooze from the board is a snooze on that
+    // item as well — deliberately, so the agent leaves the PR alone until the date.
+    // What the snooze replaces is remembered so unsnoozing can put it back.
     const row =
       current.board?.rows.find((candidate) => candidate.id === id) ??
       current.tickets?.rows.find((candidate) => candidate.id === id);
     if (row && action === 'snooze' && item && (item.status === 'done' || item.status === 'dismissed')) {
-      parkedFrom.set(id, item.status === 'done' ? 'done' : 'dismiss');
+      snoozedFrom.set(id, item.status === 'done' ? 'done' : 'dismiss');
     }
     // A remark is left to the server, which alone knows what a nudge does to a row.
     if (!isRemark(action)) state.value = optimistic(current, id, action, extra);
@@ -271,7 +272,7 @@ async function applyAction(id: string, action: ActionType, extra: ActionExtra = 
     if (action === 'reopen') {
       showToast(PAST_TENSE[action]);
     } else {
-      showToast(PAST_TENSE[action], () => void unpark(id));
+      showToast(PAST_TENSE[action], () => void undo(id));
     }
   } catch (err) {
     removePending(id);
@@ -889,7 +890,7 @@ export const handlers: Handlers = {
   // A nudge on Slack is invisible to GitHub, so it's recorded: the board's nudge
   // timer starts over from it, and the agent reads that the user asked.
   nudge: (id) => void applyAction(id, 'nudge'),
-  unpark: (id) => void unpark(id),
+  unsnooze: (id) => void undo(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
   refreshCalendar: () => void refreshCalendar(),

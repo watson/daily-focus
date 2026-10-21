@@ -81,11 +81,11 @@ export function judge(ticket: Ticket, holdStatuses: readonly string[] = []): Tic
  * The board: every fetched ticket that looks wrong, joined with the action log.
  *
  * A ticket nothing looks wrong about is dropped rather than carried as a row with
- * no court — including a parked one, since the park was about a complaint that no
+ * no court — including a snoozed one, since the snooze was about a complaint that no
  * longer stands.
  *
  * Only two things in the log are honoured, exactly as on the pull request board
- * and for the same reason. A snooze parks the row until its date; `foldActionLog`
+ * and for the same reason. A snooze sets the row aside until its date; `foldActionLog`
  * has already turned an expired one back into open. Notes are shown. Done and
  * dismissed are ignored on purpose: the ids are shared with the brief, which may
  * raise "reply to the question on PROJ-8842", and marking that done says nothing
@@ -148,7 +148,7 @@ export function resolveTickets(
  * separate views on the client, so a ticket in both is never on screen twice, and
  * the Working on row carries a flag pointing back at its court.
  *
- * So `judge` is not asked here, and neither the hold statuses nor a park reach
+ * So `judge` is not asked here, and neither the hold statuses nor a snooze reach
  * this list: both answer complaints, and nothing here is complaining.
  *
  * In the order Jira returned, which is least recently touched first, as in the
@@ -167,11 +167,11 @@ export function resolveInProgress(
     .map((ticket) => ({ ...ticket, notes: folded.get(canonicalId(ticket.id))?.notes ?? [] }));
 }
 
-/** How many rows sit in each court, plus the parked ones, for the badge and headers. */
-export function countTickets(rows: readonly TicketRow[]): Record<TicketCourt | 'parked', number> {
-  const counts: Record<TicketCourt | 'parked', number> = { settled: 0, started: 0, idle: 0, parked: 0 };
+/** How many rows sit in each court, plus the snoozed ones, for the badge and headers. */
+export function countTickets(rows: readonly TicketRow[]): Record<TicketCourt | 'snoozed', number> {
+  const counts: Record<TicketCourt | 'snoozed', number> = { settled: 0, started: 0, idle: 0, snoozed: 0 };
   for (const row of rows) {
-    if (row.status === 'snoozed') counts.parked++;
+    if (row.status === 'snoozed') counts.snoozed++;
     else counts[row.court]++;
   }
   return counts;

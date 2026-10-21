@@ -3,7 +3,7 @@
  *
  * The rules worth holding to something are the ones that live only in
  * `client/tickets.ts`: that a row shows the status it currently claims, that it
- * offers park but never done, and that a ticket with no site behind it renders
+ * offers snooze but never done, and that a ticket with no site behind it renders
  * as text rather than as an anchor going nowhere. None of those are visible to
  * `tickets.ts`, so nothing else would catch them going.
  */
@@ -174,21 +174,21 @@ test('there is no Open button, because the summary is the link', () => {
  * own — so there is nothing here for Done to mean. Nudged is absent for a
  * different reason: there is nobody to nudge about your own ticket.
  */
-test('park is offered; done, dismiss, nudge and a note button are not', () => {
+test('snooze is offered; done, dismiss, nudge and a note button are not', () => {
   const labels = buttonLabels(render());
-  assert.ok(labels.includes('Park'), labels.join(','));
+  assert.ok(labels.includes('Snooze'), labels.join(','));
   for (const absent of ['Done', 'Mark done', 'Dismiss', 'Nudged', 'Start', 'Open', 'Note', 'Ask']) {
     assert.ok(!labels.includes(absent), `${absent} should not be offered on a ticket row`);
   }
 });
 
-test('a parked row says until when, and offers Unpark instead of Park', () => {
+test('a snoozed row says until when, and offers Unsnooze instead of Snooze', () => {
   const node = render({}, [{ id: 'jira:PROJ-8842', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }]);
   assert.equal(node.dataset.status, 'snoozed');
-  assert.match(node.textContent!, /parked until/);
+  assert.match(node.textContent!, /snoozed until/);
   const labels = buttonLabels(node);
-  assert.ok(labels.includes('Unpark'), labels.join(','));
-  assert.ok(!labels.includes('Park'), labels.join(','));
+  assert.ok(labels.includes('Unsnooze'), labels.join(','));
+  assert.ok(!labels.includes('Snooze'), labels.join(','));
 });
 
 test('a note left on a ticket is counted on its row, and read in the panel', () => {
@@ -217,7 +217,7 @@ test("the element id is namespaced away from the brief's", () => {
   assert.match(String(render().id ?? ''), /^ticket-/);
 });
 
-/* ---------- the park menu ---------- */
+/* ---------- the snooze menu ---------- */
 
 /**
  * Render the menu open and press one of its entries, returning the `until` the
@@ -225,7 +225,7 @@ test("the element id is namespaced away from the brief's", () => {
  * date maths directly is the point: the arithmetic is only correct if the button
  * carrying it is wired to the label above it.
  */
-function park(label: string, today = '2026-09-22'): string | undefined {
+function snooze(label: string, today = '2026-09-22'): string | undefined {
   const rows = resolveTickets([ticket()], [], new Date(`${today}T09:00:00Z`), []);
   let sent: { until?: string } | undefined;
   const node = mountOne(
@@ -250,25 +250,25 @@ function park(label: string, today = '2026-09-22'): string | undefined {
 }
 
 test('the ticket board offers months and quarters as well as days', () => {
-  assert.equal(park('Tomorrow'), '2026-09-23');
-  assert.equal(park('In 3 days'), '2026-09-25');
-  assert.equal(park('Next week'), '2026-09-29');
-  assert.equal(park('Next month'), '2026-10-22');
-  assert.equal(park('Next quarter'), '2026-12-22');
+  assert.equal(snooze('Tomorrow'), '2026-09-23');
+  assert.equal(snooze('In 3 days'), '2026-09-25');
+  assert.equal(snooze('Next week'), '2026-09-29');
+  assert.equal(snooze('Next month'), '2026-10-22');
+  assert.equal(snooze('Next quarter'), '2026-12-22');
 });
 
 /**
  * `new Date(2026, 0 + 1, 31)` is the 3rd of March: the day overflows February and
- * rolls on, so a park set on the 31st would land in the month after the one it
+ * rolls on, so a snooze set on the 31st would land in the month after the one it
  * named. Both directions of the clamp are pinned, since only one of them is the
  * leap-year case.
  */
-test('a park from the end of a long month lands inside the month it named', () => {
-  assert.equal(park('Next month', '2026-01-31'), '2026-02-28');
-  assert.equal(park('Next month', '2028-01-31'), '2028-02-29', 'a leap February has a 29th to land on');
-  assert.equal(park('Next month', '2026-03-31'), '2026-04-30');
-  assert.equal(park('Next quarter', '2026-05-31'), '2026-08-31', 'three long months apart needs no clamp');
-  assert.equal(park('Next quarter', '2026-11-30'), '2027-02-28', 'and a quarter can cross a year end');
+test('a snooze from the end of a long month lands inside the month it named', () => {
+  assert.equal(snooze('Next month', '2026-01-31'), '2026-02-28');
+  assert.equal(snooze('Next month', '2028-01-31'), '2028-02-29', 'a leap February has a 29th to land on');
+  assert.equal(snooze('Next month', '2026-03-31'), '2026-04-30');
+  assert.equal(snooze('Next quarter', '2026-05-31'), '2026-08-31', 'three long months apart needs no clamp');
+  assert.equal(snooze('Next quarter', '2026-11-30'), '2027-02-28', 'and a quarter can cross a year end');
 });
 
 test('the long-range entries say which date they mean, and the short ones do not', () => {
@@ -282,8 +282,8 @@ test('the long-range entries say which date they mean, and the short ones do not
   assert.ok(labels.includes('Next week'), 'a week out needs no date spelled out');
 });
 
-/** A dateless park would hide a board row forever with nothing on screen to say so. */
-test('the board still refuses an open-ended park', () => {
+/** A dateless snooze would hide a board row forever with nothing on screen to say so. */
+test('the board still refuses an open-ended snooze', () => {
   const rows = resolveTickets([ticket()], [], NOW, []);
   const node = mountOne(renderTicketRow(rows[0]!, STATE, uiWith({ menuFor: 'jira:PROJ-8842' }), HANDLERS));
   const labels = byTag(byClass(node, 'menu')[0]!, 'button').map((b) => b.textContent!);
@@ -435,7 +435,7 @@ function boardState(overrides: Record<string, unknown> = {}): TicketBoardState {
     warnings: [],
     pollMinutes: 15,
     rows: [],
-    counts: { settled: 0, started: 0, idle: 0, parked: 0 },
+    counts: { settled: 0, started: 0, idle: 0, snoozed: 0 },
     inProgress: [],
     checked: 0,
     statuses: {},
@@ -487,10 +487,10 @@ function inProgress(overrides: Partial<Ticket> = {}): InProgressTicket {
 }
 
 /**
- * A park silences a complaint until a date, and nothing on this row is
- * complaining — so there is neither Park nor the Unpark it would lead to.
+ * A snooze silences a complaint until a date, and nothing on this row is
+ * complaining — so there is neither Snooze nor the Unsnooze it would lead to.
  */
-test('a Working on row has nothing to park, and no strip at all', () => {
+test('a Working on row has nothing to snooze, and no strip at all', () => {
   assert.deepEqual(buttonLabels(mountOne(renderTicketRow(inProgress(), STATE, UI, HANDLERS))), []);
 });
 
@@ -498,7 +498,7 @@ test('a Working on row has nothing to park, and no strip at all', () => {
  * A `data-court="undefined"` on the row would be a court the stylesheet and a
  * test could both go looking for, so a row with no court carries no attribute.
  */
-test('a Working on row claims no court and no park status', () => {
+test('a Working on row claims no court and no snooze status', () => {
   const node = mountOne(renderTicketRow(inProgress(), STATE, UI, HANDLERS));
   assert.ok(!node.hasAttribute('data-court'), `data-court="${node.dataset.court}"`);
   assert.ok(!node.hasAttribute('data-status'), `data-status="${node.dataset.status}"`);
@@ -534,7 +534,7 @@ test('a Working on row shows its notes and its open pull request', () => {
 
 /* ---------- the two views ---------- */
 
-/** One ticket flagged and in progress, one only in progress, and one parked. */
+/** One ticket flagged and in progress, one only in progress, and one snoozed. */
 function mixedBoard(): { rows: TicketRow[]; inProgress: InProgressTicket[] } {
   const idleTicket = ticket({
     id: 'jira:PROJ-1',
@@ -551,9 +551,9 @@ function mixedBoard(): { rows: TicketRow[]; inProgress: InProgressTicket[] } {
     hasOpenPr: true,
     issueType: 'Bug',
   });
-  const parkedTicket = ticket({ id: 'jira:PROJ-3', key: 'PROJ-3' });
+  const snoozedTicket = ticket({ id: 'jira:PROJ-3', key: 'PROJ-3' });
   const actions = [{ id: 'jira:PROJ-3', action: 'snooze' as const, at: '2026-09-22T08:00:00Z', until: '2026-09-30' }];
-  const all = [idleTicket, reviewTicket, parkedTicket];
+  const all = [idleTicket, reviewTicket, snoozedTicket];
   return { rows: resolveTickets(all, actions, NOW), inProgress: resolveInProgress(all, actions, NOW) };
 }
 
@@ -567,7 +567,7 @@ test('the switch offers both views, each with its count, and opens on Out of syn
   assert.deepEqual(
     options(node).map((o) => o.textContent),
     ['Out of sync1', 'Working on2'],
-    'the parked ticket is not counted as out of sync',
+    'the snoozed ticket is not counted as out of sync',
   );
   assert.deepEqual(
     options(node).map((o) => o.getAttribute('aria-selected')),
@@ -582,17 +582,17 @@ test('pressing a side of the switch asks for that view', () => {
   assert.deepEqual(asked, ['sync', 'working']);
 });
 
-test('Out of sync shows the courts and Parked, and none of the work in progress', () => {
+test('Out of sync shows the courts and Snoozed, and none of the work in progress', () => {
   const node = boardOf(mixedBoard());
   assert.deepEqual(sectionTitles(node), ['In flight with nothing linked']);
-  assert.equal(byClass(node, 'drawer').length, 1, 'Parked');
+  assert.equal(byClass(node, 'drawer').length, 1, 'Snoozed');
   assert.ok(!node.textContent!.includes('PROJ-2'), 'the In Review ticket belongs to the other view');
 });
 
 test('Working on shows the tickets in progress grouped by status, and no courts', () => {
   const node = boardOf(mixedBoard(), { ticketMode: 'working' });
   assert.deepEqual(sectionTitles(node), ['In Progress', 'In Review']);
-  assert.deepEqual(byClass(node, 'drawer'), [], 'Parked belongs to Out of sync');
+  assert.deepEqual(byClass(node, 'drawer'), [], 'Snoozed belongs to Out of sync');
   assert.deepEqual(byClass(node, 'court-hint'), []);
   assert.deepEqual(
     options(node).map((o) => o.getAttribute('aria-selected')),
@@ -688,8 +688,8 @@ test('a Working on row that is also out of sync says which court, and jumps to i
   assert.deepEqual(jumped, ['jira:PROJ-1']);
 });
 
-/** A park asked for exactly that complaint to stay quiet until its date. */
-test('a parked court row puts no flag on its Working on row', () => {
+/** A snooze asked for exactly that complaint to stay quiet until its date. */
+test('a snoozed court row puts no flag on its Working on row', () => {
   const flagged = ticket({ statusCategory: 'indeterminate', workflowStatus: 'In Progress', hasAnyPr: false });
   const actions = [{ id: 'jira:PROJ-8842', action: 'snooze' as const, at: '2026-09-22T08:00:00Z', until: '2026-09-30' }];
   const node = boardOf(
@@ -708,20 +708,20 @@ test('a parked court row puts no flag on its Working on row', () => {
  * hand is reported back, and the next render says the same thing the element does.
  */
 test('an opened drawer stays open when the board is rebuilt', () => {
-  const [parked] = resolveTickets(
+  const [snoozed] = resolveTickets(
     [ticket()],
     [{ id: 'jira:PROJ-8842', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }],
     NOW,
   );
   const toggled: [string, boolean][] = [];
   const handlers = { toggleDrawer: (key: string, open: boolean) => void toggled.push([key, open]) };
-  const closed = byClass(boardOf({ rows: [parked] }, {}, handlers), 'drawer')[0] as HTMLDetailsElement;
+  const closed = byClass(boardOf({ rows: [snoozed] }, {}, handlers), 'drawer')[0] as HTMLDetailsElement;
   assert.ok(!closed.open, 'closed by default');
   closed.open = true;
   closed.dispatchEvent(new Event('toggle'));
-  assert.deepEqual(toggled[0], ['tickets:parked', true]);
+  assert.deepEqual(toggled[0], ['tickets:snoozed', true]);
 
-  const reopened = byClass(boardOf({ rows: [parked] }, { openDrawers: new Set(['tickets:parked']) }), 'drawer')[0] as HTMLDetailsElement;
+  const reopened = byClass(boardOf({ rows: [snoozed] }, { openDrawers: new Set(['tickets:snoozed']) }), 'drawer')[0] as HTMLDetailsElement;
   assert.equal(reopened.open, true);
 });
 
@@ -738,21 +738,21 @@ function panelOf(row: AnyTicketRow, ui: Partial<UiValues> = {}, handlers: Partia
 const panelActions = (node: HTMLElement): HTMLElement => byClass(node, 'flyout__actions')[0]!;
 
 /** Whatever the card lets you do to a ticket, the panel open on it lets you do too. */
-test('the panel offers what the card does: the status, and Park or Unpark', () => {
+test('the panel offers what the card does: the status, and Snooze or Unsnooze', () => {
   const [open] = resolveTickets([ticket()], [], NOW, []);
   const actions = panelActions(panelOf(open!));
   assert.ok(actions, 'expected the controls in the panel');
-  assert.deepEqual(buttonLabels(actions), ['Committed', 'Park']);
+  assert.deepEqual(buttonLabels(actions), ['Committed', 'Snooze']);
   assert.equal(byClass(actions, 'pill--status')[0]?.tagName, 'BUTTON');
 
-  const [parked] = resolveTickets(
+  const [snoozed] = resolveTickets(
     [ticket()],
     [{ id: 'jira:PROJ-8842', action: 'snooze', at: '2026-09-22T08:00:00Z', until: '2026-09-30' }],
     NOW,
   );
-  assert.deepEqual(buttonLabels(panelActions(panelOf(parked!))), ['Committed', 'Unpark']);
+  assert.deepEqual(buttonLabels(panelActions(panelOf(snoozed!))), ['Committed', 'Unsnooze']);
 
-  // Nothing on a Working on row is complaining, so there is nothing to park.
+  // Nothing on a Working on row is complaining, so there is nothing to snooze.
   assert.deepEqual(buttonLabels(panelActions(panelOf(inProgress()))), ['In Review']);
 });
 
@@ -812,10 +812,10 @@ test("the panel's menus act on the row itself", () => {
     onAction: (id: string, action: string, extra?: unknown) => void sent.push([id, action, extra]),
     moveTicket: (key: string, status: string, from: string | null) => void sent.push([key, status, from]),
   };
-  const parking = panelOf(row!, { menuFor: `${PANEL_PREFIX}${row!.id}` }, handlers);
-  const menu = byClass(parking, 'menu')[0]!;
+  const snoozing = panelOf(row!, { menuFor: `${PANEL_PREFIX}${row!.id}` }, handlers);
+  const menu = byClass(snoozing, 'menu')[0]!;
   assert.equal(menu.getAttribute('popover'), 'manual');
-  assert.ok(!byTag(menu, 'button').some((b) => b.textContent === 'Until the agent decides'), 'the board still refuses an open-ended park');
+  assert.ok(!byTag(menu, 'button').some((b) => b.textContent === 'Until the agent decides'), 'the board still refuses an open-ended snooze');
   byTag(menu, 'button').find((b) => b.textContent!.startsWith('Next quarter'))!.click();
 
   const moving = panelOf(row!, { statusFor: `${PANEL_PREFIX}${row!.id}` }, handlers);
