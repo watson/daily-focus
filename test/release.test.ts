@@ -86,10 +86,26 @@ test('release notes put breaking changes first and leave housekeeping out', () =
   assert.match(quiet, /No user-facing changes\./);
 });
 
-test('only a development build says it is not notarised, and how to open it anyway', () => {
+test('a nightly and a stable release say how to install them, and neither asks for Open Anyway', () => {
   const options = { previous: '0.1.0', date: '2026-10-07', repository: 'https://github.com/example/focus', commits: [] };
-  assert.match(renderNotes({ ...options, version: '0.1.1-dev.3' }), /not notarised[^\n]*Open Anyway/);
-  assert.doesNotMatch(renderNotes({ ...options, version: '0.1.1' }), /notarised/);
+  for (const version of ['0.1.1-dev.3', '0.1.1']) {
+    const notes = renderNotes({ ...options, version });
+    assert.match(notes, /download \*\*Daily-Focus\.dmg\*\*/);
+    assert.match(notes, new RegExp(`npx daily-focus@${version.replaceAll('.', '\\.')}`));
+    assert.doesNotMatch(notes, /notarised|Open Anyway/);
+  }
+});
+
+test("a dev build's notes say which commit it is, compare with it, and point to where the app comes from", () => {
+  const head = parseCommit('9'.repeat(40), 'feat(board): call parking a snooze (#104)');
+  const options = { date: '2026-10-22', repository: 'https://github.com/example/focus', commits: [head], channel: 'dev' as const, head };
+  const notes = renderNotes({ ...options, version: '0.2.0-dev.7', previous: '0.2.0-dev.5' });
+  assert.ok(notes.startsWith(`## [0.2.0-dev.7](https://github.com/example/focus/compare/v0.2.0-dev.5...${'9'.repeat(40)}) (2026-10-22)\n`), notes);
+  assert.match(notes, /Built from \[9999999\]\(https:\/\/github\.com\/example\/focus\/commit\/9{40}\): \*\*board:\*\* call parking a snooze \(#104\)/);
+  assert.match(notes, /Everything merged since nightly 0\.2\.0-dev\.5:/);
+  assert.match(notes, /without a disk image and aren't on npm/);
+  assert.doesNotMatch(notes, /npx|Daily-Focus\.dmg/);
+  assert.match(renderNotes({ ...options, version: '0.2.1-dev.1', previous: '0.2.0' }), /Everything merged since 0\.2\.0:/);
 });
 
 /** A repository with `messages` as its commits, each tagged when a tag follows it: `['fix: a', 'v0.1.0', 'feat: b']`. */
@@ -136,6 +152,16 @@ test('notes cover the commits since the release before, tagged or not', async ()
   assert.doesNotMatch(notes, /start/);
 
   assert.match(await release('notes', '0.1.2-dev.1'), /compare\/v0\.1\.1\.\.\.v0\.1\.2-dev\.1/);
+});
+
+test("a dev build's notes start from the nightly they're given, and name HEAD", async () => {
+  const release = await repository(['feat: start', 'v0.1.0', 'fix: before the nightly', 'v0.1.1-dev.1', 'feat(board): after the nightly']);
+  const notes = await release('notes', '0.2.0-dev.2', '--channel', 'dev', '--since', 'v0.1.1-dev.1');
+  assert.match(notes, /compare\/v0\.1\.1-dev\.1\.\.\.[0-9a-f]{40}\)/);
+  assert.match(notes, /Built from \[[0-9a-f]{7}\]\([^)]+\): \*\*board:\*\* after the nightly/);
+  assert.match(notes, /### Features\n\n\* \*\*board:\*\* after the nightly/);
+  assert.doesNotMatch(notes, /before the nightly/);
+  await assert.rejects(release('notes', '0.2.0-dev.2', '--channel', 'weekly'), /not one of the channels/);
 });
 
 test('check-title refuses a title that is not a Conventional Commit', async () => {

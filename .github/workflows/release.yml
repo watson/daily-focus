@@ -1,51 +1,142 @@
 name: Release
 
-# Every push to main is a development build: a GitHub prerelease holding the
-# disk image, the app and the dashboard each zipped on its own, and the release
-# notes, and the same version on npm under the `dev` tag. A stable release is cut
-# from main by hand, with Run workflow, and goes to npm's `latest`. Only a stable release's disk image is notarised: that is a wait
-# on Apple's queue, anything from seconds to most of an hour, and a development
-# build is signed but ready in minutes. Versions and notes come from the Conventional
-# Commits since the last release: see scripts/release.ts.
+# Three tracks, one workflow (CONTRIBUTING.md, Releases):
 #
-# Two jobs, so that what can publish never runs a dependency. `build` installs
-# packages, tests, packs and signs, and can't publish. `publish` can, through
-# npm's trusted publishing, which lets this workflow publish without 2FA, and it
-# runs nothing but npm and gh on what `build` handed it.
+# - Dev: every push to main. The app and the dashboard, each zipped and signed, in
+#   the GitHub release tagged `dev`, whose files each build replaces, for apps that
+#   update themselves minutes after a merge. No disk image, and nothing on npm.
+# - Nightly: a look every half hour, which builds main once the latest nightly is
+#   six hours old and main has changed since. A GitHub prerelease of its own with a
+#   notarised disk image, and npm's `nightly`. Run workflow makes one at once.
+# - Stable: Run workflow, by hand. It builds the latest nightly's commit, so a
+#   stable release is one nightly users already ran: npm's `latest`, and the GitHub
+#   release marked Latest, notarised too.
+#
+# A nightly and a dev build of one commit have the same version, X.Y.Z-dev.N.
+# Versions and notes come from the Conventional Commits since the last release:
+# see scripts/release.ts. Notarising is a wait on Apple's queue, anything from
+# seconds to most of an hour, which a dev build skips: it is ready in minutes.
+#
+# Three jobs, so that what can publish never runs a dependency. `plan` decides
+# what to build with nothing but gh. `build` installs packages, tests, packs and
+# signs, and can't publish. `publish` can, through npm's trusted publishing, which
+# lets this workflow publish without 2FA, and it runs nothing but npm and gh on
+# what `build` handed it.
 on:
   push:
     branches: [main]
+  schedule:
+    # Off the hour, when GitHub's scheduled runs are busiest and most often late.
+    - cron: '8,38 * * * *'
   workflow_dispatch:
     inputs:
+      channel:
+        description: What to release
+        type: choice
+        options: [nightly, stable]
+        default: nightly
       version:
-        description: Version to release, such as 1.0.0. Leave empty to work it out from the commits.
+        description: For a stable release, its version, such as 1.0.0. Leave empty to work it out from the commits.
         required: false
         default: ''
 
 permissions:
   contents: read
 
-# One release at a time, none cut short. A push that lands while one runs waits,
-# and a newer push replaces it in the queue: its build carries the same commits.
+# One run of each track at a time, none cut short. A run that waits is replaced by
+# a newer one of the same track: a newer push's dev build carries the same commits,
+# and a later look for a nightly sees what the earlier one would have.
 concurrency:
-  group: release
+  group: release-${{ github.event_name == 'push' && 'dev' || github.event_name == 'schedule' && 'nightly' || inputs.channel }}
   cancel-in-progress: false
 
 jobs:
-  build:
+  plan:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      sha: ${{ steps.plan.outputs.sha }}
+      since: ${{ steps.plan.outputs.since }}
+      build: ${{ steps.plan.outputs.build }}
+
+    steps:
+      # The latest nightly is the newest prerelease titled "Nightly …", the title
+      # `publish` gives one. A nightly is due once that is six hours old and main
+      # has commits it doesn't; Run workflow skips the wait, but not the commits. A
+      # dev build's notes start from it, and a stable release builds its commit.
+      - name: Decide what to build
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.channel }}
+        run: |
+          case "$EVENT" in
+            push) channel=dev ;;
+            schedule) channel=nightly ;;
+            *) channel=$REQUESTED ;;
+          esac
+          latest=$(gh api "repos/$GH_REPO/releases?per_page=100" --jq \
+            '[.[] | select(.prerelease and (.draft | not) and ((.name // "") | startswith("Nightly ")))] | sort_by(.published_at) | last // empty | "\(.tag_name) \(.published_at)"')
+          nightly=${latest%% *}
+          published=${latest#* }
+          sha=$GITHUB_SHA
+          build=true
+          case "$channel" in
+            dev) ;;
+            nightly)
+              if [ -n "$nightly" ]; then
+                status=$(gh api "repos/$GH_REPO/compare/$nightly...$sha" --jq .status)
+                age=$(( $(date +%s) - $(date -d "$published" +%s) ))
+                if [ "$status" != ahead ]; then
+                  echo "::notice::main has nothing the latest nightly, $nightly, doesn't"
+                  build=false
+                elif [ "$EVENT" = schedule ] && [ "$age" -lt $(( 6 * 60 * 60 )) ]; then
+                  echo "the latest nightly, $nightly, is under six hours old"
+                  build=false
+                fi
+              fi
+              ;;
+            stable)
+              if [ -z "$nightly" ]; then
+                echo "::error::A stable release builds the latest nightly's commit, and there is no nightly yet. Run a nightly first."
+                exit 1
+              fi
+              sha=$(gh api "repos/$GH_REPO/commits/$nightly" --jq .sha)
+              echo "building the latest nightly, $nightly, at ${sha:0:7}"
+              ;;
+            *)
+              echo "::error::\"$channel\" isn't a channel: dev, nightly or stable"
+              exit 1
+              ;;
+          esac
+          {
+            echo "channel=$channel"
+            echo "sha=$sha"
+            echo "since=${nightly#v}"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
     runs-on: macos-latest
-    # Mostly Apple's notary service, for a stable release: macos/build.sh allows
-    # its one submission an hour, then fails with its id rather than be cut off.
+    # Mostly Apple's notary service, for a nightly or a stable release: macos/build.sh
+    # allows its one submission an hour, then fails with its id rather than be cut off.
     timeout-minutes: 90
     outputs:
       version: ${{ steps.version.outputs.version }}
-      channel: ${{ steps.version.outputs.channel }}
+    env:
+      CHANNEL: ${{ needs.plan.outputs.channel }}
 
     steps:
-      - name: Check out the repository
+      - name: Check out the commit to release
         uses: actions/checkout@v6
         with:
+          ref: ${{ needs.plan.outputs.sha }}
           # Every commit and tag: the version counts the commits since the last release.
           fetch-depth: 0
 
@@ -69,15 +160,13 @@ jobs:
         env:
           REQUESTED: ${{ inputs.version }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            version=$(node scripts/release.ts version --dev)
-            echo "channel=dev" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$CHANNEL" = stable ]; then
             version=$(node scripts/release.ts version --set "$REQUESTED")
-            echo "channel=latest" >> "$GITHUB_OUTPUT"
+          else
+            version=$(node scripts/release.ts version --dev)
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Releasing $version"
+          echo "Releasing $version as $CHANNEL"
 
       # Into the package, and from there into the app, which takes its version
       # from the package it carries. Never committed: main only moves by pull request.
@@ -93,10 +182,13 @@ jobs:
 
       # The tarball npm gets, and the app is built around, unpacked as npm would,
       # the way `npm run app` does it. The last step to run npm packages, so none
-      # of them runs once the signing certificate is in reach.
+      # of them runs once the signing certificate is in reach. A dev build's
+      # package.json goes in its release too: apps on dev builds read it as they
+      # read npm's manifest for the other tracks.
       - name: Pack the package and write the release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          SINCE: ${{ needs.plan.outputs.since }}
           # Google's client secret for the calendar sign-in, which the package
           # build writes in (src/oauthclients.ts); without it, Google isn't offered.
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -104,10 +196,17 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release" "$RUNNER_TEMP/server"
           npm pack --pack-destination "$RUNNER_TEMP/release"
           tar -xzf "$RUNNER_TEMP/release/daily-focus-$VERSION.tgz" -C "$RUNNER_TEMP/server"
-          node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/release/notes.md"
+          if [ "$CHANNEL" = dev ]; then
+            node scripts/release.ts notes "$VERSION" --channel dev --since "$SINCE" > "$RUNNER_TEMP/release/notes.md"
+            cp "$RUNNER_TEMP/server/package/package.json" "$RUNNER_TEMP/release/package.json"
+          else
+            node scripts/release.ts notes "$VERSION" --channel "$CHANNEL" > "$RUNNER_TEMP/release/notes.md"
+          fi
 
-      # dmgbuild, which lays out the disk image, needs Python 3.10 or newer.
+      # dmgbuild, which lays out the disk image, needs Python 3.10 or newer. A dev
+      # build has no disk image.
       - name: Set up Python
+        if: env.CHANNEL != 'dev'
         uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -120,12 +219,10 @@ jobs:
 
       # A keychain of the run's own, first in the search list and the default, so
       # that macos/build.sh finds the certificate and the notary profile without
-      # being told where. The notary profile only for a stable release, since
-      # build.sh notarises when it is named. CONTRIBUTING.md says how to make the
-      # secrets.
-      - name: Put the signing certificate, and for a stable release the notary key, in a keychain
+      # being told where. The notary profile not for a dev build, since build.sh
+      # notarises when it is named. CONTRIBUTING.md says how to make the secrets.
+      - name: Put the signing certificate, and but for a dev build the notary key, in a keychain
         env:
-          CHANNEL: ${{ steps.version.outputs.channel }}
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
@@ -154,7 +251,7 @@ jobs:
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$keychain"
           if [ "$CHANNEL" = dev ]; then
-            echo "a development build: signed, not notarised"
+            echo "a dev build: signed, not notarised"
             exit 0
           fi
           printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
@@ -167,11 +264,17 @@ jobs:
       # update it. It isn't notarised: macOS never runs it, the app's Node does.
       # Nor is the app's zip, which apps download to replace themselves: a file an
       # app downloads itself isn't quarantined, so Gatekeeper never looks at it, and
-      # the app checks its signature instead.
-      - name: Build and sign the menu bar app and its disk image, notarised for a stable release
+      # the app checks its signature instead. Only the disk image, which people
+      # download in a browser, is notarised, and a dev build has none.
+      - name: Build and sign the menu bar app, with a notarised disk image but for a dev build
         run: |
-          sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test
-          cp macos/build/Daily-Focus.dmg macos/build/Daily-Focus-App.zip macos/build/Daily-Focus-Dashboard.zip "$RUNNER_TEMP/release/"
+          if [ "$CHANNEL" = dev ]; then
+            sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test --no-disk-image
+            cp macos/build/Daily-Focus-App.zip macos/build/Daily-Focus-Dashboard.zip "$RUNNER_TEMP/release/"
+          else
+            sh macos/build.sh --server "$RUNNER_TEMP/server/package" --test
+            cp macos/build/Daily-Focus.dmg macos/build/Daily-Focus-App.zip macos/build/Daily-Focus-Dashboard.zip "$RUNNER_TEMP/release/"
+          fi
 
       - name: Remove the keychain
         if: always()
@@ -186,28 +289,30 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write # the tag and the GitHub release
+      contents: write # the tags and the GitHub releases
       id-token: write # npm's trusted publishing
+    env:
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      VERSION: ${{ needs.build.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
 
     # No checkout and no install: npm, gh and the files the build made.
     steps:
-      # A development build that main moved past while it was building is left
-      # unpublished: the newer push's run publishes its own. GitHub would also
-      # refuse this job's token the build's tag whenever a later push changed a
-      # workflow, since it may not create a ref whose workflows differ from main's.
+      # A dev build that main moved past while it was building is left
+      # unpublished: the newer push's run publishes its own, and the dev release
+      # holds only the newest. A nightly or a stable release goes out regardless.
       - name: Check this is still main's newest commit
         id: current
-        if: needs.build.outputs.channel == 'dev'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+        if: env.CHANNEL == 'dev'
         run: |
           head=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
-          if [ "$head" != "$GITHUB_SHA" ]; then
+          if [ "$head" != "$SHA" ]; then
             echo "::notice::main has moved on to ${head:0:7}, whose own run publishes it, so this build isn't published"
             echo "superseded=true" >> "$GITHUB_OUTPUT"
           fi
@@ -219,31 +324,48 @@ jobs:
           name: release
           path: release
 
+      # The one release every dev build replaces the files of. Its tag stays on the
+      # commit it was made at: moving it would make `git fetch` refuse the tag
+      # ("would clobber existing tag") for everyone who has it, so the title and
+      # the notes name the build's commit instead. The zips go up before the
+      # package.json that sends apps to them, and an app that downloads one in
+      # between finds another version than it asked for and refuses it.
+      - name: Replace the dev release's files
+        if: env.CHANNEL == 'dev' && steps.current.outputs.superseded != 'true'
+        run: |
+          title="Dev $VERSION (${SHA:0:7})"
+          zips="release/Daily-Focus-App.zip release/Daily-Focus-Dashboard.zip"
+          if gh release view dev > /dev/null 2>&1; then
+            gh release upload dev $zips --clobber
+            gh release upload dev release/package.json --clobber
+            gh release edit dev --title "$title" --notes-file release/notes.md
+          else
+            gh release create dev $zips release/package.json --target "$SHA" --title "$title" --notes-file release/notes.md --prerelease
+          fi
+
       # First, so that a tag GitHub refuses leaves nothing on npm without its
-      # notes. A rerun finds the release made and only refreshes it.
+      # notes. A rerun finds the release made and only refreshes it. GitHub refuses
+      # this job's token a tag on a commit whose workflows differ from main's: a
+      # nightly refused that way is built again at the next look, from the new main.
+      # A nightly's title is how `plan` finds the latest.
       - name: Make the GitHub release
-        if: steps.current.outputs.superseded != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ needs.build.outputs.version }}
-          CHANNEL: ${{ needs.build.outputs.channel }}
+        if: env.CHANNEL != 'dev'
         run: |
           tag="v$VERSION"
           assets="release/Daily-Focus.dmg release/Daily-Focus-App.zip release/Daily-Focus-Dashboard.zip"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release edit "$tag" --notes-file release/notes.md
             gh release upload "$tag" $assets --clobber
-          elif [ "$CHANNEL" = dev ]; then
-            gh release create "$tag" $assets --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --prerelease
+          elif [ "$CHANNEL" = nightly ]; then
+            gh release create "$tag" $assets --target "$SHA" --title "Nightly $VERSION (${SHA:0:7})" --notes-file release/notes.md --prerelease
           else
-            gh release create "$tag" $assets --target "$GITHUB_SHA" --title "$tag" --notes-file release/notes.md --latest
+            gh release create "$tag" $assets --target "$SHA" --title "$tag" --notes-file release/notes.md --latest
           fi
 
       # Trusted publishing needs npm 11.5.1 or newer, which the newest Node 24
       # carries; a runner's cached Node 24 might be older.
       - name: Set up Node.js
-        if: steps.current.outputs.superseded != 'true'
+        if: env.CHANNEL != 'dev'
         uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -251,15 +373,15 @@ jobs:
 
       # A tarball is published as it is, with no scripts run. The leading ./ is
       # what makes it a file: npm reads "release/x.tgz" as a GitHub repository,
-      # owner "release". A rerun finds this version already published.
+      # owner "release". A rerun finds this version already published. npm's `dev`
+      # tag, where every push went before nightlies, is left where it is: apps from
+      # then still look there, and update into an app that knows the tracks.
       - name: Publish to npm
-        if: steps.current.outputs.superseded != 'true'
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-          CHANNEL: ${{ needs.build.outputs.channel }}
+        if: env.CHANNEL != 'dev'
         run: |
+          if [ "$CHANNEL" = stable ]; then tag=latest; else tag=nightly; fi
           if [ "$(npm view "daily-focus@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
             echo "daily-focus@$VERSION is already on npm"
           else
-            npm publish "./release/daily-focus-$VERSION.tgz" --tag "$CHANNEL" --ignore-scripts
+            npm publish "./release/daily-focus-$VERSION.tgz" --tag "$tag" --ignore-scripts
           fi
