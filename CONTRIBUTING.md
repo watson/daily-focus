@@ -278,9 +278,12 @@ share the record of the server each left running.
 The dashboard updates without the app (`macos/DailyFocus/Updater.swift`). Built
 with a server, `macos/build.sh` also signs the same package as a bundle of its own,
 `Daily Focus Dashboard.bundle`, zipped as `Daily-Focus-Dashboard.zip`, and checks
-that the app it just built would run it (`--check-dashboard`). The app asks npm for
-the newest version on its track (`latest` or `dev`) and downloads that release's
-zip from GitHub. It keeps downloads in `~/Library/Application Support/Daily
+that the app it just built would run it (`--check-dashboard`). The app looks up
+the newest version on its track: Stable Releases in npm's `latest`, Nightly Builds
+in npm's `nightly`, and Dev Builds in the `package.json` of the GitHub release
+tagged `dev`, which every push to main replaces (see Releases). It downloads that
+release's zip from GitHub, and looks again every ten minutes on dev, every hour on
+nightly and every six hours on stable (`Track.checkInterval`). It keeps downloads in `~/Library/Application Support/Daily
 Focus/Dashboards/` and runs the newest one only while its signature names the
 app's own team and `dk.tson.daily-focus.dashboard`, with nothing in it changed. It
 checks that again before every start. A download that stops three times before it
@@ -292,8 +295,9 @@ something new from the app: a flag, the calendar helper, a permission in
 `Info.plist` or the entitlements. `engines.node` is compared with the Node.js the app
 carries, so keep it in the form `>=X.Y`. `test/app-interface.test.ts` checks both.
 Set `DAILY_FOCUS_APP_UPDATES` to a URL to look up and download releases from
-there instead, as `<url>/daily-focus/<tag>` and `<url>/v<version>/<asset>`, to
-try an update against a local server. A build without a Developer ID or Apple
+there instead, as `<url>/daily-focus/<tag>` and `<url>/v<version>/<asset>`, or
+`<url>/dev/package.json` and `<url>/dev/<asset>` for dev builds, to try an update
+against a local server. A build without a Developer ID or Apple
 Development signature can't check a download, so it only runs the dashboard it
 carries.
 

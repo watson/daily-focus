@@ -5,9 +5,9 @@
 //
 // The dashboard is the npm package, signed as a bundle of its own by the same
 // Developer ID as the app (`macos/build.sh`). Where the app hears of a version is
-// npm, and where it fetches it is the GitHub release, but neither is trusted: what
-// runs is only ever a bundle signed by the team that signed this app, with nothing
-// in it changed since. It is checked again before every start, because it sits in
+// npm, or for a dev build the dev release, and where it fetches it is the GitHub
+// release, but neither is trusted: what runs is only ever a bundle signed by the
+// team that signed this app, with nothing in it changed since. It is checked again before every start, because it sits in
 // a folder anything running as the user can write to, and whatever the dashboard
 // runs, macOS counts as this app, with its calendar, contacts and automation
 // permissions.
@@ -37,19 +37,39 @@ let appIdentifier = Bundle.main.bundleIdentifier ?? "dk.tson.daily-focus"
 let repositoryURL = URL(string: "https://github.com/watson/daily-focus")!
 let releasesURL = repositoryURL.appendingPathComponent("releases")
 
+/// The GitHub release holding the newest dev build. Each build replaces its files,
+/// so it is one page whatever the version, and its tag never moves.
+let devReleaseTag = "dev"
+/// The dev release's copy of its build's package.json, which says what the build is
+/// as npm's manifest does for the other tracks.
+let devManifestAsset = "package.json"
+
 /// Where the newest release on `track` is looked up: npm's manifest for the
-/// track's dist-tag. `DAILY_FOCUS_APP_UPDATES` replaces npm and GitHub both with one
-/// base URL, `<base>/daily-focus/<tag>` and `<base>/v<version>/<asset>`, so the
-/// update path can be tried against a local server.
+/// track's dist-tag, or the dev release's package.json. `DAILY_FOCUS_APP_UPDATES`
+/// replaces npm and GitHub both with one base URL, `<base>/daily-focus/<tag>`,
+/// `<base>/v<version>/<asset>` and `<base>/dev/<asset>`, so the update path can be
+/// tried against a local server.
 func manifestURL(_ track: Track, environment: [String: String]) -> URL {
+    guard let tag = track.distTag else {
+        let base = updatesBase(environment) ?? releasesURL.appendingPathComponent("download")
+        return base.appendingPathComponent(devReleaseTag).appendingPathComponent(devManifestAsset)
+    }
     let base = updatesBase(environment) ?? URL(string: "https://registry.npmjs.org")!
-    return base.appendingPathComponent("daily-focus").appendingPathComponent(track.distTag)
+    return base.appendingPathComponent("daily-focus").appendingPathComponent(tag)
 }
 
-/// Where release `version`'s `asset` is downloaded from.
-func downloadURL(_ version: String, asset: String, environment: [String: String]) -> URL {
+/// Where release `version`'s `asset` is downloaded from, on `track`: a dev build's
+/// is in the dev release, which holds only the newest. A download that turns out to
+/// be another version is refused where it is unpacked.
+func downloadURL(_ version: String, asset: String, track: Track, environment: [String: String]) -> URL {
     let base = updatesBase(environment) ?? releasesURL.appendingPathComponent("download")
-    return base.appendingPathComponent("v\(version)").appendingPathComponent(asset)
+    return base.appendingPathComponent(track == .dev ? devReleaseTag : "v\(version)").appendingPathComponent(asset)
+}
+
+/// The page of release `version` on `track`: a stable release's or a nightly's
+/// holds its disk image, and the dev release's says where to find one.
+func releasePageURL(_ version: String, track: Track) -> URL {
+    releasesURL.appendingPathComponent("tag").appendingPathComponent(track == .dev ? devReleaseTag : "v\(version)")
 }
 
 private func updatesBase(_ environment: [String: String]) -> URL? {
@@ -329,6 +349,8 @@ final class Updater {
     private(set) var checkedAt: Date?
     /// Why the last check failed, when it did.
     private(set) var checkError: String?
+    /// When the last check started, whatever came of it.
+    private var lookedAt: Date?
 
     let appVersion: String
     /// The commit this app was built from, when it is a release's build.
@@ -377,12 +399,20 @@ final class Updater {
         set { UserDefaults.standard.set(newValue, forKey: askedAutomaticKey) }
     }
 
+    /// Checks when the track's interval has passed since the last check, or there
+    /// hasn't been one. The app asks every few minutes.
+    func checkIfDue(now: Date = Date()) {
+        guard lookDue(after: lookedAt, on: track, now: now) else { return }
+        check()
+    }
+
     /// Looks up the newest release on the track; `done` gets why that failed, if it
     /// did. Asked while a check is under way, it waits for that one's answer.
     func check(then done: ((String?) -> Void)? = nil) {
         if let done { waiting.append(done) }
         if checking { return }
         checking = true
+        lookedAt = Date()
         let track = self.track
         let url = manifestURL(track, environment: environment)
         var request = URLRequest(url: url)
@@ -438,7 +468,7 @@ final class Updater {
             setRefused(version, false)
         }
         phase = .downloading(update)
-        let url = downloadURL(version, asset: asset, environment: environment)
+        let url = downloadURL(version, asset: asset, track: track, environment: environment)
         let installed = Bundle.main.bundleURL
         log.note("downloading \(what) \(version) from \(url)")
         updateSession.downloadTask(with: url) { [weak self] file, response, error in

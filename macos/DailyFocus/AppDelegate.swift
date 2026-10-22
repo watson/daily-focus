@@ -100,7 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     private let updatesItem = NSMenuItem(title: "Updates", action: nil, keyEquivalent: "")
     private let checkItem = NSMenuItem(title: "Check for Updates", action: nil, keyEquivalent: "")
     private let stableItem = NSMenuItem(title: "Stable Releases", action: nil, keyEquivalent: "")
-    private let developmentItem = NSMenuItem(title: "Development Builds", action: nil, keyEquivalent: "")
+    private let nightlyItem = NSMenuItem(title: "Nightly Builds", action: nil, keyEquivalent: "")
+    private let devItem = NSMenuItem(title: "Dev Builds", action: nil, keyEquivalent: "")
     private let automaticItem = NSMenuItem(title: "Update Automatically", action: nil, keyEquivalent: "")
 
     private var pollTimer: DispatchSourceTimer?
@@ -141,10 +142,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         timer.setEventHandler { [weak self] in self?.pollAll() }
         timer.resume()
         pollTimer = timer
-        // A release a day at most, usually fewer: four looks a day find it the same day.
+        // Every few minutes, the updater looks again once its track's interval has
+        // passed: minutes for dev builds, which come with every change, hours for the rest.
         let updates = DispatchSource.makeTimerSource(queue: .main)
-        updates.schedule(deadline: .now() + 15, repeating: 6 * 60 * 60)
-        updates.setEventHandler { [weak self] in self?.updater.check() }
+        updates.schedule(deadline: .now() + 15, repeating: 5 * 60)
+        updates.setEventHandler { [weak self] in self?.updater.checkIfDue() }
         updates.resume()
         updateTimer = updates
 
@@ -292,18 +294,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
             (checkItem, #selector(checkForUpdates)),
             (downloadItem, #selector(downloadApp)),
             (stableItem, #selector(chooseTrack(_:))),
-            (developmentItem, #selector(chooseTrack(_:))),
+            (nightlyItem, #selector(chooseTrack(_:))),
+            (devItem, #selector(chooseTrack(_:))),
             (automaticItem, #selector(toggleAutomatic)),
         ] {
             menuItem.target = self
             menuItem.action = action
         }
         stableItem.toolTip = "Releases cut by hand, every so often."
-        developmentItem.toolTip = "A build of every change, as soon as it is merged. Newer, and less tried."
+        nightlyItem.toolTip = "A build of the latest changes every six hours at most, when there are any. Newer, and less tried."
+        devItem.toolTip = "A build of every change, minutes after it is merged. The newest, and the least tried."
         automaticItem.toolTip = "Installs updates on its own once nobody has used the dashboard for half an hour, "
             + "and never while the morning agent, the assistant or the setup screen is at work."
         for item in [checkItem, downloadItem, NSMenuItem.separator(), automaticItem, NSMenuItem.separator(),
-                     stableItem, developmentItem] {
+                     stableItem, nightlyItem, devItem] {
             submenu.addItem(item)
         }
         updatesItem.submenu = submenu
@@ -498,9 +502,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         openReleasePage(version)
     }
 
-    /// The release page, which holds the disk image.
+    /// The release page, which holds the disk image, or for a dev build says where one is.
     private func openReleasePage(_ version: String) {
-        NSWorkspace.shared.open(releasesURL.appendingPathComponent("tag").appendingPathComponent("v\(version)"))
+        NSWorkspace.shared.open(releasePageURL(version, track: updater.track))
     }
 
     /// Asks what to do about an update that would stop `busy`: wait for it, stop it,
@@ -591,7 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     @objc private func chooseTrack(_ sender: NSMenuItem) {
-        updater.track = sender === developmentItem ? .development : .stable
+        updater.track = sender === devItem ? .dev : sender === nightlyItem ? .nightly : .stable
     }
 
     @objc private func toggleAutomatic() {
@@ -892,7 +896,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
     }
 
     private func trackName(_ track: Track) -> String {
-        track == .stable ? "stable releases" : "development builds"
+        switch track {
+        case .stable: return "stable releases"
+        case .nightly: return "nightly builds"
+        case .dev: return "dev builds"
+        }
     }
 
     /// Sets each item once, to what it ends up as. Hiding or showing an item in the
@@ -939,7 +947,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, UNUser
         checkItem.isEnabled = title == nil || enabled
         checkItem.toolTip = tip
         stableItem.state = updater.track == .stable ? .on : .off
-        developmentItem.state = updater.track == .development ? .on : .off
+        nightlyItem.state = updater.track == .nightly ? .on : .off
+        devItem.state = updater.track == .dev ? .on : .off
         automaticItem.state = updater.automatic ? .on : .off
         // A copy that can't check a download can't install one, on its own or not.
         automaticItem.isEnabled = ownTeam != nil

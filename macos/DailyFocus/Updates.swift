@@ -20,15 +20,44 @@ let appInterface = 2
 enum Track: String, CaseIterable {
     /// Releases cut by hand: npm's `latest`.
     case stable
-    /// A build of every change merged to main: npm's `dev`.
-    case development
+    /// A build of main at most every six hours, once it has changed: npm's `nightly`.
+    case nightly
+    /// A build of every change merged to main, in the one GitHub release that each
+    /// replaces. Saved as "development", the name of the track that was every change
+    /// before nightlies, so whoever chose that is on this one.
+    case dev = "development"
 
-    var distTag: String { self == .stable ? "latest" : "dev" }
-
-    /// The track a copy of the app starts on: the one its own version came from.
-    static func of(appVersion: String) -> Track {
-        Version(appVersion)?.prerelease.isEmpty == false ? .development : .stable
+    /// The npm dist-tag whose version is the newest on the track; dev builds aren't on npm.
+    var distTag: String? {
+        switch self {
+        case .stable: return "latest"
+        case .nightly: return "nightly"
+        case .dev: return nil
+        }
     }
+
+    /// How long after a look the next one is due: a dev build can come minutes
+    /// after the last, a nightly every six hours at most.
+    var checkInterval: TimeInterval {
+        switch self {
+        case .stable: return 6 * 60 * 60
+        case .nightly: return 60 * 60
+        case .dev: return 10 * 60
+        }
+    }
+
+    /// The track a copy of the app starts on: the one its own version came from. A
+    /// disk image with a prerelease version is a nightly's, since dev builds have
+    /// none, so only a choice in the menu puts an app on dev.
+    static func of(appVersion: String) -> Track {
+        Version(appVersion)?.prerelease.isEmpty == false ? .nightly : .stable
+    }
+}
+
+/// Whether a look for updates on `track` is due, the last having started at `last`.
+func lookDue(after last: Date?, on track: Track, now: Date) -> Bool {
+    guard let last else { return true }
+    return now.timeIntervalSince(last) >= track.checkInterval
 }
 
 /// A version as semver orders them: 0.2.0-dev.3 < 0.2.0-dev.10 < 0.2.0 < 0.2.1-dev.1.

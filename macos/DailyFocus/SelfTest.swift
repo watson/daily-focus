@@ -243,18 +243,37 @@ func runSelfTest() -> Bool {
         check(Version(bad) == nil, "not a version: \(bad.debugDescription)")
     }
     equal(Track.of(appVersion: "0.2.0"), .stable, "a stable app starts on stable releases")
-    equal(Track.of(appVersion: "0.2.1-dev.4"), .development, "a development build on development builds")
-    equal(Track.of(appVersion: "0.0.0-development"), .development, "a checkout's build too")
+    equal(Track.of(appVersion: "0.2.1-dev.4"), .nightly, "a nightly's disk image starts on nightly builds")
+    equal(Track.of(appVersion: "0.0.0-development"), .nightly, "a checkout's build too")
+    equal(Track(rawValue: "development"), .dev, "whoever chose every change before nightlies is on dev builds")
     equal(Track.stable.distTag, "latest", "stable is npm's latest")
-    equal(Track.development.distTag, "dev", "development is npm's dev")
-    equal(manifestURL(.development, environment: [:]).absoluteString, "https://registry.npmjs.org/daily-focus/dev", "where releases are looked up")
-    equal(downloadURL("0.2.0", asset: dashboardAsset, environment: [:]).absoluteString,
+    equal(Track.nightly.distTag, "nightly", "nightly is npm's nightly")
+    equal(Track.dev.distTag, nil, "dev builds aren't on npm")
+    equal(manifestURL(.nightly, environment: [:]).absoluteString, "https://registry.npmjs.org/daily-focus/nightly", "where nightlies are looked up")
+    equal(manifestURL(.dev, environment: [:]).absoluteString,
+          "https://github.com/watson/daily-focus/releases/download/dev/package.json", "where dev builds are looked up")
+    equal(downloadURL("0.2.0", asset: dashboardAsset, track: .stable, environment: [:]).absoluteString,
           "https://github.com/watson/daily-focus/releases/download/v0.2.0/Daily-Focus-Dashboard.zip", "where a dashboard is fetched")
-    equal(downloadURL("0.2.0", asset: appAsset, environment: [:]).absoluteString,
-          "https://github.com/watson/daily-focus/releases/download/v0.2.0/Daily-Focus-App.zip", "where an app is fetched")
+    equal(downloadURL("0.2.1-dev.4", asset: appAsset, track: .nightly, environment: [:]).absoluteString,
+          "https://github.com/watson/daily-focus/releases/download/v0.2.1-dev.4/Daily-Focus-App.zip", "where a nightly's app is fetched")
+    equal(downloadURL("0.2.1-dev.5", asset: appAsset, track: .dev, environment: [:]).absoluteString,
+          "https://github.com/watson/daily-focus/releases/download/dev/Daily-Focus-App.zip", "and a dev build's, from the dev release")
+    equal(releasePageURL("0.2.0", track: .stable).absoluteString, "https://github.com/watson/daily-focus/releases/tag/v0.2.0", "a release's page")
+    equal(releasePageURL("0.2.1-dev.5", track: .dev).absoluteString, "https://github.com/watson/daily-focus/releases/tag/dev", "the dev release's page")
     let local = ["DAILY_FOCUS_APP_UPDATES": "http://127.0.0.1:9000/feed"]
     equal(manifestURL(.stable, environment: local).absoluteString, "http://127.0.0.1:9000/feed/daily-focus/latest", "a local feed")
-    equal(downloadURL("0.2.0", asset: appAsset, environment: local).absoluteString, "http://127.0.0.1:9000/feed/v0.2.0/Daily-Focus-App.zip", "and its downloads")
+    equal(downloadURL("0.2.0", asset: appAsset, track: .stable, environment: local).absoluteString,
+          "http://127.0.0.1:9000/feed/v0.2.0/Daily-Focus-App.zip", "and its downloads")
+    equal(manifestURL(.dev, environment: local).absoluteString, "http://127.0.0.1:9000/feed/dev/package.json", "a local dev release")
+    equal(downloadURL("0.2.1-dev.5", asset: dashboardAsset, track: .dev, environment: local).absoluteString,
+          "http://127.0.0.1:9000/feed/dev/Daily-Focus-Dashboard.zip", "and its downloads")
+    let looked = Date(timeIntervalSince1970: 1_800_000_000)
+    check(lookDue(after: nil, on: .stable, now: looked), "the first look is due at once")
+    check(!lookDue(after: looked, on: .dev, now: looked.addingTimeInterval(9 * 60)), "a dev build waits ten minutes")
+    check(lookDue(after: looked, on: .dev, now: looked.addingTimeInterval(10 * 60)), "and then looks")
+    check(!lookDue(after: looked, on: .nightly, now: looked.addingTimeInterval(59 * 60)), "a nightly an hour")
+    check(!lookDue(after: looked, on: .stable, now: looked.addingTimeInterval(5 * 60 * 60)), "a stable release six")
+    check(lookDue(after: looked, on: .stable, now: looked.addingTimeInterval(6 * 60 * 60)), "and then looks")
 
     // What this app can run.
     for (range, node, fits) in [
