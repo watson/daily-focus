@@ -324,36 +324,59 @@ own. One that fails isn't tried on its own again; it is offered by notification.
 ## Releases
 
 `.github/workflows/release.yml` makes every release, from main, and main only
-moves by pull request. Each one is a tag, a GitHub release holding the release
-notes, `Daily-Focus.dmg`, `Daily-Focus-App.zip` and `Daily-Focus-Dashboard.zip`,
-all signed, and the same version on npm. The package it publishes carries
-`daily-focus.appSource`, the last commit to change the app (`macos/` and
-`tools/dfcal/`), stamped at build time and never committed. The app replaces itself
-with a newer release's only when that differs from its own, since otherwise only the
-dashboard changed:
+moves by pull request. Releases go out on three tracks, which the menu bar app
+offers under **Updates**. Every release carries `Daily-Focus-App.zip` and
+`Daily-Focus-Dashboard.zip`, signed. Its package carries `daily-focus.appSource`,
+the last commit to change the app (`macos/` and `tools/dfcal/`), stamped at build
+time and never committed. The app replaces itself with a newer release's only when
+that differs from its own, since otherwise only the dashboard changed.
 
-- Every push to main is a development build, such as `0.2.0-dev.3`: a GitHub
-  prerelease, and npm's `dev` tag, so `npx daily-focus@dev` runs the newest. Its
-  disk image isn't notarised, which keeps the build to minutes, so macOS refuses
-  it until it is allowed under System Settings → Privacy & Security; its notes
-  say so. A build that main moves past while it runs isn't published, since the
-  newer push's own build follows it.
-- A stable release is cut by hand: Actions → Release → Run workflow, on main. It
-  goes to npm's `latest` and is the GitHub release marked Latest. Its disk image
-  is notarised, a wait on Apple's queue of anything from seconds to most of an
-  hour. Leave the
-  version empty to work it out, or give one, such as `1.0.0`, after the last.
+- **Dev:** every push to main, in the one GitHub prerelease tagged `dev`. Each
+  build replaces its zips and its `package.json`, which the app reads as it reads
+  npm's manifest for the other tracks, and its title and notes, which name the
+  build's commit and list what was merged since the latest nightly. The tag stays
+  on the commit the release was made at: moving it would make `git fetch` refuse
+  it for everyone who has it. A dev build has no disk image and isn't on npm, so
+  it is ready in minutes. A build that main moves past while it runs isn't
+  published, since the newer push's own build follows it.
+- **Nightly:** a GitHub prerelease of its own, titled "Nightly X.Y.Z-dev.N
+  (commit)", with a notarised disk image, and npm's `nightly` tag, so `npx
+  daily-focus@nightly` runs the newest. The workflow looks every half hour and
+  builds main once the latest nightly is six hours old and main has changed since.
+  Actions → Release → Run workflow, with **nightly**, makes one at once.
+- **Stable:** cut by hand with Run workflow and **stable**. It builds the latest
+  nightly's commit, so a stable release is one nightly users already ran, and needs
+  a nightly to exist. It goes to npm's `latest` and is the GitHub release marked
+  Latest. Leave the version empty to work it out, or give one, such as `1.0.0`,
+  after the last.
+
+A nightly and a stable release wait on Apple's notary queue, anything from seconds
+to most of an hour. Only the disk image is notarised, since people download it in
+a browser: an app that downloads a zip itself gets no quarantine flag, so
+Gatekeeper never looks at it, and the app checks its signature instead. macOS keeps
+a permission, such as calendar access, for any copy with the app's identifier and
+team, so an update keeps them; changing either identifier, the app's or the
+calendar helper's, would reset them for everyone.
+
+Before nightlies, every push went to npm's `dev` tag and a GitHub release of its
+own. That tag is no longer moved: apps from then still look there, find the last
+build that went out that way, and update into an app that knows the three tracks.
+The app saves a choice of that track as "development", which is now Dev Builds.
+GitHub turns a scheduled workflow off after 60 days without activity in the
+repository; enable it again under Actions → Release to start nightlies again.
 
 `scripts/release.ts` works out the version from the commits since the last `vX.Y.Z`
 tag: a breaking change bumps the major, a `feat` the minor, anything else the
-patch, and below 1.0.0 a breaking change bumps the minor. A development build adds
-`-dev.N`, N counting those commits. The notes follow conventional-changelog's
-layout: breaking changes, features, fixes, performance and reverts, in that order,
-with housekeeping types left out. To preview them:
+patch, and below 1.0.0 a breaking change bumps the minor. A nightly or a dev build
+adds `-dev.N`, N counting those commits, so one commit has one version on either
+track. The notes follow conventional-changelog's layout: breaking changes,
+features, fixes, performance and reverts, in that order, with housekeeping types
+left out. To preview them:
 
 ```sh
 node scripts/release.ts version --dev
 node scripts/release.ts notes "$(node scripts/release.ts version --dev)"
+node scripts/release.ts notes "$(node scripts/release.ts version --dev)" --channel dev --since 2.0.0-dev.45
 ```
 
 npm takes the package from the workflow by trusted publishing, with no token. On
@@ -361,14 +384,15 @@ npmjs.com the package's settings name `watson/daily-focus` and `release.yml` as
 its trusted publisher, with **Allow npm publish** ticked so a build goes out
 without waiting for a 2FA approval, and **Allow npm dist-tag** left off: the tag
 is set as part of the publish. Since that lets the workflow publish unattended,
-the job that can is kept apart from everything that runs a dependency. `build`
-installs, tests, packs and signs on macOS; `publish` has no checkout and no
-`node_modules`, and only publishes the tarball and attaches the disk image
-`build` handed it. The signing certificate likewise goes into the keychain only
-after the last npm package has run.
+the job that can is kept apart from everything that runs a dependency. `plan`
+decides what to build with nothing but `gh`; `build` installs, tests, packs and
+signs on macOS; `publish` has no checkout and no `node_modules`, and only
+publishes the tarball and attaches the files `build` handed it. The signing
+certificate likewise goes into the keychain only after the last npm package has
+run.
 
 Signing needs the first two of these repository secrets, and notarising, for a
-stable release, the other three:
+nightly or a stable release, the other three:
 
 | Secret | What it is |
 |---|---|
@@ -382,5 +406,8 @@ A run that fails can be rerun: it finds a release already made, or a version
 already on npm, and finishes the rest. If only `publish` failed, Re-run failed
 jobs reuses what `build` made. The GitHub release comes first because its tag is
 the step GitHub may refuse: the workflow's token can't create a tag on a commit
-whose workflows differ from main's. A stable release can therefore fail there if
-a change to a workflow lands while it builds; run it again on the new main.
+whose workflows differ from main's. A nightly refused that way is built again at
+the next look, from the new main. A stable release builds an older commit, the
+latest nightly's, so it is refused when a change to a workflow has landed since
+that nightly: run a nightly, then the stable release. The rolling `dev` release
+keeps its tag, so a dev build is never refused.

@@ -5,6 +5,7 @@
  *   node scripts/release.ts version --dev
  *   node scripts/release.ts version [--set 1.0.0]
  *   node scripts/release.ts notes 0.2.0
+ *   node scripts/release.ts notes 0.2.1-dev.5 --channel dev --since 0.2.1-dev.3
  *
  * Every change reaches main as one squash commit titled with its pull request's
  * title, which CI checks with `check-title`. So main's history is a list of
@@ -15,9 +16,10 @@
  * 1.0.0 a breaking change bumps the minor, since npm's caret ranges treat that as
  * the major there, and 1.0.0 is a decision, made with `--set`.
  *
- * A development build, made for every push to main, is that version with
- * `-dev.N` after it, N counting the commits since the last release, so it sorts
- * below the release it leads to and above every build before it.
+ * A nightly, and a dev build of every push to main, is that version with `-dev.N`
+ * after it, N counting the commits since the last release, so it sorts below the
+ * release it leads to and above every build before it. One commit has one version
+ * whichever track built it, so an app that moves between tracks compares them.
  *
  * Nothing here writes: the Release workflow stamps the version into package.json
  * and makes the tag. The version in a checkout's package.json is a placeholder.
@@ -136,18 +138,38 @@ const SECTIONS: { type: string; title: string }[] = [
   { type: 'revert', title: 'Reverts' },
 ];
 
+/** Where a release goes: see .github/workflows/release.yml. */
+export const CHANNELS = ['stable', 'nightly', 'dev'] as const;
+export type Channel = (typeof CHANNELS)[number];
+
 /**
  * Release notes in conventional-changelog's layout, the one release-please and
  * semantic-release write: breaking changes first, then features, fixes,
  * performance and reverts. Housekeeping (docs, refactor, test, build, ci, chore,
  * style) is left out. A subject that isn't a Conventional Commit is listed last,
  * under Other Changes, rather than dropped.
+ *
+ * A dev build's notes are the one page of the release every dev build replaces, so
+ * they say which commit it is, `head`, and compare with that commit rather than a
+ * tag. Their `previous` is the latest nightly when there is one, since what a dev
+ * build has that a nightly doesn't is what someone on dev builds wants to know.
  */
-export function renderNotes(options: { version: string; previous: string | null; date: string; repository: string; commits: Commit[] }): string {
+export function renderNotes(options: {
+  version: string;
+  previous: string | null;
+  date: string;
+  repository: string;
+  commits: Commit[];
+  channel?: Channel;
+  head?: Commit;
+}): string {
   const { version, previous, date, repository, commits } = options;
-  const heading = previous ? `[${version}](${repository}/compare/v${previous}...v${version})` : version;
-  const entry = (commit: Commit, text: string) =>
-    `* ${commit.scope ? `**${commit.scope}:** ` : ''}${text} ([${commit.sha.slice(0, 7)}](${repository}/commit/${commit.sha}))`;
+  const channel = options.channel ?? (version.includes('-') ? 'nightly' : 'stable');
+  const head = channel === 'dev' ? options.head : undefined;
+  const scoped = (commit: Commit, text: string) => `${commit.scope ? `**${commit.scope}:** ` : ''}${text}`;
+  const link = (commit: Commit) => `[${commit.sha.slice(0, 7)}](${repository}/commit/${commit.sha})`;
+  const heading = previous ? `[${version}](${repository}/compare/v${previous}...${head ? head.sha : `v${version}`})` : version;
+  const entry = (commit: Commit, text: string) => `* ${scoped(commit, text)} (${link(commit)})`;
 
   const sections: string[] = [];
   const breaking = commits.filter((commit) => commit.breaking);
@@ -162,12 +184,16 @@ export function renderNotes(options: { version: string; previous: string | null;
   if (other.length) sections.push(['### Other Changes', '', ...other.map((commit) => entry(commit, commit.description))].join('\n'));
   if (!sections.length) sections.push('No user-facing changes.');
 
-  const install = `On a Mac, download **Daily-Focus.dmg** below for the menu bar app (Apple silicon, macOS 13.5 or newer). On Linux or Windows, run \`npx daily-focus@${version}\`.`;
-  // Only a stable release is notarised; see .github/workflows/release.yml.
-  const unnotarised =
-    'This development build is signed but not notarised, so macOS refuses to open it at first: open it once, then allow it under System Settings → Privacy & Security → Open Anyway.';
-  const footer = version.includes('-') ? [install, unnotarised] : [install];
-  return [`## ${heading} (${date})`, ...sections, '---', ...footer].join('\n\n') + '\n';
+  const intro: string[] = [];
+  if (head) {
+    intro.push(`Built from ${link(head)}: ${scoped(head, head.description)}`);
+    if (previous) intro.push(`Everything merged since ${previous.includes('-') ? `nightly ${previous}` : previous}:`);
+  }
+  const install =
+    channel === 'dev'
+      ? `Dev builds come without a disk image and aren't on npm. Install the menu bar app from a [nightly or stable release](${repository}/releases), choose **Dev Builds** under **Updates** in its menu, and it updates itself from here, minutes after each change.`
+      : `On a Mac, download **Daily-Focus.dmg** below for the menu bar app (Apple silicon, macOS 13.5 or newer). On Linux or Windows, run \`npx daily-focus@${version}\`.`;
+  return [`## ${heading} (${date})`, ...intro, ...sections, '---', install].join('\n\n') + '\n';
 }
 
 /** Git in the working directory's repository, which the workflows start in. */
@@ -180,7 +206,7 @@ async function tags(): Promise<string[]> {
   return (await git('tag', '--list', 'v*')).split('\n').filter(Boolean);
 }
 
-/** The commits after `base`, a stable version, up to HEAD; every commit when there is no base. */
+/** The commits after `base`, a released version, up to HEAD; every commit when there is no base. */
 async function commitsSince(base: string | null): Promise<Commit[]> {
   const range = base ? [`v${base}..HEAD`] : ['HEAD'];
   const log = await git('log', '--no-merges', '--format=%H%x1f%B%x1e', ...range);
@@ -219,10 +245,22 @@ async function version(options: { dev: boolean; set: string }): Promise<string> 
   return nextVersion(base ?? '0.0.0', bumpFor(await commitsSince(base)));
 }
 
-async function notes(versionText: string): Promise<string> {
-  // The release before this one, whether or not this one has been tagged yet.
+/** HEAD, as a release sees it. */
+async function headCommit(): Promise<Commit> {
+  const [sha = '', message = ''] = (await git('log', '-1', '--format=%H%x1f%B', 'HEAD')).split('\x1f');
+  return parseCommit(sha.trim(), message);
+}
+
+/**
+ * The notes for `versionText` on `channel`. They start from `since`, a released
+ * version, when given: a dev build's start from the latest nightly. Otherwise from
+ * the stable release before this one, whether or not this one has been tagged yet.
+ */
+async function notes(versionText: string, options: { channel: string; since: string }): Promise<string> {
+  const channel = options.channel || (versionText.includes('-') ? 'nightly' : 'stable');
+  if (!(CHANNELS as readonly string[]).includes(channel)) throw new Error(`"${channel}" is not one of the channels: ${CHANNELS.join(', ')}`);
   const stable = versionText.split('-')[0] ?? versionText;
-  const previous = lastRelease(await tags(), stable);
+  const previous = options.since.replace(/^v/, '') || lastRelease(await tags(), stable);
   const manifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')) as { repository?: string | { url?: string } };
   return renderNotes({
     version: versionText,
@@ -230,13 +268,20 @@ async function notes(versionText: string): Promise<string> {
     date: new Date().toISOString().slice(0, 10),
     repository: repositoryUrl(manifest),
     commits: await commitsSince(previous),
+    channel: channel as Channel,
+    head: channel === 'dev' ? await headCommit() : undefined,
   });
 }
 
 if (ranDirectly(import.meta.url)) {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { dev: { type: 'boolean', default: false }, set: { type: 'string', default: '' } },
+    options: {
+      dev: { type: 'boolean', default: false },
+      set: { type: 'string', default: '' },
+      channel: { type: 'string', default: '' },
+      since: { type: 'string', default: '' },
+    },
   });
   const [command, argument] = positionals;
   try {
@@ -250,11 +295,11 @@ if (ranDirectly(import.meta.url)) {
         console.log(`"${argument}" is a Conventional Commit`);
       }
     } else if (command === 'version') {
-      console.log(await version(values));
+      console.log(await version({ dev: values.dev, set: values.set }));
     } else if (command === 'notes' && argument) {
-      process.stdout.write(await notes(argument));
+      process.stdout.write(await notes(argument, { channel: values.channel, since: values.since }));
     } else {
-      console.error('usage: node scripts/release.ts check-title <title> | version [--dev] [--set X.Y.Z] | notes <version>');
+      console.error('usage: node scripts/release.ts check-title <title> | version [--dev] [--set X.Y.Z] | notes <version> [--channel stable|nightly|dev] [--since <version>]');
       process.exitCode = 64;
     }
   } catch (error) {

@@ -4,7 +4,7 @@
 # and the disk image people download, which shows the app beside a link to
 # Applications.
 #
-#   sh macos/build.sh [--server DIR] [--test]
+#   sh macos/build.sh [--server DIR] [--test] [--no-disk-image]
 #
 # --server DIR  copies a built server package (dist/cli.js, public/, prompts/,
 #               schema/, package.json) into the app. Without it the app has no
@@ -14,6 +14,8 @@
 #               Daily-Focus-Dashboard.zip, the update a release offers apps that
 #               already have one (see macos/DailyFocus/Updater.swift).
 # --test        runs the app's self-test after building.
+# --no-disk-image  leaves the disk image out, for a dev build: apps that already
+#               run update themselves from the zips, and nobody installs from it.
 #
 # The app carries its own Node.js, at the version in macos/node-version, downloaded
 # from nodejs.org on the first build and checked against its published checksums.
@@ -37,6 +39,7 @@ zip="$build/Daily-Focus-App.zip"
 
 server=""
 test=no
+disk_image=yes
 while [ $# -gt 0 ]; do
   case "$1" in
     --server)
@@ -48,8 +51,12 @@ while [ $# -gt 0 ]; do
       test=yes
       shift
       ;;
+    --no-disk-image)
+      disk_image=no
+      shift
+      ;;
     *)
-      echo "usage: sh macos/build.sh [--server DIR] [--test]" >&2
+      echo "usage: sh macos/build.sh [--server DIR] [--test] [--no-disk-image]" >&2
       exit 64
       ;;
   esac
@@ -319,7 +326,13 @@ if [ -f "$dashboard_zip" ]; then echo "and $dashboard_zip"; fi
 # space. The volume it mounts as is still "Daily Focus".
 dmg="$build/Daily-Focus.dmg"
 rm -f "$dmg"
-if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+if [ "$disk_image" = no ]; then
+  echo "no disk image: --no-disk-image"
+  if [ "$notarising" = yes ]; then
+    echo "and it is the disk image that is notarised, so nothing was" >&2
+    exit 1
+  fi
+elif python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
   venv="$build/dmgbuild"
   if [ ! -x "$venv/bin/dmgbuild" ]; then
     python3 -m venv "$venv"
