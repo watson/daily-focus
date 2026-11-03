@@ -109,6 +109,7 @@ versions and release notes come from, so CI checks it.
 | `src/connect.ts`, `client/connect.ts` | Connecting GitHub or Jira from the page: the CLI fetched if need be, then signed in, on setup's card, the boards and Settings |
 | `scripts/licenses.ts` | The package's `dist/third-party-licenses.txt`: every npm package its bundles read, and the fonts |
 | `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
+| `src/projects.ts`, `src/projectboard.ts` | An epic or initiative zoomed into: the order its tickets can land in from Jira's blocks links, the loops in them, and reading the projects someone opens |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/autoask.ts` | Asking the assistant ahead, on its own, about pull requests waiting on you, and which question each row's state calls for |
@@ -175,6 +176,8 @@ free of side effects, since only `POST` is checked for its content type.
 | `POST /api/board/refresh` | Polls GitHub now. Returns fresh state once it has |
 | `POST /api/tickets/refresh` | Reads Jira now. Returns fresh state once it has |
 | `POST /api/calendar/refresh` | Reads the calendar now, for the agenda's Retry. Returns fresh state once it has |
+| `POST /api/projects/refresh` | Reads the epics assigned to you, and every project kept open, now. Returns fresh state once it has |
+| `POST /api/projects/open` | `{key}`. Reads one epic, initiative or ticket with its tickets and their blocks links, unless it was read in the last minute, and keeps it in `projects.open`. `409` when Jira is off |
 | `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. The dashboard's only write to anything outside this machine |
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
