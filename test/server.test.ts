@@ -157,7 +157,7 @@ test('GET /favicon.svg serves the profile icon', async () => {
 
 test('a form on another site cannot post here, even with a body that parses as JSON', async () => {
   // A text/plain form can be shaped to send exactly this, with no preflight.
-  for (const path of ['/api/actions', '/api/tickets/transition', '/api/assistant/ask', '/api/agent/ask', '/api/agent/run']) {
+  for (const path of ['/api/actions', '/api/tickets/transition', '/api/projects/open', '/api/assistant/ask', '/api/agent/ask', '/api/agent/run']) {
     const res = await fetch(`${server.url}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'text/plain', origin: 'https://evil.example' },
@@ -186,6 +186,21 @@ test('a page that rebinds its own name to this server is refused', async () => {
   assert.equal(await getAs(`[::1]:${port}`), 200);
   // How a second device reaches it through Tailscale Serve, if Serve passes the name on.
   assert.equal(await getAs('my-mac.example-tailnet.ts.net:8443'), 200);
+});
+
+test('projects are off with Jira, and opening one asks for a single work item key', async () => {
+  const state = await json(await fetch(`${server.url}/api/state`));
+  assert.deepEqual(state.projects, { enabled: false, epics: [], fetchedAt: null, fetching: false, reason: null, open: {} });
+
+  const open = (body: unknown) =>
+    fetch(`${server.url}/api/projects/open`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  // It reaches JQL, so nothing but one key gets through.
+  for (const key of [undefined, '', 'PROJ', 'PROJ-1 OR project = OPS', 'parent = PROJ-1']) {
+    assert.equal((await open({ key })).status, 400, String(key));
+  }
+  const res = await open({ key: 'PROJ-1' });
+  assert.equal(res.status, 409);
+  assert.match((await json(res)).error, /DAILY_FOCUS_JIRA=off/);
 });
 
 test('rerunning the morning agent is off by default', async () => {

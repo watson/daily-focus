@@ -19,7 +19,7 @@ import { promisify } from 'node:util';
 
 import { launchFor } from './launch.ts';
 import { needsJiraCount, reconcile, type LinkedRead } from './linked.ts';
-import type { Ticket, TicketStatusCategory } from './types.ts';
+import type { OutsideTicket, ProjectRead, ProjectSummary, ProjectTicket, Ticket, TicketStatusCategory } from './types.ts';
 
 const run = promisify(execFile);
 
@@ -249,12 +249,12 @@ const FIELDS = 'key,status,issuetype,summary';
 async function search(
   acliPath: string,
   jql: string,
-  { limit = PAGE_LIMIT, paginate = true }: { limit?: number; paginate?: boolean } = {},
+  { limit = PAGE_LIMIT, paginate = true, fields = FIELDS }: { limit?: number; paginate?: boolean; fields?: string } = {},
 ): Promise<unknown[]> {
   const args = [
     'jira', 'workitem', 'search',
     '--jql', jql,
-    '--fields', FIELDS,
+    '--fields', fields,
     '--limit', String(limit),
     '--json',
   ];
@@ -900,4 +900,244 @@ export function readTransitionReport(stdout: string, key: string, status: string
   if (succeeded < 1) {
     throw new JiraTransitionError(`acli reported no successful move for ${key} — check Jira`);
   }
+}
+
+/* ---------- projects ---------- */
+
+/**
+ * Search fields for a project's tickets: the board's, and who each one is
+ * assigned to, which is on `acli`'s whitelist. `parent` and `issuelinks` are
+ * not — *field 'parent' is not allowed* — so which epic a ticket belongs to
+ * comes from which search found it, and its links from `view`.
+ */
+const PROJECT_FIELDS = 'key,status,issuetype,summary,assignee';
+
+/** What `view` is asked for about a project itself: enough to name it and zoom out from it. */
+const ROOT_FIELDS = 'summary,status,issuetype,parent';
+
+/** What `view` is asked for about each unfinished ticket: its links, and its pull requests. */
+const LINK_FIELDS = `issuelinks,${DEV_FIELD}`;
+
+/**
+ * The most tickets one read looks at. Every unfinished one costs a `view` for
+ * its links, at `DEV_CONCURRENCY` at a time, so this keeps a read to a minute
+ * or so. A bigger project is read in part, and says so.
+ */
+export const PROJECT_TICKET_LIMIT = 200;
+
+/**
+ * The link type that means "can't land before". Jira's own default, and the
+ * name most sites keep. Matched case-insensitively and trimmed, as status
+ * names are, since a site's admins retype these too.
+ */
+const BLOCKS_LINK = 'blocks';
+
+/**
+ * The epics to offer: unfinished, and assigned to whoever `acli` is logged in
+ * as, most recently touched first.
+ *
+ * `Epic` is the one issue type name anything here relies on, because it is not
+ * a site's own the way status names are: every Jira Cloud site has it, under
+ * that name, in both kinds of project.
+ */
+export const EPICS_JQL = 'issuetype = Epic AND assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
+
+/** The children of one or more issues, oldest first, which is the order the page falls back on. */
+export function childrenJql(parents: readonly string[], extra: string | null = null): string {
+  const clause = parents.length === 1 ? `parent = ${quoteJql(parents[0]!)}` : `parent IN (${parents.map(quoteJql).join(', ')})`;
+  return `${extra ? `${clause} AND ${extra}` : clause} ORDER BY created ASC`;
+}
+
+/**
+ * Any issue reduced to what a project needs to say about it, whatever its
+ * hierarchy level. Null for anything without a key. Unlike `toTicket`, nothing
+ * above the base level is dropped: here the epics are the point.
+ */
+export function toProjectSummary(raw: unknown, site: string | null): ProjectSummary | null {
+  const key = issueKey(raw);
+  if (key === null || !isRecord(raw)) return null;
+  const fields = isRecord(raw.fields) ? raw.fields : {};
+  const issuetype = isRecord(fields.issuetype) ? fields.issuetype : {};
+  const status = isRecord(fields.status) ? fields.status : {};
+  const category = isRecord(status.statusCategory) ? status.statusCategory : {};
+  return {
+    key,
+    summary: typeof fields.summary === 'string' ? fields.summary : key,
+    issueType: typeof issuetype.name === 'string' ? issuetype.name : '',
+    level: typeof issuetype.hierarchyLevel === 'number' ? issuetype.hierarchyLevel : 0,
+    workflowStatus: typeof status.name === 'string' ? status.name : '',
+    statusCategory: toCategory(category.key),
+    url: browseUrl(site, key),
+  };
+}
+
+/** Who an issue is assigned to, by display name, from a search that asked for `assignee`. */
+function assigneeOf(raw: unknown): string | null {
+  const fields = isRecord(raw) && isRecord(raw.fields) ? raw.fields : {};
+  const assignee = isRecord(fields.assignee) ? fields.assignee : null;
+  return assignee && typeof assignee.displayName === 'string' && assignee.displayName !== '' ? assignee.displayName : null;
+}
+
+/** One issue's blocks links, read off its `issuelinks` field. */
+export interface BlocksLinks {
+  blockedBy: string[];
+  blocks: string[];
+  /** Every issue the links name, as the link describes it: key, summary and status. */
+  linked: OutsideTicket[];
+}
+
+/**
+ * The blocks links in one issue's `issuelinks`, in both directions.
+ *
+ * Jira reports a link from where the issue stands: an entry naming an
+ * `inwardIssue` is read with the type's inward wording, "is blocked by", and
+ * one naming an `outwardIssue` with "blocks". So the side carrying the other
+ * issue is what says which way the link runs. Each linked issue arrives with
+ * its summary and status, which is how a blocker outside the project gets a
+ * name and a status without a read of its own.
+ */
+export function readBlocksLinks(fields: Record<string, unknown>, site: string | null): BlocksLinks {
+  const result: BlocksLinks = { blockedBy: [], blocks: [], linked: [] };
+  const links = Array.isArray(fields.issuelinks) ? fields.issuelinks : [];
+  for (const link of links) {
+    if (!isRecord(link)) continue;
+    const type = isRecord(link.type) ? link.type : {};
+    if (typeof type.name !== 'string' || type.name.trim().toLowerCase() !== BLOCKS_LINK) continue;
+    const blocker = isRecord(link.inwardIssue) ? link.inwardIssue : null;
+    const blocked = isRecord(link.outwardIssue) ? link.outwardIssue : null;
+    const other = toProjectSummary(blocker ?? blocked, site);
+    if (!other) continue;
+    if (blocker) result.blockedBy.push(other.key);
+    else result.blocks.push(other.key);
+    const { key, summary, workflowStatus, statusCategory, url } = other;
+    result.linked.push({ key, summary, workflowStatus, statusCategory, url });
+  }
+  return result;
+}
+
+/** Read one issue through `view`, which takes any field. Throws when it can't. */
+async function viewIssue(acliPath: string, key: string, fields: string): Promise<Record<string, unknown>> {
+  const args = ['jira', 'workitem', 'view', key, '--fields', fields, '--json'];
+  const { stdout, stderr, code } = await acli(acliPath, args);
+  if (code !== 0) {
+    throw new JiraSearchError(firstLine(stderr) || firstLine(stdout) || `could not read ${key}`, transcript(acliPath, args, { stdout, stderr }));
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new JiraSearchError(`could not read acli's answer for ${key} as JSON`, transcript(acliPath, args, { stdout, stderr }));
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.fields)) throw new JiraSearchError(`acli's answer for ${key} carried no fields`);
+  return parsed;
+}
+
+/** The epics to offer in the picker. See `EPICS_JQL`. */
+export async function fetchAssignedEpics(acliPath: string, site: string | null): Promise<ProjectSummary[]> {
+  const raw = await search(acliPath, EPICS_JQL, { limit: 50, paginate: false });
+  return raw.flatMap((issue) => toProjectSummary(issue, site) ?? []);
+}
+
+/**
+ * One project: the issue itself, its tickets, their blocks links and pull
+ * requests, and the tickets outside it that those links name.
+ *
+ * An epic's children are its tickets. An initiative's children are epics, and
+ * each epic's tickets are searched for on their own, because a search can't
+ * say which parent a ticket has and the page groups by it. A plain ticket's
+ * children are its sub-tasks, so a ticket can be zoomed into too.
+ *
+ * Throws when the issue or its children can't be read: a project with no
+ * tickets is a real answer, and must not be what a failed read looks like.
+ * One ticket's links failing costs that ticket's links and a warning, the
+ * rule `validate.ts` applies to the brief.
+ */
+export async function fetchProject(acliPath: string, key: string, site: string | null): Promise<ProjectRead> {
+  const rootIssue = await viewIssue(acliPath, key, ROOT_FIELDS);
+  const root = toProjectSummary(rootIssue, site);
+  if (!root) throw new JiraSearchError(`acli's answer for ${key} carried no key`);
+  const rootFields = isRecord(rootIssue.fields) ? rootIssue.fields : {};
+  const parent = rootFields.parent ? toProjectSummary(rootFields.parent, site) : null;
+
+  const children = await search(acliPath, childrenJql([root.key]), { fields: PROJECT_FIELDS });
+  const epics: ProjectSummary[] = [];
+  const found: { raw: unknown; parent: string }[] = [];
+  for (const child of children) {
+    const summary = toProjectSummary(child, site);
+    if (!summary) continue;
+    if (summary.level > 0) epics.push(summary);
+    else found.push({ raw: child, parent: root.key });
+  }
+  const perEpic = await mapLimit(epics, DEV_CONCURRENCY, (epic) => search(acliPath, childrenJql([epic.key]), { fields: PROJECT_FIELDS }));
+  perEpic.forEach((issues, i) => issues.forEach((raw) => found.push({ raw, parent: epics[i]!.key })));
+
+  // A search can't say whose a ticket is in a way that can be compared, since
+  // nothing here knows the user's account id; Jira can, in JQL.
+  const parents = [root.key, ...epics.map((epic) => epic.key)];
+  const mine = new Set(
+    (await search(acliPath, childrenJql(parents, 'assignee = currentUser()'))).flatMap((issue) => issueKey(issue) ?? []),
+  );
+
+  const warnings: string[] = [];
+  const seen = new Set<string>();
+  let tickets: ProjectTicket[] = [];
+  for (const { raw, parent: belongsTo } of found) {
+    const summary = toProjectSummary(raw, site);
+    if (!summary || seen.has(summary.key)) continue;
+    seen.add(summary.key);
+    const { level: _level, ...facts } = summary;
+    tickets.push({
+      ...facts,
+      parent: belongsTo,
+      assignee: assigneeOf(raw),
+      mine: mine.has(summary.key),
+      blockedBy: [],
+      blocks: [],
+      pulls: null,
+      linksRead: false,
+    });
+  }
+  if (tickets.length > PROJECT_TICKET_LIMIT) {
+    warnings.push(
+      `${root.key} has ${tickets.length} tickets; only the first ${PROJECT_TICKET_LIMIT} were read, so the order leaves out the rest.`,
+    );
+    tickets = tickets.slice(0, PROJECT_TICKET_LIMIT);
+  }
+
+  const inside = new Set(tickets.map((ticket) => ticket.key));
+  const outside = new Map<string, OutsideTicket>();
+  const unread: string[] = [];
+  const open = tickets.filter((ticket) => ticket.statusCategory !== 'done');
+  const views = await mapLimit(open, DEV_CONCURRENCY, (ticket) =>
+    viewIssue(acliPath, ticket.key, LINK_FIELDS).then(
+      (issue) => ({ ticket, fields: issue.fields as Record<string, unknown> }),
+      () => ({ ticket, fields: null }),
+    ),
+  );
+  for (const { ticket, fields } of views) {
+    if (!fields) {
+      unread.push(ticket.key);
+      continue;
+    }
+    const links = readBlocksLinks(fields, site);
+    ticket.blockedBy = links.blockedBy;
+    ticket.blocks = links.blocks;
+    ticket.pulls = readDevPullRequests(fields[DEV_FIELD]);
+    ticket.linksRead = true;
+    for (const other of links.linked) if (!inside.has(other.key)) outside.set(other.key, other);
+  }
+  if (unread.length > 0) {
+    const named = unread.length > 5 ? `${unread.slice(0, 5).join(', ')} and ${unread.length - 5} more` : unread.join(', ');
+    warnings.push(`Could not read the links of ${named}, so the order may miss what ${unread.length === 1 ? 'it waits' : 'they wait'} for.`);
+  }
+
+  return {
+    root,
+    parent,
+    epics,
+    tickets,
+    outside: [...outside.values()].sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true })),
+    warnings,
+    fetchedAt: new Date().toISOString(),
+  };
 }

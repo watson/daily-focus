@@ -751,6 +751,138 @@ export interface TicketsFile {
   statuses?: Record<string, string[]>;
 }
 
+/* ---------- projects: an epic or initiative, zoomed into ---------- */
+
+/**
+ * A Jira issue someone can zoom into: an epic, the initiative above one, or a
+ * plain ticket with sub-tasks. Facts only, as everywhere else on the boards.
+ */
+export interface ProjectSummary {
+  key: string;
+  summary: string;
+  /** `Epic`, `Initiative`, `Task`: the site's own name, shown and never branched on. */
+  issueType: string;
+  /**
+   * Jira's hierarchy level: 0 for a ticket, 1 for an epic, 2 for an initiative.
+   * Read off the issue type rather than its name, so a site's own extra tier is
+   * placed without being named.
+   */
+  level: number;
+  workflowStatus: string;
+  statusCategory: TicketStatusCategory;
+  /** Browse link. Null when `acli` never said which site it is logged in to. */
+  url: string | null;
+}
+
+/**
+ * Jira's roll-up of one ticket's pull requests, from its development panel:
+ * how many, the one state it names, and how many sit in that state. Counts
+ * only; for pull requests the user wrote, the boards have the detail.
+ */
+export interface ProjectPulls {
+  count: number;
+  /** `OPEN`, `DRAFT`, `MERGED` or `DECLINED`, as GitHub's Jira integration reports them. */
+  state: string;
+  stateCount: number;
+}
+
+/** One work item inside a project, as Jira has it. */
+export interface ProjectTicket {
+  key: string;
+  summary: string;
+  issueType: string;
+  workflowStatus: string;
+  statusCategory: TicketStatusCategory;
+  url: string | null;
+  /** The epic it belongs to when the project is an initiative; the project itself otherwise. */
+  parent: string;
+  /** Who it is assigned to, by display name. Null when nobody is. */
+  assignee: string | null;
+  /** Assigned to whoever `acli` is logged in as. */
+  mine: boolean;
+  /** Keys this ticket waits for, through Jira's blocks links, inside the project or not. */
+  blockedBy: string[];
+  /** Keys this ticket holds up. */
+  blocks: string[];
+  /** Jira's roll-up of its pull requests. Null when the panel named none, or was not read. */
+  pulls: ProjectPulls | null;
+  /**
+   * False when this ticket's links could not be read, so `blockedBy` and
+   * `blocks` may be missing some. Done tickets are never read: nothing waits on
+   * what they wait for.
+   */
+  linksRead: boolean;
+}
+
+/** A ticket outside the project that a link inside it names, as the link describes it. */
+export interface OutsideTicket {
+  key: string;
+  summary: string;
+  workflowStatus: string;
+  statusCategory: TicketStatusCategory;
+  url: string | null;
+}
+
+/** One read of a project. Facts and a timestamp, as a board's file is. */
+export interface ProjectRead {
+  root: ProjectSummary;
+  /** What the project sits under, for zooming out: an epic's initiative. Null at the top. */
+  parent: ProjectSummary | null;
+  /** An initiative's epics. Empty for an epic, whose tickets are its own. */
+  epics: ProjectSummary[];
+  /** Every ticket, done ones included, in the order Jira created them. */
+  tickets: ProjectTicket[];
+  /** The tickets outside the project that its links name. */
+  outside: OutsideTicket[];
+  warnings: string[];
+  fetchedAt: string;
+}
+
+/**
+ * What `projects.ts` works out from a read. Derived on every read rather than
+ * stored, for the reason a court is: it is a judgement about the facts.
+ */
+export interface ProjectPlan {
+  /**
+   * Every ticket key, each after the tickets it waits for. Among tickets free to
+   * go next, done ones come first and then Jira's order, so the order is stable
+   * from one read to the next.
+   */
+  order: string[];
+  /**
+   * Tickets whose blocks links go round in a loop, a group per loop, each in
+   * Jira's order. Inside a loop the order is Jira's, since no order satisfies
+   * the links; the page says so rather than pretending one does.
+   */
+  loops: string[][];
+  /** For each ticket, the tickets it waits for that are not done yet, inside or outside. */
+  waitsFor: Record<string, string[]>;
+}
+
+/** One project as the page has it: the last good read, how it went, and the plan. */
+export interface ProjectState {
+  key: string;
+  /** The last good read, planned. Null until one lands. */
+  read: (ProjectRead & { plan: ProjectPlan }) | null;
+  fetching: boolean;
+  /** Why the last read failed, when it did. The last good read stays. */
+  reason: ReadFailure | null;
+}
+
+/** The projects as the client sees them. */
+export interface ProjectsState {
+  /** Off with the Jira board: it reads through the same `acli`. */
+  enabled: boolean;
+  /** Unfinished epics assigned to the user, for the picker, most recently touched first. */
+  epics: ProjectSummary[];
+  fetchedAt: string | null;
+  fetching: boolean;
+  /** Why the last read of the epics failed, when it did. */
+  reason: ReadFailure | null;
+  /** The projects opened lately, by key. Kept in memory: a restart reads them again. */
+  open: Record<string, ProjectState>;
+}
+
 /** Everything the client needs for one render. */
 /* ---------- the assistant ---------- */
 
@@ -1003,6 +1135,8 @@ export interface DashboardState {
   calendarAccounts?: CalendarAccountsState;
   /** The Jira ticket board. Present even when off, for the same reason. */
   tickets: TicketBoardState;
+  /** Epics and initiatives, zoomed into. Absent from a server older than the page. */
+  projects?: ProjectsState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
   assistant: AssistantState;
   /** The morning agent, run by the dashboard. Present even when off, so the client can hide the button. */

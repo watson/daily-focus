@@ -19,15 +19,22 @@ import { test } from 'node:test';
 import {
   ANY_PR,
   AcliAuthError,
+  EPICS_JQL,
   OPEN_PR,
+  PROJECT_TICKET_LIMIT,
   acliIdentity,
   allPullRequestsClosed,
   buildJql,
+  childrenJql,
+  fetchAssignedEpics,
+  fetchProject,
   fetchTickets,
   projectOf,
+  readBlocksLinks,
   readDevPullRequests,
   readTransitionReport,
   statusesByProject,
+  toProjectSummary,
   toTicket,
 } from '../src/jira.ts';
 import type { LinkedRead } from '../src/linked.ts';
@@ -542,4 +549,233 @@ test('a ticket GitHub has an open pull request for is no longer warned about as 
   assert.equal(warnings.length, 2, warnings.join('\n'));
   assert.match(warnings[0]!, /PROJ-2 has pull requests, but its own development panel names none/);
   assert.ok(!warnings[0]!.includes('PROJ-1'));
+});
+
+/* ---------- projects ---------- */
+
+function blocksLink(direction: 'inward' | 'outward', key: string, category = 'indeterminate', name = 'Blocks'): unknown {
+  return {
+    id: '1',
+    type: { id: '10000', name, inward: 'is blocked by', outward: 'blocks' },
+    [direction === 'inward' ? 'inwardIssue' : 'outwardIssue']: {
+      id: '2',
+      key,
+      fields: {
+        summary: `Linked work ${key}`,
+        status: { name: category === 'done' ? 'Done' : 'In Progress', statusCategory: { key: category } },
+        issuetype: { name: 'Task', hierarchyLevel: 0 },
+        priority: { name: 'Medium' },
+      },
+    },
+  };
+}
+
+test('the epics offered are the user\'s own unfinished ones, newest first', () => {
+  assert.match(EPICS_JQL, /^issuetype = Epic AND assignee = currentUser\(\) AND statusCategory != Done ORDER BY updated DESC$/);
+});
+
+test('children are searched by parent, oldest first, one or several at a time', () => {
+  assert.equal(childrenJql(['PROJ-1']), 'parent = "PROJ-1" ORDER BY created ASC');
+  assert.equal(childrenJql(['PROJ-1', 'PROJ-9']), 'parent IN ("PROJ-1", "PROJ-9") ORDER BY created ASC');
+  assert.equal(childrenJql(['PROJ-1'], 'assignee = currentUser()'), 'parent = "PROJ-1" AND assignee = currentUser() ORDER BY created ASC');
+  // A key is quoted, so a quote smuggled into one cannot end the literal.
+  assert.equal(childrenJql(['PROJ-1" OR project = "X']), 'parent = "PROJ-1\\" OR project = \\"X" ORDER BY created ASC');
+});
+
+test('an issue of any level is summarised, epics included', () => {
+  const epic = issue({ key: 'PROJ-1' }, { summary: 'Retry failed payments', issuetype: { name: 'Epic', hierarchyLevel: 1 } });
+  assert.deepEqual(toProjectSummary(epic, 'acme.atlassian.net'), {
+    key: 'PROJ-1',
+    summary: 'Retry failed payments',
+    issueType: 'Epic',
+    level: 1,
+    workflowStatus: 'In Review',
+    statusCategory: 'indeterminate',
+    url: 'https://acme.atlassian.net/browse/PROJ-1',
+  });
+  assert.equal(toProjectSummary({ fields: {} }, null), null);
+});
+
+test('blocks links are read in both directions, and other link types are ignored', () => {
+  const links = readBlocksLinks(
+    {
+      issuelinks: [
+        blocksLink('inward', 'PROJ-2'),
+        blocksLink('outward', 'PROJ-3'),
+        blocksLink('inward', 'OPS-7', 'done', ' blocks '),
+        blocksLink('inward', 'PROJ-4', 'indeterminate', 'Relates'),
+        { type: { name: 'Blocks' } },
+        'not a link',
+      ],
+    },
+    'acme.atlassian.net',
+  );
+  assert.deepEqual(links.blockedBy, ['PROJ-2', 'OPS-7']);
+  assert.deepEqual(links.blocks, ['PROJ-3']);
+  assert.deepEqual(
+    links.linked.map((other) => [other.key, other.statusCategory]),
+    [['PROJ-2', 'indeterminate'], ['PROJ-3', 'indeterminate'], ['OPS-7', 'done']],
+  );
+  assert.equal(links.linked[0]!.url, 'https://acme.atlassian.net/browse/PROJ-2');
+  assert.deepEqual(readBlocksLinks({}, null), { blockedBy: [], blocks: [], linked: [] });
+});
+
+/**
+ * A stand-in acli for project reads: `view` answers from `views`, failing for
+ * a key it has no entry for, and `search` answers by the parent and whether
+ * the JQL asks for the user's own.
+ */
+async function projectAcli(
+  t: { after(fn: () => Promise<void>): void },
+  world: { views: Record<string, unknown>; children: Record<string, unknown[]>; mine: string[]; epics?: unknown[] },
+): Promise<{ acli: string; calls(): Promise<string[]> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-acli-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const data = join(dir, 'world.json');
+  const log = join(dir, 'calls.log');
+  await writeFile(data, JSON.stringify(world));
+  const acli = await fakeCli(
+    join(dir, 'acli'),
+    `const { readFileSync, appendFileSync } = fs;
+const world = JSON.parse(readFileSync(${JSON.stringify(data)}, 'utf8'));
+if (args[2] === 'view') {
+  appendFileSync(${JSON.stringify(log)}, 'view ' + args[3] + ' ' + args[args.indexOf('--fields') + 1] + '\\n');
+  const found = world.views[args[3]];
+  if (!found) fail('✗ Error: Issue does not exist or you do not have permission to see it.');
+  console.log(JSON.stringify(found));
+} else {
+  const jql = args[args.indexOf('--jql') + 1];
+  appendFileSync(${JSON.stringify(log)}, 'search ' + jql + '\\n');
+  if (jql.startsWith('issuetype = Epic')) { console.log(JSON.stringify(world.epics ?? [])); return; }
+  const parents = [...jql.split(' ORDER BY')[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const all = parents.flatMap((key) => world.children[key] ?? []);
+  console.log(JSON.stringify(jql.includes('currentUser()') ? all.filter((i) => world.mine.includes(i.key)) : all));
+}`,
+  );
+  return {
+    acli,
+    async calls() {
+      const text = await readFile(log, 'utf8').catch(() => '');
+      return text.split('\n').filter(Boolean);
+    },
+  };
+}
+
+function child(key: string, category: string, assignee: string | null = null, level = 0): unknown {
+  return issue(
+    { key },
+    {
+      summary: `Work for ${key}`,
+      status: { name: category === 'done' ? 'Done' : category === 'new' ? 'To Do' : 'In Progress', statusCategory: { key: category } },
+      issuetype: { name: level > 0 ? 'Epic' : 'Task', hierarchyLevel: level },
+      assignee: assignee ? { accountId: `id-${assignee}`, displayName: assignee } : null,
+    },
+  );
+}
+
+test('an epic is read with its tickets, their links and pull requests, and the outside tickets they name', async (t) => {
+  const { acli, calls } = await projectAcli(t, {
+    views: {
+      'PROJ-1': issue(
+        { key: 'PROJ-1' },
+        {
+          summary: 'Retry failed payments',
+          issuetype: { name: 'Epic', hierarchyLevel: 1 },
+          parent: { key: 'PROJ-100', fields: { summary: 'Checkout reliability', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } }, issuetype: { name: 'Initiative', hierarchyLevel: 2 } } },
+        },
+      ),
+      'PROJ-3': { key: 'PROJ-3', fields: { issuelinks: [blocksLink('outward', 'PROJ-4')], customfield_10000: devField(overall('OPEN', 2)) } },
+      'PROJ-4': { key: 'PROJ-4', fields: { issuelinks: [blocksLink('inward', 'PROJ-3'), blocksLink('inward', 'OPS-7')], customfield_10000: null } },
+      // PROJ-5's view is missing, so reading its links fails.
+    },
+    children: {
+      'PROJ-1': [child('PROJ-2', 'done', 'Mara Lindqvist'), child('PROJ-3', 'indeterminate', 'Mara Lindqvist'), child('PROJ-4', 'new', 'Sam Okafor'), child('PROJ-5', 'new')],
+    },
+    mine: ['PROJ-2', 'PROJ-3'],
+  });
+
+  const read = await fetchProject(acli, 'PROJ-1', 'acme.atlassian.net');
+
+  assert.equal(read.root.key, 'PROJ-1');
+  assert.equal(read.root.level, 1);
+  assert.deepEqual([read.parent?.key, read.parent?.level], ['PROJ-100', 2]);
+  assert.deepEqual(read.epics, []);
+  assert.deepEqual(read.tickets.map((ticket) => ticket.key), ['PROJ-2', 'PROJ-3', 'PROJ-4', 'PROJ-5']);
+
+  const by = new Map(read.tickets.map((ticket) => [ticket.key, ticket]));
+  assert.deepEqual([by.get('PROJ-3')!.mine, by.get('PROJ-4')!.mine], [true, false]);
+  assert.equal(by.get('PROJ-4')!.assignee, 'Sam Okafor');
+  assert.equal(by.get('PROJ-5')!.assignee, null);
+  assert.equal(by.get('PROJ-3')!.parent, 'PROJ-1');
+  assert.deepEqual(by.get('PROJ-3')!.blocks, ['PROJ-4']);
+  assert.deepEqual(by.get('PROJ-4')!.blockedBy, ['PROJ-3', 'OPS-7']);
+  assert.deepEqual(by.get('PROJ-3')!.pulls, { count: 2, state: 'OPEN', stateCount: 2 });
+  assert.equal(by.get('PROJ-4')!.pulls, null);
+
+  // A finished ticket's links are never read: nothing waits on what it waits for.
+  assert.equal(by.get('PROJ-2')!.linksRead, false);
+  assert.ok(!(await calls()).some((call) => call.startsWith('view PROJ-2')));
+  // One ticket's links failing costs those links, and says so.
+  assert.equal(by.get('PROJ-5')!.linksRead, false);
+  assert.deepEqual(read.warnings, ['Could not read the links of PROJ-5, so the order may miss what it waits for.']);
+
+  assert.deepEqual(read.outside.map((other) => other.key), ['OPS-7']);
+  assert.equal(read.outside[0]!.url, 'https://acme.atlassian.net/browse/OPS-7');
+});
+
+test('an initiative is read through its epics, and each ticket knows which epic it belongs to', async (t) => {
+  const { acli, calls } = await projectAcli(t, {
+    views: {
+      'PROJ-100': issue({ key: 'PROJ-100' }, { summary: 'Checkout reliability', issuetype: { name: 'Initiative', hierarchyLevel: 2 } }),
+      'PROJ-11': { key: 'PROJ-11', fields: { issuelinks: [blocksLink('inward', 'PROJ-21')] } },
+      'PROJ-21': { key: 'PROJ-21', fields: { issuelinks: [blocksLink('outward', 'PROJ-11')] } },
+    },
+    children: {
+      'PROJ-100': [child('PROJ-10', 'indeterminate', null, 1), child('PROJ-20', 'indeterminate', null, 1)],
+      'PROJ-10': [child('PROJ-11', 'new')],
+      'PROJ-20': [child('PROJ-21', 'indeterminate')],
+    },
+    mine: ['PROJ-21'],
+  });
+
+  const read = await fetchProject(acli, 'PROJ-100', null);
+
+  assert.equal(read.parent, null);
+  assert.deepEqual(read.epics.map((epic) => epic.key), ['PROJ-10', 'PROJ-20']);
+  assert.deepEqual(read.tickets.map((ticket) => [ticket.key, ticket.parent, ticket.mine]), [
+    ['PROJ-11', 'PROJ-10', false],
+    ['PROJ-21', 'PROJ-20', true],
+  ]);
+  // A blocker in another epic of the same initiative is inside the project, not outside it.
+  assert.deepEqual(read.outside, []);
+  // Whose a ticket is was asked of every parent at once.
+  assert.ok((await calls()).includes('search parent IN ("PROJ-100", "PROJ-10", "PROJ-20") AND assignee = currentUser() ORDER BY created ASC'));
+});
+
+test('a project that cannot be read throws, rather than reading as one with no tickets', async (t) => {
+  const { acli } = await projectAcli(t, { views: {}, children: {}, mine: [] });
+  await assert.rejects(fetchProject(acli, 'PROJ-1', null), /Issue does not exist/);
+});
+
+test('a project bigger than the limit is read in part, and says so', async (t) => {
+  const many = Array.from({ length: PROJECT_TICKET_LIMIT + 3 }, (_, i) => child(`PROJ-${i + 2}`, 'done'));
+  const { acli } = await projectAcli(t, {
+    views: { 'PROJ-1': issue({ key: 'PROJ-1' }, { issuetype: { name: 'Epic', hierarchyLevel: 1 } }) },
+    children: { 'PROJ-1': many },
+    mine: [],
+  });
+  const read = await fetchProject(acli, 'PROJ-1', null);
+  assert.equal(read.tickets.length, PROJECT_TICKET_LIMIT);
+  assert.match(read.warnings[0]!, new RegExp(`has ${PROJECT_TICKET_LIMIT + 3} tickets; only the first ${PROJECT_TICKET_LIMIT} were read`));
+});
+
+test('the epics to offer are read and summarised', async (t) => {
+  const { acli } = await projectAcli(t, {
+    views: {},
+    children: {},
+    mine: [],
+    epics: [child('PROJ-1', 'indeterminate', null, 1), { fields: {} }],
+  });
+  const epics = await fetchAssignedEpics(acli, 'acme.atlassian.net');
+  assert.deepEqual(epics.map((epic) => [epic.key, epic.level, epic.url]), [['PROJ-1', 1, 'https://acme.atlassian.net/browse/PROJ-1']]);
 });

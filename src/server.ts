@@ -17,6 +17,7 @@ import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.
 import { CALLBACK_PATH, type OAuthClients } from './calendarproviders.ts';
 import { OAUTH_CLIENTS } from './oauthclients.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
+import { ProjectBoard, type ProjectBoardDeps } from './projectboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
 import { AutoAsk } from './autoask.ts';
@@ -297,6 +298,8 @@ export interface StartedServer {
 export interface Integrations {
   github?: BoardDeps;
   jira?: TicketBoardDeps;
+  /** Epics and initiatives, read through the same acli as the ticket board. */
+  projects?: ProjectBoardDeps;
   /** Calendar accounts off a Mac: the provider APIs, the vault and the registered apps, for a test to supply. */
   calendarAccounts?: CalendarAccountsDeps & { clients?: OAuthClients };
 }
@@ -421,6 +424,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     : helperDeps(config);
   const calendar = new CalendarBoard(config, () => void broadcast(), calendarSource);
   const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
+  // Read when the page opens one; see `projectboard.ts`.
+  const projects = new ProjectBoard(config, () => void broadcast(), options.integrations?.projects);
 
   // Connecting GitHub or Jira, which only a click starts: fetching the CLI if
   // need be, then signing it in. A new session is news to what reads through
@@ -438,7 +443,13 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         void board.refresh();
       },
     }),
-    jira: new Connection('jira', config, { onChange: connectionChanged, onConnected: () => void tickets.refresh() }),
+    jira: new Connection('jira', config, {
+      onChange: connectionChanged,
+      onConnected: () => {
+        void tickets.refresh();
+        void projects.refresh();
+      },
+    }),
   };
 
   // Runs a CLI on request and broadcasts as its answer streams in. It writes
@@ -618,6 +629,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       connections: { github: connections.github.view(), jira: connections.jira.view() },
       calendarAccounts: calendarAccounts.view(),
       tickets: tickets.view(actions, now),
+      projects: projects.view(),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
       setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
@@ -773,6 +785,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   void tickets.start().catch((err: unknown) => {
     console.error(`[daily-focus] jira ticket board failed to start: ${(err as Error).message}`);
   });
+  void projects.start().catch((err: unknown) => {
+    console.error(`[daily-focus] projects failed to start: ${(err as Error).message}`);
+  });
 
   const heartbeat = setInterval(() => {
     void broadcast();
@@ -828,6 +843,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       board.setAudience(subscribers.size);
       calendar.setAudience(subscribers.size);
       tickets.setAudience(subscribers.size);
+      projects.setAudience(subscribers.size);
 
       const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
       keepAlive.unref();
@@ -837,6 +853,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         board.setAudience(subscribers.size);
         calendar.setAudience(subscribers.size);
         tickets.setAudience(subscribers.size);
+        projects.setAudience(subscribers.size);
       });
       return;
     }
@@ -878,6 +895,35 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (path === '/api/tickets/refresh' && req.method === 'POST') {
       // Waits for the read, as the board's refresh does, so the reply carries it.
       await tickets.refresh();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/projects/refresh' && req.method === 'POST') {
+      await projects.refresh();
+      sendState(res, await buildState());
+      return;
+    }
+
+    if (path === '/api/projects/open' && req.method === 'POST') {
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch (err) {
+        sendJSON(res, 400, { error: `invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      const key = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).key : undefined;
+      // A single work item key, as the transition takes, since it reaches JQL.
+      if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(key.trim())) {
+        sendJSON(res, 400, { error: '"key" must be a single Jira work item key, e.g. PROJ-8842' });
+        return;
+      }
+      if (!projects.enabled) {
+        sendJSON(res, 409, { error: 'Projects read Jira, which is switched off (DAILY_FOCUS_JIRA=off).' });
+        return;
+      }
+      await projects.open(key.trim().toUpperCase());
       sendState(res, await buildState());
       return;
     }
@@ -1396,6 +1442,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     board.stop();
     calendar.stop();
     tickets.stop();
+    projects.stop();
     connections.github.stop();
     connections.jira.stop();
     await assistant.close();
