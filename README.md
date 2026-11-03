@@ -119,6 +119,24 @@ Switch to **Working on** to see your in-progress tickets grouped by status,
 including ones that also need a status check. To narrow it, set **Statuses that
 mean working on it** under **Jira tickets** in the settings.
 
+Switch to **Projects** to zoom into one of the unfinished epics assigned to you.
+It shows how far each ticket has got (not started, draft, in review, ready to
+merge, merged or done), a ranked **Do next** list, and the open tickets in an
+order that puts every ticket after the tickets that block it, with Jira's
+blocks links drawn beside them. **Do next** lists what to merge first, what can
+follow once that lands, tickets whose pull requests have all merged and can move
+to Done, drafts to mark ready for review, and pull requests waiting on you or
+your reviewers. Stacked pull requests are marked, and links that loop are
+flagged so you can fix them in Jira. An initiative shows a card per epic; click
+one to zoom in, and use the breadcrumb to zoom back out. Your own tickets show
+your pull requests from the pull request board; teammates' tickets show their
+Jira status and what Jira says about their pull requests. Where **Do next** says
+to merge a pull request or mark a draft ready, it offers the pull request board's
+own **Merge** (or **Add to merge queue**, or your merge helper's button) and
+**Ready for review**, which work and ask first just as they do there. A pull
+request that has to wait for another gets a link instead. Everything else opens
+GitHub or Jira.
+
 **Clicking a ticket's status changes it in Jira.** The menu lists statuses seen in
 your projects; Jira may refuse a move that your workflow doesn't allow. Make
 transitions that need extra fields in Jira itself. Undo requests a transition back,

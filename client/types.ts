@@ -64,7 +64,7 @@ export interface OrganizationReviewUi {
 /** What the setup finish would write as the source list, once asked; see `previewSources`. */
 export type SetupSources = { text: string | null; kept: boolean } | 'loading' | { error: string };
 
-export type TicketMode = 'sync' | 'working';
+export type TicketMode = 'sync' | 'working' | 'projects';
 export type FocusField = 'note' | 'assistant';
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -129,10 +129,16 @@ export interface UiState {
    */
   openDrawers: Signal<ReadonlySet<string>>;
   /**
-   * Which of the ticket tab's two views is showing. In memory only, so a
-   * reload opens on the one that asks for action.
+   * Which of the ticket tab's views is showing. In memory only, so a reload
+   * opens on the one that asks for action.
    */
   ticketMode: Signal<TicketMode>;
+  /**
+   * The epic or initiative the Projects view is zoomed into, by key. In
+   * localStorage, as the view is: which project someone is following is a fact
+   * about this browser, and the view should open on it again.
+   */
+  projectKey: Signal<string | null>;
   /**
    * Which failed run's notice has been put away, by run id.
    *
@@ -217,6 +223,10 @@ export interface Handlers {
   saveNote(id: string, text: string): void;
   toggleDrawer(key: string, open: boolean): void;
   setTicketMode(mode: TicketMode): void;
+  /** Zoom the Projects view into an epic, an initiative or a ticket, and read it. */
+  openProject(key: string): void;
+  /** Read the epics, every project kept open, and the boards its stages come from, now. */
+  refreshProjects(): void;
   setView(view: View): void;
   jumpToTicket(id: string): void;
   nudge(id: string): void;

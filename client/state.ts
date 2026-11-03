@@ -41,6 +41,8 @@ export const PANEL_PREFIX = 'panel:';
 
 export const VIEW_KEY = 'daily-focus:view';
 export const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';
+/** The project the Projects view is zoomed into, by key. */
+export const PROJECT_KEY = 'daily-focus:project';
 /**
  * Which row the panel is open on, by item id. Persisted per tab in
  * sessionStorage rather than localStorage: it should survive the self-reload a
@@ -65,6 +67,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     focusField: signal(initial.focusField ?? null),
     openDrawers: signal(initial.openDrawers ?? new Set<string>()),
     ticketMode: signal(initial.ticketMode ?? 'sync'),
+    projectKey: signal(initial.projectKey ?? null),
     agentReportSeen: signal(initial.agentReportSeen ?? null),
     messageOpen: signal(initial.messageOpen ?? new Map<string, boolean>()),
     view: signal(initial.view ?? 'today'),
@@ -101,6 +104,7 @@ function remembered(): Partial<UiValues> {
       // Settings is a page to visit, so a reload returns to the view underneath.
       view: isView(view) && view !== 'settings' ? view : 'today',
       agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
+      projectKey: localStorage.getItem(PROJECT_KEY),
       detailFor: sessionStorage.getItem(DETAIL_KEY),
     };
   } catch {

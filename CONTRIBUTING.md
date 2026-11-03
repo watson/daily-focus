@@ -113,6 +113,7 @@ versions and release notes come from, so CI checks it.
 | `scripts/licenses.ts` | The package's `dist/third-party-licenses.txt`: every npm package its bundles read, and the fonts |
 | `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
 | `src/projects.ts`, `src/projectboard.ts` | An epic or initiative zoomed into: the order its tickets can land in from Jira's blocks links, the loops in them, and reading the projects someone opens |
+| `client/stages.ts`, `client/projects.ts` | The Tickets tab's Projects view: where each ticket stands, joined from Jira, the ticket board and the pull request board, what to do next, the rail's lanes, and the page that shows them |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/autoask.ts` | Asking the assistant ahead, on its own, about pull requests waiting on you, and which question each row's state calls for |

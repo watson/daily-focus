@@ -12,6 +12,7 @@ import { Menu, cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from '
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
+import { ProjectsView, projectPicker } from './projects.ts';
 import { PANEL_PREFIX } from './state.ts';
 import type { Handlers, TicketMode, UiState } from './types.ts';
 
@@ -104,21 +105,31 @@ export function typeLegend(rows: readonly AnyTicketRow[]): JSX.Element | null {
 }
 
 /**
- * The two questions this tab answers, one at a time.
+ * The questions this tab answers, one at a time.
  *
  * "What here is out of sync with reality" is the one that asks for action, so it
  * is where the tab opens and what its badge counts. "What am I working on" is a
  * different frame of mind, looked for rather than acted on, and it used to sit in
  * a drawer under Snoozed — styled like Snoozed, read like overflow from the list
  * above it. So the two are separate views behind a switch, and neither is ever
- * scrolled past on the way to the other.
+ * scrolled past on the way to the other. "What is left in this epic, and in which
+ * order" is a third, about one project rather than about the user's tickets, and
+ * offered only where the server reads projects (`projects.ts`).
  */
-const TICKET_MODES: readonly TicketMode[] = ['sync', 'working'];
+const TICKET_MODES: readonly TicketMode[] = ['sync', 'working', 'projects'];
 
 const TICKET_MODE_LABEL: Record<TicketMode, string> = {
   sync: 'Out of sync',
   working: 'Working on',
+  projects: 'Projects',
 };
+
+/** Which view shows: the one asked for, unless it is Projects on a server that reads none. */
+export function currentTicketMode(state: DashboardState, ui: UiState): TicketMode {
+  const mode = ui.ticketMode.value;
+  if (mode === 'projects') return state.projects?.enabled ? 'projects' : 'sync';
+  return mode === 'working' ? 'working' : 'sync';
+}
 
 export function TicketsView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
   return renderTicketBoard(state, ui, handlers);
@@ -135,7 +146,8 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
   // renderer changing on disk and the process behind it restarting.
   const inProgress = board.inProgress ?? [];
   const open = board.rows.filter((row) => row.status === 'open');
-  const mode: TicketMode = ui.ticketMode.value === 'working' ? 'working' : 'sync';
+  const mode = currentTicketMode(state, ui);
+  const modes = TICKET_MODES.filter((option) => option !== 'projects' || state.projects?.enabled);
 
   const parts: JSX.Element[] = [];
   // On the switch's line rather than beside the rows: it is a key, read once,
@@ -143,13 +155,19 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
   // Built from both views' rows, so it is the same key on either side of the
   // switch: one built per view vanished whenever a view held a single type, and
   // the line under it jumped as it came and went.
+  // In Projects the line holds the picker instead: no row there carries a type dot.
   const legend = typeLegend([...board.rows, ...inProgress]);
   parts.push(
     el(
       'div',
       { class: 'ticket-toolbar' },
-      ticketModeSwitch(mode, { sync: open.length, working: inProgress.length }, handlers),
-      legend,
+      ticketModeSwitch(
+        mode,
+        modes,
+        { sync: open.length, working: inProgress.length, projects: state.projects?.epics?.length ?? 0 },
+        handlers,
+      ),
+      mode === 'projects' ? projectPicker(state, ui, handlers) : legend,
     ),
   );
 
@@ -177,18 +195,19 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
   if (connection && (board.connect || connecting(connection))) parts.push(connectionView('jira', connection, handlers));
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
 
-  if (mode === 'working') parts.push(...workingOnView(board, inProgress, state, ui, handlers));
+  if (mode === 'projects') parts.push(h(ProjectsView, { state, ui, handlers }));
+  else if (mode === 'working') parts.push(...workingOnView(board, inProgress, state, ui, handlers));
   else parts.push(...outOfSyncView(board, open, state, ui, handlers));
 
   return parts;
 }
 
-/** The switch between the two views, each with how many tickets it holds. */
-function ticketModeSwitch(mode: TicketMode, counts: Record<TicketMode, number>, handlers: Handlers): JSX.Element {
+/** The switch between the views, each with how many it holds: tickets, or for Projects, epics to zoom into. */
+function ticketModeSwitch(mode: TicketMode, modes: readonly TicketMode[], counts: Record<TicketMode, number>, handlers: Handlers): JSX.Element {
   return el(
     'div',
     { class: 'mode-switch', role: 'tablist', 'aria-label': 'Which tickets to show' },
-    TICKET_MODES.map((option) =>
+    modes.map((option) =>
       el(
         'button',
         {

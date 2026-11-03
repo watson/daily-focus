@@ -197,6 +197,21 @@ export function relativeTime(value: DateLike, now = new Date()): string {
   return dayKey(d).slice(0, 4) === dayKey(now).slice(0, 4) ? formatShortDay(value) : formatted(value, 'shortDayYear');
 }
 
+/**
+ * How long a wait has run, as a span: "moments", "40 min", "30 h", "3 days".
+ * The same thresholds `relativeTime` uses, so "waiting 30 h" and "last touched
+ * 30 h ago" on one row can't disagree.
+ */
+export function waitedFor(since: DateLike, now: Date): string {
+  const at = parseDate(since);
+  const minutes = at ? Math.round((now.getTime() - at.getTime()) / 60_000) : 0;
+  if (minutes < 1) return 'moments';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h`;
+  return `${Math.round(hours / 24)} days`;
+}
+
 /** The first non-empty line, without the Markdown that would read as noise in one. */
 /** "40 s", "7 min", "1 h 12 min": how long something took, from its start to its end. Empty when either is missing. */
 export function durationBetween(start: DateLike, end: DateLike): string {

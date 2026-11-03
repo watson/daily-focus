@@ -9,7 +9,8 @@ import { el } from './el.ts';
 import { dayKey, formatDay, formatTime } from './format.ts';
 import { availableViews } from './state.ts';
 import { ThemeToggle } from './theme.ts';
-import { ticketStatus } from './tickets.ts';
+import { projectStatus } from './projects.ts';
+import { currentTicketMode, ticketStatus } from './tickets.ts';
 import { browserZone, sameZone } from './zone.ts';
 import type { Handlers, UiState, View } from './types.ts';
 
@@ -64,7 +65,11 @@ export function Header({ state, ui, handlers }: { state: DashboardState | null; 
       el(
         'span',
         { class: 'board-refresh', id: 'tickets-refresh' },
-        state?.tickets?.enabled ? ticketStatus(state.tickets, handlers, ui.ticketMode.value) : null,
+        state?.tickets?.enabled
+          ? currentTicketMode(state, ui) === 'projects'
+            ? projectStatus(state, ui, handlers)
+            : ticketStatus(state.tickets, handlers, ui.ticketMode.value)
+          : null,
       ),
       h(ThemeToggle, { ui, handlers }),
       el(
@@ -295,7 +300,7 @@ const SHORTCUTS: readonly [readonly string[], string][] = [
   [['o'], 'Open the source link'],
   [['u'], 'Undo the last action'],
   [['r'], 'Refresh whichever board you are on'],
-  [['w'], 'Jira tickets: switch between out of sync and working on'],
+  [['w'], 'Jira tickets: switch between out of sync, working on and projects'],
   [[','], 'Settings: your objective, where the agent looks, and the rest'],
   [['?'], 'This help'],
 ];
