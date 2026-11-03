@@ -73,6 +73,8 @@ export const STORE_ENTRIES: readonly string[] = [
   'items.schema.json',
   'onboarding',
   'onboarding.json',
+  'organization',
+  'organization.json',
   'prompt.md',
   'prs.json',
   'settings.json',
@@ -85,7 +87,7 @@ export const STORE_ENTRIES: readonly string[] = [
  * What says a folder holds a store: any of its files. Not its folders, whose
  * names (`archive`, `assistant`) are common enough to be anyone's.
  */
-const STORE_FILES: readonly string[] = STORE_ENTRIES.filter((name) => !['archive', 'assistant', 'onboarding'].includes(name));
+const STORE_FILES: readonly string[] = STORE_ENTRIES.filter((name) => !['archive', 'assistant', 'onboarding', 'organization'].includes(name));
 
 const STAGING_PREFIX = '.moving-';
 

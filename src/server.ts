@@ -29,6 +29,8 @@ import { Connection } from './connect.ts';
 import { refusal } from './guard.ts';
 import { Onboarding } from './onboarding.ts';
 import { describeLink, linkStore, storeLinkWarning } from './links.ts';
+import { Organizations, type OrganizationReads } from './organization.ts';
+import { ORGANIZATION_FOLDER, type OrganizationLayer } from './organizationfile.ts';
 import { applySettingsChange, describeSettings, saveSettings, type SettingsChange } from './settings.ts';
 import { detectIdentity, fillIdentity, firstBriefPending, forgetIdentity, setupState } from './setup.ts';
 import { hydratePath } from './shellpath.ts';
@@ -229,15 +231,36 @@ function configure(sources: SettingSources): { config: Config; warnings: string[
   if (sources.settingsError) {
     warnings.push(`${sources.settingsError}. The dashboard is ignoring it; saving on the settings page writes a fresh one.`);
   }
+  if (sources.organizationError) {
+    warnings.push(`${sources.organizationError}. The dashboard is ignoring it; stop using the organization's setup on the settings page, or use it again.`);
+  }
   try {
     return { config: loadConfig(layerSettings(sources)), warnings };
   } catch (error) {
-    if (Object.keys(sources.settings).length === 0) throw error;
-    warnings.push(
-      `\`${sources.settingsPath}\` has a value the dashboard can't use, so it is ignoring the whole file: ` +
-        `${(error as Error).message}. Fix it on the settings page.`,
-    );
-    return { config: loadConfig(layerSettings(sources, {})), warnings };
+    const saved = Object.keys(sources.settings).length > 0;
+    if (!saved && !sources.organization) throw error;
+    const why = (error as Error).message;
+    const settingsIgnored =
+      `\`${sources.settingsPath}\` has a value the dashboard can't use, so it is ignoring the whole file: ${why}. Fix it on the settings page.`;
+    const setupIgnored =
+      `${sources.organization?.name ?? 'The organization'}'s setup has a value the dashboard can't use with yours, so it is ignoring the setup: ` +
+      `${why}. Change yours on the settings page, or stop using the setup.`;
+    // The store's own settings win over the organization's, so the setup is
+    // set aside first; then the store's settings; then both.
+    const attempts: { settings: Readonly<Record<string, string>>; organization: OrganizationLayer | null; said: string[] }[] = [];
+    if (sources.organization && saved) attempts.push({ settings: sources.settings, organization: null, said: [setupIgnored] });
+    if (saved) attempts.push({ settings: {}, organization: sources.organization ?? null, said: [settingsIgnored] });
+    if (sources.organization) attempts.push({ settings: {}, organization: null, said: saved ? [settingsIgnored, setupIgnored] : [setupIgnored] });
+    for (const { settings, organization, said } of attempts) {
+      try {
+        const config = loadConfig(layerSettings(sources, settings, organization));
+        warnings.push(...said);
+        return { config, warnings };
+      } catch {
+        // Set aside more.
+      }
+    }
+    throw error;
   }
 }
 
@@ -302,6 +325,8 @@ export interface Integrations {
   projects?: ProjectBoardDeps;
   /** Calendar accounts off a Mac: the provider APIs, the vault and the registered apps, for a test to supply. */
   calendarAccounts?: CalendarAccountsDeps & { clients?: OAuthClients };
+  /** Looking for an organization's setup: gh's tokens and GitHub's reads, for a test to supply. */
+  organization?: OrganizationReads;
 }
 
 export interface ServerOptions {
@@ -435,12 +460,30 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     void broadcast();
     restartWhenIdle();
   };
+  // An organization's setup, found through the GitHub sign-in: offered, and
+  // applied only from a click. What was found is kept in memory; only what the
+  // user adopts is written. See `organization.ts`.
+  const organizations = new Organizations(config, {
+    onChange: () => void broadcast(),
+    check: (layer) => {
+      try {
+        loadConfig(layerSettings(readSources(), undefined, layer));
+        return null;
+      } catch (err) {
+        return (err as Error).message;
+      }
+    },
+    ...(options.integrations?.organization ? { reads: options.integrations.organization } : {}),
+  });
+  await organizations.load();
+
   const connections: Record<Service, Connection> = {
     github: new Connection('github', config, {
       onChange: connectionChanged,
       onConnected: () => {
         forgetIdentity();
         void board.refresh();
+        void organizations.check();
       },
     }),
     jira: new Connection('jira', config, {
@@ -630,6 +673,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       calendarAccounts: calendarAccounts.view(),
       tickets: tickets.view(actions, now),
       projects: projects.view(),
+      organization: organizations.view(),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       agentRun: agent.view(now),
       setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
@@ -706,6 +750,10 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         // Rewritten by the setup screen, which broadcasts on its own.
         basename(config.onboardingFile),
         basename(tempPathFor(config.onboardingFile)),
+        // Written by the organization setups, which broadcast on their own.
+        basename(config.organizationFile),
+        basename(tempPathFor(config.organizationFile)),
+        ORGANIZATION_FOLDER,
       ],
     },
   );
@@ -787,6 +835,10 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   });
   void projects.start().catch((err: unknown) => {
     console.error(`[daily-focus] projects failed to start: ${(err as Error).message}`);
+  });
+  // At start, and then once a day, only while GitHub is on.
+  void organizations.start().catch((err: unknown) => {
+    console.error(`[daily-focus] organization setups failed to start: ${(err as Error).message}`);
   });
 
   const heartbeat = setInterval(() => {
@@ -1344,6 +1396,58 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
+    // Everything an organization's setup would do, for its review: what it
+    // suggests as sources included, which is why it is asked for on its own
+    // and never part of the state. A read of what discovery already holds in
+    // memory; nothing here reaches GitHub.
+    if (path === '/api/organization/review' && req.method === 'GET') {
+      const org = url.searchParams.get('org') ?? '';
+      const review = organizations.review(org);
+      if (!review) {
+        sendJSON(res, 404, { error: `No Daily Focus setup from ${org || 'that organization'} is on offer` });
+        return;
+      }
+      sendJSON(res, 200, review);
+      return;
+    }
+
+    // Using a setup, putting one off, stopping, and looking again. Each answers
+    // with fresh state; using and stopping restart the dashboard to apply it.
+    if (path.startsWith('/api/organization/') && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      const org = typeof body.org === 'string' ? body.org : '';
+      const commit = typeof body.commit === 'string' ? body.commit : '';
+      let refused: string | null = null;
+      let restartAfter = false;
+      if (path === '/api/organization/adopt' || path === '/api/organization/dismiss') {
+        if (org === '' || commit === '') {
+          sendJSON(res, 400, { error: '"org" and "commit" are required: the setup, and the commit its review showed' });
+          return;
+        }
+        refused = path === '/api/organization/adopt' ? await organizations.adopt(org, commit) : await organizations.dismiss(org, commit);
+        restartAfter = path === '/api/organization/adopt' && refused === null;
+      } else if (path === '/api/organization/leave') {
+        refused = await organizations.leave();
+        restartAfter = refused === null;
+      } else if (path === '/api/organization/check') {
+        if (!config.github.enabled) refused = 'GitHub is off, so Daily Focus doesn’t look for organization setups';
+        else await organizations.check();
+      } else {
+        sendJSON(res, 404, { error: `no such organization action: ${path}` });
+        return;
+      }
+      if (refused) {
+        sendJSON(res, 409, { error: refused });
+        return;
+      }
+      if (restartAfter) requestRestart();
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
     if (path === '/api/settings' && req.method === 'GET') {
       sendJSON(res, 200, { ...describeSettings(readSources()), restart });
       return;
@@ -1516,6 +1620,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     calendar.stop();
     tickets.stop();
     projects.stop();
+    organizations.stop();
     connections.github.stop();
     connections.jira.stop();
     await assistant.close();

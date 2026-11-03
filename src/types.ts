@@ -1197,6 +1197,12 @@ export interface DashboardState {
   tickets: TicketBoardState;
   /** Epics and initiatives, zoomed into. Absent from a server older than the page. */
   projects?: ProjectsState;
+  /**
+   * Organization setups: one found through the user's GitHub sign-in to offer,
+   * the one in use, and what couldn't be read. Never what a setup suggests as
+   * sources, which comes with its review alone. Absent from an older server.
+   */
+  organization?: import('./organization.ts').OrganizationState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
   assistant: AssistantState;
   /** The morning agent, run by the dashboard. Present even when off, so the client can hide the button. */

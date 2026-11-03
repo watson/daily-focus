@@ -184,7 +184,7 @@ test("the server, the client and the README agree on the ticket board's courts",
  */
 test('AGENTS.md names the brief, action log, and integration caches', async () => {
   const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
-  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'calendar-accounts.json', 'tickets.json', 'copies.json']) {
+  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'calendar-accounts.json', 'tickets.json', 'copies.json', 'organization.json', 'organization/']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
   }
 });
@@ -217,21 +217,48 @@ test("the assistant's prompt keeps its never-rules and stays in the chat", async
   }
 });
 
+/** The setup page's section for organizations, whose example `daily-focus.json` names settings by necessity. */
+const ORGANIZATIONS_SECTION = /<section id="organizations"[\s\S]*?<\/section>/;
+
 /**
  * The launch settings can't be on the settings page, which lives in the store they
  * locate, so the setup page on the site is where anyone finds them, with the
  * profile, which can be given at launch too. It names no other setting:
  * everything else is explained where it is changed, on the settings page, and a
- * second copy there would go stale.
+ * second copy there would go stale. The one exception is the example of an
+ * organization's `daily-focus.json`, checked below.
  */
 test('the setup page documents the launch settings and the profile, and only those', async () => {
   const { LAUNCH_SETTINGS, PROFILE_SETTING } = await import('../src/env.ts');
-  const page = await readFile(resolve(root, 'site/setup/index.html'), 'utf8');
+  const whole = await readFile(resolve(root, 'site/setup/index.html'), 'utf8');
+  assert.match(whole, ORGANIZATIONS_SECTION, 'the setup page no longer has its section for organizations where this test looks');
+  const page = whole.replace(ORGANIZATIONS_SECTION, '');
   const named = new Set([...page.matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
   const documented = [...LAUNCH_SETTINGS, PROFILE_SETTING];
   for (const name of documented) assert.ok(named.has(name), `site/setup/index.html never mentions ${name}`);
   for (const name of named) {
     assert.ok(documented.includes(name), `site/setup/index.html names ${name}, which belongs on the settings page`);
+  }
+});
+
+/**
+ * The example of an organization's setup names real settings, each one a setup
+ * may set where the example sets it: under `settings` one the settings page has
+ * and a setup may set, under `files` one a setup may pin to a file.
+ */
+test('the setup page’s example of an organization’s setup is one Daily Focus would take whole', async () => {
+  const page = await readFile(resolve(root, 'site/setup/index.html'), 'utf8');
+  const section = ORGANIZATIONS_SECTION.exec(page)?.[0] ?? '';
+  const example = /<code id="cmd-org-setup">([\s\S]*?)<\/code>/.exec(section)?.[1];
+  assert.ok(example, 'the section no longer has its example where this test looks');
+  const { parseSetup } = await import('../src/organization.ts');
+  const parsed = parseSetup(JSON.parse(example.replace(/&quot;/g, '"').replace(/&amp;/g, '&')), 'acme', { profile: 'work', dataDir: '/tmp/df-docs' });
+  assert.ok(!('error' in parsed), 'error' in parsed ? parsed.error : '');
+  assert.deepEqual(parsed.skipped, [], 'the example sets nothing a setup may not');
+  assert.deepEqual(parsed.skippedFiles, []);
+  const named = new Set([...section.matchAll(/DAILY_FOCUS_[A-Z_]+/g)].map((m) => m[0]));
+  for (const name of named) {
+    assert.ok(name in parsed.settings || parsed.files.some((file) => file.setting === name), `the organizations section names ${name} outside its example`);
   }
 });
 

@@ -30,6 +30,9 @@
  * empty folder to run in, outside any git checkout even when the home folder is
  * one; the CLIs' environment; and a time limit. Nothing is written to the store
  * or the install directory. What the helper said is kept in memory only.
+ *
+ * A helper an organization's setup pinned runs only while it has the hash the
+ * user approved: the board checks before every launch (`pinned` in `board.ts`).
  */
 
 import { spawn } from 'node:child_process';

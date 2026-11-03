@@ -1,5 +1,6 @@
 /** Everything that talks to the server. */
 
+import type { OrganizationReview } from '../src/organization.ts';
 import type { CalendarProvider, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
 import type { CalendarName, SettingsPage, TextName } from './types.ts';
 
@@ -281,4 +282,29 @@ export function postSetupFinish(): Promise<DashboardState> {
 /** What the setup finish would write as the source list. */
 export async function fetchSetupSources(): Promise<{ text: string | null; kept: boolean }> {
   return jsonFrom(await fetch('/api/onboarding/sources'), 'GET /api/onboarding/sources');
+}
+
+/** Everything an organization's setup would do, the sources it suggests included, which no state carries. */
+export async function fetchOrganizationReview(org: string): Promise<OrganizationReview> {
+  return jsonFrom(await fetch(`/api/organization/review?org=${encodeURIComponent(org)}`), 'GET /api/organization/review');
+}
+
+/** Use an organization's setup at the commit its review showed, or apply its newer commit; the dashboard restarts. */
+export function postOrganizationAdopt(org: string, commit: string): Promise<DashboardState> {
+  return post('/api/organization/adopt', { org, commit });
+}
+
+/** "Not now" for an organization's setup at a commit. */
+export function postOrganizationDismiss(org: string, commit: string): Promise<DashboardState> {
+  return post('/api/organization/dismiss', { org, commit });
+}
+
+/** Stop using the organization's setup in use; the dashboard restarts. */
+export function postOrganizationLeave(): Promise<DashboardState> {
+  return post('/api/organization/leave');
+}
+
+/** Look for organization setups again now. */
+export function postOrganizationCheck(): Promise<DashboardState> {
+  return post('/api/organization/check');
 }

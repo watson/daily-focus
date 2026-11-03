@@ -16,6 +16,7 @@ import type { DashboardState, Service } from '../src/types.ts';
 import { el } from './el.ts';
 import { calendarAccountsView } from './calendaraccounts.ts';
 import { connectionView } from './connect.ts';
+import { hasOrganizationCard, organizationCard } from './organization.ts';
 import type { CalendarName, Handlers, TextEditor, TextName, UiState, View } from './types.ts';
 
 /** The views Settings can return to, by the names their tabs carry. */
@@ -35,9 +36,11 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
 
   const page = ui.settings.value;
   const draft = ui.settingsDraft.value;
+  const organization = page?.organization?.name ?? null;
   const sections: Section[] = [
     { id: 'objective', title: 'Your objective' },
     { id: 'sources', title: 'Where the agent looks' },
+    ...(hasOrganizationCard(state) ? [{ id: 'organization', title: 'Your organization' }] : []),
     ...(page?.groups ?? []),
   ];
 
@@ -54,6 +57,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
     page?.error ? el('p', { class: 'settings__problem', role: 'alert' }, page.error) : null,
     objectiveCard(state, ui, handlers),
     sourcesCard(state, ui, handlers),
+    organizationCard(state, handlers),
     page
       ? page.groups.map((group) => {
           const settings = page.settings.filter((setting) => setting.group === group.id);
@@ -63,7 +67,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
             'section',
             { class: 'settings-card', id: `settings-${group.id}`, key: group.id, 'aria-labelledby': `settings-${group.id}-title` },
             el('h3', { class: 'settings-card__title', id: `settings-${group.id}-title` }, group.title),
-            plain.map((setting) => settingField(setting, draft, handlers)),
+            plain.map((setting) => settingField(setting, draft, handlers, organization)),
             group.id === 'calendar' ? calendarPicker(state, ui, handlers, page.settings) : null,
             group.id === 'github' || group.id === 'jira' ? serviceAccount(group.id, state, handlers) : null,
             advanced.length > 0
@@ -71,7 +75,7 @@ export function SettingsView({ state, ui, handlers }: { state: DashboardState; u
                   'details',
                   { class: 'settings-card__more' },
                   el('summary', null, 'More'),
-                  advanced.map((setting) => settingField(setting, draft, handlers)),
+                  advanced.map((setting) => settingField(setting, draft, handlers, organization)),
                 )
               : null,
           );
@@ -276,10 +280,14 @@ export function textEditor(name: TextName, editor: TextEditor | undefined, handl
 
 /* ---------- one setting ---------- */
 
-/** What the field shows: the draft if there is one, otherwise whatever is in effect but a default. */
+/**
+ * What the field shows: the draft if there is one, otherwise whatever is saved
+ * or fixed. A default shows as empty, and so does the organization's value:
+ * both are what an empty field goes back to.
+ */
 function shownValue(setting: SettingView, draft: ReadonlyMap<string, string | null>): string {
   if (draft.has(setting.key)) return draft.get(setting.key) ?? '';
-  return setting.source === 'default' ? '' : (setting.value ?? '');
+  return setting.source === 'default' || setting.source === 'organization' ? '' : (setting.value ?? '');
 }
 
 /** How many answers fit a segmented control; more than this is a dropdown. */
@@ -291,11 +299,16 @@ function flagValue(raw: string): string {
   return ['off', 'false', '0', 'no'].includes(raw.trim().toLowerCase()) ? 'off' : 'on';
 }
 
-/** One setting's field, editing the draft. */
-function settingField(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers): JSX.Element {
+/**
+ * One setting's field, editing the draft. `organization` names the setup in
+ * use, whose value for a setting stands in for the default: it is what the
+ * field shows when empty, and what clearing a saved value goes back to.
+ */
+function settingField(setting: SettingView, draft: ReadonlyMap<string, string | null>, handlers: Handlers, organization: string | null = null): JSX.Element {
   const id = `setting-${setting.key}`;
   const locked = setting.source === 'fixed';
   const value = shownValue(setting, draft);
+  const fromSetup = organization !== null && setting.organization ? setting.organization : null;
   const onChange = (event: Event) => {
     const next = (event.currentTarget as HTMLInputElement | HTMLSelectElement).value;
     handlers.editSetting(setting.key, next.trim() === '' ? null : next);
@@ -312,7 +325,11 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
     // the default is what is in force its segment says so. A longer list, or a
     // default that is none of the answers, stays a dropdown with the default as
     // its first entry.
-    const fallback = choices.find((choice) => choice.label.toLowerCase() === setting.fallback.toLowerCase());
+    const fallback =
+      fromSetup !== null
+        ? choices.find((choice) => choice.value === (setting.kind === 'flag' ? flagValue(fromSetup) : fromSetup.trim().toLowerCase()))
+        : choices.find((choice) => choice.label.toLowerCase() === setting.fallback.toLowerCase());
+    const fallbackWord = fromSetup !== null ? `${organization}'s` : 'default';
     input =
       choices.length <= SEGMENTS && fallback
         ? el(
@@ -330,18 +347,24 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
                   class: 'segmented__option',
                   'aria-checked': String(checked),
                   disabled: locked,
-                  title: isDefault ? 'The default' : undefined,
+                  title: isDefault ? (fromSetup !== null ? `From ${organization}'s setup` : 'The default') : undefined,
                   onClick: () => handlers.editSetting(setting.key, isDefault ? null : choice.value),
                 },
                 choice.label,
-                checked && current === '' ? el('small', null, 'default') : null,
+                checked && current === '' ? el('small', null, fallbackWord) : null,
               );
             }),
           )
         : el(
             'select',
             { class: 'field__input', id, disabled: locked, value: current, onChange },
-            el('option', { value: '' }, `Default: ${setting.fallback}`),
+            el(
+              'option',
+              { value: '' },
+              fromSetup !== null
+                ? `From ${organization}'s setup: ${choices.find((choice) => choice.value === fromSetup)?.label ?? fromSetup}`
+                : `Default: ${setting.fallback}`,
+            ),
             choices.map((choice) => el('option', { value: choice.value, key: choice.value }, choice.label)),
           );
   } else {
@@ -352,7 +375,7 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
       inputmode: setting.kind === 'number' ? 'numeric' : undefined,
       disabled: locked,
       value,
-      placeholder: setting.fallback,
+      placeholder: fromSetup ?? setting.fallback,
       autocomplete: 'off',
       spellcheck: false,
       onInput: onChange,
@@ -364,6 +387,15 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
     { class: 'field', key: setting.key, 'data-changed': String(draft.has(setting.key)) },
     el('label', { class: 'field__label', for: id }, setting.label),
     input,
+    fromSetup !== null
+      ? el(
+          'p',
+          { class: 'field__source' },
+          setting.source === 'organization'
+            ? `From ${organization}'s setup.`
+            : `${organization}'s setup sets ${fromSetup}. Clear yours to use it.`,
+        )
+      : null,
     el('p', { class: 'field__help' }, setting.help),
   );
 }

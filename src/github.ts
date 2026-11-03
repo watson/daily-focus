@@ -1654,3 +1654,131 @@ export async function fetchTicketPulls(
   }
   return { pulls, complete };
 }
+
+/* ---------- an organization's setup ---------- */
+
+/**
+ * The reads that find an organization's Daily Focus setup: which organizations
+ * an account is in, whether one has a `.daily-focus` repository and at which
+ * commit, and a file in it at that commit. Only reads, over GitHub's REST API,
+ * as the account's own token. See `organization.ts`.
+ */
+
+const REST_URL = 'https://api.github.com';
+
+/** The most a setup's file may weigh: GitHub's contents API inlines files up to a megabyte, and a setup's are small. */
+export const MAX_SETUP_FILE_BYTES = 1024 * 1024;
+
+/** Organizations per page, and pages read: a thousand organizations is more than anyone is in. */
+const ORGS_PAGE_SIZE = 100;
+const ORGS_MAX_PAGES = 10;
+
+/** A path in the repository that is there, but isn't a file the setup can use: a folder, or one too big. */
+export class RepositoryFileProblem extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RepositoryFileProblem';
+  }
+}
+
+/** One GET of the REST API: its status and body, or `GitHubRequestError` when GitHub couldn't be asked. */
+async function restGet(token: string, path: string, accept = 'application/vnd.github+json'): Promise<{ status: number; text: string }> {
+  const url = `${REST_URL}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { authorization: `Bearer ${token}`, accept, 'user-agent': 'daily-focus', 'x-github-api-version': '2022-11-28' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new GitHubRequestError(unreachable(err, new URL(url).host), null, { cause: err });
+  }
+  const text = await res.text().catch(() => '');
+  return { status: res.status, text };
+}
+
+/** Why a read that wasn't a success failed, in words: GitHub's single sign-on refusal said as such. */
+function refusedRead(status: number, text: string, what: string): GitHubRequestError {
+  if (status === 401) return new GitHubRequestError('GitHub rejected the token (401) — sign in to GitHub again', 401);
+  if (status === 403 && /SAML/i.test(text)) {
+    return new GitHubRequestError(`the token isn't authorised for ${what}'s single sign-on`, 403);
+  }
+  let message = '';
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown };
+    if (typeof parsed.message === 'string') message = parsed.message;
+  } catch {
+    message = text.slice(0, 200);
+  }
+  return new GitHubRequestError(`GitHub answered ${status}${message ? `: ${message}` : ''}`, status);
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new GitHubRequestError(`GitHub returned unreadable JSON: ${(err as Error).message}`);
+  }
+}
+
+/** The organizations `token`'s account belongs to, by login. */
+export async function fetchOrganizations(token: string): Promise<string[]> {
+  const orgs: string[] = [];
+  for (let page = 1; page <= ORGS_MAX_PAGES; page++) {
+    const { status, text } = await restGet(token, `/user/orgs?per_page=${ORGS_PAGE_SIZE}&page=${page}`);
+    if (status !== 200) throw refusedRead(status, text, 'your organizations');
+    const body = parseJson(text);
+    if (!Array.isArray(body)) throw new GitHubRequestError('GitHub answered with something other than a list of organizations');
+    for (const entry of body as { login?: unknown }[]) {
+      if (typeof entry?.login === 'string' && entry.login !== '') orgs.push(entry.login);
+    }
+    if (body.length < ORGS_PAGE_SIZE) break;
+  }
+  return orgs;
+}
+
+/**
+ * `<org>/<name>`'s default branch and the commit it is at, or null when there
+ * is no such repository the account can see: GitHub answers 404 for one that
+ * is private to others as for one that doesn't exist. An empty repository has
+ * no commit, and is none too.
+ */
+export async function fetchSetupRepository(token: string, org: string, name: string): Promise<{ branch: string; commit: string } | null> {
+  const repo = `/repos/${encodeURIComponent(org)}/${encodeURIComponent(name)}`;
+  const found = await restGet(token, repo);
+  if (found.status === 404) return null;
+  if (found.status !== 200) throw refusedRead(found.status, found.text, org);
+  const branch = (parseJson(found.text) as { default_branch?: unknown })?.default_branch;
+  if (typeof branch !== 'string' || branch === '') throw new GitHubRequestError(`GitHub didn't say which is ${org}/${name}'s default branch`);
+  const head = await restGet(token, `${repo}/commits/${encodeURIComponent(branch)}`, 'application/vnd.github.sha');
+  if (head.status === 404 || head.status === 409) return null;
+  if (head.status !== 200) throw refusedRead(head.status, head.text, org);
+  const commit = head.text.trim();
+  if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new GitHubRequestError(`GitHub answered with something other than a commit for ${org}/${name}`);
+  return { branch, commit };
+}
+
+/**
+ * A file of `repo` at `commit`, or null when there is none at that path.
+ * Throws `RepositoryFileProblem` for a path that is a folder or a file too big
+ * for a setup, and `GitHubRequestError` when GitHub couldn't be asked.
+ */
+export async function fetchRepositoryFile(token: string, repo: string, path: string, commit: string): Promise<Uint8Array | null> {
+  const [owner = '', name = ''] = repo.split('/');
+  const where = path.split('/').map(encodeURIComponent).join('/');
+  const { status, text } = await restGet(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${where}?ref=${encodeURIComponent(commit)}`,
+  );
+  if (status === 404) return null;
+  if (status !== 200) throw refusedRead(status, text, owner);
+  const body = parseJson(text) as { type?: unknown; size?: unknown; encoding?: unknown; content?: unknown } | unknown[];
+  if (Array.isArray(body) || body?.type !== 'file') throw new RepositoryFileProblem(`${path} is not a file`);
+  if (typeof body.size === 'number' && body.size > MAX_SETUP_FILE_BYTES) {
+    throw new RepositoryFileProblem(`${path} is larger than ${MAX_SETUP_FILE_BYTES / 1024 / 1024} MB`);
+  }
+  if (body.encoding !== 'base64' || typeof body.content !== 'string') {
+    throw new RepositoryFileProblem(`GitHub didn't send ${path}'s content`);
+  }
+  return new Uint8Array(Buffer.from(body.content, 'base64'));
+}

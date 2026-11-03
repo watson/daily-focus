@@ -42,7 +42,7 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `prs.json`, `tickets.json`, `calendar-accounts.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `organization.json`, `organization/`, `prs.json`, `tickets.json`, `calendar-accounts.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
 | User, through the dashboard's editors, the setup screen, or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
@@ -119,6 +119,17 @@ run it again with `--remove` afterwards.
   maintainer's explicit go-ahead first. The package build refuses them. Node's
   licence quotes the GPL only for ICU build scripts under Autoconf's exception,
   which aren't in the binary.
+- An organization's setup (`src/organization.ts`) lives in its own private
+  `<org>/.daily-focus` repository; the code names no company, and
+  `test/internal-names.test.ts` fails on a known internal name. Discovery and
+  updates only read GitHub, while GitHub is on. Nothing applies without a click:
+  only "Use it", "Not now" and "Stop using" write `organization.json` and
+  `organization/`, a newer commit changes nothing until applied, and nothing is
+  written to GitHub. A setup never sets a program setting (`program` in
+  `src/settings.ts`) but through `files`, and a pinned file runs only at the
+  approved hash (`approvedFileProblem`), checked before every run. Its suggested
+  sources are shown to copy, never written to `sources.md`, and reach the browser
+  only through its review (`/api/organization/review`), never `/api/state`.
 - The server has no login. `src/guard.ts` refuses a non-JSON `POST` and an untrusted
   `Host` before any route runs; keep every route behind it and every `GET` free of
   side effects, or any page open in the browser can act through the dashboard.
@@ -211,4 +222,7 @@ the setup page (`site/setup/index.html`) documents them instead: they locate the
 store, so they can't be kept in it. They and `DAILY_FOCUS_PROFILE`, which picks the
 store when given at launch and is locked on the page, are the only settings read
 from the environment (or `--data`, `--port`, `--host`, `--profile`); don't read
-another from it, or a `.env`.
+another from it, or a `.env`. Every other setting's value is the store's
+`settings.json`, then the adopted organization setup, then the default
+(`layerSettings` in `src/env.ts`), and an organization's setup never sets a
+launch setting or the profile.

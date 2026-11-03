@@ -54,6 +54,7 @@
       <li><a href="#running">Keep it running</a></li>
       <li><a href="#connect">Connect your tools</a></li>
       <li><a href="#merge-helper">Merge through your own queue</a></li>
+      <li><a href="#organizations">A setup for your organization</a></li>
       <li><a href="#personal">A dashboard for home</a></li>
       <li><a href="#options">Where it keeps things</a></li>
       <li><a href="#update">Update</a></li>
@@ -197,6 +198,51 @@ case "$1" in
   *) echo "unknown command: $1" &gt;&amp;2; exit 2 ;;
 esac</code><button class="button button--primary" type="button" data-copy="cmd-merge-helper">Copy</button></div>
       <p>On Windows, the helper has to be a program, or a Node script installed with npm, whose command Daily Focus knows how to start; it won’t run a batch file of its own through the command prompt.</p>
+    </section>
+
+    <section id="organizations" aria-labelledby="organizations-title">
+      <h2 id="organizations-title">A setup for your organization</h2>
+      <p>A company can give everyone who uses Daily Focus a setup that works from the start, without Daily Focus naming the company or any of its tools. It publishes its setup in a private repository named <code>.daily-focus</code> in its GitHub organization, the way GitHub reads an organization’s <code>.github</code> repository, with a file named <code>daily-focus.json</code> on its default branch.</p>
+      <h3>How Daily Focus finds it</h3>
+      <p>While GitHub is on, Daily Focus lists the organizations each GitHub account it reads as belongs to, the ones under <b>Accounts</b> in the settings, or the GitHub CLI’s active account, and looks in each for <code>.daily-focus</code>. It does this when the dashboard starts, again about once a day, and when you press <b>Look again</b> on the settings page. It only ever reads, with the account’s own sign-in, so it finds a private repository only for people who can read it. With GitHub off it never looks. An organization without the repository simply has no setup; one it couldn’t read is a warning on the settings page, and whatever it found before stands.</p>
+      <h3>The file</h3>
+      <div class="code code--block"><code id="cmd-org-setup">{
+  "version": 1,
+  "name": "Acme",
+  "settings": {
+    "DAILY_FOCUS_GITHUB_SCOPE": "org:acme",
+    "DAILY_FOCUS_JIRA_HOLD_STATUSES": "Blocked, On Hold"
+  },
+  "files": {
+    "DAILY_FOCUS_MERGE_HELPER": "bin/merge-helper"
+  },
+  "sources": "sources.md"
+}</code><button class="button button--primary" type="button" data-copy="cmd-org-setup">Copy</button></div>
+      <dl class="faq">
+        <div>
+          <dt><code>version</code></dt>
+          <dd>Always <code>1</code>. A file in a version Daily Focus doesn’t read is not offered, and the settings page says why.</dd>
+        </div>
+        <div>
+          <dt><code>name</code></dt>
+          <dd>What Daily Focus calls the setup: “Acme has a Daily Focus setup”, and “From Acme’s setup” beside each value it sets. The organization’s name on GitHub when it is left out.</dd>
+        </div>
+        <div>
+          <dt><code>settings</code></dt>
+          <dd>Values for settings on the settings page, by the name each is saved under in a store’s <code>settings.json</code>, as text. Each is checked as the settings page checks a change, and one it would refuse is left out. So is any name that isn’t on the settings page, where the store is and how the dashboard listens, and every setting that names a program to run: the paths to the CLIs, the GitHub CLI, the Atlassian CLI, the calendar helper and the merge helper. So are the tools Claude Code may use as the agent or the assistant, which only each person sets. The review lists what was left out, and why.</dd>
+        </div>
+        <div>
+          <dt><code>files</code></dt>
+          <dd>A setting that names a program, set to a file in the repository instead, by its path from the repository’s root. Only the merge helper can be set this way. When someone uses the setup, Daily Focus downloads the file at the commit they reviewed, keeps it in the store’s <code>organization</code> folder, and records its SHA-256. Before every run it checks the file still has that hash, and if it doesn’t, it refuses to run it and says so on the board. Keep it a script or a program that runs on everyone’s computers, as <a href="#merge-helper">Merge through your own queue</a> describes, and under a megabyte.</dd>
+        </div>
+        <div>
+          <dt><code>sources</code></dt>
+          <dd>A Markdown file in the repository of sources worth reading every morning, such as your channels and recurring documents. Daily Focus shows it in the review for each person to copy what applies into their own source list. It never adds it for them: the source list is theirs.</dd>
+        </div>
+      </dl>
+      <h3>Using it, and its updates</h3>
+      <p>When Daily Focus finds a setup, the dashboard and the settings page say so, and so does the setup screen of a new dashboard. <b>Review</b> lists each setting it would set, with its value, each program, with a link to it on GitHub at the commit, and the sources it suggests. <b>Use it</b> applies them and restarts the dashboard; <b>Not now</b> puts that commit off. A value someone saved on the settings page always wins over the setup’s, and clearing it goes back to the setup’s.</p>
+      <p>When the setup changes on its default branch, the next look offers what changed: the settings added, changed and removed, and the programs that changed, with a link to the comparison on GitHub. Nothing changes until it is applied, and until then the files approved before keep running. <b>Stop using</b> on the settings page removes the setup’s values and files and restarts the dashboard. Everything Daily Focus writes for a setup stays on the computer: it never writes to GitHub.</p>
     </section>
 
     <section id="personal" aria-labelledby="personal-title">

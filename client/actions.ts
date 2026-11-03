@@ -908,6 +908,44 @@ async function loadSetupSources(): Promise<void> {
   }
 }
 
+/* ---------- organization setups ---------- */
+
+/** Open an organization's setup for review. What it would do comes from the server on its own, never with the state. */
+async function reviewOrganization(org: string): Promise<void> {
+  ui.organizationReview.value = { org, review: 'loading', busy: false, error: null };
+  let review: NonNullable<typeof ui.organizationReview.value>['review'];
+  try {
+    review = await api.fetchOrganizationReview(org);
+  } catch (err) {
+    review = { error: (err as Error).message };
+  }
+  const open = ui.organizationReview.value;
+  if (open?.org === org) ui.organizationReview.value = { ...open, review };
+}
+
+/**
+ * One of the review's buttons, or the settings page's. The review closes once
+ * the server agrees, and says why not when it doesn't; with no review open,
+ * a toast does.
+ */
+async function organizationRequest(send: () => Promise<DashboardState>, done: string): Promise<boolean> {
+  const open = ui.organizationReview.value;
+  if (open?.busy) return false;
+  if (open) ui.organizationReview.value = { ...open, busy: true, error: null };
+  try {
+    adoptState(await send());
+  } catch (err) {
+    const current = ui.organizationReview.value;
+    if (current) ui.organizationReview.value = { ...current, busy: false, error: (err as Error).message };
+    else showToast(`That didn’t work: ${(err as Error).message}`);
+    return false;
+  }
+  ui.organizationReview.value = null;
+  showToast(done);
+  if (state.value?.restart === 'waiting') void followRestart();
+  return true;
+}
+
 function openSettings(section: string | null = null): void {
   if (ui.view.value !== 'settings') {
     try {
@@ -1106,4 +1144,28 @@ export const handlers: Handlers = {
       if (finished && state.value?.restart === 'waiting') void followRestart();
     }),
   loadSetupSources: () => void loadSetupSources(),
+  reviewOrganization: (org) => void reviewOrganization(org),
+  closeOrganizationReview: () => {
+    if (!ui.organizationReview.value?.busy) ui.organizationReview.value = null;
+  },
+  adoptOrganization: (org, commit) => {
+    const name = reviewName(org);
+    void organizationRequest(() => api.postOrganizationAdopt(org, commit), `Using ${name}’s setup. Restarting the dashboard to apply it…`);
+  },
+  dismissOrganization: (org, commit) => {
+    const name = reviewName(org);
+    void organizationRequest(() => api.postOrganizationDismiss(org, commit), `${name}’s setup is put off until it changes. Settings still lists it.`);
+  },
+  leaveOrganization: () => {
+    const name = state.value?.organization?.adopted?.name ?? 'the organization';
+    void organizationRequest(() => api.postOrganizationLeave(), `Stopped using ${name}’s setup. Restarting the dashboard…`);
+  },
+  checkOrganizations: () => void organizationRequest(() => api.postOrganizationCheck(), 'Looked for organization setups again'),
 };
+
+/** What the setup under review calls itself, for a toast. */
+function reviewName(org: string): string {
+  const review = ui.organizationReview.value?.review;
+  if (review && typeof review === 'object' && 'name' in review) return review.name;
+  return state.value?.organization?.offers.find((offer) => offer.org === org)?.name ?? org;
+}
