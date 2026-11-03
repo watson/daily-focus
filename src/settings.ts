@@ -3,9 +3,11 @@
  * shown, and how a change is checked before it is saved.
  *
  * Every setting `config.ts` reads is kept in the store's `settings.json`, under
- * the name it is read by, and this page is how it gets there. This table adds
- * only what a page needs that a name can't say: a label, a line of help, what
- * kind of field it is, and its default in words. `test/docs-contract.test.ts`
+ * the name it is read by, and this page is how it gets there. Under those values
+ * come the organization setup's the user adopted, if any, which the page shows
+ * as coming from it and a value saved here overrides (`organization.ts`). This
+ * table adds only what a page needs that a name can't say: a label, a line of
+ * help, what kind of field it is, and its default in words. `test/docs-contract.test.ts`
  * checks that every name `config.ts` reads is either here or a launch setting,
  * so a new one can't be left off the page.
  *
@@ -53,6 +55,19 @@ export interface SettingDef {
   fallback: (profile: Profile) => string;
   /** Folded away on the page: paths, poll intervals and lists most people never touch. */
   advanced?: boolean;
+  /**
+   * The setting names a program the dashboard runs. An organization's setup
+   * never sets one from its `settings`, where it could point it anywhere: only
+   * from `files`, pinned to a file of its repository by hash, and only for the
+   * few in `ORGANIZATION_FILE_SETTINGS`. See `organization.ts`.
+   */
+  program?: boolean;
+  /**
+   * The setting grants the coding CLIs tool permissions. An organization's
+   * setup never sets one: what the agent and the assistant may do is the
+   * user's own choice.
+   */
+  permissions?: boolean;
 }
 
 const OFF_OR_CLI: readonly SettingChoice[] = [
@@ -136,6 +151,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'list',
     fallback: always('Bash(gh *), Bash(acli *), WebFetch, mcp__claude_ai_Gmail'),
     advanced: true,
+    permissions: true,
   },
   {
     key: 'DAILY_FOCUS_AGENT_BIN',
@@ -145,6 +161,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'text',
     fallback: always('Found on PATH'),
     advanced: true,
+    program: true,
   },
   {
     key: 'DAILY_FOCUS_STALE_AFTER_HOURS',
@@ -190,6 +207,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'list',
     fallback: always('Bash(gh *), Bash(acli *), WebFetch, mcp__claude_ai_Gmail'),
     advanced: true,
+    permissions: true,
   },
   {
     key: 'DAILY_FOCUS_ASSISTANT_COMPUTER_USE',
@@ -224,6 +242,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'text',
     fallback: always('Found on PATH'),
     advanced: true,
+    program: true,
   },
 
   {
@@ -285,6 +304,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'text',
     fallback: always('Found on PATH, else the one Daily Focus fetched'),
     advanced: true,
+    program: true,
   },
   {
     key: 'DAILY_FOCUS_MERGE_HELPER',
@@ -296,6 +316,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'text',
     fallback: always("None: GitHub's own merge"),
     advanced: true,
+    program: true,
   },
 
   {
@@ -356,6 +377,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'text',
     fallback: always('Found on PATH, else the one Daily Focus fetched'),
     advanced: true,
+    program: true,
   },
 
   {
@@ -399,6 +421,7 @@ export const SETTINGS: readonly SettingDef[] = [
     kind: 'text',
     fallback: always('The Mac app’s, or the built copy'),
     advanced: true,
+    program: true,
   },
 
   {
@@ -437,8 +460,27 @@ export const SETTINGS: readonly SettingDef[] = [
 
 const BY_KEY = new Map(SETTINGS.map((def) => [def.key, def]));
 
-/** Where the value in effect came from: the page shows it, and locks a fixed one, which only the profile is. */
-export type SettingSource = 'fixed' | 'settings' | 'default';
+/** A setting the page lists, by name. */
+export function settingDef(key: string): SettingDef | undefined {
+  return BY_KEY.get(key);
+}
+
+/**
+ * Every setting that names a program to run, in one list: the CLIs, gh, acli,
+ * the calendar helper and the merge helper. An organization's setup may set
+ * none of them from `settings`; see `SettingDef.program`.
+ */
+export const PROGRAM_SETTINGS: readonly string[] = SETTINGS.filter((def) => def.program).map((def) => def.key);
+
+/** Every setting that grants the coding CLIs tool permissions; see `SettingDef.permissions`. */
+export const PERMISSION_SETTINGS: readonly string[] = SETTINGS.filter((def) => def.permissions).map((def) => def.key);
+
+/**
+ * Where the value in effect came from: the page shows it, and locks a fixed one,
+ * which only the profile is. `organization` is the setup the user adopted from
+ * their organization, which a value saved here overrides.
+ */
+export type SettingSource = 'fixed' | 'settings' | 'organization' | 'default';
 
 export interface SettingView {
   key: string;
@@ -452,6 +494,12 @@ export interface SettingView {
   value: string | null;
   source: SettingSource;
   fallback: string;
+  /**
+   * What the adopted organization setup sets this to, whether or not a saved
+   * value overrides it: clearing that value goes back to this one. Null or
+   * absent when the setup leaves it alone, or none is in use.
+   */
+  organization?: string | null;
 }
 
 export interface SettingsView {
@@ -459,6 +507,8 @@ export interface SettingsView {
   settings: SettingView[];
   /** Why the store's settings file couldn't be used, when it couldn't. */
   error: string | null;
+  /** The organization setup in use, by the name its values are shown as coming from. Absent from an older server. */
+  organization?: { name: string } | null;
 }
 
 /** Set means present and not blank, which is what `config.ts` treats as set too. */
@@ -480,8 +530,16 @@ export function describeSettings(sources: SettingSources): SettingsView {
     // The store's folder says it, so it is shown but never changed here.
     const fixed = def.key === PROFILE_SETTING ? sources.store.profile : null;
     const saved = present(sources.settings, def.key);
+    // The profile is the store's folder's, whatever a setup says.
+    const organization = fixed === null ? present(sources.organization?.settings ?? {}, def.key) : null;
     const [value, source]: [string | null, SettingSource] =
-      fixed !== null ? [fixed, 'fixed'] : saved !== null ? [saved, 'settings'] : [null, 'default'];
+      fixed !== null
+        ? [fixed, 'fixed']
+        : saved !== null
+          ? [saved, 'settings']
+          : organization !== null
+            ? [organization, 'organization']
+            : [null, 'default'];
     return {
       key: def.key,
       group: def.group,
@@ -493,9 +551,11 @@ export function describeSettings(sources: SettingSources): SettingsView {
       value,
       source,
       fallback: def.fallback(profile),
+      organization,
     };
   });
-  return { groups: SETTING_GROUPS, settings, error: sources.settingsError };
+  const name = sources.organization?.name;
+  return { groups: SETTING_GROUPS, settings, error: sources.settingsError, organization: name ? { name } : null };
 }
 
 /** A save the page asked for: a value per setting, or null to go back to the default. */

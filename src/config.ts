@@ -3,6 +3,7 @@ import { basename, dirname, resolve } from 'node:path';
 
 import { DEFAULT_DATA_DIR, expandHome, loadSettings, SETTINGS_FILE, type SettingValues } from './env.ts';
 import { APP_CALENDAR_APP, USER_CALENDAR_APP } from './install.ts';
+import { ORGANIZATION_FILE, ORGANIZATION_FOLDER } from './organizationfile.ts';
 import { parseWeekdays, type Weekday } from './schedule.ts';
 import { PROFILES, TOOLS_FOLDER, type Profile } from './stores.ts';
 
@@ -267,7 +268,8 @@ export interface AgentRunConfig {
  * Everything the dashboard is configured with. The store's `settings.json`, which
  * the settings page writes, holds all of it but where the store is and how the
  * server listens, which come from the environment or the flags that set it; see
- * `env.ts`. Every setting has a default that suits most people.
+ * `env.ts`. Under it comes the organization setup the user adopted, if any, and
+ * under that the defaults, each of which suits most people.
  */
 export interface Config {
   profile: Profile;
@@ -386,6 +388,14 @@ export interface Config {
   onboardingFile: string;
   /** Where setup's CLI sessions run: an empty directory, as the assistant's is, since they only read. */
   onboardingDir: string;
+  /**
+   * The organization setup the user adopted, and the ones they put off: written
+   * by the dashboard alone, from a click. Its settings come under the store's
+   * own (`env.ts`). See `organization.ts`.
+   */
+  organizationFile: string;
+  /** The files that setup pinned, each run only at the hash the user approved. */
+  organizationDir: string;
   /**
    * What setup's CLI sessions are told, read from this copy of the package
    * rather than linked into the store: they start from the setup screen, which
@@ -763,6 +773,8 @@ export function loadConfig(values: SettingValues = loadSettings()): Config {
     agentSettingsFile: resolve(dataDir, 'agent-settings.json'),
     onboardingFile: resolve(dataDir, 'onboarding.json'),
     onboardingDir: resolve(dataDir, 'onboarding'),
+    organizationFile: resolve(dataDir, ORGANIZATION_FILE),
+    organizationDir: resolve(dataDir, ORGANIZATION_FOLDER),
     onboardingPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'onboarding.md'),
   };
 }

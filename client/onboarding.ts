@@ -24,6 +24,7 @@ import type {
   Service,
 } from '../src/types.ts';
 import { el } from './el.ts';
+import { organizationNotice } from './organization.ts';
 import { calendarAccountsView } from './calendaraccounts.ts';
 import { connectionView, SERVICE_NAME } from './connect.ts';
 import type { Handlers, SetupDraft, UiState } from './types.ts';
@@ -62,6 +63,7 @@ export function OnboardingView({ state, ui, handlers }: { state: DashboardState;
               'needs doing today. A few questions get it ready; most are answered already, so confirm or change them.',
           )
         : null,
+      organizationNotice(state, handlers),
       el(
         'ol',
         { class: 'onboarding__thread' },

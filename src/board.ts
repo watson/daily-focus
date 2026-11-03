@@ -23,7 +23,8 @@ import {
   type OrgVisibility,
 } from './github.ts';
 import { canonicalId } from './ids.ts';
-import { CHECK_FRESH_MS, MergeHelper, runMergeHelper, type RunHelper } from './mergehelper.ts';
+import { CHECK_FRESH_MS, HelperError, MergeHelper, runMergeHelper, type RunHelper } from './mergehelper.ts';
+import { approvedFileProblem, inOrganizationFolder } from './organizationfile.ts';
 import { countBoard, findStack, mergeRoute, refuseMerge, refuseReady, resolveBoard, type MergeContext } from './prs.ts';
 import { resolveTool } from './tools.ts';
 import type {
@@ -86,6 +87,27 @@ export interface MergeOutcome {
   route: 'merge' | 'queue' | 'helper';
   /** The merge helper's line, for the page to show; null for GitHub's own merge. */
   notice: string | null;
+}
+
+/**
+ * The merge helper's launch, behind the organization setup's check: a helper
+ * that setup pinned runs only while it still has the hash the user approved,
+ * read afresh before every run, and is otherwise refused with a warning on the
+ * board, in the words of whichever question or click it was for. One of the
+ * user's own runs as it always has. See `approvedFileProblem`.
+ */
+function pinned(storeDir: string, run: RunHelper): RunHelper {
+  return (helper, args, options) => {
+    // One of the user's own starts at once, as it always has.
+    if (!inOrganizationFolder(storeDir, helper)) return run(helper, args, options);
+    return approvedFileProblem(storeDir, helper).then((problem) => {
+      if (problem) {
+        console.warn(`[daily-focus] the merge helper ${problem}`);
+        throw new HelperError(problem);
+      }
+      return run(helper, args, options);
+    });
+  };
 }
 
 /** When the approvals a branch's rules require can't be read: one, as the board requires anyway. */
@@ -192,7 +214,7 @@ export class Board {
     this.#deps = deps;
     this.#onChange = onChange;
     const helper = config.github.mergeHelper;
-    this.#helper = config.github.enabled && helper ? new MergeHelper(helper, deps.runHelper, () => cliEnvironment(config)) : null;
+    this.#helper = config.github.enabled && helper ? new MergeHelper(helper, pinned(config.dataDir, deps.runHelper), () => cliEnvironment(config)) : null;
   }
 
   get enabled(): boolean {

@@ -6,6 +6,7 @@ import type { AgentRun, AgentRunState, DashboardState } from '../src/types.ts';
 import { el, type Props } from './el.ts';
 import { dayKey, daysFromToday, formatTime, formatWeekday, parseDate, relativeDay, relativeTime } from './format.ts';
 import { renderMarkdown } from './markdown.ts';
+import { offerText, reviewButton } from './organization.ts';
 import type { Handlers, UiState } from './types.ts';
 
 export function renderBanners(state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element[] {
@@ -85,6 +86,11 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
   }
   for (const warning of state.warnings) {
     banners.push(banner('warning', '!', warning));
+  }
+  // An organization's setup on offer, until it is used or put off. The banner
+  // only opens the review; nothing applies without the review's own click.
+  for (const offer of state.organization?.offers ?? []) {
+    if (!offer.dismissed) banners.push(banner('info', 'i', offerText(offer), reviewButton(offer.org, handlers, ' banner__action')));
   }
 
   return banners;

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { delimiter, isAbsolute, resolve } from 'node:path';
 import { parseArgs, parseEnv } from 'node:util';
 
+import { ORGANIZATION_FILE, organizationLayer, readOrganizationRecord, type OrganizationLayer } from './organizationfile.ts';
 import { asProfile, findStore, PROFILES, type Profile, type StoreLocation } from './stores.ts';
 import { fetchedBin } from './tools.ts';
 
@@ -153,6 +154,13 @@ export interface SettingSources {
   settingsPath: string;
   /** Why `settings.json` couldn't be used, when it couldn't. */
   settingsError: string | null;
+  /**
+   * The organization setup the user adopted, if any: what it sets, under the
+   * store's own settings and over the defaults. See `organization.ts`.
+   */
+  organization?: OrganizationLayer | null;
+  /** Why `organization.json` couldn't be used, when it couldn't. */
+  organizationError?: string | null;
 }
 
 /**
@@ -173,20 +181,42 @@ export function settingSources(
   }
   const settingsPath = resolve(store.dir, SETTINGS_FILE);
   const { values, error } = readSettingsFile(settingsPath);
-  return { launch, store, settings: values, settingsPath, settingsError: error };
+  const adopted = readOrganizationRecord(resolve(store.dir, ORGANIZATION_FILE));
+  return {
+    launch,
+    store,
+    settings: values,
+    settingsPath,
+    settingsError: error,
+    organization: organizationLayer(adopted.record, store.dir),
+    organizationError: adopted.error,
+  };
 }
 
 /**
  * The values the dashboard configures itself from: the store, then the launch
- * settings, then the store's settings. A blank saved value is no value:
- * `config.ts` reads one as the default, and the settings page shows it so.
+ * settings, then the store's settings, then the organization setup the user
+ * adopted, and the defaults under all of them. A blank saved value is no value:
+ * `config.ts` reads one as the default, or the organization's, and the settings
+ * page shows it so.
+ *
+ * The organization's values never reach a launch setting or the profile: they
+ * say where the store is and how the server listens, which nothing in the store
+ * may change.
  *
  * `config.ts` reads `DAILY_FOCUS_DATA` as the store itself, so the data folder
  * the dashboard was given is replaced here by the store found in it, and the
  * profile by the one the store is for.
  */
-export function layerSettings(sources: SettingSources, settings: Readonly<Record<string, string>> = sources.settings): Record<string, string> {
+export function layerSettings(
+  sources: SettingSources,
+  settings: Readonly<Record<string, string>> = sources.settings,
+  organization: OrganizationLayer | null = sources.organization ?? null,
+): Record<string, string> {
   const kept: Record<string, string> = {};
+  for (const [key, value] of Object.entries(organization?.settings ?? {})) {
+    if (value.trim() !== '' && !LAUNCH_SETTINGS.includes(key) && key !== PROFILE_SETTING) kept[key] = value;
+  }
   for (const [key, value] of Object.entries(settings)) {
     if (value.trim() !== '') kept[key] = value;
   }

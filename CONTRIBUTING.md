@@ -85,7 +85,7 @@ versions and release notes come from, so CI checks it.
 |---|---|
 | `src/server.ts` | HTTP endpoints and live state updates over SSE |
 | `src/types.ts`, `schema/items.schema.json` | Types and the brief payload contract |
-| `src/config.ts`, `src/env.ts` | Settings: the store's `settings.json`, and where the data folder is, which profile, and how the server listens from the environment |
+| `src/config.ts`, `src/env.ts` | Settings: the store's `settings.json` over the adopted organization setup over the defaults, and where the data folder is, which profile, and how the server listens from the environment |
 | `src/stores.ts` | Which store in the data folder a dashboard opens, and moving a store from before the profile folders into its folder |
 | `src/settings.ts` | The settings page: every setting's label, help and field, and checking a change before it is saved |
 | `src/setup.ts` | What a new store still needs: the CLIs installed, the calendar helper, whether a brief has ever existed |
@@ -107,6 +107,8 @@ versions and release notes come from, so CI checks it.
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads and the board's writes, PR classification and what a row offers to do, and polling |
 | `src/mergehelper.ts` | The user's merge helper: starting it safely, reading its answers, and what it said, kept in memory |
 | `src/tools.ts` | Fetching gh and acli from their makers for a user without them, checked, into the data folder's `tools/` |
+| `src/organization.ts`, `client/organization.ts` | An organization's setup: finding its `.daily-focus` repository through the GitHub sign-in, checking `daily-focus.json` against the settings page, the review, and using, putting off, updating and stopping it |
+| `src/organizationfile.ts` | The setup in use as the store keeps it, `organization.json` and `organization/`: its values for the settings to layer, and the check that a file it pinned still has the approved hash before it runs |
 | `src/connect.ts`, `client/connect.ts` | Connecting GitHub or Jira from the page: the CLI fetched if need be, then signed in, on setup's card, the boards and Settings |
 | `scripts/licenses.ts` | The package's `dist/third-party-licenses.txt`: every npm package its bundles read, and the fonts |
 | `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
@@ -131,7 +133,7 @@ versions and release notes come from, so CI checks it.
 
 Each store file has one writer. The agent writes `items.json`; the dashboard
 appends actions, archives briefs, maintains integration caches, saves
-settings, and links the prompt. The user edits `focus.md` and `sources.md`, in the
+settings, keeps the organization setup the user adopted, and links the prompt. The user edits `focus.md` and `sources.md`, in the
 dashboard's editors or by hand. See the
 [file ownership table](AGENTS.md#private-data-and-store-ownership) before adding
 another write path. Never compact or rewrite the action log.
@@ -194,8 +196,13 @@ free of side effects, since only `POST` is checked for its content type.
 | `GET /api/onboarding/sources` | The source list the finish would write, or that it keeps the one there is |
 | `POST /api/agent/ask` | `{run, text}`. Asks a finished run a question in its own session; returns state with the answer coming. The reply streams in over SSE. `409` when it is off, busy, or the run can't be continued |
 | `POST /api/agent/stop` | Kills whatever the morning agent is doing: a run, or a question about one |
-| `GET /api/settings` | Every setting: its value, where it came from (saved, the default, or fixed, as the profile is by its store's folder), its default, and the page's label and help |
+| `GET /api/settings` | Every setting: its value, where it came from (saved, the organization's setup, the default, or fixed, as the profile is by its store's folder), its default, the organization's value, and the page's label and help |
 | `POST /api/settings` | `{values: {NAME: value or null}}`. Checks the change by building the config from it, saves `settings.json`, and restarts the dashboard in place once nothing is running. `400` names the setting it refused |
+| `GET /api/organization/review?org=` | Everything an organization's setup would do, from what the last look found: each setting with its label and value, what it leaves out and why, each file with its link on GitHub and SHA-256, the sources it suggests, and for an update what changed. Never part of `/api/state`, and it asks GitHub nothing. `404` when that organization has none on offer |
+| `POST /api/organization/adopt` | `{org, commit}`, the commit the review showed. Writes `organization.json` and the setup's files, then restarts the dashboard to apply it; applies a newer commit of the one in use the same way. `409` when the setup changed since, or its values can't be used with the store's own |
+| `POST /api/organization/dismiss` | `{org, commit}`. "Not now": no banner for that commit until a newer one |
+| `POST /api/organization/leave` | Stops using the setup in use: removes its files and its values, and restarts the dashboard. `409` when none is in use |
+| `POST /api/organization/check` | Looks for organization setups again now; returns state once it has. `409` when GitHub is off |
 | `GET /api/text/focus`, `GET /api/text/sources` | The whole file for its editor, private part included, with its version and the template a new one starts from. Never part of `/api/state` |
 | `POST /api/text/focus`, `POST /api/text/sources` | `{text, version}`. Saves only if the file is still at `version`; otherwise `409` with what is there now |
 | `POST /api/focus/objective` | `{objective, blocker}`. Sets the two frontmatter fields and keeps the rest of `focus.md`; returns fresh state |

@@ -85,6 +85,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     setupError: signal(initial.setupError ?? null),
     setupTell: signal(initial.setupTell ?? new Map()),
     setupSources: signal(initial.setupSources ?? null),
+    organizationReview: signal(initial.organizationReview ?? null),
   };
 }
 

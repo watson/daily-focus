@@ -217,6 +217,27 @@ or the assistant on it; before 0.149.0 it can't switch computer use off, so the
 assistant won't answer while **Computer use** is off. The page warns when yours is
 too old.
 
+## Your organization's setup
+
+A company can give everyone who uses Daily Focus a setup that works from the
+start: the scope of its pull requests, its Jira statuses, its merge helper and the
+sources worth reading. It publishes them in a private repository named
+`.daily-focus` in its GitHub organization, the way GitHub reads an organization's
+`.github` repository. Daily Focus names no company, and nothing of one's is in this
+repository.
+
+While GitHub is on, the dashboard looks for that repository in each organization
+your GitHub accounts belong to, when it starts and once a day after, and only ever
+reads it. When it finds one, it says so, and **Review** lists every setting it
+would set, every program it would run, with a link to it on GitHub, and the
+sources it suggests, which you can copy into your own list. Nothing changes until
+you choose **Use it**. A value you save on the settings page always wins over the
+setup's, which shows there as "From Acme's setup". When the organization changes
+its setup, you review what changed before it applies; a program it pinned runs
+only while it is exactly the file you approved. **Stop using** on the settings page
+takes it all away. The [setup guide](https://dailyfocus.dev/setup/#organizations)
+describes the format for whoever publishes one.
+
 ## Keyboard shortcuts
 
 Press **?** in the dashboard to see the shortcuts.

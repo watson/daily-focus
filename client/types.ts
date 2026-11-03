@@ -5,6 +5,7 @@
  */
 
 import type { Signal } from '@preact/signals';
+import type { OrganizationReview } from '../src/organization.ts';
 import type { SettingsView } from '../src/settings.ts';
 import type { ActionType, CalendarProvider, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
 
@@ -46,6 +47,18 @@ export interface CalendarName {
 export interface SetupDraft {
   version: number;
   answer: Extract<OnboardingAnswer, { choices: unknown }>;
+}
+
+/**
+ * An organization's setup open for review: asked for, shown, or why it
+ * couldn't be, with a request on its way from its buttons.
+ */
+export interface OrganizationReviewUi {
+  org: string;
+  review: OrganizationReview | 'loading' | { error: string };
+  busy: boolean;
+  /** Why the last button press was refused, until the next. */
+  error: string | null;
 }
 
 /** What the setup finish would write as the source list, once asked; see `previewSources`. */
@@ -176,6 +189,8 @@ export interface UiState {
   setupTell: Signal<ReadonlyMap<string, string>>;
   /** What the finish would write as the source list, once looked at. */
   setupSources: Signal<SetupSources | null>;
+  /** The organization setup open for review, while one is. In memory only. */
+  organizationReview: Signal<OrganizationReviewUi | null>;
 }
 
 /** The same facts as plain values, which is how a test says what it wants. */
@@ -274,4 +289,15 @@ export interface Handlers {
   /** Save everything setup has, and start the first brief. */
   finishSetup(): void;
   loadSetupSources(): void;
+  /** Open the review of an organization's setup. */
+  reviewOrganization(org: string): void;
+  closeOrganizationReview(): void;
+  /** Use the setup the review shows, at its commit, or apply its newer commit; the dashboard restarts. */
+  adoptOrganization(org: string, commit: string): void;
+  /** "Not now" for the setup the review shows, at its commit. */
+  dismissOrganization(org: string, commit: string): void;
+  /** Stop using the organization's setup in use; the dashboard restarts. */
+  leaveOrganization(): void;
+  /** Look for organization setups again now. */
+  checkOrganizations(): void;
 }

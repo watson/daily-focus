@@ -222,3 +222,11 @@ test("the morning agent's clock waits for the first brief, which comes from the 
     await rm(store, { recursive: true, force: true });
   }
 });
+
+test('with GitHub off, the dashboard never looks for an organization’s setup', async () => {
+  const state = (await json(await fetch(`${url}/api/state`))) as { organization: { enabled: boolean; checkedAt: string | null; offers: unknown[] } };
+  assert.deepEqual([state.organization.enabled, state.organization.checkedAt, state.organization.offers], [false, null, []]);
+  const res = await post('/api/organization/check', {});
+  assert.equal(res.status, 409);
+  assert.match((await json(res)).error, /GitHub is off/);
+});

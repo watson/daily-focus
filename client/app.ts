@@ -16,6 +16,7 @@ import { Header, HelpDialog, Tabs } from './chrome.ts';
 import { el } from './el.ts';
 import { Flyout } from './flyout.ts';
 import { OnboardingView } from './onboarding.ts';
+import { OrganizationReviewDialog } from './organization.ts';
 import { SettingsView } from './settings.ts';
 import { detailRow, detailRun, state } from './state.ts';
 import { TicketsView } from './tickets.ts';
@@ -29,7 +30,9 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
   const row = current && !run ? detailRow(current, ui) : null;
 
   // A new store is the setup screen and nothing else, until it is set up.
-  if (current?.onboarding) return [h(OnboardingView, { state: current, ui, handlers }), h(Toast, { ui, handlers })];
+  if (current?.onboarding) {
+    return [h(OnboardingView, { state: current, ui, handlers }), h(OrganizationReviewDialog, { ui, handlers }), h(Toast, { ui, handlers })];
+  }
 
   return [
     el('a', { class: 'skip-link', href: '#main' }, 'Skip to content'),
@@ -73,6 +76,7 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
         ? h(Flyout, { row, run, state: current, ui, handlers })
         : el('aside', { class: 'flyout', id: 'flyout', 'aria-label': 'Item details', hidden: true }),
     ),
+    h(OrganizationReviewDialog, { ui, handlers }),
     h(Toast, { ui, handlers }),
     h(HelpDialog, {}),
   ];
