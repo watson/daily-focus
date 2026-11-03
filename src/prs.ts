@@ -1,4 +1,4 @@
-import type { Action, BoardRow, Court, CourtReason, PendingCheck, PullOffer, PullRequest, ReviewDecision } from './types.ts';
+import type { Action, BoardRow, Court, CourtReason, MergeHelperView, PendingCheck, PullOffer, PullRequest, ReviewDecision } from './types.ts';
 import { canonicalId } from './ids.ts';
 import { foldActionLog } from './store.ts';
 import { laterISO, parseISO } from './time.ts';
@@ -258,7 +258,8 @@ export function judge(
  *
  * `gates` is `github.mergeGateChecks`, and `reviews` is `github.mergeGateReviews`
  * — configuration rather than facts about the pull request, which is why the
- * match happens here and never reaches `prs.json`.
+ * match happens here and never reaches `prs.json`. `merging` is what the merge
+ * helper said, when one is set, and stays out of the file for the same reason.
  */
 export function resolveBoard(
   pulls: readonly PullRequest[],
@@ -266,6 +267,7 @@ export function resolveBoard(
   now: Date,
   gates: readonly string[] = [],
   reviews: RegExp | null = null,
+  merging: MergeContext | null = null,
 ): BoardRow[] {
   const folded = foldActionLog(actions, now);
 
@@ -275,9 +277,26 @@ export function resolveBoard(
 
     const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes: log?.notes ?? [] };
     if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;
+    if (merging) {
+      // Only a branch the helper is asked about: the default one.
+      const helper = pr.defaultBranch && pr.baseRef === pr.defaultBranch ? merging.helper(pr.repo, pr.baseRef) : null;
+      if (helper) row.mergeHelper = helper;
+      if (merging.queued(pr.id)) row.helperQueued = true;
+    }
     row.offers = pullOffers(row);
     return row;
   });
+
+  // A stack is read from the whole board, so once every row is judged.
+  if (merging) {
+    for (const row of rows) {
+      if (!row.defaultBranch || row.baseRef === row.defaultBranch) continue;
+      const { chain } = findStack(row, rows, (repo) => merging.approvals(repo));
+      if (!chain) continue;
+      row.offers = [...(row.offers ?? []), 'stack'];
+      row.stack = chain.map((member) => member.id);
+    }
+  }
 
   return rows.sort((a, b) => {
     const court = courtOrder(a.court) - courtOrder(b.court);
@@ -303,10 +322,15 @@ type OfferFacts = Pick<
   | 'inMergeQueue'
   | 'stacked'
   | 'mergeStateStatus'
+  | 'mergeHelper'
+  | 'helperQueued'
 >;
 
 /** Said when a row comes from a cache older than the facts an action needs: the next poll reads them. */
 const UNREAD = "the board hasn't read what that needs from GitHub yet; refresh the board and try again";
+
+/** Said while the merge helper hasn't answered for a branch, which offers no merge until it has. */
+const ASKING = "the merge helper hasn't said yet how this repository merges; try again in a moment";
 
 /**
  * Why the board won't mark this pull request ready for review: null when it will.
@@ -331,6 +355,11 @@ export function refuseReady(row: OfferFacts): string | null {
  * does. The head commit is needed too, since the merge is made conditional on it:
  * a push since the last poll makes GitHub refuse rather than merge commits nobody
  * here has seen.
+ *
+ * Where the user's merge helper said the branch merges through it, these rules
+ * still decide, and the helper merges in GitHub's place (`mergeRoute`). While it
+ * hasn't said, nothing is offered: a merge can't be taken back, and the answer
+ * is seconds away.
  */
 export function refuseMerge(row: OfferFacts): string | null {
   if (row.court !== 'ready') return 'it is not ready to merge';
@@ -340,22 +369,133 @@ export function refuseMerge(row: OfferFacts): string | null {
   if (!row.nodeId || !row.account || !row.headSha || !row.defaultBranch) return UNREAD;
   if (row.stacked) return 'it is part of a stack on GitHub, which merges there';
   if (row.baseRef !== row.defaultBranch) return `it targets ${row.baseRef}, not ${row.defaultBranch}`;
-  if (row.mergeQueue) return row.inMergeQueue ? 'it is in the merge queue already' : null;
+  if (row.inMergeQueue || row.helperQueued) return 'it is in the merge queue already';
+  if (row.mergeHelper?.kind === 'asking') return ASKING;
+  if (row.mergeHelper?.kind === 'queue' || row.mergeQueue) return null;
   if (!row.mergeMethod) return UNREAD;
   return null;
 }
 
-/** How a merge the board offers would go: straight in, or into the merge queue. */
-export function mergeRoute(row: OfferFacts): 'merge' | 'queue' {
+/** How a merge the board offers would go: through the merge helper, into GitHub's merge queue, or straight in. */
+export function mergeRoute(row: OfferFacts): 'helper' | 'queue' | 'merge' {
+  if (row.mergeHelper?.kind === 'queue') return 'helper';
   return row.mergeQueue ? 'queue' : 'merge';
 }
 
-/** What a click on the row may do to the pull request upstream. */
+/** What a click on the row may do to the pull request upstream, a stack apart: see `findStack`. */
 export function pullOffers(row: OfferFacts): PullOffer[] {
   const offers: PullOffer[] = [];
   if (refuseReady(row) === null) offers.push('ready');
   if (refuseMerge(row) === null) offers.push(mergeRoute(row));
   return offers;
+}
+
+/* ---------- a stack, merged from its top ---------- */
+
+/** The longest stack looked for, so a chain of branches can't keep the board walking. */
+const MAX_STACK = 20;
+
+/**
+ * What the board knows of the merge helper when one is set, for `resolveBoard`
+ * to work the rows' offers out from. See `mergehelper.ts`.
+ */
+export interface MergeContext {
+  /** What it said about a repository's branch; null for GitHub's own merge. */
+  helper(repo: string, base: string): MergeHelperView | null;
+  /** Whether it says a pull request handed to it from the dashboard is still in its queue. */
+  queued(id: string): boolean;
+  /** The approvals a repository's default branch requires, or null until the board has read them. */
+  approvals(repo: string): number | null;
+}
+
+/** How many people approved it, by their latest review. */
+function approvalsOf(row: BoardRow): number {
+  return row.reviews.filter((review) => review.state === 'APPROVED').length;
+}
+
+/** Why a pull request above a stack's bottom can't go with it: null when it can. */
+function refuseAbove(row: BoardRow, needed: number, branch: string): string | null {
+  const ref = `#${row.number}`;
+  if (!row.headSha || !row.account) return UNREAD;
+  if (row.isDraft) return `${ref} is a draft`;
+  if (row.stacked) return `${ref} is part of a stack on GitHub, which merges there`;
+  if (row.decision === 'CHANGES_REQUESTED') return `${ref} has changes requested`;
+  if (row.checks === 'failure' || row.failingChecks.length > 0) return `${ref} has failing checks`;
+  if (row.mergeable === 'CONFLICTING' || row.mergeStateStatus === 'DIRTY') return `${ref} has conflicts`;
+  if (row.inMergeQueue || row.helperQueued) return `${ref} is in the merge queue already`;
+  const approvals = approvalsOf(row);
+  if (approvals < needed) {
+    return `${ref} has ${approvals === 0 ? 'no' : approvals} approval${approvals === 1 ? '' : 's'}, and ${branch} needs ${needed}`;
+  }
+  return null;
+}
+
+/**
+ * The stack `top` tops, bottom first, for the merge helper to merge from it, or
+ * why there is none.
+ *
+ * A stack is a chain of the user's open pull requests in one repository, read
+ * as one account, each based on the branch of the one below, down to one based
+ * on the default branch. A chain, not a tree: a pull request with two others on
+ * its branch belongs to two stacks, and merging one would pull the other's base
+ * out from under it. Only its top offers the merge, and only when all of it
+ * could go: the bottom offers the helper's own merge, and the helper said it
+ * merges stacks; each one above is not a draft, has no changes requested, no
+ * failing checks and no conflicts, and has as many approvals as the default
+ * branch's rules require, and at least one, since the board calls nothing
+ * ready that nobody approved.
+ *
+ * `rows` is the whole board, from which the chain is read; nothing outside it
+ * can be part of one, so a branch someone else's pull request owns breaks it.
+ */
+export function findStack(
+  top: BoardRow,
+  rows: readonly BoardRow[],
+  approvals: (repo: string) => number | null,
+): { chain: BoardRow[]; why: null } | { chain: null; why: string } {
+  const no = (why: string) => ({ chain: null, why }) as const;
+  if (!top.defaultBranch || !top.account) return no(UNREAD);
+  if (top.baseRef === top.defaultBranch) return no('it is not stacked on another of your pull requests');
+
+  const repo = top.repo.toLowerCase();
+  const account = top.account.toLowerCase();
+  const kin = rows.filter((row) => row.repo.toLowerCase() === repo && row.account.toLowerCase() === account);
+  const on = (branch: string) => kin.filter((row) => row.baseRef === branch);
+  const owning = (branch: string) => kin.filter((row) => row.headRef === branch);
+
+  const above = on(top.headRef);
+  if (above.length > 0) return no(`#${above[0]!.number} is stacked on it; merge the stack from its top`);
+
+  const chain: BoardRow[] = [top];
+  let current = top;
+  while (current.baseRef !== top.defaultBranch) {
+    const below = owning(current.baseRef);
+    if (below.length === 0) return no(`#${current.number} is based on ${current.baseRef}, which isn't the branch of another of your open pull requests`);
+    if (below.length > 1) return no(`more than one of your pull requests is on ${current.baseRef}`);
+    const next = below[0]!;
+    if (chain.includes(next) || chain.length >= MAX_STACK) return no(`the branches under #${current.number} never reach ${top.defaultBranch}`);
+    if (on(next.headRef).length > 1) return no(`#${next.number} has more than one pull request stacked on it`);
+    chain.unshift(next);
+    current = next;
+  }
+
+  const bottom = chain[0]!;
+  const helper = bottom.mergeHelper;
+  if (!helper) return no(`no merge helper merges ${top.repo}'s ${top.defaultBranch}`);
+  if (helper.kind === 'asking') return no(ASKING);
+  if (!helper.stacks) return no('the merge helper merges one pull request at a time');
+  const why = refuseMerge(bottom);
+  if (why) return no(`#${bottom.number}, at the bottom: ${why}`);
+  if (mergeRoute(bottom) !== 'helper') return no(`#${bottom.number}, at the bottom, doesn't merge through the merge helper`);
+
+  const required = approvals(top.repo);
+  if (required === null) return no(`the board hasn't read how many approvals ${top.defaultBranch} needs yet; try again in a moment`);
+  const needed = Math.max(1, required);
+  for (const row of chain.slice(1)) {
+    const refused = refuseAbove(row, needed, top.defaultBranch);
+    if (refused) return no(refused);
+  }
+  return { chain, why: null };
 }
 
 /** How many rows sit in each court, plus the snoozed ones, for the badge and the headers. */

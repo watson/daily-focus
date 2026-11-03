@@ -7,11 +7,13 @@ import { errorDetail } from '../src/failure.ts';
 import {
   GitHubRefusedError,
   GitHubRequestError,
+  branchRulesUrl,
   buildRemainingChecksQuery,
   buildSearchQuery,
   enqueuePull,
   enqueueRequest,
   fetchPulls,
+  fetchRequiredApprovals,
   graphql,
   isBot,
   isSamlError,
@@ -23,6 +25,7 @@ import {
   readEnqueueReply,
   readMergeReply,
   readReadyReply,
+  readRequiredApprovals,
   readyRequest,
   rollupTruncated,
   summarizeChecks,
@@ -888,4 +891,42 @@ test('a pull request the search index still calls open is left out once GitHub s
     [[411, 'PR_kwDOAcme411', 'abc411']],
   );
   assert.deepEqual(github.requests[2]!.variables, { ids: ['PR_kwDOAcme411'] }, 'nothing more is asked about the merged one');
+});
+
+/* ---------- the approvals a branch requires ---------- */
+
+test("the approvals a branch requires are its pull_request rules' highest count, and none without one", () => {
+  const rules = [
+    { type: 'deletion', ruleset_id: 1 },
+    { type: 'pull_request', ruleset_id: 2, parameters: { required_approving_review_count: 1, dismiss_stale_reviews_on_push: true } },
+    { type: 'pull_request', ruleset_id: 3, parameters: { required_approving_review_count: 2 } },
+    { type: 'required_status_checks', ruleset_id: 4, parameters: { required_status_checks: [] } },
+  ];
+  assert.equal(readRequiredApprovals(rules), 2);
+  assert.equal(readRequiredApprovals([{ type: 'deletion' }]), 0);
+  assert.equal(readRequiredApprovals([]), 0);
+  // A count that isn't one is not a requirement anybody can meet.
+  assert.equal(readRequiredApprovals([{ type: 'pull_request', parameters: { required_approving_review_count: '3' } }, { type: 'pull_request' }, null]), 0);
+  assert.throws(() => readRequiredApprovals({ message: 'Not Found' }));
+});
+
+test("a branch's rules are read from its own address, slashes kept, as the account given", async () => {
+  assert.equal(branchRulesUrl('acme/payments-api', 'main'), 'https://api.github.com/repos/acme/payments-api/rules/branches/main?per_page=100');
+  assert.equal(branchRulesUrl('acme/payments-api', 'release/2026 #1'), 'https://api.github.com/repos/acme/payments-api/rules/branches/release/2026%20%231?per_page=100');
+
+  const realFetch = globalThis.fetch;
+  const asked: { url: string; auth: string | null }[] = [];
+  let reply = new Response(JSON.stringify([{ type: 'pull_request', parameters: { required_approving_review_count: 2 } }]), { status: 200 });
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    asked.push({ url: String(url), auth: new Headers(init?.headers).get('authorization') });
+    return reply;
+  }) as typeof fetch;
+  try {
+    assert.equal(await fetchRequiredApprovals('t-alice', 'acme/payments-api', 'main'), 2);
+    assert.deepEqual(asked, [{ url: 'https://api.github.com/repos/acme/payments-api/rules/branches/main?per_page=100', auth: 'Bearer t-alice' }]);
+    reply = new Response('{"message":"Not Found"}', { status: 404 });
+    await assert.rejects(fetchRequiredApprovals('t-alice', 'acme/payments-api', 'main'), { name: 'GitHubRequestError', message: "GitHub answered 404 for acme/payments-api's rules on main" });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

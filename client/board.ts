@@ -193,6 +193,8 @@ function renderPullMeta(row: BoardRow, state: DashboardState, now: Date): JSX.El
   else if (row.checks === 'pending' && !onlyGatesPending(row)) pill('pill', 'checks running');
   if (row.mergeable === 'CONFLICTING') pill('pill pill--overdue', 'conflicts');
   if (row.autoMerge) pill('pill pill--good', 'auto-merge on');
+  // In GitHub's merge queue, or in the merge helper's, as its `status` says.
+  if (row.inMergeQueue || row.helperQueued) pill('pill pill--good', 'in merge queue');
   if (row.nudge) pill('pill pill--age', 'time to ask');
   if (row.nudgedAt && row.nudgedUntil) {
     pill('pill', `nudged ${relativeTime(row.nudgedAt, now)}, back ${relativeDay(row.nudgedUntil, now)} ${formatTime(row.nudgedUntil)}`);
@@ -398,12 +400,22 @@ function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.
   return el('div', { class: 'item__actions' }, buttons);
 }
 
+/** The merge helper's button when it names none, as the server has it. */
+export const HELPER_LABEL = 'Add to merge queue';
+
+/** The merge helper's button on a row, where it merges the row's branch. */
+export function helperLabel(row: BoardRow): string {
+  return row.mergeHelper?.kind === 'queue' ? row.mergeHelper.label : HELPER_LABEL;
+}
+
 /**
  * The buttons that change the pull request on GitHub, where the server offers
- * them: ready for review on a draft, and merge on one that is ready. Which rows
- * offer what is the server's reading (`pullOffers`), the same one it refuses a
- * click by, so the page never shows a button the server would turn down. While
- * a click is on its way the row is pending and they are disabled.
+ * them: ready for review on a draft, and merge on one that is ready, or the
+ * merge helper's button where it merges the branch, and on the top of a stack
+ * it can merge whole, Merge stack. Which rows offer what is the server's
+ * reading (`pullOffers`, `findStack`), the same one it refuses a click by, so
+ * the page never shows a button the server would turn down. While a click is
+ * on its way the row is pending and they are disabled.
  */
 function renderPullWrites(row: BoardRow, ui: UiState, handlers: Handlers): JSX.Element[] {
   const offers = row.offers ?? [];
@@ -414,10 +426,22 @@ function renderPullWrites(row: BoardRow, ui: UiState, handlers: Handlers): JSX.E
   if (offers.includes('ready')) {
     buttons.push(button('Ready for review', 'Mark this draft ready for review on GitHub', () => handlers.markReady(row.id)));
   }
-  if (offers.includes('merge')) {
+  if (offers.includes('helper')) {
+    buttons.push(button(helperLabel(row), `Hand to your merge helper for ${row.baseRef}, after asking`, () => handlers.mergePull(row.id)));
+  } else if (offers.includes('merge')) {
     buttons.push(button('Merge', `Merge into ${row.baseRef} on GitHub, after asking`, () => handlers.mergePull(row.id)));
   } else if (offers.includes('queue')) {
     buttons.push(button('Add to merge queue', `Add to ${row.baseRef}'s merge queue on GitHub, after asking`, () => handlers.mergePull(row.id)));
+  }
+  if (offers.includes('stack') && row.stack) {
+    const below = row.stack.length - 1;
+    buttons.push(
+      button(
+        'Merge stack',
+        `Have your merge helper merge the ${below} pull request${below === 1 ? '' : 's'} under this one and then this one, from the bottom, after asking`,
+        () => handlers.mergeStack(row.id),
+      ),
+    );
   }
   return buttons;
 }

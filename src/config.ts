@@ -61,6 +61,13 @@ export interface GitHubConfig {
    * launchd job's PATH rarely has Homebrew on it.
    */
   ghPath: string;
+  /**
+   * The user's merge helper: a program of their own that queues or merges a
+   * pull request the way their company does, which the board offers instead of
+   * GitHub's merge where it says so. Null when none is set, the default. See
+   * `mergehelper.ts` for what it is asked.
+   */
+  mergeHelper: string | null;
 }
 
 /**
@@ -507,6 +514,8 @@ function gitHubConfig(values: SettingValues): GitHubConfig {
     mergeGateReviews: gateReviewsSetting('DAILY_FOCUS_GITHUB_MERGE_GATE_REVIEWS', values),
     pollMinutes,
     ghPath: expandHome((values.DAILY_FOCUS_GH ?? '').trim() || 'gh'),
+    // A path, `~` and all, or a name to look for on PATH; empty is none.
+    mergeHelper: stringSetting('DAILY_FOCUS_MERGE_HELPER', '', values) ? expandHome(stringSetting('DAILY_FOCUS_MERGE_HELPER', '', values)) : null,
   };
 }
 

@@ -85,6 +85,9 @@ const deps: BoardDeps = {
     write(`enqueue ${token} ${nodeId} ${headSha}`, () => {
       for (const pull of github.pulls) if (pull.nodeId === nodeId) pull.inMergeQueue = true;
     }),
+  requiredApprovals: async () => assert.fail('no merge helper is set'),
+  liveHeads: async () => assert.fail('no merge helper is set'),
+  runHelper: async () => assert.fail('no merge helper is set'),
 };
 
 let server: StartedServer;

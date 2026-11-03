@@ -122,14 +122,37 @@ export function postPullReady(id: string): Promise<DashboardState> {
   return post('/api/board/ready', { id });
 }
 
+/** The board read back after a merge, and what the merge helper said, when it was the helper's. */
+export interface Landed {
+  state: DashboardState;
+  /** The merge helper's line, or null for GitHub's own merge, which says nothing of its own. */
+  notice: string | null;
+}
+
+/** A merge's answer: the state, with the merge helper's line taken off it. */
+async function landed(path: string, body: unknown): Promise<Landed> {
+  const { notice, ...state } = (await post(path, body)) as DashboardState & { notice?: unknown };
+  return { state: state as DashboardState, notice: typeof notice === 'string' ? notice : null };
+}
+
 /**
- * Merge a pull request that is ready, by its board row's id, or add it to its
- * branch's merge queue: the server decides which from the row. Resolves once
- * GitHub has and the board has been read back; rejects with GitHub's own words
- * when it refuses, as it does when the head moved since the board looked.
+ * Merge a pull request that is ready, by its board row's id, add it to its
+ * branch's merge queue, or hand it to the merge helper: the server decides which
+ * from the row. Resolves once it has and the board has been read back; rejects
+ * with GitHub's or the helper's own words when it refuses, as GitHub does when
+ * the head moved since the board looked.
  */
-export function postPullMerge(id: string, head: string): Promise<DashboardState> {
-  return post('/api/board/merge', { id, head });
+export function postPullMerge(id: string, head: string): Promise<Landed> {
+  return landed('/api/board/merge', { id, head });
+}
+
+/**
+ * Have the merge helper merge a stack of pull requests, bottom first, by its top
+ * row's id. `heads` names every pull request in it with the head commit the page
+ * showed: the server refuses if the stack it works out differs, or one has moved.
+ */
+export function postPullMergeStack(id: string, heads: Record<string, string>): Promise<Landed> {
+  return landed('/api/board/merge-stack', { id, heads });
 }
 
 /**

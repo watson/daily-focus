@@ -884,19 +884,56 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         sendJSON(res, 400, { error: '"head" must be the head commit the page showed' });
         return;
       }
+      let notice: string | null = null;
       try {
         const actions = await store.readActions();
         if (path === '/api/board/ready') await board.markReady(id, actions);
-        else await board.merge(id, actions, head as string);
+        else ({ notice } = await board.merge(id, actions, head as string));
       } catch (err) {
         // GitHub's own words, and a 409, as for a transition: the request was
         // well-formed and GitHub refused it, which is the expected outcome for
-        // a merge whose head moved since the row was read.
+        // a merge whose head moved since the row was read. The merge helper's
+        // refusal is its own words too.
         sendJSON(res, err instanceof BoardRefusal ? err.status : 409, { error: (err as Error).message });
         return;
       }
       const state = await buildState();
-      sendState(res, state);
+      // What the merge helper said, for this page's toast alone.
+      sendJSON(res, 200, notice === null ? state : { ...state, notice });
+      void broadcast(state);
+      return;
+    }
+
+    if (path === '/api/board/merge-stack' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      // The top row's id, and every row in the stack with the head commit the
+      // page showed: what the user said yes to, which the board checks against
+      // the stack it works out itself. Nothing else; the helper is told the
+      // top's URL from the board's row.
+      const { id, heads } = body;
+      if (typeof id !== 'string' || !id.startsWith('github:pr:')) {
+        sendJSON(res, 400, { error: '"id" must be the top pull request row\'s id, e.g. github:pr:acme/payments-api#412' });
+        return;
+      }
+      const entries = typeof heads === 'object' && heads !== null && !Array.isArray(heads) ? Object.entries(heads) : [];
+      if (
+        entries.length < 2 ||
+        entries.length > 50 ||
+        entries.some(([key, sha]) => !key.startsWith('github:pr:') || typeof sha !== 'string' || sha === '')
+      ) {
+        sendJSON(res, 400, { error: '"heads" must map each pull request row id in the stack to the head commit the page showed' });
+        return;
+      }
+      let notice: string | null;
+      try {
+        ({ notice } = await board.mergeStack(id, await store.readActions(), Object.fromEntries(entries) as Record<string, string>));
+      } catch (err) {
+        sendJSON(res, err instanceof BoardRefusal ? err.status : 409, { error: (err as Error).message });
+        return;
+      }
+      const state = await buildState();
+      sendJSON(res, 200, { ...state, notice });
       void broadcast(state);
       return;
     }
