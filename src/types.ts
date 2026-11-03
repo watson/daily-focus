@@ -713,6 +713,12 @@ export interface Ticket {
    * heard of. `pulls` is the evidence, and the row shows it.
    */
   fromGitHub?: boolean;
+  /**
+   * A hash of the words in the ticket's description, so the done check can tell
+   * when the description changed without carrying it to every tab. Absent when
+   * the search didn't return the field. See `descriptionHash` in `jira.ts`.
+   */
+  descriptionHash?: string;
 }
 
 /** A pull request's state as GitHub reports it, with a draft told apart from open. */
@@ -728,6 +734,11 @@ export interface LinkedPull {
   state: LinkedPullState;
   /** When it merged or was closed. Null while it is open. */
   closedAt: string | null;
+  /**
+   * The commit at the head of its branch, which the done check keys on: a push
+   * is a new head, a merge is not. Absent from a cache written before it was read.
+   */
+  headSha?: string;
 }
 
 /**
@@ -1046,6 +1057,63 @@ export interface AssistantAuto {
   rows: Record<string, string[]>;
 }
 
+/* ---------- the done check ---------- */
+
+/**
+ * What the done check made of a ticket: whether its pull requests, together, do
+ * everything the ticket asks. See `donecheck.ts`.
+ *
+ * - `complete`  they do
+ * - `work-left` something the ticket asks for isn't in them; the line says what
+ * - `unclear`   it couldn't tell; the line says why
+ */
+export type DoneVerdict = 'complete' | 'work-left' | 'unclear';
+
+/** A check that came back with a verdict. */
+export interface DoneCheckVerdict {
+  verdict: DoneVerdict;
+  /** One short line: what is left, or why it can't tell. May be empty for `complete`. */
+  line: string;
+  /** When the check finished. */
+  at: string;
+  /**
+   * Whether it was about the ticket as it stands: the same description and the
+   * same head commits. False once either has changed, until a new check lands.
+   */
+  current: boolean;
+}
+
+/** The done check's part of one ticket. Advice only: nothing here moves or hides a row. */
+export interface DoneCheckTicket {
+  /** A check can be started: the ticket has pull requests, each with a known head commit. */
+  checkable: boolean;
+  /** The newest verdict, which a failed check never replaces. */
+  verdict: DoneCheckVerdict | null;
+  /** A check is running on it now: since when, and whether a click started it. */
+  running: { since: string; by: 'auto' | 'click' } | null;
+  /** The newest check failed, after the newest verdict: why, when, and whether it was about the ticket as it stands. */
+  failure: { error: string; at: string; current: boolean } | null;
+  /**
+   * When an automatic check of the ticket as it stands would start, once its
+   * pull requests and description have been still for a while. Null when none is
+   * owed: automatic checks are off, or this has been checked already.
+   */
+  dueAt: string | null;
+}
+
+/** The done check as the page shows it. */
+export interface DoneCheckState {
+  /** There is a CLI to check with: the assistant is on. All Check now needs. */
+  enabled: boolean;
+  /** Checks start on their own: `DAILY_FOCUS_ASSISTANT_AUTO`, with the assistant on. */
+  auto: boolean;
+  /** `DAILY_FOCUS_DONE_CHECK_LIMIT`, and how many started on their own today. */
+  limit: number;
+  usedToday: number;
+  /** By upper-cased ticket key: the user's own unfinished tickets with pull requests, and any checked before. */
+  tickets: Record<string, DoneCheckTicket>;
+}
+
 /* ---------- the morning agent, run by the dashboard ---------- */
 
 /**
@@ -1205,6 +1273,8 @@ export interface DashboardState {
   organization?: import('./organization.ts').OrganizationState;
   /** The on-demand assistant. Present even when off, so the client can hide the button. */
   assistant: AssistantState;
+  /** Whether each ticket's pull requests finish it, as the assistant judged. Absent from an older server. */
+  doneCheck?: DoneCheckState;
   /** The morning agent, run by the dashboard. Present even when off, so the client can hide the button. */
   agentRun: AgentRunState;
   stats: {

@@ -116,7 +116,8 @@ versions and release notes come from, so CI checks it.
 | `client/stages.ts`, `client/projects.ts` | The Tickets tab's Projects view: where each ticket stands, joined from Jira, the ticket board and the pull request board, what to do next, the rail's lanes, and the page that shows them |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
-| `src/autoask.ts` | Asking the assistant ahead, on its own, about pull requests waiting on you, and which question each row's state calls for |
+| `src/autoask.ts` | Asking the assistant ahead, on its own, about pull requests waiting on you, and which question each row's state calls for; and starting the done check on its own once a ticket's pull requests and description have settled |
+| `src/donecheck.ts`, `client/donecheck.ts` | The done check: whether a ticket's pull requests finish it, as a verdict keyed on its description and their head commits, run through the assistant's runner, kept in `donecheck.jsonl`, and the line on each ticket's row and card |
 | `src/agent.ts` | Runs the morning agent through a coding-agent CLI, on the dashboard's clock and when the user asks, and keeps each run's report, steps and follow-up chat |
 | `src/codexsessions.ts` | Reads a Codex run's subagents from Codex's own session files, since `codex exec --json` doesn't say what they do |
 | `src/cli.ts`, `src/install.ts` | The `daily-focus` command the npm package installs, and telling a checkout from the package |
@@ -126,7 +127,7 @@ versions and release notes come from, so CI checks it.
 | `scripts/` | Store initialization, the macOS background service, sample data, brief audits, and the package build |
 | `tools/dfcal/` | The macOS calendar helper, which the app carries built and signed, and `build-calendar` builds without it |
 | `macos/` | The macOS menu bar app, which runs the dashboard in place of `daily-focus service`; `npm run app -- --test` builds and checks it |
-| `prompts/` | The briefing agent's instructions, the assistant's, and setup's |
+| `prompts/` | The briefing agent's instructions, the assistant's, the done check's, and setup's |
 | `apps-script/` | Optional Google Tasks export |
 | `site/` | The marketing page for dailyfocus.dev: static HTML, CSS and script with no build step, in the dashboard's own fonts and colours, on its sample data; `.github/workflows/site.yml` publishes it to GitHub Pages when main changes it |
 
@@ -148,7 +149,9 @@ When changing a contract, update the documents that describe it:
 - Brief fields belong in the schema and both prompts, `prompts/morning-brief-work.md`
   and `prompts/morning-brief-personal.md`.
 - The assistant's instructions belong in `prompts/assistant.md`, and its quick
-  actions in `QUICK_ACTIONS` in `src/assistant.ts`.
+  actions in `QUICK_ACTIONS` in `src/assistant.ts`. The done check's belong in
+  `prompts/done-check.md`, and the answer it must give in `DONE_CHECK_SCHEMA` in
+  `src/donecheck.ts`.
 - Agent instructions belong in the prompt for the profile they apply to, or both.
   Read [prompts/README.md](prompts/README.md) before editing one; an installed
   symlink makes changes live on the next run.
@@ -186,6 +189,7 @@ free of side effects, since only `POST` is checked for its content type.
 | `POST /api/board/ready` | `{id}`, a pull request row's. Marks that draft ready for review on GitHub, as the account that read it, then polls. `404` for a row the board isn't showing, `409` for one that isn't a draft, or with GitHub's reason when it refuses |
 | `POST /api/board/merge` | `{id, head}`, a pull request row's and the head commit the page showed. Merges one in Ready to merge into its default branch, with the account's usual merge method and only at the head the board last read, or adds it to the branch's merge queue when it has one, or runs the merge helper's `merge` where its `check` said the branch merges through it, answering with its line as `notice`; then polls. Never for another base branch or a member of a GitHub stack. `404` and `409` as for ready, and `409` with the helper's own words when it refuses |
 | `POST /api/board/merge-stack` | `{id, heads}`: the top row of a stack the merge helper merges whole, and every row in it with the head commit the page showed. Works the stack out again, refuses with `409` if it differs or a head moved, then runs the helper's `merge --stack` and polls, answering with its line as `notice` |
+| `POST /api/tickets/check` | `{key}`. Checks now whether one of your tickets' pull requests finish it, with automatic checks off too and outside the day's count; returns state with the check running, and the verdict lands over SSE. `404` for a ticket not on the board, `409` when the assistant is off, the ticket has no pull request with a known head commit, or it is being checked already. Writes nothing outside this machine |
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
 | `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `409` when it is off or already running |

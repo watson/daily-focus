@@ -42,7 +42,7 @@ Each store file has one writer. There is no locking, so preserve these boundarie
 | Writer | Files |
 |---|---|
 | Briefing agent | `items.json` |
-| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `organization.json`, `organization/`, `prs.json`, `tickets.json`, `calendar-accounts.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
+| Dashboard | `actions.jsonl`, `assistant.jsonl`, `agent.jsonl`, `donecheck.jsonl`, `agent-settings.json`, `archive/`, `assistant/`, `onboarding.json`, `onboarding/`, `organization.json`, `organization/`, `prs.json`, `tickets.json`, `calendar-accounts.json`, `timezone.json`, `settings.json`, and the `prompt.md`, `assistant.md` and `items.schema.json` symlinks, relinked to the running copy at every start (on Windows, copies, recorded by hash in `copies.json`) |
 | User, through the dashboard's editors, the setup screen, or by hand | `focus.md`, `sources.md` |
 
 The dashboard saves `focus.md` and `sources.md` only when the user does, and only if
@@ -51,7 +51,7 @@ overwritten. The setup screen's finish is such a save: it writes the source list
 user's answers add up to, shown to them first, and only when there is none, and
 sets the objective they typed. Nothing else writes them on the user's behalf.
 
-Never compact or rewrite `actions.jsonl`, `assistant.jsonl` or `agent.jsonl`. Do not write dashboard records on the briefing agent's behalf.
+Never compact or rewrite `actions.jsonl`, `assistant.jsonl`, `agent.jsonl` or `donecheck.jsonl`. Do not write dashboard records on the briefing agent's behalf.
 A store from before the profile folders lies in the data folder itself. The server
 moves it into its profile's folder as it starts (`settleStore`), by rename, and only
 a dashboard of that profile does: never over a folder that exists, never out of the
@@ -161,11 +161,19 @@ run it again with `--remove` afterwards.
   editing tools; under Codex, `src/codex.ts` refuses every connector write but the
   draft, for the agent too. Leave Codex's shell approvals, rules and sandbox escapes
   to the user's own config: briefs reach GitHub and other local sources through them,
-  so tightening them needs a real brief run on each profile first.
-- The assistant starts on its own only through `src/autoask.ts`: behind
-  `DAILY_FOCUS_ASSISTANT_AUTO`, off by default, for pull requests waiting on the
-  user, with `AUTO_ACTIONS` alone, each key once and within the daily limit. Never
-  add a quick action that creates something, a draft included, to `AUTO_ACTIONS`.
+  so tightening them needs a real brief run on each profile first. The done check
+  (`src/donecheck.ts`) runs through the same runner and creates nothing, a draft
+  included; its verdict is advice on the row and never moves, hides or marks it.
+- The assistant starts on its own only through `src/autoask.ts`, behind
+  `DAILY_FOCUS_ASSISTANT_AUTO`, off by default, and only to read. `AutoAsk` asks
+  about pull requests waiting on the user, with `AUTO_ACTIONS` alone, each key once
+  and within `DAILY_FOCUS_ASSISTANT_AUTO_LIMIT`. Never add a quick action that
+  creates something, a draft included, to `AUTO_ACTIONS`. `AutoCheck` starts the
+  done check on the user's own tickets only when a pull request is added, its head
+  commit moves, or the description's hash changes (`checkKey`; comments, reviews and
+  labels never), `CHECK_SETTLE_MS` after the key last changed, each key once, one at
+  a time, within its own `DAILY_FOCUS_DONE_CHECK_LIMIT`. Check now is the only other
+  way a check starts.
 - The menu bar app installs an update on its own only behind **Update
   Automatically**, off by default, and only when `/api/status` says nothing is
   busy and no page has reported use (`client/presence.ts`) for half an hour. An

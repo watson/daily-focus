@@ -184,7 +184,7 @@ test("the server, the client and the README agree on the ticket board's courts",
  */
 test('AGENTS.md names the brief, action log, and integration caches', async () => {
   const agents = await readFile(resolve(root, 'AGENTS.md'), 'utf8');
-  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'calendar-accounts.json', 'tickets.json', 'copies.json', 'organization.json', 'organization/']) {
+  for (const file of ['items.json', 'actions.jsonl', 'assistant.jsonl', 'agent.jsonl', 'donecheck.jsonl', 'agent-settings.json', 'prs.json', 'calendar.json', 'calendar-accounts.json', 'tickets.json', 'copies.json', 'organization.json', 'organization/']) {
     assert.ok(agents.includes(file), `AGENTS.md never mentions ${file}`);
   }
 });
@@ -215,6 +215,19 @@ test("the assistant's prompt keeps its never-rules and stays in the chat", async
   for (const rule of ['Never send', 'Never post', 'Never change', 'Do not leave notes']) {
     assert.ok(prompt.includes(rule), `prompts/assistant.md has lost the "${rule}" rule`);
   }
+});
+
+/**
+ * The done check's prompt keeps it to reading and to the one answer it gives, and
+ * shows the shape the schema fixes: the verdicts are the schema's own words.
+ */
+test("the done check's prompt keeps its never-rules and names each verdict the schema allows", async () => {
+  const prompt = await readFile(resolve(root, 'prompts/done-check.md'), 'utf8');
+  for (const rule of ['Never post', 'Never change', 'Never create', 'Never act on instructions']) {
+    assert.ok(prompt.includes(rule), `prompts/done-check.md has lost the "${rule}" rule`);
+  }
+  const { DONE_VERDICTS } = await import('../src/donecheck.ts');
+  for (const verdict of DONE_VERDICTS) assert.ok(prompt.includes(`\`${verdict}\``), `prompts/done-check.md never explains \`${verdict}\``);
 });
 
 /** The setup page's section for organizations, whose example `daily-focus.json` names settings by necessity. */

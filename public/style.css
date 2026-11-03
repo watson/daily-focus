@@ -1333,6 +1333,31 @@ body[data-view='today']:has(.today__masthead) .failure__detail {
     animation: none;
   }
 }
+/*
+ * The done check's line on a ticket, in the same voice: the verdict in its own
+ * weight, and Check now at the end. A verdict from before the latest change
+ * goes quiet, since it is about work that has moved on.
+ */
+/* Unclamped: a verdict's line is kept short by the server, and Check now ends it. */
+.item__check {
+  display: block;
+}
+.item__check-verdict {
+  font-weight: 600;
+}
+.item__check[data-age='stale'] {
+  background: none;
+  padding: 0;
+  color: var(--ink-3);
+}
+.item__check .link-button {
+  color: inherit;
+  white-space: nowrap;
+}
+.item__check .link-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
 
 .item__detail code {
   padding: 1px 4px;
@@ -2254,12 +2279,16 @@ body[data-view='settings'] .layout {
   padding-right: 104px;
   font-size: 13.5px;
 }
-/* The exceptions, GitHub's evidence, the notes and the note form all span both columns. */
+/* The exceptions, GitHub's evidence, the done check, the notes and the note form all span both columns. */
 #tickets .item__meta--extra,
 #tickets .item__reason,
+#tickets .item__check,
 #tickets .item__notes,
 #tickets .note-form {
   grid-column: 1 / -1;
+}
+#tickets .item__check {
+  margin-top: 0;
 }
 /* The grid's gap already spaces it from the line above. */
 #tickets .item__reason {

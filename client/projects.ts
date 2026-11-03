@@ -20,6 +20,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { BoardRow, DashboardState, ProjectSummary, ProjectsState } from '../src/types.ts';
 import { banner } from './banners.ts';
 import { boardFailures, renderPullWrites, type PullWrite } from './board.ts';
+import { doneCheckLine } from './donecheck.ts';
 import { el, type Props } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatTime } from './format.ts';
@@ -210,7 +211,7 @@ function noProjectLine(projects: ProjectsState): string {
 
 /** One read project: its warnings, its header, and the epic or initiative layout. */
 function readView(read: PlannedRead, state: DashboardState, ui: UiState, handlers: Handlers, now: Date): ComponentChild[] {
-  const project = projectWork(read, pullSources(state));
+  const project = projectWork(read, pullSources(state), state.doneCheck ?? null);
   const parts: ComponentChild[] = [];
   // Where each pull request stands, and what it offers, is the board's last good read.
   if (state.board?.enabled) parts.push(...boardFailures(state.board, now, ui, handlers));
@@ -584,6 +585,8 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
       el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain' }, label.text),
     ),
     work.pulls.length > 0 ? el('ul', { class: 'project-card__pulls' }, work.pulls.map((pull) => pullLine(pull, now, writes))) : null,
+    // The user's own tickets only: the check reads no one else's.
+    ticket.mine ? doneCheckLine(ticket.key, project.checks, now, writes ? { ui: writes.ui, handlers: writes.handlers } : null) : null,
     ticketMeta(work, project),
     !ticket.linksRead && ticket.statusCategory !== 'done'
       ? el('p', { class: 'item__reason item__reason--waiting' }, 'Its links could not be read, so it may wait for more than this says.')

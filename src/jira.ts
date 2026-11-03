@@ -17,6 +17,7 @@
  */
 
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 
 import { launchFor } from './launch.ts';
@@ -248,6 +249,14 @@ export function buildJql(projects: readonly string[], predicate: string | null):
  */
 const FIELDS = 'key,status,issuetype,summary';
 
+/**
+ * The base search's fields: the ones above and the description, which the done
+ * check needs to notice a change to (see `descriptionHash`). Off the whitelist
+ * above, and accepted all the same by acli 1.3; asked for on the base search
+ * alone, since it can run to kilobytes a ticket and the other two read keys.
+ */
+const BASE_FIELDS = `${FIELDS},description`;
+
 async function search(
   acliPath: string,
   jql: string,
@@ -344,6 +353,7 @@ export function toTicket(
   const status = isRecord(fields.status) ? fields.status : {};
   const category = isRecord(status.statusCategory) ? status.statusCategory : {};
 
+  const hash = 'description' in fields ? descriptionHash(fields.description) : null;
   return {
     id: `jira:${key}`,
     key,
@@ -358,7 +368,42 @@ export function toTicket(
     // Never inferred from the two above, which is the whole point of the field:
     // they cannot tell "all closed" from "could not find out".
     allPrsClosed: allPrsClosed && !hasOpenPr,
+    ...(hash ? { descriptionHash: hash } : {}),
   };
+}
+
+/**
+ * A short hash of the words in a ticket's description, for the done check to
+ * notice a change by (see `donecheck.ts`) without carrying the description to
+ * every tab.
+ *
+ * Jira Cloud sends the description as an Atlassian document, a tree of nodes,
+ * and an older site or a text field as a plain string; empty is null. Only the
+ * words count, and the links: the text of every text node and the URL of every
+ * link or card, with whitespace run together, so moving a paragraph into a list
+ * or re-saving the page asks nothing new, and rewording a sentence does.
+ */
+export function descriptionHash(description: unknown): string {
+  const words: string[] = [];
+  const walk = (node: unknown): void => {
+    if (typeof node === 'string') {
+      words.push(node);
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child);
+      return;
+    }
+    if (!isRecord(node)) return;
+    if (typeof node.text === 'string') words.push(node.text);
+    const attrs = isRecord(node.attrs) ? node.attrs : null;
+    for (const name of ['url', 'href'] as const) if (typeof attrs?.[name] === 'string') words.push(attrs[name]);
+    walk(node.marks);
+    walk(node.content);
+  };
+  walk(description);
+  const text = words.join(' ').replace(/\s+/g, ' ').trim();
+  return createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
 /* ---------- the development panel ---------- */
@@ -589,7 +634,7 @@ export async function fetchTickets(
   opts: { projects: readonly string[]; site: string | null; linked?: Promise<LinkedRead | null> },
 ): Promise<TicketFetch> {
   const [base, anyPr, openPr] = await Promise.all([
-    search(acliPath, buildJql(opts.projects, null)),
+    search(acliPath, buildJql(opts.projects, null), { fields: BASE_FIELDS }),
     search(acliPath, buildJql(opts.projects, ANY_PR)),
     search(acliPath, buildJql(opts.projects, OPEN_PR)),
   ]);

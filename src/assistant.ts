@@ -36,7 +36,9 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { CodexGate, CONNECTOR_POLICY, computerUseOff, configArgs, GMAIL_DRAFTS, windowsSandbox } from './codex.ts';
@@ -496,7 +498,11 @@ export const claudeAdapter: Adapter = {
     }
     if (type === 'result') {
       const ok = event.is_error !== true && event.subtype === 'success';
-      const reply = typeof event.result === 'string' ? event.result : undefined;
+      // Asked for a schema, Claude Code hands the answer over as `structured_output`;
+      // `result` is then only the last thing said, which after tool calls may be prose.
+      const structured = event.structured_output;
+      const reply =
+        structured !== undefined && structured !== null ? JSON.stringify(structured) : typeof event.result === 'string' ? event.result : undefined;
       const parsed: ParsedEvent = { done: ok ? { ok, reply } : failed('claude', reply ?? String(event.subtype ?? 'failed')) };
       if (typeof event.session_id === 'string') parsed.sessionId = event.session_id;
       return parsed;
@@ -740,6 +746,34 @@ export function composePrompt(instructions: string, context: AskContext, request
 
 /* ---------- the runner ---------- */
 
+/**
+ * A one-off question whose answer the dashboard reads rather than shows: the
+ * done check's (see `donecheck.ts`). It runs as the assistant does, in the same
+ * empty directory with the editing tools denied, but in no row's conversation,
+ * with no session to resume, and on the model and effort it is given.
+ */
+export interface CheckSpec {
+  /** The whole first message: instructions and context. */
+  prompt: string;
+  model: string | null;
+  effort: string | null;
+  /** What Claude Code may call. Ignored by Codex, which is held to `codex.ts`'s rules and no drafts. */
+  tools: readonly string[];
+  /** The JSON the answer must be. */
+  schema: Record<string, unknown>;
+  /** Killed after this long. */
+  timeoutMs: number;
+}
+
+/** How a check run ended: the CLI's last word, or why there is none. */
+export interface CheckOutcome {
+  ok: boolean;
+  /** The answer, as the CLI gave it, when `ok`. */
+  reply: string;
+  error: string | null;
+  cause: FailureCause | null;
+}
+
 interface RunningTurn {
   turn: AssistantTurn;
   child: ChildProcess;
@@ -756,6 +790,8 @@ export interface AssistantHooks {
 export class Assistant {
   private readonly turns = new Map<string, AssistantTurn>();
   private readonly running = new Map<string, RunningTurn>();
+  /** Checks with a process going, each with the reason it is being stopped once it is. */
+  private readonly checks = new Set<{ child: ChildProcess; abortReason: string | null }>();
   private loaded = false;
   private readonly config: Config;
   private readonly hooks: AssistantHooks;
@@ -780,9 +816,9 @@ export class Assistant {
     return this.config.assistant.agent !== null;
   }
 
-  /** Whether any turn has a process going right now. */
+  /** Whether any turn, or any check, has a process going right now. */
   get busy(): boolean {
-    return this.running.size > 0;
+    return this.running.size > 0 || this.checks.size > 0;
   }
 
   /**
@@ -1019,6 +1055,122 @@ export class Assistant {
   /** Kill everything, for shutdown. The exit handlers write the aborted lines. */
   async close(): Promise<void> {
     for (const itemId of [...this.running.keys()]) await this.stop(itemId, SHUT_DOWN);
+    for (const check of this.checks) {
+      check.abortReason ??= SHUT_DOWN;
+      stopProcess(check.child);
+    }
+  }
+
+  /**
+   * Run one check to its end and say how it went. Never rejects: anything that
+   * goes wrong, from a missing CLI to a timeout, is an outcome with its reason.
+   *
+   * Held to what the assistant is held to, and to less: the editing tools
+   * denied by name, the tools in `spec` rather than the assistant's list, and
+   * under Codex no Gmail draft on top of the connector rules every turn gets.
+   * It writes nothing to the assistant's log; its caller keeps its own.
+   */
+  async check(spec: CheckSpec): Promise<CheckOutcome> {
+    const failure = (error: string, cause: FailureCause | null = null): CheckOutcome => ({ ok: false, reply: '', error, cause });
+    const agent = this.config.assistant.agent;
+    if (!agent) return failure('the assistant is off; set DAILY_FOCUS_ASSISTANT to claude or codex');
+    const refusal = agent === 'codex' ? await this.codexGate.refusal() : null;
+    if (refusal) return failure(refusal);
+    let codexConfig: string[];
+    try {
+      codexConfig = await this.computerUseConfig();
+    } catch (err) {
+      return failure(
+        (err as NodeJS.ErrnoException).code === 'ENOENT'
+          ? this.spawnError(err)
+          : `computer use is off in the settings, and Codex could not confirm it: ${(err as Error).message}`,
+      );
+    }
+
+    // Codex takes the schema as a file, which goes with the run.
+    const schemaDir = await mkdtemp(join(tmpdir(), 'daily-focus-check-'));
+    const file = join(schemaDir, 'schema.json');
+    const json = JSON.stringify(spec.schema);
+    await writeFile(file, json, 'utf8');
+    await mkdir(this.config.assistantDir, { recursive: true });
+    const adapter = ADAPTERS[agent];
+    const args = adapter.args({
+      prompt: spec.prompt,
+      sessionId: null,
+      model: spec.model,
+      effort: spec.effort,
+      tools: spec.tools,
+      denyEdits: true,
+      drafts: false,
+      codexConfig,
+      schema: { json, file },
+    });
+
+    let child: ChildProcess;
+    try {
+      const launch = launchFor(this.config.assistant.binPath, args);
+      child = this.spawnFn(launch.file, launch.args, {
+        cwd: this.config.assistantDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: cliEnvironment(this.config),
+      });
+    } catch (err) {
+      await rm(schemaDir, { recursive: true, force: true });
+      return failure(this.spawnError(err));
+    }
+    const run = { child, abortReason: null as string | null };
+    this.checks.add(run);
+    const minutes = Math.round(spec.timeoutMs / 60_000);
+    const timer = setTimeout(() => {
+      run.abortReason ??= `gave up after ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+      stopProcess(child);
+    }, spec.timeoutMs);
+    timer.unref();
+
+    return new Promise<CheckOutcome>((resolve) => {
+      let done: ParsedEvent['done'] | undefined;
+      let said = '';
+      const stderr: string[] = [];
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr.push(chunk.toString('utf8'));
+        if (stderr.length > 50) stderr.shift();
+      });
+      if (child.stdout) {
+        createInterface({ input: child.stdout }).on('line', (line) => {
+          const event = adapter.parse(line);
+          if (!event) return;
+          // The last thing it said itself is the answer, unless the CLI hands one over at the end.
+          if (event.text && !event.by) said = event.text;
+          if (event.done) done = event.done;
+        });
+      }
+      child.on('error', (err) => {
+        done = { ok: false, error: this.spawnError(err) };
+      });
+      // Stopped, it is over when it exits, whoever still holds its pipes.
+      child.on('exit', () => {
+        if (run.abortReason === null) return;
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        this.checks.delete(run);
+        void rm(schemaDir, { recursive: true, force: true });
+        const outcome: NonNullable<ParsedEvent['done']> = run.abortReason
+          ? { ok: false, error: run.abortReason }
+          : (done ?? {
+              ok: false,
+              error: `${agent} exited with code ${code}${stderr.length ? `: ${stderr.join('').trim().split('\n').slice(-3).join(' ')}` : ''}`,
+            });
+        resolve(
+          outcome.ok
+            ? { ok: true, reply: outcome.reply ?? said, error: null, cause: null }
+            : failure(outcome.error ?? 'failed', outcome.cause ?? null),
+        );
+        this.hooks.onChange();
+      });
+    });
   }
 
   private async finish(turn: AssistantTurn, outcome: NonNullable<ParsedEvent['done']>, aborted = false): Promise<void> {

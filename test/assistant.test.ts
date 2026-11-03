@@ -451,6 +451,11 @@ test('the Claude adapter reads what Claude Code prints', () => {
   assert.equal(claudeAdapter.parse('{"type":"rate_limit_event"}'), null);
   assert.equal(claudeAdapter.parse('plain text'), null);
   assert.deepEqual(claudeAdapter.parse(RESULT('done')), { sessionId: 'sess-1', done: { ok: true, reply: 'done' } });
+  // With a schema, the answer is the structured output, whatever was said last.
+  assert.deepEqual(
+    claudeAdapter.parse('{"type":"result","subtype":"success","is_error":false,"result":"Checked both.","structured_output":{"verdict":"complete","line":""}}'),
+    { done: { ok: true, reply: '{"verdict":"complete","line":""}' } },
+  );
   assert.deepEqual(
     claudeAdapter.parse('{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Rate limited"}'),
     { done: { ok: false, error: 'Rate limited' } },

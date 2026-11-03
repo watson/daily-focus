@@ -5,9 +5,10 @@
 | [`morning-brief-work.md`](./morning-brief-work.md) | The prompt for the work briefing agent, run once every workday morning. |
 | [`morning-brief-personal.md`](./morning-brief-personal.md) | The prompt for the personal briefing agent: email, family calendars, Apple Reminders, Apple Messages, e-Boks and the user's own GitHub projects. |
 | [`assistant.md`](./assistant.md) | The instructions for the on-demand assistant, which the server runs headless when the user presses Ask on a row. One file for both profiles. Linked into the store as `assistant.md`. |
+| [`done-check.md`](./done-check.md) | The instructions for the done check, which the server runs through the assistant's runner to judge whether a ticket's pull requests finish it, answering in the JSON its schema fixes. Not linked into the store: the server reads it from the running copy and inlines it ahead of the ticket. |
 | [`onboarding.md`](./onboarding.md) | The instructions for the setup screen's CLI sessions, one per question, which propose the answer a new user most likely wants. Not linked into the store: the server reads it from the running copy and inlines it, as it does the assistant's. |
 
-All four are **nothing but prompt** — each is read verbatim by its agent, so anything
+All five are **nothing but prompt** — each is read verbatim by its agent, so anything
 else in there is either noise the agent has to skip or, worse, an instruction it
 might try to act on. Notes about the prompts belong in this file instead.
 

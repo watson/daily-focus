@@ -146,6 +146,15 @@ export class TicketBoard {
     return this.#reading;
   }
 
+  /**
+   * Every ticket the last good read found: the user's own unfinished ones,
+   * flagged or not. For the done check (`donecheck.ts`), which looks at all of
+   * them. Empty while the board is off.
+   */
+  tickets(): readonly Ticket[] {
+    return this.enabled ? (this.#file?.tickets ?? []) : [];
+  }
+
   /** The board joined with the action log, ready to render. Never throws. */
   view(actions: readonly Action[], now: Date): TicketBoardState {
     const warnings = this.enabled ? [...this.#warnings] : [];
@@ -364,6 +373,8 @@ export function normalizeStoredTicket(raw: unknown): Ticket | null {
     raw.allPrsClosed === true,
   );
   if (!ticket) return null;
+  // Stored as the hash: the description itself never reaches the file.
+  if (typeof raw.descriptionHash === 'string' && /^[0-9a-f]{8,64}$/.test(raw.descriptionHash)) ticket.descriptionHash = raw.descriptionHash;
   // The three readings above are stored already reconciled, so GitHub's evidence
   // comes back beside them rather than being applied again.
   const pulls = storedPulls(raw.pulls);
@@ -381,12 +392,14 @@ function storedPulls(value: unknown): LinkedPull[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry): LinkedPull[] => {
     if (!isRecord(entry)) return [];
-    const { repo, number, title, url, state, closedAt } = entry;
+    const { repo, number, title, url, state, closedAt, headSha } = entry;
     if (typeof repo !== 'string' || typeof number !== 'number' || typeof title !== 'string') return [];
     // Re-checked on the way in, as the pull request board's links are: it reaches an anchor.
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return [];
     if (typeof state !== 'string' || !(PULL_STATES as readonly string[]).includes(state)) return [];
-    return [{ repo, number, title, url, state: state as LinkedPullState, closedAt: typeof closedAt === 'string' ? closedAt : null }];
+    const pull: LinkedPull = { repo, number, title, url, state: state as LinkedPullState, closedAt: typeof closedAt === 'string' ? closedAt : null };
+    if (typeof headSha === 'string' && /^[0-9a-f]{7,64}$/i.test(headSha)) pull.headSha = headSha;
+    return [pull];
   });
 }
 

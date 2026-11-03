@@ -215,6 +215,8 @@ export interface Handlers {
   toggleMenu(id: string): void;
   toggleStatus(id: string): void;
   moveTicket(key: string, status: string, from: string | null): void;
+  /** Check now whether a ticket's pull requests finish it, which starts the assistant's CLI. */
+  checkTicket(key: string): void;
   /** Open the panel on a row, with the cursor in `field`, or in neither. */
   openDetail(id: string, field?: FocusField | null): void;
   closeDetail(): void;
