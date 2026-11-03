@@ -382,7 +382,37 @@ export interface PullRequest {
   lastActivityByYou: string | null;
   /** Newest thing anyone else did, bots excluded. */
   lastActivityByOthers: PullActivity | null;
+  /*
+   * What marking it ready or merging it from the board needs, and what decides
+   * whether either is offered (`pullOffers` in `prs.ts`). Each is absent on a
+   * cache written before it was kept, which offers neither until the next poll.
+   */
+  /** GitHub's node id for it, which the mutations name it by. */
+  nodeId?: string | null;
+  /** The repository's default branch: the only base Merge is offered for. */
+  defaultBranch?: string | null;
+  /** How this account last merged in the repository, or the repository's default: what Merge uses. */
+  mergeMethod?: MergeMethod | null;
+  /** Its base branch merges through GitHub's merge queue, so Merge adds it to the queue instead. */
+  mergeQueue?: boolean;
+  /** It is in that queue already. */
+  inMergeQueue?: boolean;
+  /** It is part of a GitHub stack, which merges through the stack's own API: never offered here. */
+  stacked?: boolean;
 }
+
+/** GitHub's merge methods, by their GraphQL names. */
+export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
+
+/**
+ * What the board offers to do to a pull request from a click on its row. The
+ * server refuses anything a row doesn't offer, by the same reading.
+ *
+ * - `ready`  mark a draft ready for review.
+ * - `merge`  merge it now with `mergeMethod`, into its default branch.
+ * - `queue`  add it to its default branch's merge queue.
+ */
+export type PullOffer = 'ready' | 'merge' | 'queue';
 
 export interface BoardAccount {
   login: string;
@@ -468,6 +498,8 @@ export interface BoardRow extends PullRequest {
   status: 'open' | 'snoozed';
   snoozedUntil?: string;
   notes: { text: string; at: string }[];
+  /** What a click on the row may do to it upstream. Absent from a server older than the page. */
+  offers?: PullOffer[];
 }
 
 /** The optional services the dashboard reads through a CLI: GitHub through gh, Jira through acli. */

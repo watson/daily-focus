@@ -86,9 +86,15 @@ run it again with `--remove` afterwards.
   ignore `done` and `dismiss` because they show upstream state.
 - A failed integration read is not an empty result. Preserve the last successful
   data or use the documented fallback, and surface the failure.
-- `transitionTicket` is the dashboard's only external write. It moves one Jira ticket
-  to one status after a user click. Do not add automatic transitions or other external
-  writes without an explicit scope change.
+- The dashboard has three external writes, each run once per user click on a row:
+  `transitionTicket` moves one Jira ticket to one status; `markReadyForReview` marks
+  one of the user's draft pull requests ready for review; `mergePull` merges one
+  GitHub says is ready, into its default branch at the head the board last read, or
+  `enqueuePull` adds it to that branch's merge queue. The board's routes take a row
+  id, never a URL or repository, and act only on a row the board is showing, as the
+  account that read it (`src/board.ts`, `refuseReady` and `refuseMerge` in
+  `src/prs.ts`). Do not add automatic writes, or other external writes, without an
+  explicit scope change.
 - GitHub and Jira are optional. `DAILY_FOCUS_GITHUB` and `DAILY_FOCUS_JIRA` off
   leave them out of everything, the brief included (`agentSettings`). A user's own
   `gh` or `acli` always wins; only without one does connecting fetch it from its
@@ -126,7 +132,7 @@ run it again with `--remove` afterwards.
   sealed by the operating system (`src/calendarvault.ts`), and what is read held
   in memory, never given to the agent, the assistant or setup's sessions, not even
   calendar names: Google's terms for calendar data hold us to that. Disconnecting
-  asks Google to revoke the sign-in, the one request besides `transitionTicket`
+  asks Google to revoke the sign-in, the one request besides those three writes
   that changes anything elsewhere. Change what it reads only with the policy, at
   `site/privacy/`. Never commit Google's client secret: the package build writes it
   in from `GOOGLE_CLIENT_SECRET` (`src/oauthclients.ts`).

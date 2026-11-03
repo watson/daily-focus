@@ -365,6 +365,7 @@ function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.
   );
 
   if (row.status === 'open') {
+    buttons.push(...renderPullWrites(row, ui, handlers));
     // Nudging happens on Slack, where the board can't see it. This is how it's told,
     // and the agent reads it too. A row already nudged has nothing to tell yet.
     if (row.court === 'reviewers' && !row.nudgedAt) {
@@ -395,4 +396,28 @@ function renderPullActions(row: BoardRow, ui: UiState, handlers: Handlers): JSX.
   }
 
   return el('div', { class: 'item__actions' }, buttons);
+}
+
+/**
+ * The buttons that change the pull request on GitHub, where the server offers
+ * them: ready for review on a draft, and merge on one that is ready. Which rows
+ * offer what is the server's reading (`pullOffers`), the same one it refuses a
+ * click by, so the page never shows a button the server would turn down. While
+ * a click is on its way the row is pending and they are disabled.
+ */
+function renderPullWrites(row: BoardRow, ui: UiState, handlers: Handlers): JSX.Element[] {
+  const offers = row.offers ?? [];
+  const pending = ui.pending.value.has(row.id);
+  const button = (label: string, title: string, onClick: () => void): JSX.Element =>
+    el('button', { type: 'button', class: 'button', title, disabled: pending, 'aria-busy': pending ? 'true' : undefined, onClick }, label);
+  const buttons: JSX.Element[] = [];
+  if (offers.includes('ready')) {
+    buttons.push(button('Ready for review', 'Mark this draft ready for review on GitHub', () => handlers.markReady(row.id)));
+  }
+  if (offers.includes('merge')) {
+    buttons.push(button('Merge', `Merge into ${row.baseRef} on GitHub, after asking`, () => handlers.mergePull(row.id)));
+  } else if (offers.includes('queue')) {
+    buttons.push(button('Add to merge queue', `Add to ${row.baseRef}'s merge queue on GitHub, after asking`, () => handlers.mergePull(row.id)));
+  }
+  return buttons;
 }

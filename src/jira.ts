@@ -11,7 +11,9 @@
  * comments, no deletes — and it only ever runs from a click the user made on a
  * row. Everything else is a search or a status read. That boundary is the whole
  * safety argument for pointing this at a shared Jira, so a second writing
- * function needs to be a deliberate decision rather than a convenience.
+ * function needs to be a deliberate decision rather than a convenience. The
+ * dashboard's other writes are to GitHub, from the pull request board's rows,
+ * and are kept in `github.ts` on the same terms.
  */
 
 import { execFile } from 'node:child_process';

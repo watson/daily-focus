@@ -15,9 +15,10 @@
  * authority on everything GitHub cannot see: pull requests by someone else, or
  * outside the configured scope, or closed too long ago to be searched.
  *
- * Read-only, like the rest of the board's GitHub access, and borrowing the pull
- * request board's accounts and scope rather than having its own: the two boards
- * are about the same pull requests.
+ * Read-only, borrowing the pull request board's accounts and scope rather than
+ * having its own: the two boards are about the same pull requests. The pull
+ * request board's only writes are the ones a click on its rows makes, marking a
+ * draft ready or merging one that is ready; nothing here reaches them.
  */
 
 import type { GitHubConfig } from './config.ts';

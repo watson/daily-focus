@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { Board, normalizeStoredPull, readPullsFile, type BoardDeps } from '../src/board.ts';
-import { GhAuthError, GhMissingError, GitHubRequestError, type AccountFetch } from '../src/github.ts';
+import { Board, BoardRefusal, normalizeStoredPull, readPullsFile, type BoardDeps } from '../src/board.ts';
+import { GhAuthError, GhMissingError, GitHubRefusedError, GitHubRequestError, type AccountFetch } from '../src/github.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 import type { PullRequest } from '../src/types.ts';
 
@@ -50,6 +50,13 @@ function pull(account: string, number: number): PullRequest {
   };
 }
 
+/** The board's writes, for a test that expects none: each one fails the test. */
+const NO_WRITES: Pick<BoardDeps, 'markReady' | 'merge' | 'enqueue'> = {
+  markReady: async () => assert.fail('nothing should be marked ready'),
+  merge: async () => assert.fail('nothing should be merged'),
+  enqueue: async () => assert.fail('nothing should be queued'),
+};
+
 /** Fake gh and GitHub. Each fetch is keyed by the token it was handed. */
 function fakeDeps(opts: {
   accounts?: { login: string; active: boolean }[];
@@ -58,6 +65,7 @@ function fakeDeps(opts: {
 }): BoardDeps & { calls: string[] } {
   const calls: string[] = [];
   return {
+    ...NO_WRITES,
     calls,
     async listAccounts() {
       calls.push('list');
@@ -309,6 +317,7 @@ test('a missing gh is reported as the reason', async () => {
     fetch: async () => {
       throw new Error('unreachable');
     },
+    ...NO_WRITES,
   };
   const board = new Board(cfg, () => {}, deps);
   await board.start();
@@ -583,4 +592,203 @@ test('with one account, an org it cannot find is a warning straight away', async
   const board = new Board(cfg, () => {}, deps);
   await board.start();
   assert.match(board.view([], new Date()).warnings[0] ?? '', /^Can't find an organisation or user called acme-typo/);
+});
+
+/* ---------- marking ready and merging, from a click ---------- */
+
+const HEAD = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432';
+
+/** One of alice's pull requests in acme/payments-api, as a fresh poll reads it: approved, green and clean. */
+function payments(number: number, overrides: Partial<PullRequest> = {}): PullRequest {
+  return {
+    ...pull('alice', number),
+    id: `github:pr:acme/payments-api#${number}`,
+    repo: 'acme/payments-api',
+    url: `https://github.com/acme/payments-api/pull/${number}`,
+    reviewDecision: 'APPROVED',
+    checks: 'success',
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+    headSha: HEAD,
+    nodeId: `PR_kwDOAcme${number}`,
+    defaultBranch: 'main',
+    mergeMethod: 'SQUASH',
+    mergeQueue: false,
+    inMergeQueue: false,
+    stacked: false,
+    ...overrides,
+  };
+}
+
+/**
+ * A board that polls alice as `t-alice` and hands back `pulls()` each time, with
+ * the writes recorded in `calls` and answered by `refuse` when it says so.
+ */
+async function writableBoard(pulls: () => PullRequest[], refuse: string | null = null) {
+  const cfg = await config({ DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice' });
+  const deps = fakeDeps({ tokens: { alice: 't-alice' }, fetches: { 't-alice': async () => ok('alice', pulls())() } });
+  const answer = async (call: string): Promise<void> => {
+    deps.calls.push(call);
+    if (refuse) throw new GitHubRefusedError(refuse);
+  };
+  deps.markReady = (token, nodeId) => answer(`ready:${token}:${nodeId}`);
+  deps.merge = (token, nodeId, method, headSha) => answer(`merge:${token}:${nodeId}:${method}:${headSha}`);
+  deps.enqueue = (token, nodeId, headSha) => answer(`enqueue:${token}:${nodeId}:${headSha}`);
+  const board = new Board(cfg, () => {}, deps);
+  await board.start();
+  deps.calls.length = 0;
+  return { board, calls: deps.calls };
+}
+
+/** What a refused click rejects with: who refused, and in what words. */
+async function refusal(action: Promise<unknown>): Promise<{ status: number; message: string }> {
+  const err = await action.then(
+    () => assert.fail('expected the board to refuse'),
+    (error: unknown) => error,
+  );
+  assert.ok(err instanceof BoardRefusal, `expected a BoardRefusal, got ${String(err)}`);
+  return { status: err.status, message: err.message };
+}
+
+test('the rows say what a click may do: ready on a draft, merge or queue on one that is ready', async () => {
+  const { board } = await writableBoard(() => [
+    payments(410, { isDraft: true }),
+    payments(411),
+    payments(412, { mergeQueue: true }),
+    payments(413, { mergeQueue: true, inMergeQueue: true }),
+    payments(414, { baseRef: 'alice/refactor-ledger' }),
+    payments(415, { stacked: true }),
+    payments(416, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' }),
+    // Read back from a cache older than the facts the writes need.
+    payments(417, { nodeId: undefined, defaultBranch: undefined, mergeMethod: undefined }),
+    payments(418, { isDraft: true, nodeId: undefined }),
+  ]);
+  const offers = Object.fromEntries(board.view([], new Date()).rows.map((row) => [row.number, row.offers]));
+  assert.deepEqual(offers, {
+    410: ['ready'],
+    411: ['merge'],
+    412: ['queue'],
+    413: [],
+    414: [],
+    415: [],
+    416: [],
+    417: [],
+    418: [],
+  });
+});
+
+test('ready marks the draft ready as the account that read it, then reads the board back', async () => {
+  let isDraft = true;
+  const { board, calls } = await writableBoard(() => [payments(412, { isDraft })]);
+  isDraft = false;
+  await board.markReady('github:pr:acme/payments-api#412', []);
+
+  assert.deepEqual(calls, ['token:alice', 'ready:t-alice:PR_kwDOAcme412', 'token:alice', 'fetch:t-alice']);
+  assert.equal(board.view([], new Date()).rows[0]?.court, 'ready', 'the row on screen is the one GitHub sent back');
+});
+
+test('ready is refused, before GitHub hears of it, for a row that is not a draft or not on the board', async () => {
+  const { board, calls } = await writableBoard(() => [payments(411), payments(410, { isDraft: true })]);
+
+  assert.deepEqual(await refusal(board.markReady('github:pr:acme/payments-api#411', [])), {
+    status: 409,
+    message: 'acme/payments-api#411: it is not a draft',
+  });
+  assert.deepEqual(await refusal(board.markReady('github:pr:acme/payments-api#999', [])), {
+    status: 404,
+    message: 'that pull request is not on the board',
+  });
+  assert.deepEqual(await refusal(board.markReady('github:pr:acme/other#410', [])), {
+    status: 404,
+    message: 'that pull request is not on the board',
+  });
+  assert.deepEqual(calls, [], 'no token borrowed, nothing sent');
+});
+
+test("merge uses the repository's method and the head the board read, and reads the board back", async () => {
+  let open = true;
+  const { board, calls } = await writableBoard(() => (open ? [payments(412, { mergeMethod: 'REBASE' })] : []));
+  open = false;
+  assert.equal(await board.merge('github:pr:acme/payments-api#412', [], HEAD), 'merge');
+
+  assert.deepEqual(calls, ['token:alice', `merge:t-alice:PR_kwDOAcme412:REBASE:${HEAD}`, 'token:alice', 'fetch:t-alice']);
+  assert.deepEqual(board.view([], new Date()).rows, [], 'merged, it is gone from the board');
+});
+
+test('a branch with a merge queue gets the pull request queued, not merged', async () => {
+  const { board, calls } = await writableBoard(() => [payments(412, { mergeQueue: true })]);
+  assert.equal(await board.merge('github:pr:acme/payments-api#412', [], HEAD), 'queue');
+  assert.deepEqual(calls, ['token:alice', `enqueue:t-alice:PR_kwDOAcme412:${HEAD}`, 'token:alice', 'fetch:t-alice']);
+});
+
+test('merge is refused for another base branch, a stack member, or a row no longer ready', async () => {
+  const { board, calls } = await writableBoard(() => [
+    payments(414, { baseRef: 'alice/refactor-ledger' }),
+    payments(415, { stacked: true }),
+    payments(416, { checks: 'failure', failingChecks: ['unit-tests'], mergeStateStatus: 'UNSTABLE' }),
+    payments(417, { isDraft: true }),
+    payments(418, { mergeQueue: true, inMergeQueue: true }),
+    payments(419, { mergeStateStatus: null }),
+  ]);
+  const merge = (number: number) => refusal(board.merge(`github:pr:acme/payments-api#${number}`, [], HEAD));
+
+  assert.deepEqual(await merge(414), { status: 409, message: 'acme/payments-api#414: it targets alice/refactor-ledger, not main' });
+  assert.deepEqual(await merge(415), { status: 409, message: 'acme/payments-api#415: it is part of a stack on GitHub, which merges there' });
+  assert.deepEqual(await merge(416), { status: 409, message: 'acme/payments-api#416: it is not ready to merge' });
+  assert.deepEqual(await merge(417), { status: 409, message: 'acme/payments-api#417: it is not ready to merge' });
+  assert.deepEqual(await merge(418), { status: 409, message: 'acme/payments-api#418: it is in the merge queue already' });
+  // Ready on the board by the fallback for an unread merge state, which is not GitHub saying yes.
+  assert.deepEqual(await merge(419), { status: 409, message: "acme/payments-api#419: GitHub hasn't said the merge would work" });
+  assert.deepEqual(calls, [], 'GitHub never heard of any of them');
+});
+
+test('merge is refused when the head moved after the page showed it', async () => {
+  const { board, calls } = await writableBoard(() => [payments(412)]);
+  assert.deepEqual(await refusal(board.merge('github:pr:acme/payments-api#412', [], 'an-older-head')), {
+    status: 409,
+    message: 'acme/payments-api#412: it has new commits since you looked; check them and try again',
+  });
+  assert.deepEqual(calls, [], 'GitHub never heard of it');
+});
+
+test("GitHub's refusal comes back in its own words, and the board is read back anyway", async () => {
+  const { board, calls } = await writableBoard(() => [payments(412)], 'Head branch was modified. Review and try the merge again.');
+  await assert.rejects(board.merge('github:pr:acme/payments-api#412', [], HEAD), {
+    name: 'GitHubRefusedError',
+    message: 'Head branch was modified. Review and try the merge again.',
+  });
+  assert.deepEqual(calls, ['token:alice', `merge:t-alice:PR_kwDOAcme412:SQUASH:${HEAD}`, 'token:alice', 'fetch:t-alice']);
+});
+
+test('a second click while the first is on its way is refused, and a switched-off board refuses everything', async () => {
+  const { board, calls } = await writableBoard(() => [payments(412)]);
+  const first = board.merge('github:pr:acme/payments-api#412', [], HEAD);
+  assert.deepEqual(await refusal(board.merge('github:pr:acme/payments-api#412', [], HEAD)), {
+    status: 409,
+    message: 'acme/payments-api#412: already on its way to GitHub',
+  });
+  await first;
+  assert.equal(calls.filter((call) => call.startsWith('merge:')).length, 1);
+
+  const off = new Board(await config({ DAILY_FOCUS_GITHUB: 'off' }), () => {}, fakeDeps({}));
+  assert.equal((await refusal(off.markReady('github:pr:acme/payments-api#412', []))).status, 409);
+});
+
+test('the facts the writes need survive a restart, and an older file reads as not having them', () => {
+  const kept = normalizeStoredPull(payments(412, { mergeQueue: true, stacked: true }));
+  assert.ok(kept);
+  assert.equal(kept.nodeId, 'PR_kwDOAcme412');
+  assert.equal(kept.defaultBranch, 'main');
+  assert.equal(kept.mergeMethod, 'SQUASH');
+  assert.equal(kept.mergeQueue, true);
+  assert.equal(kept.stacked, true);
+
+  const { nodeId, defaultBranch, mergeMethod, mergeQueue, inMergeQueue, stacked, ...older } = payments(412);
+  const old = normalizeStoredPull({ ...older, mergeMethod: 'FAST_FORWARD' });
+  assert.ok(old);
+  assert.deepEqual(
+    [old.nodeId, old.defaultBranch, old.mergeMethod, old.mergeQueue, old.inMergeQueue, old.stacked],
+    [null, null, null, false, false, false],
+  );
+  void [nodeId, defaultBranch, mergeMethod, mergeQueue, inMergeQueue, stacked];
 });

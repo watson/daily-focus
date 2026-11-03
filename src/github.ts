@@ -8,6 +8,7 @@ import type {
   CheckState,
   LinkedPull,
   LinkedPullState,
+  MergeMethod,
   MergeStateStatus,
   MergeableState,
   PendingCheck,
@@ -325,11 +326,15 @@ query($q: String!, $first: Int!, $after: String) {
         isDraft
         createdAt
         updatedAt
+        state
         headRefName
         baseRefName
-        repository { nameWithOwner }
+        repository { nameWithOwner defaultBranchRef { name } viewerDefaultMergeMethod }
         reviewDecision
         mergeable
+        isMergeQueueEnabled
+        isInMergeQueue
+        stackEntry { id }
         autoMergeRequest { enabledAt }
         commits(last: 1) { nodes { commit { oid committedDate } } }
         readyEvents: timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
@@ -449,20 +454,25 @@ export function mergeStatesFromNodes(nodes: readonly (RawMergeState | null | und
 
 /** Loosely typed: the shape of one `search.nodes` entry, as far as the board reads it. */
 export interface RawPullRequest {
-  /** The GraphQL node id, used only to join the merge-state request. Never stored. */
+  /** The GraphQL node id: the join key for the merge state and the checks, and what the board's writes name. */
   id?: string;
   number?: number;
   title?: string;
   url?: string;
   isDraft?: boolean;
+  /** `OPEN`, `CLOSED` or `MERGED`. */
+  state?: string;
   createdAt?: string;
   updatedAt?: string;
   headRefName?: string;
   baseRefName?: string;
-  repository?: { nameWithOwner?: string };
+  repository?: { nameWithOwner?: string; defaultBranchRef?: { name?: string } | null; viewerDefaultMergeMethod?: string | null };
   reviewDecision?: string | null;
   mergeable?: string | null;
   mergeStateStatus?: string | null;
+  isMergeQueueEnabled?: boolean;
+  isInMergeQueue?: boolean;
+  stackEntry?: { id?: string } | null;
   autoMergeRequest?: { enabledAt?: string } | null;
   commits?: { nodes?: { commit?: { oid?: string; committedDate?: string; statusCheckRollup?: RawRollup | null } }[] };
   readyEvents?: { nodes?: ({ createdAt?: string } | null)[] };
@@ -799,6 +809,11 @@ function toDecision(state: string | null | undefined): ReviewDecision {
   return state === 'APPROVED' || state === 'CHANGES_REQUESTED' || state === 'REVIEW_REQUIRED' ? state : null;
 }
 
+/** A merge method GitHub named, or null for anything else: a method nobody can name is not one to merge with. */
+export function toMergeMethod(method: unknown): MergeMethod | null {
+  return method === 'MERGE' || method === 'SQUASH' || method === 'REBASE' ? method : null;
+}
+
 /**
  * Reduce one search node to the facts the board keeps. Returns null for anything
  * that isn't recognisably a pull request, so one odd node can't sink a page.
@@ -877,6 +892,12 @@ export function normalizePullRequest(raw: RawPullRequest, account: string): Pull
     reviews: [...latestReview.values()].filter((review) => review.state !== 'DISMISSED'),
     lastActivityByYou: lastByYou,
     lastActivityByOthers: lastByOthers,
+    nodeId: typeof raw.id === 'string' && raw.id !== '' ? raw.id : null,
+    defaultBranch: typeof raw.repository?.defaultBranchRef?.name === 'string' ? raw.repository.defaultBranchRef.name : null,
+    mergeMethod: toMergeMethod(raw.repository?.viewerDefaultMergeMethod),
+    mergeQueue: raw.isMergeQueueEnabled === true,
+    inMergeQueue: raw.isInMergeQueue === true,
+    stacked: Boolean(raw.stackEntry),
   };
 }
 
@@ -1122,12 +1143,17 @@ export async function fetchPulls(
       warnings.push(`${login}: some results were withheld by an organisation's single sign-on policy.`);
     }
 
-    // Keyed by node id only for as long as it takes to ask for the merge states;
-    // the id is GitHub's handle for the pull request, not a fact about it, and it
-    // is deliberately not among the facts that reach `prs.json`.
+    // Keyed by node id for as long as it takes to ask for the merge states and
+    // the checks. The id is kept on the pull request as well, since it is what
+    // marking one ready or merging it from the board names it by.
     const found = new Map<string, PullRequest>();
     for (const node of result.data?.search?.nodes ?? []) {
       if (!node) continue;
+      // The search runs on an index that lags behind a merge by seconds, and the
+      // board reads itself back straight after merging one. The node's own state
+      // is live, so a pull request the index still calls open is left out once
+      // GitHub says it is merged or closed.
+      if (typeof node.state === 'string' && node.state !== 'OPEN') continue;
       const pull = normalizePullRequest(node, login);
       if (!pull) continue;
       // The node id is now the join key for the checks as well as the merge state,
@@ -1242,6 +1268,130 @@ export async function fetchPulls(
   }
 
   return { login, pulls, warnings, orgs, rateLimitRemaining };
+}
+
+/* ---------- the board's writes ---------- */
+
+/*
+ * What a click on a board row may change on GitHub: mark a draft ready for
+ * review, merge a pull request, or add it to its branch's merge queue. Each runs
+ * only from a click, on a row the board is showing, as the account that read it;
+ * `board.ts` decides which rows and `prs.ts` which actions. Nothing here runs on
+ * its own, and nothing else in this file writes.
+ */
+
+/** One GraphQL request: the document and its variables. */
+export interface GraphQLRequest {
+  query: string;
+  variables: Record<string, unknown>;
+}
+
+const READY_MUTATION = `
+mutation($id: ID!) {
+  markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { id isDraft } }
+}`;
+
+/**
+ * Merging is made conditional on the head commit the board last read, so a push
+ * since that poll makes GitHub refuse rather than merge commits nobody here has
+ * seen.
+ */
+const MERGE_MUTATION = `
+mutation($id: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+  mergePullRequest(input: { pullRequestId: $id, mergeMethod: $method, expectedHeadOid: $head }) { pullRequest { id merged } }
+}`;
+
+/** The same condition on the head commit, for a branch that merges through the queue. */
+const ENQUEUE_MUTATION = `
+mutation($id: ID!, $head: GitObjectID!) {
+  enqueuePullRequest(input: { pullRequestId: $id, expectedHeadOid: $head }) { mergeQueueEntry { id } }
+}`;
+
+export function readyRequest(nodeId: string): GraphQLRequest {
+  return { query: READY_MUTATION, variables: { id: nodeId } };
+}
+
+export function mergeRequest(nodeId: string, method: MergeMethod, headSha: string): GraphQLRequest {
+  return { query: MERGE_MUTATION, variables: { id: nodeId, method, head: headSha } };
+}
+
+export function enqueueRequest(nodeId: string, headSha: string): GraphQLRequest {
+  return { query: ENQUEUE_MUTATION, variables: { id: nodeId, head: headSha } };
+}
+
+/** GitHub answered, and said no. The message is GitHub's own, for the page to show as it is. */
+export class GitHubRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GitHubRefusedError';
+  }
+}
+
+/** GitHub's reasons, in its own words, when it gave any. */
+function refuse(errors: readonly GraphQLError[]): void {
+  const said = errors.map((error) => error.message.trim()).filter(Boolean);
+  if (errors.length > 0) throw new GitHubRefusedError(said.length > 0 ? said.join('; ') : 'GitHub refused without saying why');
+}
+
+export interface ReadyReply {
+  markPullRequestReadyForReview?: { pullRequest?: { id?: string; isDraft?: boolean } | null } | null;
+}
+
+export interface MergeReply {
+  mergePullRequest?: { pullRequest?: { id?: string; merged?: boolean } | null } | null;
+}
+
+export interface EnqueueReply {
+  enqueuePullRequest?: { mergeQueueEntry?: { id?: string } | null } | null;
+}
+
+/**
+ * Whether GitHub did it, from its reply. Each throws unless the reply says so:
+ * an answer that names no error but doesn't confirm the change either is not
+ * one to report as done.
+ */
+export function readReadyReply(result: Pick<GraphQLResult<ReadyReply>, 'data' | 'errors'>): void {
+  refuse(result.errors);
+  const pull = result.data?.markPullRequestReadyForReview?.pullRequest;
+  if (!pull || pull.isDraft !== false) throw new GitHubRefusedError("GitHub didn't say the pull request is ready for review");
+}
+
+export function readMergeReply(result: Pick<GraphQLResult<MergeReply>, 'data' | 'errors'>): void {
+  refuse(result.errors);
+  if (result.data?.mergePullRequest?.pullRequest?.merged !== true) {
+    throw new GitHubRefusedError("GitHub didn't say the pull request merged");
+  }
+}
+
+export function readEnqueueReply(result: Pick<GraphQLResult<EnqueueReply>, 'data' | 'errors'>): void {
+  refuse(result.errors);
+  if (!result.data?.enqueuePullRequest?.mergeQueueEntry) {
+    throw new GitHubRefusedError("GitHub didn't say the pull request joined the merge queue");
+  }
+}
+
+/**
+ * Mark a draft ready for review. Rejects with GitHub's reason when it refuses.
+ *
+ * No abort signal, here or in the two below: a write cut off half way has
+ * happened or not, and nobody would know which. The request's own timeout
+ * bounds it.
+ */
+export async function markReadyForReview(token: string, nodeId: string): Promise<void> {
+  const { query, variables } = readyRequest(nodeId);
+  readReadyReply(await graphql<ReadyReply>(token, query, variables));
+}
+
+/** Merge a pull request with `method`, if its head is still `headSha`. Rejects with GitHub's reason when it refuses. */
+export async function mergePull(token: string, nodeId: string, method: MergeMethod, headSha: string): Promise<void> {
+  const { query, variables } = mergeRequest(nodeId, method, headSha);
+  readMergeReply(await graphql<MergeReply>(token, query, variables));
+}
+
+/** Add a pull request to its branch's merge queue, if its head is still `headSha`. Rejects with GitHub's reason when it refuses. */
+export async function enqueuePull(token: string, nodeId: string, headSha: string): Promise<void> {
+  const { query, variables } = enqueueRequest(nodeId, headSha);
+  readEnqueueReply(await graphql<EnqueueReply>(token, query, variables));
 }
 
 /* ---------- pull requests by ticket ---------- */
