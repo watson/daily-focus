@@ -36,15 +36,13 @@ export function BoardView({ state, ui, handlers }: { state: DashboardState; ui: 
   return renderBoard(state, ui, handlers);
 }
 
-export function renderBoard(state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element[] {
-  const board = state.board;
-
-  if (!board || !board.enabled) {
-    return [el('p', { class: 'empty' }, 'The pull request board is switched off (DAILY_FOCUS_GITHUB=off).')];
-  }
-
+/**
+ * What failed in the board's last read, over the rows it kept from the read
+ * before. Also shown in Projects, which offers the same writes from those rows.
+ */
+export function boardFailures(board: BoardState, now: Date, ui: UiState, handlers: Handlers): JSX.Element[] {
   const parts: JSX.Element[] = [];
-  const retry = { icon: '!', lastGood: board.fetchedAt, now: new Date(state.now), onRetry: () => handlers.refreshBoard() };
+  const retry = { icon: '!', lastGood: board.fetchedAt, now, onRetry: () => handlers.refreshBoard() };
   if (board.reason) {
     parts.push(failureNotice(board.reason, { ...retry, fold: 'failure:board', className: 'banner banner--critical' }, ui, handlers));
   }
@@ -52,6 +50,17 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
   (board.failures ?? []).forEach((failure, i) => {
     parts.push(failureNotice(failure, { ...retry, fold: `failure:board:${i}`, className: 'banner banner--warning' }, ui, handlers));
   });
+  return parts;
+}
+
+export function renderBoard(state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element[] {
+  const board = state.board;
+
+  if (!board || !board.enabled) {
+    return [el('p', { class: 'empty' }, 'The pull request board is switched off (DAILY_FOCUS_GITHUB=off).')];
+  }
+
+  const parts: JSX.Element[] = boardFailures(board, new Date(state.now), ui, handlers);
   for (const warning of board.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
   // Under what failed, when connecting is what fixes it: fetching gh, or signing
   // it in, which the gh Daily Focus fetched has no terminal for. Absent from an older server.

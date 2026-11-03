@@ -529,7 +529,9 @@ export function nextSteps(project: ProjectWork, now: Date, only: (work: TicketWo
 
     for (const pull of work.pulls) {
       const row = pull.row;
-      if (pull.stage === 'ready') {
+      // A ticket whose links could not be read may wait for something unseen, so
+      // it is never offered to merge; its card says why.
+      if (pull.stage === 'ready' && work.ticket.linksRead) {
         const base = pull.stackedOn;
         if (waits.length === 0 && !base) {
           merge.push({ key, step: { kind: 'merge', key, title: `Merge ${pullRef(pull)}`, reason: line(key, unblocks(key) || summary), url: pull.url, on: 'github', pull: row } });

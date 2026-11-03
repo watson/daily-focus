@@ -263,6 +263,13 @@ test('a ticket waiting on one outside the project is not started, merged or mark
   assert.deepEqual(steps, []);
 });
 
+test('a ticket whose links could not be read is never offered to merge', () => {
+  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)] }, [PULLS.ready]);
+  const steps = nextSteps(projectWork(planned([ticket('PAY-1', { linksRead: false })]), sources), NOW);
+  assert.ok(!steps.some((step) => step.kind.startsWith('merge')));
+  assert.ok(nextSteps(projectWork(planned([ticket('PAY-1')]), sources), NOW).some((step) => step.kind === 'merge'), 'it is, once they are read');
+});
+
 test('tickets in a loop are never offered to merge', () => {
   const tickets = [ticket('PAY-1', { blockedBy: ['PAY-2'] }), ticket('PAY-2', { blockedBy: ['PAY-1'] })];
   const other = pull({ id: 'github:pr:acme/payments-api#502', number: 502, url: 'https://github.com/acme/payments-api/pull/502', headRef: 'pay-2' });

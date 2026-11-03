@@ -311,6 +311,20 @@ test('a write on its way disables its buttons, here as on the board', () => {
   assert.equal(merge.disabled, true);
 });
 
+test('a failed read of the pull request board is shown here too, over the rows it kept', () => {
+  let retried = 0;
+  const board = { reason: failure('GitHub is having a day'), failures: [failure('could not read acme/payments-api')], fetchedAt: hoursAgo(2) };
+  const state = stateWith(projectsState({ open: opened() }), { board });
+  const ui = uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' });
+  const node = mount(h('div', null, renderTicketBoard(state, ui, handlersWith({ refreshBoard: () => retried++ }))));
+  const critical = byClass(node, 'banner--critical')[0]!;
+  assert.match(text(critical), /GitHub is having a day/);
+  assert.match(text(byClass(node, 'banner--warning')[0]), /could not read acme\/payments-api/);
+  (byTag(critical, 'button')[0] as HTMLButtonElement).click();
+  assert.equal(retried, 1);
+  assert.ok(labels(byClass(node, 'project-next')[0]!).includes('Merge'), 'the rows kept still offer what they did');
+});
+
 /* ---------- the merge order ---------- */
 
 const cards = (node: HTMLElement) => byClass(byClass(node, 'merge-order')[0]!, 'merge-order__row');

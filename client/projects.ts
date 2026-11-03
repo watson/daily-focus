@@ -19,7 +19,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import type { BoardRow, DashboardState, ProjectSummary, ProjectsState } from '../src/types.ts';
 import { banner } from './banners.ts';
-import { renderPullWrites, type PullWrite } from './board.ts';
+import { boardFailures, renderPullWrites, type PullWrite } from './board.ts';
 import { el, type Props } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatTime } from './format.ts';
@@ -212,6 +212,8 @@ function noProjectLine(projects: ProjectsState): string {
 function readView(read: PlannedRead, state: DashboardState, ui: UiState, handlers: Handlers, now: Date): ComponentChild[] {
   const project = projectWork(read, pullSources(state));
   const parts: ComponentChild[] = [];
+  // Where each pull request stands, and what it offers, is the board's last good read.
+  if (state.board?.enabled) parts.push(...boardFailures(state.board, now, ui, handlers));
   for (const warning of read.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
   for (const loop of read.plan.loops ?? []) parts.push(loopBanner(loop, read));
 
