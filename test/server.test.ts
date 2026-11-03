@@ -157,7 +157,7 @@ test('GET /favicon.svg serves the profile icon', async () => {
 
 test('a form on another site cannot post here, even with a body that parses as JSON', async () => {
   // A text/plain form can be shaped to send exactly this, with no preflight.
-  for (const path of ['/api/actions', '/api/tickets/transition', '/api/projects/open', '/api/assistant/ask', '/api/agent/ask', '/api/agent/run']) {
+  for (const path of ['/api/actions', '/api/tickets/transition', '/api/board/ready', '/api/board/merge', '/api/projects/open', '/api/assistant/ask', '/api/agent/ask', '/api/agent/run']) {
     const res = await fetch(`${server.url}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'text/plain', origin: 'https://evil.example' },

@@ -270,6 +270,10 @@ function gitHub(now: Date): BoardDeps {
     listAccounts: async () => [{ login: 'me', active: true }],
     token: async () => 'token',
     fetch: async () => ({ login: 'me', pulls, warnings: [], orgs: {}, rateLimitRemaining: null }),
+    // Asking ahead never changes anything on GitHub.
+    markReady: async () => assert.fail('nothing should be marked ready'),
+    merge: async () => assert.fail('nothing should be merged'),
+    enqueue: async () => assert.fail('nothing should be queued'),
   };
 }
 

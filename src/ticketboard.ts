@@ -188,8 +188,9 @@ export class TicketBoard {
   /**
    * Move one ticket to a status, then read the board back.
    *
-   * The only thing in this process that changes anything outside it, and it runs
-   * only from a click. It deliberately does *not* touch `#file` itself: the row
+   * One of the few things in this process that change anything outside it,
+   * with the pull request board's ready and merge, and like them it runs only
+   * from a click. It deliberately does *not* touch `#file` itself: the row
    * on screen has to come from Jira having actually accepted the move, so the
    * refresh is the confirmation. A refresh already in flight is joined rather
    * than doubled, which is why this awaits `refresh` rather than `#read`.

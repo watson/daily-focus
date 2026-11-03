@@ -10,7 +10,7 @@ import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.t
 import { dataRoot, launchProfile, layerSettings, oldDotenvWarning, settingSources, tilde, type SettingSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
 import { Store } from './store.ts';
-import { Board, type BoardDeps } from './board.ts';
+import { Board, BoardRefusal, type BoardDeps } from './board.ts';
 import { CalendarBoard, helperDeps, type CalendarDeps } from './calendarboard.ts';
 import { runHelper } from './calendar.ts';
 import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.ts';
@@ -866,6 +866,41 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
+    if ((path === '/api/board/ready' || path === '/api/board/merge') && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      // A row of the board's, by its id, and nothing else: no URL, owner, repo or
+      // number from the page. The board looks the row up among the ones it is
+      // showing and acts on that, so this can only ever touch a pull request the
+      // dashboard put on screen, and only in the way that row offers.
+      const { id, head } = body;
+      if (typeof id !== 'string' || !id.startsWith('github:pr:')) {
+        sendJSON(res, 400, { error: '"id" must be a pull request row\'s id, e.g. github:pr:acme/payments-api#412' });
+        return;
+      }
+      // The head commit the page showed when the user said yes. Not what to
+      // merge, which is still the board's row; only what the row must still be.
+      if (path === '/api/board/merge' && (typeof head !== 'string' || head === '')) {
+        sendJSON(res, 400, { error: '"head" must be the head commit the page showed' });
+        return;
+      }
+      try {
+        const actions = await store.readActions();
+        if (path === '/api/board/ready') await board.markReady(id, actions);
+        else await board.merge(id, actions, head as string);
+      } catch (err) {
+        // GitHub's own words, and a 409, as for a transition: the request was
+        // well-formed and GitHub refused it, which is the expected outcome for
+        // a merge whose head moved since the row was read.
+        sendJSON(res, err instanceof BoardRefusal ? err.status : 409, { error: (err as Error).message });
+        return;
+      }
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
     if ((path === '/api/connect' || path === '/api/connect/cancel' || path === '/api/connect/choose') && req.method === 'POST') {
       const body = await readJsonObject(req, res);
       if (!body) return;
@@ -1035,11 +1070,12 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       }
 
       const { key, status } = body as Record<string, unknown>;
-      // The only endpoint here that changes anything outside this machine, so it
-      // is the strictest about what it accepts. The key is matched against Jira's
-      // own `<PROJECT>-<number>` shape rather than merely being non-empty: `acli`
-      // would take a JQL query in this position just as happily, and a bulk
-      // transition is not something this dashboard should be able to express.
+      // One of the few endpoints here that change anything outside this machine,
+      // with the board's ready and merge, so it is the strictest about what it
+      // accepts. The key is matched against Jira's own `<PROJECT>-<number>` shape
+      // rather than merely being non-empty: `acli` would take a JQL query in this
+      // position just as happily, and a bulk transition is not something this
+      // dashboard should be able to express.
       if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(key.trim())) {
         sendJSON(res, 400, { error: '"key" must be a single Jira work item key, e.g. PROJ-8842' });
         return;

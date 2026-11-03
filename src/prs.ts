@@ -1,4 +1,4 @@
-import type { Action, BoardRow, Court, CourtReason, PendingCheck, PullRequest, ReviewDecision } from './types.ts';
+import type { Action, BoardRow, Court, CourtReason, PendingCheck, PullOffer, PullRequest, ReviewDecision } from './types.ts';
 import { canonicalId } from './ids.ts';
 import { foldActionLog } from './store.ts';
 import { laterISO, parseISO } from './time.ts';
@@ -275,6 +275,7 @@ export function resolveBoard(
 
     const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes: log?.notes ?? [] };
     if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;
+    row.offers = pullOffers(row);
     return row;
   });
 
@@ -284,6 +285,77 @@ export function resolveBoard(
     if (a.since !== b.since) return a.since < b.since ? -1 : 1;
     return a.id < b.id ? -1 : 1;
   });
+}
+
+/* ---------- what a click may do upstream ---------- */
+
+/** The facts the offers are read from: a row, or anything shaped like one. */
+type OfferFacts = Pick<
+  BoardRow,
+  | 'court'
+  | 'account'
+  | 'baseRef'
+  | 'headSha'
+  | 'nodeId'
+  | 'defaultBranch'
+  | 'mergeMethod'
+  | 'mergeQueue'
+  | 'inMergeQueue'
+  | 'stacked'
+  | 'mergeStateStatus'
+>;
+
+/** Said when a row comes from a cache older than the facts an action needs: the next poll reads them. */
+const UNREAD = "the board hasn't read what that needs from GitHub yet; refresh the board and try again";
+
+/**
+ * Why the board won't mark this pull request ready for review: null when it will.
+ *
+ * Only a draft, and only as the account that read it, which is the one the
+ * mutation runs as. The same reading decides the button and the server's answer
+ * to a click, so neither can offer what the other refuses.
+ */
+export function refuseReady(row: OfferFacts): string | null {
+  if (row.court !== 'draft') return 'it is not a draft';
+  if (!row.nodeId || !row.account) return UNREAD;
+  return null;
+}
+
+/**
+ * Why the board won't merge this pull request: null when it will.
+ *
+ * Only one in the ready court, so GitHub has said the merge would work, and only
+ * into its repository's default branch: a pull request stacked on another's
+ * branch would merge into that branch, not land. A member of a GitHub stack
+ * merges through the stack's own API, which this doesn't speak; GitHub's page
+ * does. The head commit is needed too, since the merge is made conditional on it:
+ * a push since the last poll makes GitHub refuse rather than merge commits nobody
+ * here has seen.
+ */
+export function refuseMerge(row: OfferFacts): string | null {
+  if (row.court !== 'ready') return 'it is not ready to merge';
+  // The ready court also holds an approved, quiet pull request whose merge
+  // state couldn't be read, so the court alone is not GitHub saying yes.
+  if (row.mergeStateStatus !== 'CLEAN' && row.mergeStateStatus !== 'HAS_HOOKS') return "GitHub hasn't said the merge would work";
+  if (!row.nodeId || !row.account || !row.headSha || !row.defaultBranch) return UNREAD;
+  if (row.stacked) return 'it is part of a stack on GitHub, which merges there';
+  if (row.baseRef !== row.defaultBranch) return `it targets ${row.baseRef}, not ${row.defaultBranch}`;
+  if (row.mergeQueue) return row.inMergeQueue ? 'it is in the merge queue already' : null;
+  if (!row.mergeMethod) return UNREAD;
+  return null;
+}
+
+/** How a merge the board offers would go: straight in, or into the merge queue. */
+export function mergeRoute(row: OfferFacts): 'merge' | 'queue' {
+  return row.mergeQueue ? 'queue' : 'merge';
+}
+
+/** What a click on the row may do to the pull request upstream. */
+export function pullOffers(row: OfferFacts): PullOffer[] {
+  const offers: PullOffer[] = [];
+  if (refuseReady(row) === null) offers.push('ready');
+  if (refuseMerge(row) === null) offers.push(mergeRoute(row));
+  return offers;
 }
 
 /** How many rows sit in each court, plus the snoozed ones, for the badge and the headers. */

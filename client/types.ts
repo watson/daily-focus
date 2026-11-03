@@ -206,6 +206,10 @@ export interface Handlers {
   jumpToTicket(id: string): void;
   nudge(id: string): void;
   unsnooze(id: string): void;
+  /** Mark a draft pull request ready for review on GitHub. */
+  markReady(id: string): void;
+  /** Merge a pull request, or add it to its merge queue, once the user has said yes. */
+  mergePull(id: string): void;
   refreshBoard(): void;
   refreshTickets(): void;
   refreshCalendar(): void;

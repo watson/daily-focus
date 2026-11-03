@@ -5,14 +5,25 @@ import { test } from 'node:test';
 
 import { errorDetail } from '../src/failure.ts';
 import {
+  GitHubRefusedError,
   GitHubRequestError,
   buildRemainingChecksQuery,
   buildSearchQuery,
+  enqueuePull,
+  enqueueRequest,
+  fetchPulls,
   graphql,
   isBot,
   isSamlError,
+  markReadyForReview,
+  mergePull,
+  mergeRequest,
   mergeStatesFromNodes,
   normalizePullRequest,
+  readEnqueueReply,
+  readMergeReply,
+  readReadyReply,
+  readyRequest,
   rollupTruncated,
   summarizeChecks,
   toMergeState,
@@ -721,4 +732,160 @@ test("an error page keeps its line short and the rest of the page, with GitHub's
   assert.ok(err.message.length < 230, 'the line quotes the start of the page, not all of it');
   assert.match(err.detail, /^x-github-request-id: ABCD:1234\n\n<!DOCTYPE html>/);
   assert.ok(err.detail.includes('</html>'));
+});
+
+/* ---------- the board's writes ---------- */
+
+test('a search node carries what marking it ready or merging it needs', () => {
+  const plain = normalizePullRequest(node({ id: 'PR_kwDOAcme412' }), 'alice');
+  assert.ok(plain);
+  assert.equal(plain.nodeId, 'PR_kwDOAcme412');
+  // Nothing said is nothing offered: an older selection, or a field GitHub held back.
+  assert.equal(plain.defaultBranch, null);
+  assert.equal(plain.mergeMethod, null);
+  assert.equal(plain.mergeQueue, false);
+  assert.equal(plain.inMergeQueue, false);
+  assert.equal(plain.stacked, false);
+
+  const full = normalizePullRequest(
+    node({
+      id: 'PR_kwDOAcme412',
+      repository: { nameWithOwner: 'acme/payments-api', defaultBranchRef: { name: 'main' }, viewerDefaultMergeMethod: 'SQUASH' },
+      isMergeQueueEnabled: true,
+      isInMergeQueue: true,
+      stackEntry: { id: 'PSE_kwDOAcme7' },
+    }),
+    'alice',
+  );
+  assert.ok(full);
+  assert.equal(full.defaultBranch, 'main');
+  assert.equal(full.mergeMethod, 'SQUASH');
+  assert.equal(full.mergeQueue, true);
+  assert.equal(full.inMergeQueue, true);
+  assert.equal(full.stacked, true);
+
+  // A method GitHub adds later is not one to merge with.
+  const odd = normalizePullRequest(node({ repository: { nameWithOwner: 'acme/payments-api', viewerDefaultMergeMethod: 'OCTOPUS' } }), 'alice');
+  assert.equal(odd?.mergeMethod, null);
+});
+
+test('the search asks for what the writes need, and for whether the pull request is still open', async () => {
+  const source = await readFile(resolve(import.meta.dirname, '../src/github.ts'), 'utf8');
+  const search = /const SEARCH_QUERY = `([^`]+)`/.exec(source);
+  assert.ok(search, 'SEARCH_QUERY is no longer declared where this test looks');
+  for (const field of ['defaultBranchRef { name }', 'viewerDefaultMergeMethod', 'isMergeQueueEnabled', 'isInMergeQueue', 'stackEntry { id }']) {
+    assert.ok(search[1]!.includes(field), `the search must ask for ${field}`);
+  }
+  assert.ok(/^\s+state$/m.test(search[1]!), 'the search must ask for the live state, which outruns the index after a merge');
+});
+
+test('each write names the pull request by node id, and merging pins the head commit', () => {
+  const ready = readyRequest('PR_kwDOAcme412');
+  assert.match(ready.query, /markPullRequestReadyForReview\(input: \{ pullRequestId: \$id \}\)/);
+  assert.deepEqual(ready.variables, { id: 'PR_kwDOAcme412' });
+
+  const merge = mergeRequest('PR_kwDOAcme412', 'SQUASH', '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432');
+  assert.match(merge.query, /mergePullRequest\(input: \{ pullRequestId: \$id, mergeMethod: \$method, expectedHeadOid: \$head \}\)/);
+  assert.match(merge.query, /\$head: GitObjectID!/, 'the head commit is required, never optional');
+  assert.deepEqual(merge.variables, { id: 'PR_kwDOAcme412', method: 'SQUASH', head: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432' });
+
+  const queue = enqueueRequest('PR_kwDOAcme412', '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432');
+  assert.match(queue.query, /enqueuePullRequest\(input: \{ pullRequestId: \$id, expectedHeadOid: \$head \}\)/);
+  assert.doesNotMatch(queue.query, /jump/, 'never to the front of the queue');
+  assert.deepEqual(queue.variables, { id: 'PR_kwDOAcme412', head: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432' });
+});
+
+test("a reply counts as done only when it says so, and a refusal is GitHub's own words", () => {
+  readReadyReply({ data: { markPullRequestReadyForReview: { pullRequest: { id: 'PR_kwDOAcme412', isDraft: false } } }, errors: [] });
+  readMergeReply({ data: { mergePullRequest: { pullRequest: { id: 'PR_kwDOAcme412', merged: true } } }, errors: [] });
+  readEnqueueReply({ data: { enqueuePullRequest: { mergeQueueEntry: { id: 'MQE_kwDOAcme9' } } }, errors: [] });
+
+  // As GitHub refuses a merge whose head moved since it was read.
+  assert.throws(
+    () =>
+      readMergeReply({
+        data: { mergePullRequest: null },
+        errors: [{ type: 'UNPROCESSABLE', path: ['mergePullRequest'], message: 'Head branch was modified. Review and try the merge again.' }],
+      }),
+    (err: unknown) => err instanceof GitHubRefusedError && err.message === 'Head branch was modified. Review and try the merge again.',
+  );
+  assert.throws(
+    () =>
+      readEnqueueReply({
+        data: { enqueuePullRequest: null },
+        errors: [{ message: 'Pull request is not mergeable' }, { message: 'Required status check "build" is expected.' }],
+      }),
+    /^GitHubRefusedError: Pull request is not mergeable; Required status check "build" is expected\.$/,
+  );
+  // Silence is not success.
+  assert.throws(() => readReadyReply({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: true } } }, errors: [] }), GitHubRefusedError);
+  assert.throws(() => readMergeReply({ data: { mergePullRequest: { pullRequest: { merged: false } } }, errors: [] }), GitHubRefusedError);
+  assert.throws(() => readEnqueueReply({ data: null, errors: [] }), GitHubRefusedError);
+});
+
+/** A GitHub stand-in that records each request and answers with the next reply. */
+function recording(replies: unknown[]): { stub: typeof fetch; requests: { auth: string | null; query: string; variables: Record<string, unknown> }[] } {
+  const requests: { auth: string | null; query: string; variables: Record<string, unknown> }[] = [];
+  const stub = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+    requests.push({ auth: new Headers(init?.headers).get('authorization'), ...body });
+    const reply = replies.shift();
+    assert.ok(reply, `nothing recorded for request ${requests.length}`);
+    return new Response(JSON.stringify(reply), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  return { stub, requests };
+}
+
+test('the writes go to GitHub as the token given, and reject with what GitHub said', async () => {
+  const head = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432';
+  const github = recording([
+    { data: { markPullRequestReadyForReview: { pullRequest: { id: 'PR_kwDOAcme412', isDraft: false } } } },
+    { data: { mergePullRequest: { pullRequest: { id: 'PR_kwDOAcme412', merged: true } } } },
+    { data: { enqueuePullRequest: { mergeQueueEntry: { id: 'MQE_kwDOAcme9' } } } },
+    {
+      data: { mergePullRequest: null },
+      errors: [{ type: 'UNPROCESSABLE', path: ['mergePullRequest'], message: 'Head branch was modified. Review and try the merge again.' }],
+    },
+  ]);
+  await withFetch(github.stub, async () => {
+    await markReadyForReview('token-alice', 'PR_kwDOAcme412');
+    await mergePull('token-alice', 'PR_kwDOAcme412', 'REBASE', head);
+    await enqueuePull('token-alice', 'PR_kwDOAcme412', head);
+    await assert.rejects(mergePull('token-alice', 'PR_kwDOAcme412', 'MERGE', head), {
+      name: 'GitHubRefusedError',
+      message: 'Head branch was modified. Review and try the merge again.',
+    });
+  });
+  assert.deepEqual(
+    github.requests.map((request) => request.auth),
+    ['Bearer token-alice', 'Bearer token-alice', 'Bearer token-alice', 'Bearer token-alice'],
+  );
+  assert.match(github.requests[0]!.query, /markPullRequestReadyForReview/);
+  assert.deepEqual(github.requests[1]!.variables, { id: 'PR_kwDOAcme412', method: 'REBASE', head });
+  assert.match(github.requests[2]!.query, /enqueuePullRequest/);
+});
+
+test('a pull request the search index still calls open is left out once GitHub says it merged', async () => {
+  const github = recording([
+    { data: { viewer: { login: 'alice' } } },
+    {
+      data: {
+        search: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [
+            node({ id: 'PR_kwDOAcme411', number: 411, state: 'OPEN' }),
+            node({ id: 'PR_kwDOAcme412', number: 412, state: 'MERGED' }),
+          ],
+        },
+      },
+    },
+    { data: { nodes: [{ id: 'PR_kwDOAcme411', mergeStateStatus: 'CLEAN' }] } },
+    { data: { nodes: [{ id: 'PR_kwDOAcme411', commits: { nodes: [{ commit: { oid: 'abc411', statusCheckRollup: null } }] } }] } },
+  ]);
+  const fetched = await withFetch(github.stub, () => fetchPulls('token-alice', [], 'alice'));
+  assert.deepEqual(
+    fetched.pulls.map((pull) => [pull.number, pull.nodeId, pull.headSha]),
+    [[411, 'PR_kwDOAcme411', 'abc411']],
+  );
+  assert.deepEqual(github.requests[2]!.variables, { ids: ['PR_kwDOAcme411'] }, 'nothing more is asked about the merged one');
 });

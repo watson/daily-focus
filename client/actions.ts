@@ -8,7 +8,17 @@
 
 import { batch } from '@preact/signals';
 
-import type { ActionType, BoardRow, CalendarProvider, DashboardState, ItemStatus, OnboardingAnswer, Service, TicketRow } from '../src/types.ts';
+import type {
+  ActionType,
+  BoardRow,
+  CalendarProvider,
+  DashboardState,
+  ItemStatus,
+  MergeMethod,
+  OnboardingAnswer,
+  Service,
+  TicketRow,
+} from '../src/types.ts';
 import * as api from './api.ts';
 import {
   AGENT_RUN_SEEN_KEY,
@@ -361,6 +371,75 @@ async function moveTicket(key: string, status: string, from: string | null): Pro
   } finally {
     removePending(id);
   }
+}
+
+/* ---------- changing a pull request on GitHub ---------- */
+
+/** GitHub's own names for its merge buttons. */
+const MERGE_VERB: Record<MergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
+
+/** What Merge asks before it does anything: which pull request, into which branch, and how. */
+export function mergeQuestion(row: BoardRow): string {
+  const ref = `${row.repo} #${row.number}`;
+  if (row.offers?.includes('queue')) return `Add ${ref} to the merge queue for ${row.baseRef}?`;
+  return `${MERGE_VERB[row.mergeMethod ?? 'MERGE']} ${ref} into ${row.baseRef}?`;
+}
+
+/**
+ * Change a pull request on GitHub from its row.
+ *
+ * Not optimistic, for the reason `moveTicket` gives: the row moves once GitHub
+ * has accepted the change and the server has read the board back. The row is
+ * pending meanwhile, which disables its buttons, so a second click can't send
+ * the same write twice. GitHub refusing is an expected outcome — a push since
+ * the board looked makes it refuse a merge — so its words go in the toast.
+ */
+async function writePull(id: string, send: (id: string) => Promise<DashboardState>, done: string, refused: string): Promise<void> {
+  if (ui.pending.value.has(id)) return;
+  batch(() => {
+    closeMenus();
+    addPending(id);
+  });
+  try {
+    adoptState(await send(id));
+    showToast(done);
+  } catch (err) {
+    showToast(`${refused}: ${(err as Error).message}`);
+    await refresh();
+  } finally {
+    removePending(id);
+  }
+}
+
+function pullRow(id: string): BoardRow | undefined {
+  return state.value?.board?.rows.find((row) => row.id === id);
+}
+
+/** Mark a draft ready for review. It doesn't ask: GitHub turns a pull request back into a draft just as easily. */
+async function markReady(id: string): Promise<void> {
+  const row = pullRow(id);
+  if (!row) return;
+  const ref = `${row.repo}#${row.number}`;
+  await writePull(id, api.postPullReady, `${ref} is ready for review`, `GitHub would not mark ${ref} ready`);
+}
+
+/** Merge a pull request, or queue it, once the user has said yes: a merge can't be taken back. */
+async function mergePull(id: string): Promise<void> {
+  const row = pullRow(id);
+  if (!row || ui.pending.value.has(id)) return;
+  // The commit being asked about: a poll while the question is open may move
+  // the row on, and the server merges only if it is still this one.
+  const head = row.headSha;
+  if (!head) return;
+  if (!window.confirm(mergeQuestion(row))) return;
+  const ref = `${row.repo}#${row.number}`;
+  const queue = row.offers?.includes('queue') ?? false;
+  await writePull(
+    id,
+    (rowId) => api.postPullMerge(rowId, head),
+    queue ? `${ref} added to the merge queue` : `${ref} merged into ${row.baseRef}`,
+    queue ? `GitHub would not queue ${ref}` : `GitHub would not merge ${ref}`,
+  );
 }
 
 /* ---------- the assistant ---------- */
@@ -891,6 +970,8 @@ export const handlers: Handlers = {
   // timer starts over from it, and the agent reads that the user asked.
   nudge: (id) => void applyAction(id, 'nudge'),
   unsnooze: (id) => void undo(id),
+  markReady: (id) => void markReady(id),
+  mergePull: (id) => void mergePull(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
   refreshCalendar: () => void refreshCalendar(),

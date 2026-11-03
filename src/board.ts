@@ -7,20 +7,27 @@ import {
   GhAuthError,
   GhMissingError,
   GitHubRequestError,
+  enqueuePull,
   fetchPulls,
   ghToken,
   listGhAccounts,
+  markReadyForReview,
+  mergePull,
+  toMergeMethod,
   toMergeState,
   type AccountFetch,
   type OrgVisibility,
 } from './github.ts';
-import { countBoard, resolveBoard } from './prs.ts';
+import { canonicalId } from './ids.ts';
+import { countBoard, mergeRoute, refuseMerge, refuseReady, resolveBoard } from './prs.ts';
 import { resolveTool } from './tools.ts';
 import type {
   Action,
   BoardAccount,
+  BoardRow,
   BoardState,
   CheckState,
+  MergeMethod,
   MergeableState,
   PendingCheck,
   PullActivity,
@@ -37,16 +44,40 @@ const MAX_BACKOFF_MS = 30 * 60_000;
 const RATE_LIMIT_FLOOR = 100;
 
 /**
- * The calls the poller makes to the outside world, gathered so a test can supply
- * its own. The defaults are the real gh and GitHub.
+ * The calls the board makes to the outside world, gathered so a test can supply
+ * its own. The defaults are the real gh and GitHub. The last three are the
+ * board's writes, which only a click on a row reaches: see `markReady` and `merge`.
  */
 export interface BoardDeps {
   listAccounts(ghPath: string): Promise<{ login: string; active: boolean }[]>;
   token(ghPath: string, login: string | null): Promise<string>;
   fetch(token: string, scope: readonly string[], expectedLogin: string | null, signal?: AbortSignal): Promise<AccountFetch>;
+  markReady(token: string, nodeId: string): Promise<void>;
+  merge(token: string, nodeId: string, method: MergeMethod, headSha: string): Promise<void>;
+  enqueue(token: string, nodeId: string, headSha: string): Promise<void>;
 }
 
-const realDeps: BoardDeps = { listAccounts: listGhAccounts, token: ghToken, fetch: fetchPulls };
+const realDeps: BoardDeps = {
+  listAccounts: listGhAccounts,
+  token: ghToken,
+  fetch: fetchPulls,
+  markReady: markReadyForReview,
+  merge: mergePull,
+  enqueue: enqueuePull,
+};
+
+/**
+ * A click the board turned down before asking GitHub anything: `404` for a pull
+ * request it isn't showing, `409` for one it is, which doesn't offer that.
+ */
+export class BoardRefusal extends Error {
+  readonly status: 404 | 409;
+  constructor(status: 404 | 409, message: string) {
+    super(message);
+    this.name = 'BoardRefusal';
+    this.status = status;
+  }
+}
 
 /** An account the poller could get a token for. */
 interface Identity {
@@ -70,6 +101,8 @@ interface Attempt {
  * The one part of the dashboard that gathers anything itself. It borrows gh's
  * tokens, asks GitHub for the pull requests the user has open, and keeps the last
  * good answer in `prs.json` so a restart or a GitHub outage never blanks the page.
+ * From a click on a row, and only then, it also marks a draft ready for review
+ * or merges a pull request that is ready: see `markReady` and `merge`.
  * Judging whose court each PR is in happens in `prs.ts` at read time, since that
  * depends on the clock and the action log rather than on anything fetched.
  *
@@ -114,6 +147,8 @@ export class Board {
   /** When the rate limit says to leave GitHub alone until. */
   #holdUntil = 0;
   readonly #abort = new AbortController();
+  /** Rows with a write on its way to GitHub, so a second click waits for the first. */
+  readonly #writing = new Set<string>();
 
   constructor(config: Config, onChange: () => void, deps: BoardDeps = realDeps) {
     this.#config = config;
@@ -180,6 +215,81 @@ export class Board {
       });
     this.#onChange();
     return this.#fetching;
+  }
+
+  /**
+   * Mark a draft ready for review, then read the board back.
+   *
+   * `id` is a row's, and nothing else about the pull request comes from the
+   * click: the row the board is showing says which pull request, and which
+   * account read it, which is the one the write runs as. Rejects with a
+   * `BoardRefusal` when the board won't, and with GitHub's own reason when
+   * GitHub won't.
+   */
+  async markReady(id: string, actions: readonly Action[]): Promise<void> {
+    const row = this.#actionable(id, actions, refuseReady);
+    await this.#write(row, (token) => this.#deps.markReady(token, row.nodeId!));
+  }
+
+  /**
+   * Merge a pull request that is ready, into its default branch, or add it to
+   * that branch's merge queue when it has one; then read the board back. Says
+   * which it did. Refuses as `markReady` does, and when `head`, the commit the
+   * page showed when the user said yes, is no longer the row's: a poll while the
+   * question was open must not get commits merged that nobody looked at. GitHub
+   * refuses for itself when the head has moved since the row was read.
+   */
+  async merge(id: string, actions: readonly Action[], head: string): Promise<'merge' | 'queue'> {
+    const row = this.#actionable(id, actions, refuseMerge);
+    if (row.headSha !== head) {
+      throw new BoardRefusal(409, `${row.repo}#${row.number}: it has new commits since you looked; check them and try again`);
+    }
+    const route = mergeRoute(row);
+    await this.#write(row, (token) =>
+      route === 'queue'
+        ? this.#deps.enqueue(token, row.nodeId!, row.headSha!)
+        : this.#deps.merge(token, row.nodeId!, row.mergeMethod!, row.headSha!),
+    );
+    return route;
+  }
+
+  /** The row a click names, if it is on the board and offers what was asked. */
+  #actionable(id: string, actions: readonly Action[], refuse: (row: BoardRow) => string | null): BoardRow {
+    if (!this.enabled) throw new BoardRefusal(409, 'the pull request board is switched off (DAILY_FOCUS_GITHUB=off)');
+    if (this.#stopped) throw new BoardRefusal(409, 'the server is shutting down');
+    const wanted = canonicalId(id);
+    const row = this.view(actions, new Date()).rows.find((candidate) => canonicalId(candidate.id) === wanted);
+    if (!row) throw new BoardRefusal(404, 'that pull request is not on the board');
+    const why = refuse(row);
+    if (why) throw new BoardRefusal(409, `${row.repo}#${row.number}: ${why}`);
+    if (this.#writing.has(row.id)) throw new BoardRefusal(409, `${row.repo}#${row.number}: already on its way to GitHub`);
+    return row;
+  }
+
+  /**
+   * One write, as the account that read the row, then the board read back.
+   *
+   * Read back whether GitHub agreed or not: a refusal usually means the row is
+   * out of date, and the fresh row is the explanation. A poll already in flight
+   * may have asked before the write landed, so it is waited out and another
+   * started rather than joined. Unlike the poll, this rejects: somebody is
+   * waiting on the answer, and a write that silently did nothing must never
+   * look like one that worked.
+   */
+  async #write(row: BoardRow, call: (token: string) => Promise<void>): Promise<void> {
+    this.#writing.add(row.id);
+    try {
+      const gh = resolveTool('gh', this.#config.github.ghPath, this.#config.toolsDir);
+      const token = await this.#deps.token(gh.path, row.account);
+      try {
+        await call(token);
+      } finally {
+        if (this.#fetching) await this.#fetching;
+        await this.refresh();
+      }
+    } finally {
+      this.#writing.delete(row.id);
+    }
   }
 
   /** The board joined with the action log, ready to render. Never throws. */
@@ -535,6 +645,14 @@ export function normalizeStoredPull(raw: unknown): PullRequest | null {
     headSha: typeof raw.headSha === 'string' ? raw.headSha : null,
     lastActivityByYou: typeof raw.lastActivityByYou === 'string' ? raw.lastActivityByYou : null,
     lastActivityByOthers,
+    // What marking it ready or merging it needs. Absent on an older cache, which
+    // offers neither until the next poll reads them.
+    nodeId: typeof raw.nodeId === 'string' && raw.nodeId !== '' ? raw.nodeId : null,
+    defaultBranch: typeof raw.defaultBranch === 'string' && raw.defaultBranch !== '' ? raw.defaultBranch : null,
+    mergeMethod: toMergeMethod(raw.mergeMethod),
+    mergeQueue: raw.mergeQueue === true,
+    inMergeQueue: raw.inMergeQueue === true,
+    stacked: raw.stacked === true,
   };
 }
 

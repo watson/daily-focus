@@ -114,6 +114,25 @@ export function postTicketTransition(key: string, status: string): Promise<Dashb
 }
 
 /**
+ * Mark a draft pull request ready for review on GitHub, by its board row's id.
+ * Resolves once GitHub has and the board has been read back; rejects with
+ * GitHub's own words when it refuses.
+ */
+export function postPullReady(id: string): Promise<DashboardState> {
+  return post('/api/board/ready', { id });
+}
+
+/**
+ * Merge a pull request that is ready, by its board row's id, or add it to its
+ * branch's merge queue: the server decides which from the row. Resolves once
+ * GitHub has and the board has been read back; rejects with GitHub's own words
+ * when it refuses, as it does when the head moved since the board looked.
+ */
+export function postPullMerge(id: string, head: string): Promise<DashboardState> {
+  return post('/api/board/merge', { id, head });
+}
+
+/**
  * Ask the assistant about an item: a quick action, typed text, or both.
  * Resolves once the CLI is running, with the state showing the turn in
  * progress; the reply streams in over SSE.

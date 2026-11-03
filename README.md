@@ -76,6 +76,13 @@ request moves to a Nudged section for a day, then goes back to Waiting on review
 with "time to ask" if nobody has reviewed it. Completing a task about a pull
 request in the brief doesn't remove that pull request from the board.
 
+**Two buttons change the pull request on GitHub.** **Ready for review** on a draft
+marks it ready. **Merge** in Ready to merge asks first, then merges it with the
+method you last used in that repository, or reads **Add to merge queue** where its
+branch has one. Merge appears only when the pull request targets the repository's
+default branch and isn't part of a GitHub stack; merge the others on GitHub. If you
+pushed since the board last looked, GitHub refuses the merge and the board says why.
+
 Cancelled checks appear as "cancelled, no verdict" rather than failures.
 When a check is rerun, the board uses its newest workflow run or attempt.
 
