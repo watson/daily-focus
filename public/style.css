@@ -2310,6 +2310,15 @@ body[data-view='settings'] .layout {
 .mode-switch__option:hover {
   color: var(--ink-1);
 }
+/* Three views on a phone: each label stays on one line, and the padding gives way first. */
+.mode-switch__option {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .mode-switch__option {
+    padding: 5px 10px;
+  }
+}
 .mode-switch__option[aria-selected='true'] {
   background: var(--band);
   color: var(--band-ink);
@@ -2429,6 +2438,444 @@ a.button {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+
+/* ---------- projects: an epic or initiative, zoomed into ---------- */
+
+/*
+ * The epic picker, at the end of the switch's line where the type key sits in
+ * the other two views. A field like the settings page's, sized to what it says.
+ */
+.project-picker {
+  max-width: min(100%, 420px);
+  height: 32px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e7484' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  color: var(--ink-1);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  appearance: none;
+  cursor: pointer;
+}
+.project-picker:hover {
+  border-color: var(--ink-3);
+}
+
+/* The project's name is the page's headline here, set in the serif on the paper. */
+.project-head {
+  margin: 0 0 16px;
+}
+.project-crumbs {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.project-crumbs__up {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ink-3);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.project-crumbs__up:hover {
+  color: var(--ink-1);
+  text-decoration-color: var(--ink-1);
+}
+.project-title {
+  margin: 0;
+  max-width: 60ch;
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.project-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.project-title a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--ink-3);
+}
+
+/*
+ * How far each ticket has got, as a gauge: a quarter for a draft, half for a
+ * review, three quarters once it is ready to merge, full once merged, and full
+ * and darker once done. Shared by the strip's bars and the glyphs, so the two
+ * can never disagree. Ready also takes the good colour; every stage is named in
+ * words beside it too, so the colour only agrees.
+ */
+.stage-glyph,
+.progress-strip__seg {
+  --fill: 0%;
+  --tone: var(--ink-3);
+}
+.stage-glyph[data-stage='draft'],
+.progress-strip__seg[data-stage='draft'] {
+  --fill: 25%;
+}
+.stage-glyph[data-stage='review'],
+.progress-strip__seg[data-stage='review'] {
+  --fill: 50%;
+}
+.stage-glyph[data-stage='ready'],
+.progress-strip__seg[data-stage='ready'] {
+  --fill: 75%;
+  --tone: var(--good);
+}
+.stage-glyph[data-stage='merged'],
+.progress-strip__seg[data-stage='merged'] {
+  --fill: 100%;
+}
+.stage-glyph[data-stage='done'],
+.progress-strip__seg[data-stage='done'] {
+  --fill: 100%;
+  --tone: var(--ink-1);
+}
+
+.stage-glyph {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--tone);
+  border-radius: 50%;
+  background: conic-gradient(var(--tone) var(--fill), var(--surface) 0);
+}
+/* Begun with nothing to show for it: an empty gauge, drawn dashed so it isn't "not started". */
+.stage-glyph[data-stage='progress'] {
+  border-style: dashed;
+}
+.stage-glyph[data-stage='done']::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0.5px;
+  width: 3px;
+  height: 6px;
+  border: solid var(--surface);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.progress {
+  margin: 0 0 28px;
+}
+.progress-strip {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+}
+.progress-strip__seg {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 56px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.progress-strip__seg::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill);
+  background: var(--tone);
+}
+.progress__sentence {
+  margin: 10px 0 6px;
+  max-width: 68ch;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.stage-legend .stage-glyph {
+  width: 10px;
+  height: 10px;
+}
+.stage-legend .stage-glyph[data-stage='done']::after {
+  left: 2px;
+  top: -0.5px;
+  width: 2.5px;
+  height: 5px;
+}
+
+/*
+ * What to do next, ranked: one sheet with its rows ruled apart, and the rank in
+ * the serif in the margin, as Today's ranked rows carry it.
+ */
+.next-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.next-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 0 8px;
+  align-items: start;
+  padding: 12px 14px 12px 8px;
+}
+.next-step + .next-step {
+  border-top: 1px solid var(--rule);
+}
+.next-step__body {
+  min-width: 0;
+}
+.next-step__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.next-step__reason {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.next-step__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  align-self: center;
+}
+.next-steps__more {
+  margin: 8px 2px 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+@media (max-width: 600px) {
+  .next-step {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .next-step__actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    margin-top: 8px;
+  }
+}
+
+/*
+ * The merge order, with its links drawn as a rail on the paper beside the
+ * cards, `git log --graph` fashion: a node per ticket in its lane, and a line
+ * from each blocker down to what it blocks. The lines are one SVG under the
+ * nodes, which carry a ring of the paper's colour so a line meets a node's edge.
+ */
+.merge-order__body {
+  --lane-width: 16px;
+  --rail: calc(var(--lanes, 1) * var(--lane-width) + 10px);
+  position: relative;
+}
+.merge-order__rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--rail);
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.merge-order__rail path {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+/* The blocker's code is in; only its ticket is left to close. */
+.merge-order__rail path[data-dotted='true'] {
+  stroke-dasharray: 1.5 3.5;
+}
+.merge-order__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.merge-order__row {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  align-items: start;
+  scroll-margin: 90px;
+}
+.merge-order__node {
+  z-index: 1;
+  margin-top: 16px;
+  margin-left: calc(var(--lane, 0) * var(--lane-width) + 2px);
+  box-shadow: 0 0 0 3px var(--page);
+}
+
+/* A ticket in a project: a card like a row's, but not a row: nothing opens a panel on it. */
+.project-card {
+  min-width: 0;
+  padding: 11px 14px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.project-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px 14px;
+}
+.project-card__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.project-card__title a {
+  color: inherit;
+  text-decoration: none;
+}
+.project-card__title a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--ink-3);
+}
+.project-card__stage {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.project-card__stage[data-tone='good'] {
+  color: var(--good-ink);
+}
+.project-card__stage[data-tone='critical'] {
+  color: var(--critical);
+}
+.project-card__pulls {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.project-pull {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+.project-pull__ref {
+  color: var(--ink-1);
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+  text-underline-offset: 2px;
+}
+.project-pull__ref:hover {
+  text-decoration-color: var(--ink-3);
+}
+.project-pull__state--you {
+  color: var(--critical);
+}
+.project-pull__writes {
+  display: inline-flex;
+  gap: 4px;
+}
+.project-pull__writes .button {
+  padding: 1px 8px;
+}
+.project-card__meta a {
+  color: inherit;
+}
+/* The status's source, as a dot: on this tab every status is Jira's, but here it sits beside GitHub's. */
+.pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--src-jira);
+}
+@media (max-width: 600px) {
+  .project-card__head {
+    flex-wrap: wrap;
+  }
+}
+
+/* An initiative's epics: cards that zoom in, so the whole card is the target. */
+.epic-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.epic-card[data-openable='true'] {
+  cursor: pointer;
+}
+.epic-card[data-openable='true']:hover {
+  border-color: var(--ink-3);
+}
+.epic-card__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.epic-card__open:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--ink-3);
+}
+.epic-card__count {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.progress-strip--mini {
+  height: 6px;
+  margin: 8px 0 2px;
+}
+.epic-card__next {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.epic-card__next a {
+  color: inherit;
+}
+.epic-card__next-label {
+  color: var(--ink-3);
+  font-weight: 600;
 }
 
 /* ---------- the assistant ---------- */

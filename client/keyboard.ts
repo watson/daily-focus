@@ -6,7 +6,7 @@ import type { BoardRow, InProgressTicket, ResolvedItem, TicketRow } from '../src
 import { afterRender, undoLast } from './actions.ts';
 import { addDays, dayKey } from './format.ts';
 import { setDetailFor, state, ui } from './state.ts';
-import type { Handlers } from './types.ts';
+import type { Handlers, TicketMode } from './types.ts';
 
 /**
  * Ids of the items currently on screen, in visual order. Only the showing view
@@ -115,18 +115,23 @@ export function installKeyboard(handlers: Handlers): void {
         event.preventDefault();
         handlers.setView('tickets');
         return;
-      case 'w':
+      case 'w': {
         if (ui.view.value !== 'tickets') return;
         event.preventDefault();
-        handlers.setTicketMode(ui.ticketMode.value === 'working' ? 'sync' : 'working');
+        // Round the views the tab offers: Projects only where the server reads them.
+        const modes: TicketMode[] = state.value?.projects?.enabled ? ['sync', 'working', 'projects'] : ['sync', 'working'];
+        const at = modes.indexOf(ui.ticketMode.value);
+        handlers.setTicketMode(modes[(at + 1) % modes.length]!);
         return;
+      }
       case 'r':
         if (ui.view.value === 'board') {
           event.preventDefault();
           handlers.refreshBoard();
         } else if (ui.view.value === 'tickets') {
           event.preventDefault();
-          handlers.refreshTickets();
+          if (ui.ticketMode.value === 'projects' && state.value?.projects?.enabled) handlers.refreshProjects();
+          else handlers.refreshTickets();
         }
         return;
       case '?':

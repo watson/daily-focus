@@ -23,6 +23,7 @@ import * as api from './api.ts';
 import { HELPER_LABEL, helperLabel } from './board.ts';
 import {
   AGENT_RUN_SEEN_KEY,
+  PROJECT_KEY,
   RUN_PREFIX,
   VIEW_KEY,
   availableViews,
@@ -325,6 +326,58 @@ async function refreshTickets(): Promise<void> {
   if (!state.value?.tickets?.enabled || state.value.tickets.fetching) return;
   try {
     adoptState(await api.postTicketsRefresh());
+  } catch (err) {
+    showToast(`Could not refresh: ${(err as Error).message}`);
+  }
+}
+
+/** The projects being read open now, so a second ask for one joins the first rather than sending another. */
+const openingProjects = new Set<string>();
+
+/**
+ * Zoom the Projects view into a project, and read it. The server answers at
+ * once when it read that project within the last minute, and otherwise once
+ * it has read it again, which takes a few seconds of acli; the view says it is
+ * reading in the meantime, since the read's start is broadcast.
+ */
+async function openProject(key: string): Promise<void> {
+  const wanted = key.trim().toUpperCase();
+  if (!wanted) return;
+  if (ui.projectKey.value !== wanted) {
+    batch(() => {
+      ui.projectKey.value = wanted;
+      ui.selectedId.value = null;
+      closeMenus();
+    });
+    remember(PROJECT_KEY, wanted);
+    // Zooming from a card far down the page lands at the top of the view, where
+    // the new project's name appears: it may still be being read.
+    afterRender(() => document.querySelector('#tickets .ticket-toolbar')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }));
+  }
+  if (!state.value?.projects?.enabled || openingProjects.has(wanted)) return;
+  openingProjects.add(wanted);
+  try {
+    adoptState(await api.postProjectOpen(wanted));
+  } catch (err) {
+    showToast(`Could not read ${wanted}: ${(err as Error).message}`);
+  } finally {
+    openingProjects.delete(wanted);
+  }
+}
+
+/**
+ * Ask everything the Projects view is made of now: Jira for the epics and the
+ * projects kept open, and the two boards for where the user's pull requests
+ * stand, since a stage is only as fresh as the oldest of the three.
+ */
+async function refreshProjects(): Promise<void> {
+  const projects = state.value?.projects;
+  if (!projects?.enabled) return;
+  void refreshTickets();
+  void refreshBoard();
+  if (projects.fetching) return;
+  try {
+    adoptState(await api.postProjectsRefresh());
   } catch (err) {
     showToast(`Could not refresh: ${(err as Error).message}`);
   }
@@ -658,8 +711,8 @@ function setView(view: View): void {
 }
 
 /**
- * Switch the ticket tab between its two views. The selection and anything open
- * go with it, as they do between tabs: they belong to the list they were made in.
+ * Switch the ticket tab between its views. The selection and anything open go
+ * with it, as they do between tabs: they belong to the list they were made in.
  */
 function setTicketMode(mode: TicketMode): void {
   if (ui.ticketMode.value === mode) return;
@@ -1049,6 +1102,8 @@ export const handlers: Handlers = {
     ui.openDrawers.value = next;
   },
   setTicketMode,
+  openProject: (key) => void openProject(key),
+  refreshProjects: () => void refreshProjects(),
   setView,
   // From the flag on a Working on row: over to Out of sync, with that ticket's
   // row selected and on screen, so the jump lands on the thing it named.

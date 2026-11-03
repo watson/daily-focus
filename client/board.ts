@@ -6,7 +6,7 @@ import type { BoardRow, BoardState, CourtReason, DashboardState, PendingCheck } 
 import { banner } from './banners.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
-import { formatTime, parseDate, relativeDay, relativeTime } from './format.ts';
+import { formatTime, relativeDay, relativeTime, waitedFor } from './format.ts';
 import { cssId, onCard, renderAhead, renderSnoozeMenu, rowPills, sourceColor, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
@@ -312,20 +312,6 @@ function describeReason(reason: CourtReason, row: BoardRow, now: Date): Componen
 }
 
 /**
- * How long a wait has run, as a span. The same thresholds `relativeTime` uses, so
- * "waiting 30 h" and "last touched 30 h ago" on one row can't disagree.
- */
-function waitedFor(since: string, now: Date): string {
-  const at = parseDate(since);
-  const minutes = at ? Math.round((now.getTime() - at.getTime()) / 60_000) : 0;
-  if (minutes < 1) return 'moments';
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} h`;
-  return `${Math.round(hours / 24)} days`;
-}
-
-/**
  * Pending check names, linked where GitHub gave somewhere to look. At most three.
  * `described` adds the line GitHub shows beside each, the way it shows it there.
  */
@@ -408,6 +394,9 @@ export function helperLabel(row: BoardRow): string {
   return row.mergeHelper?.kind === 'queue' ? row.mergeHelper.label : HELPER_LABEL;
 }
 
+/** Which of a row's writes to show: Ready for review, the merge (or the merge helper's), or Merge stack. */
+export type PullWrite = 'ready' | 'merge' | 'stack';
+
 /**
  * The buttons that change the pull request on GitHub, where the server offers
  * them: ready for review on a draft, and merge on one that is ready, or the
@@ -416,9 +405,17 @@ export function helperLabel(row: BoardRow): string {
  * reading (`pullOffers`, `findStack`), the same one it refuses a click by, so
  * the page never shows a button the server would turn down. While a click is
  * on its way the row is pending and they are disabled.
+ *
+ * `kinds` narrows them, for the Projects view, which offers a write only where
+ * the merge order says it is the next thing to do.
  */
-function renderPullWrites(row: BoardRow, ui: UiState, handlers: Handlers): JSX.Element[] {
-  const offers = row.offers ?? [];
+export function renderPullWrites(
+  row: BoardRow,
+  ui: UiState,
+  handlers: Handlers,
+  kinds: readonly PullWrite[] = ['ready', 'merge', 'stack'],
+): JSX.Element[] {
+  const offers = (row.offers ?? []).filter((offer) => kinds.includes(offer === 'helper' || offer === 'queue' ? 'merge' : offer));
   const pending = ui.pending.value.has(row.id);
   const button = (label: string, title: string, onClick: () => void): JSX.Element =>
     el('button', { type: 'button', class: 'button', title, disabled: pending, 'aria-busy': pending ? 'true' : undefined, onClick }, label);

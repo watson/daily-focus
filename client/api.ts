@@ -100,6 +100,19 @@ export function postTicketsRefresh(): Promise<DashboardState> {
   return post('/api/tickets/refresh');
 }
 
+/** Ask the server to read the epics, and every project kept open, now. Resolves once it has. */
+export function postProjectsRefresh(): Promise<DashboardState> {
+  return post('/api/projects/refresh');
+}
+
+/**
+ * Zoom into a project: the server reads it, unless it did within the last
+ * minute, and keeps it. Resolves once it has been read.
+ */
+export function postProjectOpen(key: string): Promise<DashboardState> {
+  return post('/api/projects/open', { key });
+}
+
 /** Ask the server to read the calendar now. Resolves once it has. */
 export function postCalendarRefresh(): Promise<DashboardState> {
   return post('/api/calendar/refresh');
