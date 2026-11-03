@@ -498,7 +498,11 @@ export const claudeAdapter: Adapter = {
     }
     if (type === 'result') {
       const ok = event.is_error !== true && event.subtype === 'success';
-      const reply = typeof event.result === 'string' ? event.result : undefined;
+      // Asked for a schema, Claude Code hands the answer over as `structured_output`;
+      // `result` is then only the last thing said, which after tool calls may be prose.
+      const structured = event.structured_output;
+      const reply =
+        structured !== undefined && structured !== null ? JSON.stringify(structured) : typeof event.result === 'string' ? event.result : undefined;
       const parsed: ParsedEvent = { done: ok ? { ok, reply } : failed('claude', reply ?? String(event.subtype ?? 'failed')) };
       if (typeof event.session_id === 'string') parsed.sessionId = event.session_id;
       return parsed;
