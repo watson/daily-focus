@@ -20,7 +20,8 @@ import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
 import { ProjectBoard, type ProjectBoardDeps } from './projectboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
-import { AutoAsk } from './autoask.ts';
+import { AutoAsk, AutoCheck } from './autoask.ts';
+import { DoneCheck, DoneCheckRefusal } from './donecheck.ts';
 import { codexVersionWarning } from './codex.ts';
 import { watchDataDir } from './watch.ts';
 import { computeAssetVersion } from './assets.ts';
@@ -423,6 +424,9 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // Asks the assistant ahead about pull requests waiting on the user, whenever
   // the board or a turn changes. Made below, once what it reads exists.
   let autoAsk: AutoAsk | null = null;
+  // Starts the done check on its own once a ticket's key has settled, whenever
+  // the tickets, the board or a check change. Made below, with what it reads.
+  let autoCheck: AutoCheck | null = null;
 
   // The board polls only while a tab is open, so it's told the audience below,
   // and it broadcasts on its own whenever a fetch starts or lands.
@@ -431,6 +435,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     () => {
       void broadcast();
       autoAsk?.poke();
+      autoCheck?.poke();
     },
     options.integrations?.github,
   );
@@ -448,7 +453,14 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     ? { read: () => calendarAccounts.read(config.calendar.names), ready: () => calendarAccounts.ready, where: 'your connected calendars' }
     : helperDeps(config);
   const calendar = new CalendarBoard(config, () => void broadcast(), calendarSource);
-  const tickets = new TicketBoard(config, () => void broadcast(), options.integrations?.jira);
+  const tickets = new TicketBoard(
+    config,
+    () => {
+      void broadcast();
+      autoCheck?.poke();
+    },
+    options.integrations?.jira,
+  );
   // Read when the page opens one; see `projectboard.ts`.
   const projects = new ProjectBoard(config, () => void broadcast(), options.integrations?.projects);
 
@@ -515,6 +527,30 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     canStart: () => restart !== 'waiting',
   });
   const ahead = autoAsk;
+
+  // Whether each of the user's tickets is finished by its pull requests, through
+  // the assistant's runner, from Check now on a row or on its own through
+  // `autoCheck`. It keeps its own log, and its verdicts are advice on the row
+  // and nothing else. See `donecheck.ts`.
+  const checks = new DoneCheck({
+    config,
+    assistant,
+    tickets: () => tickets.tickets(),
+    onChange: () => {
+      void broadcast();
+      restartWhenIdle();
+      autoCheck?.poke();
+    },
+  });
+  autoCheck = new AutoCheck({
+    config,
+    checks,
+    tickets: () => tickets.tickets(),
+    rows: () => board.view([], new Date()).rows,
+    // As for asking ahead: nothing new while saved settings wait on a restart.
+    canStart: () => restart !== 'waiting',
+  });
+  const checksAhead = autoCheck;
 
   // The morning agent, on the dashboard's clock and when the user asks for a
   // fresh brief. It writes the brief itself, and the watcher below picks it up
@@ -675,6 +711,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       projects: projects.view(),
       organization: organizations.view(),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
+      doneCheck: checks.view(checksAhead.view()),
       agentRun: agent.view(now),
       setupWarnings: [...configWarnings, ...codexWarnings, ...(linkWarning ? [linkWarning] : [])],
       setupNotices:
@@ -772,6 +809,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
   // Before the first render: a turn left running when the last process died is
   // closed as aborted now, rather than shown as a spinner that never stops.
   await assistant.start();
+  await checks.start();
   await agent.start();
   await onboarding.start(await firstBriefPending(config));
   await startRequestedBrief();
@@ -871,7 +909,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     if (
       restart === 'waiting' &&
       req.method === 'POST' &&
-      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/connect', '/api/calendar/accounts/connect'].includes(path)
+      ['/api/agent/run', '/api/agent/ask', '/api/assistant/ask', '/api/tickets/check', '/api/connect', '/api/calendar/accounts/connect'].includes(path)
     ) {
       sendJSON(res, 409, { error: 'the dashboard is restarting to apply new settings; try again in a moment' });
       return;
@@ -896,6 +934,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       calendar.setAudience(subscribers.size);
       tickets.setAudience(subscribers.size);
       projects.setAudience(subscribers.size);
+      checksAhead.setAudience(subscribers.size);
 
       const keepAlive = setInterval(() => res.write(': ping\n\n'), 25_000);
       keepAlive.unref();
@@ -906,6 +945,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         calendar.setAudience(subscribers.size);
         tickets.setAudience(subscribers.size);
         projects.setAudience(subscribers.size);
+        checksAhead.setAudience(subscribers.size);
       });
       return;
     }
@@ -1185,6 +1225,28 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         return;
       }
 
+      const state = await buildState();
+      sendState(res, state);
+      void broadcast(state);
+      return;
+    }
+
+    if (path === '/api/tickets/check' && req.method === 'POST') {
+      const body = await readJsonObject(req, res);
+      if (!body) return;
+      // A ticket key and nothing else, in Jira's own shape. The check looks the
+      // ticket up among the user's own on the board, and checks it as it stands.
+      const { key } = body;
+      if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(key.trim())) {
+        sendJSON(res, 400, { error: '"key" must be a single Jira work item key, e.g. PROJ-8842' });
+        return;
+      }
+      try {
+        await checks.checkNow(key.trim());
+      } catch (err) {
+        sendJSON(res, err instanceof DoneCheckRefusal ? err.status : 500, { error: (err as Error).message });
+        return;
+      }
       const state = await buildState();
       sendState(res, state);
       void broadcast(state);
@@ -1616,6 +1678,8 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     clearInterval(heartbeat);
     clearInterval(agentClock);
     ahead.close();
+    checksAhead.close();
+    checks.close();
     board.stop();
     calendar.stop();
     tickets.stop();

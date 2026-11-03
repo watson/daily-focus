@@ -21,6 +21,7 @@ import type {
 } from '../src/types.ts';
 import * as api from './api.ts';
 import { HELPER_LABEL, helperLabel } from './board.ts';
+import { checkPending } from './donecheck.ts';
 import {
   AGENT_RUN_SEEN_KEY,
   PROJECT_KEY,
@@ -422,6 +423,24 @@ async function moveTicket(key: string, status: string, from: string | null): Pro
     // offers the statuses it has seen, never the transitions the workflow allows.
     showToast(`Jira would not move ${key} to ${status}: ${(err as Error).message}`);
     await refresh();
+  } finally {
+    removePending(id);
+  }
+}
+
+/**
+ * Check now whether a ticket's pull requests finish it. Pending under its own
+ * key rather than the row's, so the row's status menu stays usable while the
+ * request goes; the check itself shows on the row as running, then its verdict.
+ */
+async function checkTicket(key: string): Promise<void> {
+  const id = checkPending(key);
+  if (ui.pending.value.has(id)) return;
+  addPending(id);
+  try {
+    adoptState(await api.postTicketCheck(key));
+  } catch (err) {
+    showToast(`Could not check ${key}: ${(err as Error).message}`);
   } finally {
     removePending(id);
   }
@@ -1074,6 +1093,7 @@ export const handlers: Handlers = {
       ui.menuFor.value = null;
     }),
   moveTicket: (key, status, from) => void moveTicket(key, status, from),
+  checkTicket: (key) => void checkTicket(key),
   openDetail: (id, field: FocusField | null = null) =>
     batch(() => {
       setDetailFor(ui, id);

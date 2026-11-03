@@ -25,12 +25,17 @@
  * It is off unless `DAILY_FOCUS_ASSISTANT_AUTO` says otherwise: it spends the
  * CLI's usage without anyone pressing anything. It runs off the board, which
  * reads only while a tab is open, so it asks while the dashboard is in use.
+ *
+ * The same switch starts the done check on its own (`AutoCheck`, below): it
+ * reads, judges and creates nothing either. That and asking ahead are the only
+ * ways anything the assistant runs starts without a click.
  */
 
 import { RESTARTED, SHUT_DOWN, type AskContext, type Assistant } from './assistant.ts';
 import type { Config } from './config.ts';
+import { checkKey, checkRank, type AutoCheckView, type DoneCheck } from './donecheck.ts';
 import { localDateKey } from './time.ts';
-import type { AssistantAuto, BoardRow } from './types.ts';
+import type { AssistantAuto, BoardRow, Ticket } from './types.ts';
 
 /** The quick actions it may ask on its own. Both read and answer; neither creates anything. */
 export const AUTO_ACTIONS = ['assess-review', 'explain-ci'] as const;
@@ -191,5 +196,203 @@ export class AutoAsk {
   private usedToday(asked: readonly { startedAt: string }[]): number {
     const today = localDateKey(this.deps.now?.() ?? new Date());
     return asked.filter((turn) => localDateKey(new Date(turn.startedAt)) === today).length;
+  }
+}
+
+/* ---------- the done check, on its own ---------- */
+
+/**
+ * How long a ticket's key has to stay the same before it is checked on its own:
+ * long enough for a push, a fix and another push to cost one check, short
+ * enough that the verdict is there the same morning.
+ */
+export const CHECK_SETTLE_MS = 20 * 60_000;
+
+/** What `AutoCheck` needs of the done check. */
+export type AutoChecker = Pick<DoneCheck, 'enabled' | 'busy' | 'start' | 'checked' | 'usedToday' | 'begin'>;
+
+export interface AutoCheckDeps {
+  config: Config;
+  checks: AutoChecker;
+  /** The user's own unfinished tickets as the ticket board last read them. */
+  tickets: () => readonly Ticket[];
+  /** The pull request board's rows, for which open pull requests are ready to merge. */
+  rows: () => readonly BoardRow[];
+  /** False while something must not be started: saved settings waiting on a restart. */
+  canStart: () => boolean;
+  now?: () => Date;
+}
+
+/** A check owed: the ticket, its key, and when it settles. */
+interface Owed {
+  ticket: Ticket;
+  key: string;
+  dueAt: number;
+}
+
+/**
+ * The done check, started on its own (see `donecheck.ts`), behind the switch
+ * asking ahead has.
+ *
+ *  - Only for a key nobody has checked: a new pull request on one of the
+ *    user's tickets, a push to one, or a reworded description. A key checked
+ *    once is never checked on its own again, however it went, unless the
+ *    dashboard going away cut it short.
+ *  - Only once the key has been still for `CHECK_SETTLE_MS`, counted from when
+ *    the dashboard first saw it, so push, fix, push again costs one check.
+ *  - One at a time, a click's included; only while a page is open, since the
+ *    ticket board reads only then; never while saved settings wait on a restart.
+ *  - No more than `DAILY_FOCUS_DONE_CHECK_LIMIT` a day, failed ones included,
+ *    counted apart from the questions above. When more are owed than that,
+ *    tickets whose pull requests have all merged go first, then those whose last
+ *    open one is ready to merge, then the rest.
+ *
+ * A check creates nothing: no draft, no comment, no transition. That is what
+ * lets it start on its own at all.
+ */
+export class AutoCheck {
+  readonly #deps: AutoCheckDeps;
+  /**
+   * Each ticket's key as last seen, and when it was first seen as that: where
+   * the settle wait counts from. In memory, so a restart starts the wait again,
+   * which costs a delay and never a check.
+   */
+  readonly #seen = new Map<string, { key: string; at: number }>();
+  #audience = 0;
+  #timer: NodeJS.Timeout | null = null;
+  /** Set for when the next owed check has settled. */
+  #wake: NodeJS.Timeout | null = null;
+  #looking = false;
+  #again = false;
+  #closed = false;
+
+  constructor(deps: AutoCheckDeps) {
+    this.#deps = deps;
+  }
+
+  get enabled(): boolean {
+    return this.#deps.config.assistant.auto && this.#deps.checks.enabled;
+  }
+
+  /** How many pages are open. Nothing starts at zero. */
+  setAudience(count: number): void {
+    this.#audience = count;
+    if (count > 0) this.poke();
+    else this.#clearWake();
+  }
+
+  /** Something changed — the tickets, the board, a check — so look again shortly. Coalesced. */
+  poke(): void {
+    if (!this.enabled || this.#closed || this.#timer) return;
+    this.#timer = setTimeout(() => {
+      this.#timer = null;
+      void this.consider().catch((err: unknown) => {
+        console.error(`[daily-focus] could not start a done check: ${(err as Error).message}`);
+      });
+    }, SETTLE_MS);
+    this.#timer.unref();
+  }
+
+  /**
+   * Start the next check owed, if one may start now. Returns the ticket's key,
+   * or null when nothing was started. Each check that ends pokes, through the
+   * server, which is what takes the queue on to the next.
+   */
+  async consider(): Promise<string | null> {
+    if (!this.enabled || this.#closed || this.#audience === 0 || !this.#deps.canStart()) return null;
+    if (this.#looking) {
+      this.#again = true;
+      return null;
+    }
+    this.#looking = true;
+    try {
+      return await this.#look();
+    } finally {
+      this.#looking = false;
+      if (this.#again) {
+        this.#again = false;
+        this.poke();
+      }
+    }
+  }
+
+  async #look(): Promise<string | null> {
+    const { checks, config } = this.#deps;
+    // Its log read first, or everything checked before the last restart looks unchecked.
+    await checks.start();
+    if (checks.busy) return null;
+    if (checks.usedToday() >= config.assistant.doneCheckLimit) return null;
+    const now = this.#now();
+    const owed = this.#owed(now);
+    const rows = this.#deps.rows();
+    const ready = owed
+      .filter((entry) => entry.dueAt <= now)
+      .map((entry) => ({ ...entry, rank: checkRank(entry.ticket, rows) }))
+      .sort((a, b) => a.rank - b.rank || a.dueAt - b.dueAt || a.ticket.key.localeCompare(b.ticket.key));
+    const next = ready[0];
+    if (!next) {
+      this.#wakeAt(Math.min(...owed.map((entry) => entry.dueAt)), now);
+      return null;
+    }
+    try {
+      await checks.begin(next.ticket, next.key, 'auto');
+      return next.ticket.key;
+    } catch {
+      // A click started one in the meantime, or the assistant went off. The next poke looks again.
+      return null;
+    }
+  }
+
+  /** What the view needs: whether this is on, and when each owed ticket's check would start. */
+  view(): AutoCheckView {
+    if (!this.enabled) return { enabled: false, due: new Map() };
+    return { enabled: true, due: new Map(this.#owed(this.#now()).map((entry) => [entry.ticket.key.toUpperCase(), entry.dueAt])) };
+  }
+
+  close(): void {
+    this.#closed = true;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = null;
+    this.#clearWake();
+  }
+
+  /** The checks owed, at whatever point they settle, noting each key as it is first seen. */
+  #owed(now: number): Owed[] {
+    const owed: Owed[] = [];
+    const present = new Set<string>();
+    for (const ticket of this.#deps.tickets()) {
+      const key = checkKey(ticket);
+      if (!key) continue;
+      const name = ticket.key.toUpperCase();
+      present.add(name);
+      if (this.#seen.get(name)?.key !== key) this.#seen.set(name, { key, at: now });
+      if (this.#deps.checks.checked(key)) continue;
+      owed.push({ ticket, key, dueAt: this.#seen.get(name)!.at + CHECK_SETTLE_MS });
+    }
+    for (const name of [...this.#seen.keys()]) if (!present.has(name)) this.#seen.delete(name);
+    return owed;
+  }
+
+  /** Look again once the earliest owed check has settled, while a page is open. */
+  #wakeAt(at: number, now: number): void {
+    this.#clearWake();
+    if (!Number.isFinite(at) || this.#closed || this.#audience === 0) return;
+    this.#wake = setTimeout(
+      () => {
+        this.#wake = null;
+        this.poke();
+      },
+      Math.max(0, at - now) + SETTLE_MS,
+    );
+    this.#wake.unref();
+  }
+
+  #clearWake(): void {
+    if (this.#wake) clearTimeout(this.#wake);
+    this.#wake = null;
+  }
+
+  #now(): number {
+    return (this.#deps.now?.() ?? new Date()).getTime();
   }
 }

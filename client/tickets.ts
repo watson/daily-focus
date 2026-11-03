@@ -5,6 +5,7 @@ import { h, type ComponentChild, type JSX } from 'preact';
 import type { DashboardState, InProgressTicket, LinkedPull, TicketBoardState, TicketRow } from '../src/types.ts';
 import { banner } from './banners.ts';
 import { connecting, connectionView } from './connect.ts';
+import { doneCheckLine } from './donecheck.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatDay, formatTime, relativeTime } from './format.ts';
@@ -385,6 +386,8 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
       el('p', { class: 'item__title' }, title),
       renderTicketMeta(row, state, handlers),
       renderGitHubEvidence(row, now),
+      // Whether its pull requests finish it: a line of advice, and nothing about the row changes with it.
+      doneCheckLine(row.key, state.doneCheck, now, { ui, handlers }),
     ),
     renderTicketActions(row, ui, handlers),
     ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, SNOOZE_MENU) : null,

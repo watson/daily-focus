@@ -104,8 +104,9 @@ view has three buckets:
 | In flight with nothing linked | The ticket is in progress with no linked pull request. This can be fine for work that isn't code. |
 
 Draft pull requests count as open. Closed pull requests don't prove that a ticket
-is finished, so the board leaves that decision to you. Snooze the ticket until a date or
-leave a note when there's more work planned.
+is finished, so the board leaves that decision to you; the assistant can read the
+ticket and the diffs and say what it thinks (see [Ask the assistant](#ask-the-assistant)).
+Snooze the ticket until a date or leave a note when there's more work planned.
 
 Jira can take days to hear that a pull request merged, so the board also checks
 GitHub. It searches your open pull requests and the ones closed in the last 60
@@ -164,6 +165,24 @@ line of its answer appears on the row, such as "Flaky, not yours: the Safari job
 timed out", so the card already says what to do. It asks about each state once,
 one at a time, and no more than ten times a day unless you change the limit.
 
+A pull request linked to a ticket doesn't always finish it, so the assistant can
+also check whether a ticket's pull requests, together, do everything the ticket
+asks. It reads the ticket's description and each pull request's diff, and its
+verdict goes on the ticket's row in **Out of sync** and **Working on**, and on its
+card in **Projects**: "Looks complete", "Work left: …" or "Can't tell: …", with when
+it was checked. Press **Check now** on a row to check it straight away. With **Answer
+ahead** on, it also checks on its own, about 20 minutes after one of your tickets
+gets a new pull request, a push to one, or a new description, so pushing a fix
+twice costs one check. Comments, reviews and labels never start one. It checks each
+version of a ticket once, one at a time, and no more than 50 times a day unless you
+change **Check tickets at most**; when more are waiting, tickets whose pull requests
+have all merged go first, then ones whose last pull request is ready to merge.
+Check now isn't counted. Each check runs the newest model your CLI offers (Opus, or
+Codex's top model) at high effort, whatever the assistant's own model setting says.
+A verdict from before the latest change says so until the next one lands, and a
+check that fails says it failed. It's advice: it never moves a ticket or changes
+its status, and only checks your own tickets that have a pull request on GitHub.
+
 It is told to read and draft, and nothing more. An email reply is created as a Gmail
 draft on the thread, so it is waiting there when you open the mail; a reply to a
 reviewer is handed back as text for you to post. It is told never to send, post, or
@@ -196,7 +215,9 @@ settings.
 Both run the Claude Code or Codex you already use, with the access it already has.
 The dashboard narrows some of that, as below, and leaves the rest to their
 instructions: the morning agent's forbid it to change anything, and the
-assistant's forbid it anything but a Gmail draft.
+assistant's forbid it anything but a Gmail draft. A done check may not even draft:
+under Claude Code it may only view tickets and pull requests with `acli` and `gh`,
+and under Codex it gets the assistant's rules without the draft.
 
 **Under Claude Code**, the morning agent may write `items.json` and nothing else in
 the store, and the assistant may never use the file-editing tools. Beyond that, each

@@ -87,6 +87,13 @@ test('a draft is told apart from open, and neither has closed', () => {
   assert.equal(normalizeTicketPull({ ...base, state: 'CLOSED', closedAt: '2026-09-20T00:00:00Z' })?.pull.state, 'closed');
 });
 
+test('a search node keeps its head commit, for the done check, and one that is not a commit is dropped', () => {
+  const base = { number: 1, title: 't', url: 'https://github.com/a/b/pull/1', state: 'OPEN', repository: { nameWithOwner: 'a/b' } };
+  assert.equal(normalizeTicketPull({ ...base, headRefOid: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432' })?.pull.headSha, '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432');
+  assert.equal(normalizeTicketPull({ ...base, headRefOid: 'not a sha' })?.pull.headSha, undefined);
+  assert.equal(normalizeTicketPull(base)?.pull.headSha, undefined, 'still a pull request without one');
+});
+
 /** A state GitHub adds later could be one that means open, so it is not guessed at. */
 test('a node in an unknown state, or with an unsafe link, is not a pull request', () => {
   const base = { number: 1, title: 't', url: 'https://github.com/a/b/pull/1', repository: { nameWithOwner: 'a/b' } };

@@ -216,6 +216,12 @@ export interface AssistantConfig {
   auto: boolean;
   /** `DAILY_FOCUS_ASSISTANT_AUTO_LIMIT`: how many turns it may start on its own a day. */
   autoLimit: number;
+  /**
+   * `DAILY_FOCUS_DONE_CHECK_LIMIT`: how many done checks may start on their own
+   * a day, behind the same switch as `auto` (see `donecheck.ts`). Its own count,
+   * since a check is a longer read at a higher effort than an answer ahead.
+   */
+  doneCheckLimit: number;
 }
 
 /** A local time of day, as `DAILY_FOCUS_AGENT_AT` gives it. */
@@ -371,6 +377,16 @@ export interface Config {
    */
   assistantPromptFile: string;
   assistantPromptSource: string;
+  /**
+   * Append-only record of every done check: what was checked, when, and the
+   * verdict or why there is none. Written by the server alone. See `donecheck.ts`.
+   */
+  doneCheckLogFile: string;
+  /**
+   * What the done check is told, read from this copy of the package as setup's
+   * prompt is: only the server starts it, so nothing in the store names it.
+   */
+  doneCheckPromptSource: string;
   /** The morning agent, when the dashboard starts it by hand. */
   agent: AgentRunConfig;
   /** Append-only record of every run the dashboard started, written by the server. */
@@ -598,6 +614,7 @@ function assistantConfig(values: SettingValues): AssistantConfig {
     computerUse: flagSetting('DAILY_FOCUS_ASSISTANT_COMPUTER_USE', false, values),
     auto: flagSetting('DAILY_FOCUS_ASSISTANT_AUTO', false, values),
     autoLimit: boundedSetting('DAILY_FOCUS_ASSISTANT_AUTO_LIMIT', 10, 1, 100, values),
+    doneCheckLimit: boundedSetting('DAILY_FOCUS_DONE_CHECK_LIMIT', 50, 1, 500, values),
   };
 }
 
@@ -768,6 +785,8 @@ export function loadConfig(values: SettingValues = loadSettings()): Config {
     assistantDir: resolve(dataDir, 'assistant'),
     assistantPromptFile: resolve(dataDir, 'assistant.md'),
     assistantPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'assistant.md'),
+    doneCheckLogFile: resolve(dataDir, 'donecheck.jsonl'),
+    doneCheckPromptSource: resolve(import.meta.dirname, '..', 'prompts', 'done-check.md'),
     agent: agentConfig(values),
     agentLogFile: resolve(dataDir, 'agent.jsonl'),
     agentSettingsFile: resolve(dataDir, 'agent-settings.json'),

@@ -25,6 +25,7 @@ import {
   acliIdentity,
   allPullRequestsClosed,
   buildJql,
+  descriptionHash,
   childrenJql,
   fetchAssignedEpics,
   fetchProject,
@@ -778,4 +779,36 @@ test('the epics to offer are read and summarised', async (t) => {
   });
   const epics = await fetchAssignedEpics(acli, 'acme.atlassian.net');
   assert.deepEqual(epics.map((epic) => [epic.key, epic.level, epic.url]), [['PROJ-1', 1, 'https://acme.atlassian.net/browse/PROJ-1']]);
+});
+
+/* ---------- the description, for the done check ---------- */
+
+test('a ticket carries a hash of its description when the search returned one, and none when it did not', () => {
+  const doc = { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Cap retries at five.' }] }] };
+  assert.equal(toTicket(issue({}, { description: doc }), 'x', true, false)?.descriptionHash, descriptionHash(doc));
+  assert.equal(toTicket(issue({}, { description: null }), 'x', true, false)?.descriptionHash, descriptionHash(''), 'an empty description is still read');
+  assert.equal(toTicket(issue(), 'x', true, false)?.descriptionHash, undefined, 'not asked for, so not claimed');
+});
+
+test('the base search asks for the description, and the two that read keys do not', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'daily-focus-acli-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const log = join(dir, 'fields.log');
+  const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Reset the backoff.' }] }] };
+  const base = { key: 'PROJ-1', fields: { summary: 's', status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } }, issuetype: { name: 'Task', hierarchyLevel: 0 }, description: doc } };
+  const acli = await fakeCli(
+    join(dir, 'acli'),
+    `const jql = args[args.indexOf('--jql') + 1];
+fs.appendFileSync(${JSON.stringify(log)}, (jql.includes('[pullrequests]') ? 'membership ' : jql.startsWith('statusCategory = Done') ? 'done ' : 'base ') + args[args.indexOf('--fields') + 1] + '\\n');
+console.log(jql.startsWith('statusCategory = Done') ? '[]' : JSON.stringify([${JSON.stringify(base)}]));`,
+  );
+  const { tickets } = await fetchTickets(acli, { projects: [], site: null, linked: Promise.resolve(null) });
+  assert.equal(tickets[0]?.descriptionHash, descriptionHash(doc));
+  const asked = (await readFile(log, 'utf8')).split('\n').filter(Boolean).sort();
+  assert.deepEqual(asked, [
+    'base key,status,issuetype,summary,description',
+    'done key,status,issuetype,summary',
+    'membership key,status,issuetype,summary',
+    'membership key,status,issuetype,summary',
+  ]);
 });

@@ -21,6 +21,7 @@ import type {
   BoardRow,
   CourtReason,
   DashboardState,
+  DoneCheckState,
   LinkedPull,
   LinkedPullState,
   OutsideTicket,
@@ -310,9 +311,11 @@ export interface ProjectWork {
   /** For each ticket, the unfinished tickets inside the project waiting for it, in order. */
   dependents: ReadonlyMap<string, readonly string[]>;
   outside: ReadonlyMap<string, OutsideTicket>;
+  /** What the done check says about the user's own tickets, shown on their cards; null from an older server. */
+  checks: DoneCheckState | null;
 }
 
-export function projectWork(read: PlannedRead, sources: PullSources): ProjectWork {
+export function projectWork(read: PlannedRead, sources: PullSources, checks: DoneCheckState | null = null): ProjectWork {
   const works = new Map(read.tickets.map((ticket) => [ticket.key, ticketWork(ticket, sources)]));
   const order = read.plan.order.filter((key) => works.has(key));
   // A ticket the order missed still gets a place, at the end: dropped, it
@@ -325,7 +328,7 @@ export function projectWork(read: PlannedRead, sources: PullSources): ProjectWor
     if (works.get(key)!.stage === 'done') continue;
     for (const blocker of waitsFor[key]!) dependents.get(blocker)?.push(key);
   }
-  return { read, works, order, waitsFor, dependents, outside: new Map(read.outside.map((ticket) => [ticket.key, ticket])) };
+  return { read, works, order, waitsFor, dependents, outside: new Map(read.outside.map((ticket) => [ticket.key, ticket])), checks };
 }
 
 export type StageCounts = Record<Stage, number>;

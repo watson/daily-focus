@@ -537,6 +537,20 @@ test("GitHub's evidence survives the file, and a bad entry costs only itself", a
   assert.equal(stored?.fromGitHub, true);
 });
 
+test('the head commits and the description hash survive the file; the description itself never reaches it', async () => {
+  const cfg = await config();
+  const pushed = linkedPull({ headSha: 'abc1234def' });
+  const read = ticket('PROJ-1', { pulls: [pushed], fromGitHub: true, descriptionHash: '0123456789abcdef' });
+  const board = new TicketBoard(cfg, () => {}, fakeDeps({ fetches: [ok([read])] }));
+  await board.start();
+  board.stop();
+  assert.deepEqual((await readTicketsFile(cfg.ticketsFile))?.tickets, [read]);
+  assert.deepEqual(board.tickets(), [read], 'every ticket read, for the done check');
+  const stored = normalizeStoredTicket({ ...read, descriptionHash: 'not hex!', pulls: [{ ...pushed, headSha: 'nope' }] });
+  assert.equal(stored?.descriptionHash, undefined);
+  assert.equal(stored?.pulls?.[0]?.headSha, undefined);
+});
+
 test('a stored claim that GitHub decided, with no evidence left to show for it, is dropped', () => {
   const stored = normalizeStoredTicket({ ...ticket('PROJ-1'), pulls: ['nonsense'], fromGitHub: true });
   assert.equal(stored?.pulls, undefined);

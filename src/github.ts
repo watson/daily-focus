@@ -1525,6 +1525,7 @@ query($q: String!, $first: Int!, $after: String) {
         closedAt
         mergedAt
         headRefName
+        headRefOid
         body
         repository { nameWithOwner }
         commits(first: ${TICKET_COMMITS}) { nodes { commit { message } } }
@@ -1561,6 +1562,7 @@ export interface RawTicketPull {
   closedAt?: string | null;
   mergedAt?: string | null;
   headRefName?: string;
+  headRefOid?: string;
   body?: string | null;
   repository?: { nameWithOwner?: string };
   commits?: { nodes?: ({ commit?: { message?: string } } | null)[] };
@@ -1608,7 +1610,10 @@ export function normalizeTicketPull(raw: RawTicketPull): TicketPull | null {
     const message = node?.commit?.message;
     if (typeof message === 'string') text.push(message);
   }
-  return { pull: { repo, number: raw.number, title: raw.title, url, state, closedAt }, text };
+  const pull: LinkedPull = { repo, number: raw.number, title: raw.title, url, state, closedAt };
+  // The done check's key; a node without one is still a pull request, and still counts.
+  if (typeof raw.headRefOid === 'string' && /^[0-9a-f]{7,64}$/i.test(raw.headRefOid)) pull.headSha = raw.headRefOid;
+  return { pull, text };
 }
 
 /**

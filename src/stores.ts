@@ -68,6 +68,7 @@ export const STORE_ENTRIES: readonly string[] = [
   'calendar-accounts.json',
   'calendar.json',
   'copies.json',
+  'donecheck.jsonl',
   'focus.md',
   'items.json',
   'items.schema.json',

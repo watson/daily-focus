@@ -128,6 +128,14 @@ export function postTicketTransition(key: string, status: string): Promise<Dashb
 }
 
 /**
+ * Check now whether a ticket's pull requests finish it. Resolves once the check
+ * is running, with the state saying so; the verdict lands over SSE.
+ */
+export function postTicketCheck(key: string): Promise<DashboardState> {
+  return post('/api/tickets/check', { key });
+}
+
+/**
  * Mark a draft pull request ready for review on GitHub, by its board row's id.
  * Resolves once GitHub has and the board has been read back; rejects with
  * GitHub's own words when it refuses.
