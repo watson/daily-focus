@@ -274,6 +274,9 @@ function gitHub(now: Date): BoardDeps {
     markReady: async () => assert.fail('nothing should be marked ready'),
     merge: async () => assert.fail('nothing should be merged'),
     enqueue: async () => assert.fail('nothing should be queued'),
+    requiredApprovals: async () => assert.fail('no merge helper is set'),
+    liveHeads: async () => assert.fail('no merge helper is set'),
+    runHelper: async () => assert.fail('no merge helper is set'),
   };
 }
 

@@ -93,8 +93,14 @@ run it again with `--remove` afterwards.
   `enqueuePull` adds it to that branch's merge queue. The board's routes take a row
   id, never a URL or repository, and act only on a row the board is showing, as the
   account that read it (`src/board.ts`, `refuseReady` and `refuseMerge` in
-  `src/prs.ts`). Do not add automatic writes, or other external writes, without an
-  explicit scope change.
+  `src/prs.ts`). The user's merge helper (`DAILY_FOCUS_MERGE_HELPER`,
+  `src/mergehelper.ts`) is run with `merge` only from such a click, in place of
+  `mergePull` where its `check` said so, or with `merge --stack` from the top of a
+  stack (`findStack`), and never otherwise; `check` and `status` are its read-only
+  questions, asked after polls. Keep its launch as it is: arguments without a shell,
+  no stdin or terminal, an empty temporary folder outside any checkout, a timeout.
+  Do not add automatic writes, or other external writes, without an explicit scope
+  change.
 - GitHub and Jira are optional. `DAILY_FOCUS_GITHUB` and `DAILY_FOCUS_JIRA` off
   leave them out of everything, the brief included (`agentSettings`). A user's own
   `gh` or `acli` always wins; only without one does connecting fetch it from its
@@ -133,9 +139,10 @@ run it again with `--remove` afterwards.
   in memory, never given to the agent, the assistant or setup's sessions, not even
   calendar names: Google's terms for calendar data hold us to that. Disconnecting
   asks Google to revoke the sign-in, the one request besides those three writes
-  that changes anything elsewhere. Change what it reads only with the policy, at
-  `site/privacy/`. Never commit Google's client secret: the package build writes it
-  in from `GOOGLE_CLIENT_SECRET` (`src/oauthclients.ts`).
+  and the merge helper's `merge` that changes anything elsewhere. Change what it
+  reads only with the policy, at `site/privacy/`. Never commit Google's client
+  secret: the package build writes it in from `GOOGLE_CLIENT_SECRET`
+  (`src/oauthclients.ts`).
 - The assistant may read anything and create or revise a Gmail draft; it must never
   send, post, or edit. It runs in an empty directory, so keep that a property of the
   process: no checkout, no worktree, no repository path setting. Work that needs one

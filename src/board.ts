@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 import type { Config } from './config.ts';
+import { cliEnvironment } from './env.ts';
 import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { writeJsonAtomic } from './fs.ts';
 import {
@@ -8,7 +9,9 @@ import {
   GhMissingError,
   GitHubRequestError,
   enqueuePull,
+  fetchLiveHeads,
   fetchPulls,
+  fetchRequiredApprovals,
   ghToken,
   listGhAccounts,
   markReadyForReview,
@@ -16,10 +19,12 @@ import {
   toMergeMethod,
   toMergeState,
   type AccountFetch,
+  type LiveHead,
   type OrgVisibility,
 } from './github.ts';
 import { canonicalId } from './ids.ts';
-import { countBoard, mergeRoute, refuseMerge, refuseReady, resolveBoard } from './prs.ts';
+import { CHECK_FRESH_MS, MergeHelper, runMergeHelper, type RunHelper } from './mergehelper.ts';
+import { countBoard, findStack, mergeRoute, refuseMerge, refuseReady, resolveBoard, type MergeContext } from './prs.ts';
 import { resolveTool } from './tools.ts';
 import type {
   Action,
@@ -45,8 +50,10 @@ const RATE_LIMIT_FLOOR = 100;
 
 /**
  * The calls the board makes to the outside world, gathered so a test can supply
- * its own. The defaults are the real gh and GitHub. The last three are the
- * board's writes, which only a click on a row reaches: see `markReady` and `merge`.
+ * its own. The defaults are the real gh, GitHub and merge helper. `markReady`,
+ * `merge` and `enqueue` are the board's writes to GitHub, which only a click on
+ * a row reaches: see `markReady` and `merge`. `runHelper` runs the user's merge
+ * helper, whose `merge` only such a click reaches too (`mergehelper.ts`).
  */
 export interface BoardDeps {
   listAccounts(ghPath: string): Promise<{ login: string; active: boolean }[]>;
@@ -55,6 +62,11 @@ export interface BoardDeps {
   markReady(token: string, nodeId: string): Promise<void>;
   merge(token: string, nodeId: string, method: MergeMethod, headSha: string): Promise<void>;
   enqueue(token: string, nodeId: string, headSha: string): Promise<void>;
+  /** The approvals a branch's rules require, for a stack merge's pull requests above the bottom. A read. */
+  requiredApprovals(token: string, repo: string, branch: string): Promise<number>;
+  /** Pull requests as GitHub has them now, by node id, read just before the merge helper is handed them. A read. */
+  liveHeads(token: string, nodeIds: readonly string[]): Promise<Map<string, LiveHead>>;
+  runHelper: RunHelper;
 }
 
 const realDeps: BoardDeps = {
@@ -64,7 +76,20 @@ const realDeps: BoardDeps = {
   markReady: markReadyForReview,
   merge: mergePull,
   enqueue: enqueuePull,
+  requiredApprovals: fetchRequiredApprovals,
+  liveHeads: fetchLiveHeads,
+  runHelper: runMergeHelper,
 };
+
+/** How a merge went: GitHub's merge, its merge queue, or the merge helper, with what the helper said. */
+export interface MergeOutcome {
+  route: 'merge' | 'queue' | 'helper';
+  /** The merge helper's line, for the page to show; null for GitHub's own merge. */
+  notice: string | null;
+}
+
+/** When the approvals a branch's rules require can't be read: one, as the board requires anyway. */
+const APPROVALS_FALLBACK = 1;
 
 /**
  * A click the board turned down before asking GitHub anything: `404` for a pull
@@ -149,11 +174,25 @@ export class Board {
   readonly #abort = new AbortController();
   /** Rows with a write on its way to GitHub, so a second click waits for the first. */
   readonly #writing = new Set<string>();
+  /** The user's merge helper, when one is set. */
+  readonly #helper: MergeHelper | null;
+  /**
+   * The approvals each repository's default branch requires, by lowercased
+   * name, for stack merges: read only where the helper merges stacks, kept a
+   * day, and asked again on the next poll when the read failed.
+   */
+  readonly #approvals = new Map<string, { count: number; at: number; failed: boolean }>();
+  /** The merge helper's questions after a poll, while they are being asked. */
+  #answering: Promise<void> | null = null;
+  /** A poll ended while they were: ask again about what it read once they are done. */
+  #askAgain = false;
 
   constructor(config: Config, onChange: () => void, deps: BoardDeps = realDeps) {
     this.#config = config;
     this.#deps = deps;
     this.#onChange = onChange;
+    const helper = config.github.mergeHelper;
+    this.#helper = config.github.enabled && helper ? new MergeHelper(helper, deps.runHelper, () => cliEnvironment(config)) : null;
   }
 
   get enabled(): boolean {
@@ -212,9 +251,88 @@ export class Board {
         this.#lastPollAt = Date.now();
         this.#schedule();
         this.#onChange();
+        void this.#answer();
       });
     this.#onChange();
     return this.#fetching;
+  }
+
+  /**
+   * Ask the merge helper what the poll that just ended needs from it, and read
+   * the approvals a stack merge needs, without holding the poll up: until the
+   * answers are in, the rows offer nothing they depend on. A poll that ends
+   * while a round is under way gets a round of its own once that one is done,
+   * so a slow helper never leaves a new branch waiting a whole poll. Never
+   * rejects.
+   */
+  #answer(): Promise<void> {
+    const helper = this.#helper;
+    if (!helper || this.#stopped || !this.#file) return Promise.resolve();
+    if (this.#answering) {
+      this.#askAgain = true;
+      return this.#answering;
+    }
+    this.#answering = (async () => {
+      do {
+        this.#askAgain = false;
+        const pulls = this.#file?.pulls ?? [];
+        await helper.ask(pulls);
+        await this.#readApprovals(pulls, helper);
+      } while (this.#askAgain && !this.#stopped);
+    })()
+      .catch((err: unknown) => console.error(`[daily-focus] asking the merge helper failed: ${(err as Error).stack ?? String(err)}`))
+      .finally(() => {
+        this.#answering = null;
+        if (!this.#stopped) this.#onChange();
+      });
+    return this.#answering;
+  }
+
+  /** Resolves once the merge helper has answered what the last poll asked. For tests, and anything that must wait. */
+  answered(): Promise<void> {
+    return this.#answering ?? Promise.resolve();
+  }
+
+  /**
+   * Read how many approvals the default branch requires, for each repository
+   * with a pull request above another's where the helper merges stacks. As the
+   * account that read the pull request; a read that fails stands at one, and is
+   * tried again after the next poll.
+   */
+  async #readApprovals(pulls: readonly PullRequest[], helper: MergeHelper): Promise<void> {
+    const wanted = new Map<string, { repo: string; branch: string; account: string }>();
+    const now = Date.now();
+    for (const pull of pulls) {
+      if (!pull.defaultBranch || pull.baseRef === pull.defaultBranch) continue;
+      const view = helper.view(pull.repo, pull.defaultBranch);
+      if (view?.kind !== 'queue' || !view.stacks) continue;
+      const key = pull.repo.toLowerCase();
+      const known = this.#approvals.get(key);
+      if (known && !known.failed && now - known.at < CHECK_FRESH_MS) continue;
+      if (!wanted.has(key)) wanted.set(key, { repo: pull.repo, branch: pull.defaultBranch, account: pull.account });
+    }
+    await Promise.all(
+      [...wanted].map(async ([key, { repo, branch, account }]) => {
+        try {
+          const gh = resolveTool('gh', this.#config.github.ghPath, this.#config.toolsDir);
+          const count = await this.#deps.requiredApprovals(await this.#deps.token(gh.path, account), repo, branch);
+          this.#approvals.set(key, { count, at: Date.now(), failed: false });
+        } catch {
+          this.#approvals.set(key, { count: APPROVALS_FALLBACK, at: Date.now(), failed: true });
+        }
+      }),
+    );
+  }
+
+  /** What `resolveBoard` needs to know of the merge helper, when one is set. */
+  #merging(): MergeContext | null {
+    const helper = this.#helper;
+    if (!helper) return null;
+    return {
+      helper: (repo, base) => helper.view(repo, base),
+      queued: (id) => helper.queued(id),
+      approvals: (repo) => this.#approvals.get(repo.toLowerCase())?.count ?? null,
+    };
   }
 
   /**
@@ -227,43 +345,140 @@ export class Board {
    * GitHub won't.
    */
   async markReady(id: string, actions: readonly Action[]): Promise<void> {
-    const row = this.#actionable(id, actions, refuseReady);
+    const { row } = this.#actionable(id, actions, refuseReady);
     await this.#write(row, (token) => this.#deps.markReady(token, row.nodeId!));
   }
 
   /**
    * Merge a pull request that is ready, into its default branch, or add it to
-   * that branch's merge queue when it has one; then read the board back. Says
-   * which it did. Refuses as `markReady` does, and when `head`, the commit the
-   * page showed when the user said yes, is no longer the row's: a poll while the
-   * question was open must not get commits merged that nobody looked at. GitHub
-   * refuses for itself when the head has moved since the row was read.
+   * that branch's merge queue when it has one, or hand it to the merge helper
+   * where that said the branch merges through it; then read the board back.
+   * Says which it did. Refuses as `markReady` does, and when `head`, the commit
+   * the page showed when the user said yes, is no longer the row's: a poll while
+   * the question was open must not get commits merged that nobody looked at.
+   * GitHub refuses for itself when the head has moved since the row was read.
    */
-  async merge(id: string, actions: readonly Action[], head: string): Promise<'merge' | 'queue'> {
-    const row = this.#actionable(id, actions, refuseMerge);
+  async merge(id: string, actions: readonly Action[], head: string): Promise<MergeOutcome> {
+    const { row } = this.#actionable(id, actions, refuseMerge);
     if (row.headSha !== head) {
       throw new BoardRefusal(409, `${row.repo}#${row.number}: it has new commits since you looked; check them and try again`);
     }
     const route = mergeRoute(row);
+    if (route === 'helper') {
+      const helper = this.#helper!;
+      const notice = await this.#handOver([row], async () => {
+        await this.#confirmUpstream([row], new Map([[row.id, head]]));
+        return helper.merge(row.url, false, [{ url: row.url, head }]);
+      });
+      return { route, notice };
+    }
     await this.#write(row, (token) =>
       route === 'queue'
         ? this.#deps.enqueue(token, row.nodeId!, row.headSha!)
         : this.#deps.merge(token, row.nodeId!, row.mergeMethod!, row.headSha!),
     );
-    return route;
+    return { route, notice: null };
   }
 
-  /** The row a click names, if it is on the board and offers what was asked. */
-  #actionable(id: string, actions: readonly Action[], refuse: (row: BoardRow) => string | null): BoardRow {
+  /**
+   * Have the merge helper merge the stack `id` tops, bottom first, then read
+   * the board back. Resolves with what the helper said.
+   *
+   * `heads` is what the page asked about: every pull request in the stack, by
+   * row id, with the head commit it showed. The board works the stack out again
+   * from the rows it is showing and refuses unless it is the same pull requests
+   * at the same commits, and unless the top offers the stack merge, by the same
+   * reading that put the button there (`findStack`).
+   */
+  async mergeStack(id: string, actions: readonly Action[], heads: Readonly<Record<string, string>>): Promise<MergeOutcome> {
+    const helper = this.#helper;
+    const { row, rows } = this.#actionable(id, actions, () => (helper ? null : 'no merge helper is set'));
+    const found = findStack(row, rows, this.#merging()!.approvals);
+    if (!found.chain) throw new BoardRefusal(409, `${row.repo}#${row.number}: ${found.why}`);
+    const chain = found.chain;
+    const shown = new Map(Object.entries(heads).map(([key, sha]) => [canonicalId(key), sha]));
+    if (shown.size !== chain.length || chain.some((member) => !shown.has(canonicalId(member.id)))) {
+      throw new BoardRefusal(409, `${row.repo}#${row.number}: the stack has changed since you looked; check it and try again`);
+    }
+    for (const member of chain) {
+      if (shown.get(canonicalId(member.id)) !== member.headSha) {
+        throw new BoardRefusal(409, `${member.repo}#${member.number}: it has new commits since you looked; check them and try again`);
+      }
+      if (this.#writing.has(member.id)) throw new BoardRefusal(409, `${member.repo}#${member.number}: already on its way to the merge helper`);
+    }
+    const notice = await this.#handOver(chain, async () => {
+      await this.#confirmUpstream(chain, new Map(chain.map((member) => [member.id, member.headSha!])));
+      return helper!.merge(
+        row.url,
+        true,
+        chain.map((member) => ({ url: member.url, head: member.headSha! })),
+      );
+    });
+    return { route: 'helper', notice };
+  }
+
+  /**
+   * Read from GitHub, just before the merge helper is handed `rows`, that each
+   * is still open, on the base branch the board read, at the head commit the
+   * page showed (`heads`, by row id). GitHub's own merge is held to a commit;
+   * a helper is handed addresses, so this is what keeps a push since the last
+   * poll from going into the queue unseen. The helper is told the commits too,
+   * and is asked to refuse when they no longer match.
+   */
+  async #confirmUpstream(rows: readonly BoardRow[], heads: ReadonlyMap<string, string>): Promise<void> {
+    const unread = rows.find((row) => !row.nodeId);
+    if (unread) throw new BoardRefusal(409, `${unread.repo}#${unread.number}: the board hasn't read what that needs from GitHub yet; refresh the board and try again`);
+    let live: Map<string, LiveHead>;
+    try {
+      const gh = resolveTool('gh', this.#config.github.ghPath, this.#config.toolsDir);
+      const token = await this.#deps.token(gh.path, rows[0]!.account);
+      live = await this.#deps.liveHeads(token, rows.map((row) => row.nodeId!));
+    } catch (err) {
+      throw new BoardRefusal(409, `could not check on GitHub just now (${(err as Error).message}); try again`);
+    }
+    for (const row of rows) {
+      const now = live.get(row.nodeId!);
+      const ref = `${row.repo}#${row.number}`;
+      if (!now || now.state !== 'OPEN') throw new BoardRefusal(409, `${ref}: it is no longer open`);
+      if (now.head !== heads.get(row.id)) throw new BoardRefusal(409, `${ref}: it has new commits on GitHub since you looked; check them and try again`);
+      if (now.base !== row.baseRef) throw new BoardRefusal(409, `${ref}: its base branch is now ${now.base}; check it and try again`);
+    }
+  }
+
+  /** The row a click names, if it is on the board and offers what was asked, with the rest of the board. */
+  #actionable(id: string, actions: readonly Action[], refuse: (row: BoardRow) => string | null): { row: BoardRow; rows: BoardRow[] } {
     if (!this.enabled) throw new BoardRefusal(409, 'the pull request board is switched off (DAILY_FOCUS_GITHUB=off)');
     if (this.#stopped) throw new BoardRefusal(409, 'the server is shutting down');
     const wanted = canonicalId(id);
-    const row = this.view(actions, new Date()).rows.find((candidate) => canonicalId(candidate.id) === wanted);
+    const rows = this.view(actions, new Date()).rows;
+    const row = rows.find((candidate) => canonicalId(candidate.id) === wanted);
     if (!row) throw new BoardRefusal(404, 'that pull request is not on the board');
     const why = refuse(row);
     if (why) throw new BoardRefusal(409, `${row.repo}#${row.number}: ${why}`);
     if (this.#writing.has(row.id)) throw new BoardRefusal(409, `${row.repo}#${row.number}: already on its way to GitHub`);
-    return row;
+    return { row, rows };
+  }
+
+  /**
+   * One `merge` by the merge helper, for `rows`, then the board read back, as
+   * `#write` does for GitHub. Once the helper has taken them they are in its
+   * queue, as the board will say, until GitHub reports them merged or closed or
+   * its `status` says otherwise. Rejects with its refusal in its own words.
+   */
+  async #handOver(rows: readonly BoardRow[], call: () => Promise<string>): Promise<string> {
+    for (const row of rows) this.#writing.add(row.id);
+    try {
+      try {
+        const notice = await call();
+        this.#helper!.handed(rows.map(({ id, url, repo, number }) => ({ id, url, repo, number })));
+        return notice;
+      } finally {
+        if (this.#fetching) await this.#fetching;
+        await this.refresh();
+      }
+    } finally {
+      for (const row of rows) this.#writing.delete(row.id);
+    }
   }
 
   /**
@@ -294,12 +509,12 @@ export class Board {
 
   /** The board joined with the action log, ready to render. Never throws. */
   view(actions: readonly Action[], now: Date): BoardState {
-    const warnings = this.enabled ? [...this.#attemptWarnings] : [];
+    const warnings = this.enabled ? [...this.#attemptWarnings, ...(this.#helper?.warnings() ?? [])] : [];
     let rows: BoardState['rows'] = [];
     if (this.enabled) {
       try {
         const { mergeGateChecks, mergeGateReviews } = this.#config.github;
-        rows = resolveBoard(this.#file?.pulls ?? [], actions, now, mergeGateChecks, mergeGateReviews);
+        rows = resolveBoard(this.#file?.pulls ?? [], actions, now, mergeGateChecks, mergeGateReviews, this.#merging());
       } catch (err) {
         warnings.push(`Could not judge the pull requests on file: ${(err as Error).message}`);
       }

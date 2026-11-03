@@ -83,6 +83,12 @@ branch has one. Merge appears only when the pull request targets the repository'
 default branch and isn't part of a GitHub stack; merge the others on GitHub. If you
 pushed since the board last looked, GitHub refuses the merge and the board says why.
 
+If your company merges through a queue of its own, set a **Merge helper** under Pull
+requests in Settings: a small program of yours that the board asks how each
+repository merges, and hands a pull request to from its own button, or a whole stack
+from its top with **Merge stack**. Pull requests it took read "in merge queue". The
+[setup guide](https://dailyfocus.dev/setup/#merge-helper) says what it is asked.
+
 Cancelled checks appear as "cancelled, no verdict" rather than failures.
 When a check is rerun, the board uses its newest workflow run or attempt.
 

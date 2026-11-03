@@ -20,6 +20,7 @@ import type {
   TicketRow,
 } from '../src/types.ts';
 import * as api from './api.ts';
+import { HELPER_LABEL, helperLabel } from './board.ts';
 import {
   AGENT_RUN_SEEN_KEY,
   RUN_PREFIX,
@@ -381,33 +382,57 @@ const MERGE_VERB: Record<MergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squas
 /** What Merge asks before it does anything: which pull request, into which branch, and how. */
 export function mergeQuestion(row: BoardRow): string {
   const ref = `${row.repo} #${row.number}`;
+  if (row.offers?.includes('helper')) {
+    const label = helperLabel(row);
+    return label === HELPER_LABEL ? `Add ${ref} to the merge queue?` : `${label}: ${ref}?`;
+  }
   if (row.offers?.includes('queue')) return `Add ${ref} to the merge queue for ${row.baseRef}?`;
   return `${MERGE_VERB[row.mergeMethod ?? 'MERGE']} ${ref} into ${row.baseRef}?`;
+}
+
+/** The rows a stack merge from `row` would land, bottom first, as the page shows them; null when one isn't there. */
+export function stackRows(row: BoardRow): BoardRow[] | null {
+  const rows = state.value?.board?.rows ?? [];
+  const chain = (row.stack ?? []).map((id) => rows.find((candidate) => candidate.id === id));
+  return chain.length >= 2 && chain.every((member) => member !== undefined) ? (chain as BoardRow[]) : null;
+}
+
+/** What Merge stack asks: how many pull requests, and the order they merge in. */
+export function stackQuestion(chain: readonly BoardRow[]): string {
+  return `Merge this stack of ${chain.length} pull requests from the bottom: ${chain.map((member) => `#${member.number}`).join(', ')}?`;
 }
 
 /**
  * Change a pull request on GitHub from its row.
  *
- * Not optimistic, for the reason `moveTicket` gives: the row moves once GitHub
- * has accepted the change and the server has read the board back. The row is
- * pending meanwhile, which disables its buttons, so a second click can't send
- * the same write twice. GitHub refusing is an expected outcome — a push since
- * the board looked makes it refuse a merge — so its words go in the toast.
+ * Not optimistic, for the reason `moveTicket` gives: the row moves once GitHub,
+ * or the merge helper, has accepted the change and the server has read the board
+ * back. The rows are pending meanwhile, which disables their buttons, so a
+ * second click can't send the same write twice. A refusal is an expected outcome
+ * — a push since the board looked makes GitHub refuse a merge — so its words go
+ * in the toast. `done` is what the toast says on success, unless the merge
+ * helper said something of its own.
  */
-async function writePull(id: string, send: (id: string) => Promise<DashboardState>, done: string, refused: string): Promise<void> {
-  if (ui.pending.value.has(id)) return;
+async function writePull(
+  ids: readonly string[],
+  send: () => Promise<api.Landed>,
+  done: string,
+  refused: string,
+): Promise<void> {
+  if (ids.some((id) => ui.pending.value.has(id))) return;
   batch(() => {
     closeMenus();
-    addPending(id);
+    for (const id of ids) addPending(id);
   });
   try {
-    adoptState(await send(id));
-    showToast(done);
+    const { state: next, notice } = await send();
+    adoptState(next);
+    showToast(notice || done);
   } catch (err) {
     showToast(`${refused}: ${(err as Error).message}`);
     await refresh();
   } finally {
-    removePending(id);
+    for (const id of ids) removePending(id);
   }
 }
 
@@ -420,10 +445,14 @@ async function markReady(id: string): Promise<void> {
   const row = pullRow(id);
   if (!row) return;
   const ref = `${row.repo}#${row.number}`;
-  await writePull(id, api.postPullReady, `${ref} is ready for review`, `GitHub would not mark ${ref} ready`);
+  const send = async () => ({ state: await api.postPullReady(id), notice: null });
+  await writePull([id], send, `${ref} is ready for review`, `GitHub would not mark ${ref} ready`);
 }
 
-/** Merge a pull request, or queue it, once the user has said yes: a merge can't be taken back. */
+/**
+ * Merge a pull request, queue it, or hand it to the merge helper, once the user
+ * has said yes: a merge can't be taken back.
+ */
 async function mergePull(id: string): Promise<void> {
   const row = pullRow(id);
   if (!row || ui.pending.value.has(id)) return;
@@ -433,12 +462,39 @@ async function mergePull(id: string): Promise<void> {
   if (!head) return;
   if (!window.confirm(mergeQuestion(row))) return;
   const ref = `${row.repo}#${row.number}`;
+  const send = () => api.postPullMerge(id, head);
+  if (row.offers?.includes('helper')) {
+    await writePull([id], send, `${ref} went to your merge helper`, `Your merge helper would not take ${ref}`);
+    return;
+  }
   const queue = row.offers?.includes('queue') ?? false;
   await writePull(
-    id,
-    (rowId) => api.postPullMerge(rowId, head),
+    [id],
+    send,
     queue ? `${ref} added to the merge queue` : `${ref} merged into ${row.baseRef}`,
     queue ? `GitHub would not queue ${ref}` : `GitHub would not merge ${ref}`,
+  );
+}
+
+/**
+ * Have the merge helper merge the stack a row tops, bottom first, once the user
+ * has said yes to the pull requests it names, in the order they merge. Sends the
+ * head commit of each as the page showed it, so the server merges only what was
+ * asked about.
+ */
+async function mergeStack(id: string): Promise<void> {
+  const row = pullRow(id);
+  if (!row || !row.offers?.includes('stack')) return;
+  const chain = stackRows(row);
+  if (!chain || chain.some((member) => !member.headSha || ui.pending.value.has(member.id))) return;
+  const heads = Object.fromEntries(chain.map((member) => [member.id, member.headSha!]));
+  if (!window.confirm(stackQuestion(chain))) return;
+  const ref = `${row.repo}#${row.number}`;
+  await writePull(
+    chain.map((member) => member.id),
+    () => api.postPullMergeStack(id, heads),
+    `${ref} and the ${chain.length - 1} under it went to your merge helper`,
+    `Your merge helper would not merge the stack up to ${ref}`,
   );
 }
 
@@ -972,6 +1028,7 @@ export const handlers: Handlers = {
   unsnooze: (id) => void undo(id),
   markReady: (id) => void markReady(id),
   mergePull: (id) => void mergePull(id),
+  mergeStack: (id) => void mergeStack(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),
   refreshCalendar: () => void refreshCalendar(),

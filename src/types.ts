@@ -408,11 +408,28 @@ export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
  * What the board offers to do to a pull request from a click on its row. The
  * server refuses anything a row doesn't offer, by the same reading.
  *
- * - `ready`  mark a draft ready for review.
- * - `merge`  merge it now with `mergeMethod`, into its default branch.
- * - `queue`  add it to its default branch's merge queue.
+ * - `ready`   mark a draft ready for review.
+ * - `merge`   merge it now with `mergeMethod`, into its default branch.
+ * - `queue`   add it to its default branch's merge queue.
+ * - `helper`  hand it to the user's merge helper, which queues or merges it
+ *             (`mergehelper.ts`), where the helper said its repository's
+ *             default branch merges that way. In place of `merge` and `queue`.
+ * - `stack`   have the merge helper merge the whole stack this row tops,
+ *             bottom first: `stack` on the row names it.
  */
-export type PullOffer = 'ready' | 'merge' | 'queue';
+export type PullOffer = 'ready' | 'merge' | 'queue' | 'helper' | 'stack';
+
+/**
+ * What the merge helper said about a pull request's repository and base branch
+ * (`mergehelper.ts`), when one is set. Absent when there is none, when it said
+ * GitHub's own merge is the way, or when it couldn't say: then GitHub's merge
+ * applies.
+ *
+ * - `asking`  it hasn't answered yet, so the row offers no merge until it does.
+ * - `queue`   it merges this branch: `label` is its button, and `stacks` says it
+ *             can merge a whole stack of pull requests from its top one.
+ */
+export type MergeHelperView = { kind: 'asking' } | { kind: 'queue'; label: string; stacks: boolean };
 
 export interface BoardAccount {
   login: string;
@@ -500,6 +517,17 @@ export interface BoardRow extends PullRequest {
   notes: { text: string; at: string }[];
   /** What a click on the row may do to it upstream. Absent from a server older than the page. */
   offers?: PullOffer[];
+  /*
+   * The merge helper's part, worked out from what it said and never kept in
+   * `prs.json`: it is configuration and the helper's answers, not facts GitHub
+   * reported. Each is absent when no helper is set.
+   */
+  /** What the merge helper said about this row's base branch, when it targets its default branch. */
+  mergeHelper?: MergeHelperView;
+  /** Sent to the merge helper from the dashboard, which says it is still in its queue. */
+  helperQueued?: boolean;
+  /** On a row offering `stack`: the rows the helper would merge, by id, bottom first and this one last. */
+  stack?: string[];
 }
 
 /** The optional services the dashboard reads through a CLI: GitHub through gh, Jira through acli. */

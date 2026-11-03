@@ -53,6 +53,7 @@
       <li><a href="#install">Install</a></li>
       <li><a href="#running">Keep it running</a></li>
       <li><a href="#connect">Connect your tools</a></li>
+      <li><a href="#merge-helper">Merge through your own queue</a></li>
       <li><a href="#personal">A dashboard for home</a></li>
       <li><a href="#options">Where it keeps things</a></li>
       <li><a href="#update">Update</a></li>
@@ -143,6 +144,59 @@ daily-focus service</code><button class="button button--primary" type="button" d
       <h3 id="sources">Your other sources</h3>
       <p>The morning brief can read anything Claude Code or Codex can reach. With Codex, that’s the apps linked to your ChatGPT account. With Claude Code, add each connector to <b>Tools Claude Code may use</b> under <b>Morning agent</b> on the settings page, or the brief reports it as out of reach.</p>
       <p>Google Tasks has no connector, so it takes a small export to Google Drive first. The <a href="https://github.com/watson/daily-focus/blob/main/apps-script/README.md">Apps Script guide</a> sets it up in a few minutes.</p>
+    </section>
+
+    <section id="merge-helper" aria-labelledby="merge-helper-title">
+      <h2 id="merge-helper-title">Merge through your own queue</h2>
+      <p>The pull request board merges a pull request that’s ready with GitHub’s own merge. If your company merges through a queue of its own instead, started by a bot command or a tool of its own, give Daily Focus a small program that does it for you: a merge helper. Set its path as <b>Merge helper</b> under <b>Pull requests</b> on the settings page. Where the helper says a repository merges through it, the board shows the helper’s button in place of <b>Merge</b>, asks first, and hands the pull request to it.</p>
+      <p>Daily Focus runs the helper with one of three commands, each time as a program of its own, with its arguments passed as they are and no shell in between. It gets no terminal and nothing on its standard input, so it can never stop to ask you something, and it runs in an empty folder of its own, outside any git checkout, with the PATH Claude Code and Codex get. It writes nothing of Daily Focus’s, and Daily Focus keeps what it says in memory only.</p>
+      <dl class="faq">
+        <div>
+          <dt><code>check &lt;pr-url&gt; &lt;base-branch&gt;</code></dt>
+          <dd>Asked once a day for each repository and default branch your open pull requests target, with one of them as the example. It prints one line of JSON: <code>{"queue": true, "label": "Add to merge queue", "stacks": true}</code> when it merges that branch, or <code>{"queue": false}</code> when GitHub’s merge is the way. <code>label</code> is its button, <b>Add to merge queue</b> unless it says otherwise, and <code>stacks</code>, false unless it says so, means it can merge a whole stack from its top pull request.</dd>
+        </div>
+        <div>
+          <dt><code>merge &lt;pr-url&gt; --head &lt;pr-url&gt;=&lt;commit&gt;</code> or <code>merge --stack &lt;top-pr-url&gt; --head …</code></dt>
+          <dd>Run only when you click its button and say yes. It queues or merges that pull request, or the whole stack, from the bottom. Each <code>--head</code> names one of the pull requests and the commit you said yes to, one for every pull request in a stack. Refuse if any of them has moved: Daily Focus checks GitHub just before it runs the helper, but only the helper and its queue can hold the merge to those commits, and a queue that merges later should drop a pull request whose head changes, as GitHub’s own does. Exit 0 when it took it: the first line it prints is what Daily Focus tells you. Exit with anything else to refuse, and the first line it printed to standard error is the reason Daily Focus shows.</dd>
+        </div>
+        <div>
+          <dt><code>status &lt;pr-url&gt;</code></dt>
+          <dd>Asked about the pull requests it took from Daily Focus, after the board reads GitHub, starting two minutes after it took them, until GitHub says they merged or closed. It prints <code>{"queued": true}</code> while one is still in your queue, and <code>{"queued": false}</code> once it isn’t, after which Daily Focus stops asking. The board marks those still queued as in the merge queue.</dd>
+        </div>
+      </dl>
+      <p><code>check</code> and <code>status</code> are questions, and must change nothing. Each gets 30 seconds, and <code>merge</code> two minutes. A <code>check</code> that fails, or prints anything else, is a warning on the board, and that repository offers GitHub’s merge until the helper answers, which Daily Focus asks again the next time it reads GitHub. Every rule GitHub’s merge has still applies: the pull request is approved, its checks pass, it targets the repository’s default branch, and its newest commit is the one you saw.</p>
+      <p>With <code>"stacks": true</code>, the board also finds your stacks: pull requests in one repository, each based on the branch of the one below, down to one on the default branch. The top one offers <b>Merge stack</b> when all of them could go: the bottom one could merge, and each one above isn’t a draft, has no changes requested, failing checks or conflicts, and has as many approvals as the default branch’s rules ask for, and at least one. Daily Focus asks, listing them in the order they merge, then runs <code>merge --stack</code> with the top one’s address.</p>
+      <p>This helper asks a queue to take a pull request by commenting <code>/merge</code> on it with the GitHub CLI, in the repositories it lists, and leaves the rest to GitHub. It reads whether one is still queued from a label on it. Change the two lists at the top to yours, save it, make it executable with <code>chmod +x</code>, and set its path:</p>
+      <div class="code code--block"><code id="cmd-merge-helper">#!/bin/sh
+# A merge helper: asks the queue with a /merge comment, in these repositories only.
+REPOS="acme/payments-api acme/webapp"
+QUEUED_LABEL="queued"
+
+repo_of() { printf '%s\n' "$1" | sed -E 's#^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$#\1#'; }
+listed() { for repo in $REPOS; do [ "$repo" = "$1" ] &amp;&amp; return 0; done; return 1; }
+
+case "$1" in
+  check)
+    if listed "$(repo_of "$2")"; then echo '{"queue": true, "label": "Add to merge queue"}'
+    else echo '{"queue": false}'; fi ;;
+  merge)
+    if [ "$2" = "--stack" ]; then echo "this helper merges one pull request at a time" &gt;&amp;2; exit 1; fi
+    url=$2; shift 2
+    # Refuse if a pull request has new commits since you said yes.
+    while [ "$1" = "--head" ]; do
+      now=$(gh pr view "${2%%=*}" --json headRefOid --jq .headRefOid) || exit 1
+      [ "$now" = "${2#*=}" ] || { echo "${2%%=*} has new commits; check them and try again" &gt;&amp;2; exit 1; }
+      shift 2
+    done
+    gh pr comment "$url" --body "/merge" &gt; /dev/null || exit 1
+    echo "Asked the merge queue to take it" ;;
+  status)
+    labels=$(gh pr view "$2" --json labels --jq '.labels[].name') || exit 1
+    if printf '%s\n' "$labels" | grep -qx "$QUEUED_LABEL"; then echo '{"queued": true}'
+    else echo '{"queued": false}'; fi ;;
+  *) echo "unknown command: $1" &gt;&amp;2; exit 2 ;;
+esac</code><button class="button button--primary" type="button" data-copy="cmd-merge-helper">Copy</button></div>
+      <p>On Windows, the helper has to be a program, or a Node script installed with npm, whose command Daily Focus knows how to start; it won’t run a batch file of its own through the command prompt.</p>
     </section>
 
     <section id="personal" aria-labelledby="personal-title">

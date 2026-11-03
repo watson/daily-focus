@@ -371,6 +371,45 @@ query($ids: [ID!]!) {
   }
 }`;
 
+/** What a pull request is on GitHub right now: its state, head commit and base branch. */
+export interface LiveHead {
+  state: string;
+  head: string;
+  base: string;
+}
+
+const LIVE_HEADS_QUERY = `
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on PullRequest { id state headRefOid baseRefName }
+  }
+}`;
+
+/**
+ * Some pull requests as GitHub has them now, by node id, for the moment before
+ * a merge helper is handed them: a helper is given addresses, not a commit
+ * GitHub can hold it to, so the board checks what it would be handing over.
+ * Throws when GitHub doesn't answer; one missing from the answer is missing
+ * from the map.
+ */
+export async function fetchLiveHeads(token: string, nodeIds: readonly string[]): Promise<Map<string, LiveHead>> {
+  const result = await graphql<{
+    nodes?: ({ id?: unknown; state?: unknown; headRefOid?: unknown; baseRefName?: unknown } | null)[];
+  }>(token, LIVE_HEADS_QUERY, { ids: nodeIds });
+  if (!result.data?.nodes) {
+    throw new GitHubRequestError(`GitHub did not say (${result.errors.map((error) => error.message).join('; ') || 'no answer'})`, null);
+  }
+  const heads = new Map<string, LiveHead>();
+  for (const node of result.data.nodes) {
+    if (!node) continue;
+    const { id, state, headRefOid, baseRefName } = node;
+    if (typeof id === 'string' && typeof state === 'string' && typeof headRefOid === 'string' && typeof baseRefName === 'string') {
+      heads.set(id, { state, head: headRefOid, base: baseRefName });
+    }
+  }
+  return heads;
+}
+
 /**
  * The checks on several pulls' head commits, keyed by node id.
  *
@@ -1392,6 +1431,62 @@ export async function mergePull(token: string, nodeId: string, method: MergeMeth
 export async function enqueuePull(token: string, nodeId: string, headSha: string): Promise<void> {
   const { query, variables } = enqueueRequest(nodeId, headSha);
   readEnqueueReply(await graphql<EnqueueReply>(token, query, variables));
+}
+
+/* ---------- the approvals a branch requires ---------- */
+
+/**
+ * How many approvals a branch's rules require: the highest
+ * `required_approving_review_count` among its `pull_request` rules, or 0 when it
+ * has none. Throws for an answer that isn't a list of rules, which the caller
+ * treats as unreadable.
+ *
+ * Read from the rules that apply to a branch, which anyone who can read the
+ * repository may read. Classic branch protection is not among them, and reading
+ * it takes admin rights, so a branch protected only that way reads as 0 here.
+ */
+export function readRequiredApprovals(rules: unknown): number {
+  if (!Array.isArray(rules)) throw new Error('GitHub answered with something other than a list of rules');
+  let required = 0;
+  for (const rule of rules as { type?: unknown; parameters?: { required_approving_review_count?: unknown } | null }[]) {
+    if (rule?.type !== 'pull_request') continue;
+    const count = rule.parameters?.required_approving_review_count;
+    if (typeof count === 'number' && Number.isInteger(count) && count > required) required = count;
+  }
+  return required;
+}
+
+/** Where a branch's rules are read from, its name kept whole across any slashes in it. */
+export function branchRulesUrl(repo: string, branch: string): string {
+  const [owner = '', name = ''] = repo.split('/');
+  const path = branch.split('/').map(encodeURIComponent).join('/');
+  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/rules/branches/${path}?per_page=100`;
+}
+
+/**
+ * The approvals `repo`'s `branch` requires, read as `token`'s account. Only a
+ * read: it is what the board's stack merge checks the pull requests above the
+ * bottom one against. Rejects when GitHub can't be asked or won't say.
+ */
+export async function fetchRequiredApprovals(token: string, repo: string, branch: string): Promise<number> {
+  const url = branchRulesUrl(repo, branch);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'user-agent': 'daily-focus' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new GitHubRequestError(unreachable(err, new URL(url).host), null, { cause: err });
+  }
+  if (!res.ok) throw new GitHubRequestError(`GitHub answered ${res.status} for ${repo}'s rules on ${branch}`, res.status);
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (err) {
+    throw new GitHubRequestError(`GitHub returned unreadable JSON: ${(err as Error).message}`, res.status, { cause: err });
+  }
+  return readRequiredApprovals(body);
 }
 
 /* ---------- pull requests by ticket ---------- */

@@ -50,11 +50,14 @@ function pull(account: string, number: number): PullRequest {
   };
 }
 
-/** The board's writes, for a test that expects none: each one fails the test. */
-const NO_WRITES: Pick<BoardDeps, 'markReady' | 'merge' | 'enqueue'> = {
+/** The board's writes, and the merge helper, for a test that expects none: each one fails the test. */
+const NO_WRITES: Pick<BoardDeps, 'markReady' | 'merge' | 'enqueue' | 'requiredApprovals' | 'liveHeads' | 'runHelper'> = {
   markReady: async () => assert.fail('nothing should be marked ready'),
   merge: async () => assert.fail('nothing should be merged'),
   enqueue: async () => assert.fail('nothing should be queued'),
+  requiredApprovals: async () => assert.fail('no merge helper is set'),
+  liveHeads: async () => assert.fail('no merge helper is set'),
+  runHelper: async () => assert.fail('no merge helper is set'),
 };
 
 /** Fake gh and GitHub. Each fetch is keyed by the token it was handed. */
@@ -709,7 +712,7 @@ test("merge uses the repository's method and the head the board read, and reads 
   let open = true;
   const { board, calls } = await writableBoard(() => (open ? [payments(412, { mergeMethod: 'REBASE' })] : []));
   open = false;
-  assert.equal(await board.merge('github:pr:acme/payments-api#412', [], HEAD), 'merge');
+  assert.deepEqual(await board.merge('github:pr:acme/payments-api#412', [], HEAD), { route: 'merge', notice: null });
 
   assert.deepEqual(calls, ['token:alice', `merge:t-alice:PR_kwDOAcme412:REBASE:${HEAD}`, 'token:alice', 'fetch:t-alice']);
   assert.deepEqual(board.view([], new Date()).rows, [], 'merged, it is gone from the board');
@@ -717,7 +720,7 @@ test("merge uses the repository's method and the head the board read, and reads 
 
 test('a branch with a merge queue gets the pull request queued, not merged', async () => {
   const { board, calls } = await writableBoard(() => [payments(412, { mergeQueue: true })]);
-  assert.equal(await board.merge('github:pr:acme/payments-api#412', [], HEAD), 'queue');
+  assert.deepEqual(await board.merge('github:pr:acme/payments-api#412', [], HEAD), { route: 'queue', notice: null });
   assert.deepEqual(calls, ['token:alice', `enqueue:t-alice:PR_kwDOAcme412:${HEAD}`, 'token:alice', 'fetch:t-alice']);
 });
 

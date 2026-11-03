@@ -105,6 +105,7 @@ versions and release notes come from, so CI checks it.
 | `src/oauthclients.ts` | The apps Daily Focus is registered as with Google and Microsoft. Google's client secret stays out of git: the package build writes it in from `GOOGLE_CLIENT_SECRET`, a secret of the Release workflow, so a dashboard run from a checkout offers only Microsoft |
 | `src/zone.ts`, `client/zone.ts` | The dashboard's time zone: the one the browser last reported, or the Mac's when it moves |
 | `src/github.ts`, `src/prs.ts`, `src/board.ts` | GitHub reads and the board's writes, PR classification and what a row offers to do, and polling |
+| `src/mergehelper.ts` | The user's merge helper: starting it safely, reading its answers, and what it said, kept in memory |
 | `src/tools.ts` | Fetching gh and acli from their makers for a user without them, checked, into the data folder's `tools/` |
 | `src/connect.ts`, `client/connect.ts` | Connecting GitHub or Jira from the page: the CLI fetched if need be, then signed in, on setup's card, the boards and Settings |
 | `scripts/licenses.ts` | The package's `dist/third-party-licenses.txt`: every npm package its bundles read, and the fonts |
@@ -178,9 +179,10 @@ free of side effects, since only `POST` is checked for its content type.
 | `POST /api/calendar/refresh` | Reads the calendar now, for the agenda's Retry. Returns fresh state once it has |
 | `POST /api/projects/refresh` | Reads the epics assigned to you, and every project kept open, now. Returns fresh state once it has |
 | `POST /api/projects/open` | `{key}`. Reads one epic, initiative or ticket with its tickets and their blocks links, unless it was read in the last minute, and keeps it in `projects.open`. `409` when Jira is off |
-| `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. One of the dashboard's three writes to anything outside this machine, with the two below |
+| `POST /api/tickets/transition` | `{key, status}`. Moves one ticket in Jira, then re-reads. `409` with Jira's reason when the workflow refuses. One of the dashboard's writes to anything outside this machine, with the board's below |
 | `POST /api/board/ready` | `{id}`, a pull request row's. Marks that draft ready for review on GitHub, as the account that read it, then polls. `404` for a row the board isn't showing, `409` for one that isn't a draft, or with GitHub's reason when it refuses |
-| `POST /api/board/merge` | `{id}`, a pull request row's. Merges one in Ready to merge into its default branch, with the account's usual merge method and only at the head the board last read, or adds it to the branch's merge queue when it has one; then polls. Never for another base branch or a member of a GitHub stack. `404` and `409` as for ready |
+| `POST /api/board/merge` | `{id, head}`, a pull request row's and the head commit the page showed. Merges one in Ready to merge into its default branch, with the account's usual merge method and only at the head the board last read, or adds it to the branch's merge queue when it has one, or runs the merge helper's `merge` where its `check` said the branch merges through it, answering with its line as `notice`; then polls. Never for another base branch or a member of a GitHub stack. `404` and `409` as for ready, and `409` with the helper's own words when it refuses |
+| `POST /api/board/merge-stack` | `{id, heads}`: the top row of a stack the merge helper merges whole, and every row in it with the head commit the page showed. Works the stack out again, refuses with `409` if it differs or a head moved, then runs the helper's `merge --stack` and polls, answering with its line as `notice` |
 | `POST /api/assistant/ask` | `{id, action?, text?}`. Starts the assistant on a row; returns state with the turn running. The reply streams in over SSE. `409` when it is off or already working on that row |
 | `POST /api/assistant/stop` | `{id}`. Kills the turn running on a row |
 | `POST /api/agent/run` | Starts the morning agent now; returns state with the run going. `409` when it is off or already running |
