@@ -749,3 +749,21 @@ test('a card stacked on another ticket says so, and says when Jira had the order
   assert.match(text(card(node, 'PAY-202')), /Jira says it blocks PAY-201, but its pull request is stacked on PAY-201's, so it is shown after PAY-201/);
   assert.deepEqual(byClass(node, 'banner--warning').filter((banner) => /block each other/.test(text(banner))), [], 'and no loop');
 });
+
+test('a loop made of a stack and Jira links is named the way the plan sees it', () => {
+  // Stack: PAY-202 after PAY-201. Jira: PAY-203 waits for PAY-202, and PAY-201 waits for PAY-203.
+  const tickets = epicTickets().map((each) =>
+    each.key === 'PAY-201'
+      ? { ...each, blockedBy: ['PAY-203'], blocks: [] }
+      : each.key === 'PAY-202'
+        ? { ...each, blockedBy: [], blocks: [] }
+        : each.key === 'PAY-203'
+          ? { ...each, blockedBy: ['PAY-202'], blocks: [] }
+          : { ...each, blockedBy: each.blockedBy.filter((key) => !['PAY-201', 'PAY-202', 'PAY-203'].includes(key)) },
+  );
+  const node = view(projectsState({ open: opened(planned(tickets)) }), { projectKey: 'PAY-200' });
+  assert.ok(
+    byClass(node, 'banner__text').some((banner) => text(banner) === 'These tickets block each other: PAY-201 → PAY-202 → PAY-203 → PAY-201. Fix the links in Jira.'),
+    byClass(node, 'banner__text').map(text).join(' | '),
+  );
+});

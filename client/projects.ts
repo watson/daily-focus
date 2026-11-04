@@ -291,7 +291,7 @@ function readView(read: PlannedRead, state: DashboardState, ui: UiState, handler
   // Where each pull request stands, and what it offers, is the board's last good read.
   if (state.board?.enabled) parts.push(...boardFailures(state.board, now, ui, handlers));
   for (const warning of read.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
-  for (const loop of project.plan.loops ?? []) parts.push(loopBanner(loop, read));
+  for (const loop of project.plan.loops ?? []) parts.push(loopBanner(loop, project));
 
   parts.push(projectHeader(read, handlers));
   const all = project.order.map((key) => project.works.get(key)!);
@@ -322,8 +322,10 @@ function projectBody(children: ComponentChild[], state: DashboardState, ui: UiSt
 }
 
 /** "These tickets block each other: PROJ-2 → PROJ-3 → PROJ-2. Fix the links in Jira." */
-function loopBanner(members: readonly string[], read: PlannedRead): JSX.Element {
-  const { path, others } = loopPath(members, read.tickets);
+function loopBanner(members: readonly string[], project: ProjectWork): JSX.Element {
+  // The way round from the links the plan used, stacks included and the Jira links they overruled left out.
+  const links = project.read.tickets.map((ticket) => ({ ...ticket, blockedBy: [...(project.waitsFor[ticket.key] ?? [])], blocks: [] }));
+  const { path, others } = loopPath(members, links);
   const also = others.length > 0 ? `, with ${listOf(others)} caught in it too` : '';
   return banner('warning', '!', `These tickets block each other: ${path.join(' → ')}${also}. Fix the links in Jira.`);
 }
