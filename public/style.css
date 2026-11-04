@@ -2236,7 +2236,9 @@ body[data-view='settings'] .layout {
   columns: 2 460px;
   column-gap: 10px;
 }
-#tickets .list > .item {
+#tickets .list > .item,
+#tickets .list > .project-done,
+#tickets .list > .epic-card {
   break-inside: avoid;
   margin-bottom: 8px;
 }
