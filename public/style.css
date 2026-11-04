@@ -1839,6 +1839,10 @@ body:has(.today__masthead) .agenda__title {
 .drawer {
   margin-top: 24px;
 }
+/* The pull request board is drawers all the way down, and its first starts where a section would. */
+.drawer:first-child {
+  margin-top: 0;
+}
 .drawer > summary {
   display: flex;
   align-items: center;

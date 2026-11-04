@@ -42,7 +42,7 @@ export function failureNotice(
     'details',
     {
       class: `${className} failure`,
-      open: ui.openDrawers.value.has(fold),
+      open: ui.drawers.value.get(fold) ?? false,
       onToggle: (event: Event) => handlers.toggleDrawer(fold, (event.currentTarget as HTMLDetailsElement).open),
     },
     el(

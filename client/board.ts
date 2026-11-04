@@ -10,7 +10,7 @@ import { formatTime, relativeDay, relativeTime, waitedFor } from './format.ts';
 import { cssId, onCard, renderAhead, renderSnoozeMenu, rowPills, sourceColor, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
-import { drawer, section } from './section.ts';
+import { drawer } from './section.ts';
 import { connecting, connectionView } from './connect.ts';
 import type { Handlers, UiState } from './types.ts';
 
@@ -67,15 +67,18 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
   const connection = state.connections?.github;
   if (connection && (board.connect || connecting(connection))) parts.push(connectionView('github', connection, handlers));
 
+  // Every court folds, as Snoozed does, and starts open: it holds what to look at.
   const open = board.rows.filter((row) => row.status === 'open');
   for (const court of COURT_ORDER) {
     const rows = open.filter((row) => row.court === court);
     // A nudged row waits on the same reviewers, but there is nothing to do about
-    // it until it asks again. It sits apart until then, and comes back on its own.
+    // it until it asks again. It sits apart until then, folded, and comes back on its own.
     const nudged = court === 'reviewers' ? rows.filter((row) => row.nudgedAt) : [];
     const waiting = rows.filter((row) => !row.nudgedAt);
-    if (waiting.length > 0) parts.push(section(COURT_TITLE[court], waiting, state, ui, handlers, null, renderPullRow));
-    if (nudged.length > 0) parts.push(section('Nudged', nudged, state, ui, handlers, null, renderPullRow));
+    if (waiting.length > 0) {
+      parts.push(drawer(`board:${court}`, COURT_TITLE[court], waiting, state, ui, handlers, renderPullRow, { open: true }));
+    }
+    if (nudged.length > 0) parts.push(drawer('board:nudged', 'Nudged', nudged, state, ui, handlers, renderPullRow));
   }
 
   if (open.length === 0 && !board.reason) {
