@@ -424,7 +424,8 @@ export function renderPullWrites(
   handlers: Handlers,
   kinds: readonly PullWrite[] = ['ready', 'merge', 'stack'],
 ): JSX.Element[] {
-  const offers = (row.offers ?? []).filter((offer) => kinds.includes(offer === 'helper' || offer === 'queue' ? 'merge' : offer));
+  // Turning one back into a draft is the Projects card's, on its state, never a button here.
+  const offers = (row.offers ?? []).filter((offer) => offer !== 'draft' && kinds.includes(offer === 'helper' || offer === 'queue' ? 'merge' : offer));
   const pending = ui.pending.value.has(row.id);
   const button = (label: string, title: string, onClick: () => void): JSX.Element =>
     el('button', { type: 'button', class: 'button', title, disabled: pending, 'aria-busy': pending ? 'true' : undefined, onClick }, label);

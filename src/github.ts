@@ -1330,6 +1330,11 @@ mutation($id: ID!) {
   markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { id isDraft } }
 }`;
 
+const DRAFT_MUTATION = `
+mutation($id: ID!) {
+  convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { id isDraft } }
+}`;
+
 /**
  * Merging is made conditional on the head commit the board last read, so a push
  * since that poll makes GitHub refuse rather than merge commits nobody here has
@@ -1348,6 +1353,10 @@ mutation($id: ID!, $head: GitObjectID!) {
 
 export function readyRequest(nodeId: string): GraphQLRequest {
   return { query: READY_MUTATION, variables: { id: nodeId } };
+}
+
+export function draftRequest(nodeId: string): GraphQLRequest {
+  return { query: DRAFT_MUTATION, variables: { id: nodeId } };
 }
 
 export function mergeRequest(nodeId: string, method: MergeMethod, headSha: string): GraphQLRequest {
@@ -1376,6 +1385,10 @@ export interface ReadyReply {
   markPullRequestReadyForReview?: { pullRequest?: { id?: string; isDraft?: boolean } | null } | null;
 }
 
+export interface DraftReply {
+  convertPullRequestToDraft?: { pullRequest?: { id?: string; isDraft?: boolean } | null } | null;
+}
+
 export interface MergeReply {
   mergePullRequest?: { pullRequest?: { id?: string; merged?: boolean } | null } | null;
 }
@@ -1393,6 +1406,12 @@ export function readReadyReply(result: Pick<GraphQLResult<ReadyReply>, 'data' | 
   refuse(result.errors);
   const pull = result.data?.markPullRequestReadyForReview?.pullRequest;
   if (!pull || pull.isDraft !== false) throw new GitHubRefusedError("GitHub didn't say the pull request is ready for review");
+}
+
+export function readDraftReply(result: Pick<GraphQLResult<DraftReply>, 'data' | 'errors'>): void {
+  refuse(result.errors);
+  const pull = result.data?.convertPullRequestToDraft?.pullRequest;
+  if (!pull || pull.isDraft !== true) throw new GitHubRefusedError("GitHub didn't say the pull request is a draft again");
 }
 
 export function readMergeReply(result: Pick<GraphQLResult<MergeReply>, 'data' | 'errors'>): void {
@@ -1419,6 +1438,12 @@ export function readEnqueueReply(result: Pick<GraphQLResult<EnqueueReply>, 'data
 export async function markReadyForReview(token: string, nodeId: string): Promise<void> {
   const { query, variables } = readyRequest(nodeId);
   readReadyReply(await graphql<ReadyReply>(token, query, variables));
+}
+
+/** Turn a pull request back into a draft. Rejects with GitHub's reason when it refuses. */
+export async function convertToDraft(token: string, nodeId: string): Promise<void> {
+  const { query, variables } = draftRequest(nodeId);
+  readDraftReply(await graphql<DraftReply>(token, query, variables));
 }
 
 /** Merge a pull request with `method`, if its head is still `headSha`. Rejects with GitHub's reason when it refuses. */

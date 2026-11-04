@@ -72,7 +72,9 @@ function board(pulls: PullRequest[], merging: MergeContext | null = context()): 
   return new Map(resolveBoard(pulls, [], NOW, [], null, merging).map((row) => [row.number, row]));
 }
 
-const offers = (rows: Map<number, BoardRow>) => Object.fromEntries([...rows].map(([number, row]) => [number, row.offers]));
+// Merges only: turning a pull request back into a draft is offered on every open one, and is not what this file is about.
+const merges = (row: BoardRow | undefined) => row?.offers?.filter((offer) => offer !== 'draft');
+const offers = (rows: Map<number, BoardRow>) => Object.fromEntries([...rows].map(([number, row]) => [number, merges(row)]));
 
 test("the helper's button takes the place of GitHub's merge only where it said the branch merges through it", () => {
   const pulls = [pull(411), pull(412, { mergeQueue: true }), pull(410, { isDraft: true })];
@@ -95,7 +97,7 @@ test('GitHub’s rules for a merge still decide whether the helper is offered', 
     pull(419, { headSha: null }),
     pull(420),
   ], context({ queued: ['github:pr:acme/payments-api#420'] }));
-  for (const number of [414, 415, 416, 417, 418, 419, 420]) assert.deepEqual(rows.get(number)?.offers, [], `#${number}`);
+  for (const number of [414, 415, 416, 417, 418, 419, 420]) assert.deepEqual(merges(rows.get(number)), [], `#${number}`);
   assert.equal(rows.get(420)?.helperQueued, true, 'the helper says it is in its queue');
   assert.equal(rows.get(414)?.mergeHelper, undefined, 'the helper is asked about default branches only');
 });
@@ -115,7 +117,7 @@ test('a stack offers Merge stack on its top, naming every pull request in it, bo
 });
 
 test('no stack merge without a helper that merges stacks, or while it or the approvals are unknown', () => {
-  const none = (merging: MergeContext | null) => assert.deepEqual(board(STACK(), merging).get(412)?.offers, []);
+  const none = (merging: MergeContext | null) => assert.deepEqual(merges(board(STACK(), merging).get(412)), []);
   none(null);
   none(context({ helper: null }));
   none(context({ helper: { kind: 'asking' } }));
@@ -162,7 +164,7 @@ test('every pull request above the bottom must be ready to go with it', () => {
 test("each needs as many approvals as the default branch's rules ask, and always one", () => {
   assert.equal(refusal(STACK(), 412, context({ approvals: 2 })), '#411 has 1 approval, and main needs 2');
   const twice = { reviews: [{ login: 'bob', state: 'APPROVED', at: '2026-11-02T10:00:00Z' }, { login: 'carol', state: 'APPROVED', at: '2026-11-02T11:00:00Z' }] };
-  assert.deepEqual(board([pull(410), above(411, 410, twice), above(412, 411, twice)], context({ approvals: 2 })).get(412)?.offers, ['stack']);
+  assert.deepEqual(merges(board([pull(410), above(411, 410, twice), above(412, 411, twice)], context({ approvals: 2 })).get(412)), ['stack']);
   // A branch whose rules ask for none still gets an approved stack only.
   assert.equal(refusal([pull(410), above(411, 410, { reviews: [] }), above(412, 411)], 412, context({ approvals: 0 })), '#411 has no approvals, and main needs 1');
 });

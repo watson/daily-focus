@@ -13,7 +13,7 @@ import { Menu, cssId, onCard, renderSnoozeMenu, rowPills, type RowProps } from '
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
-import { ProjectsView, projectPicker } from './projects.ts';
+import { ProjectsView } from './projects.ts';
 import { PANEL_PREFIX, type ProjectTicketRow } from './state.ts';
 import type { Handlers, TicketMode, UiState } from './types.ts';
 
@@ -163,7 +163,7 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
   // Built from both views' rows, so it is the same key on either side of the
   // switch: one built per view vanished whenever a view held a single type, and
   // the line under it jumped as it came and went.
-  // In Projects the line holds the picker instead: no row there carries a type dot.
+  // Not in Projects: no row there carries a type dot, and its own breadcrumb is how to move about it.
   const legend = typeLegend([...board.rows, ...inProgress]);
   parts.push(
     el(
@@ -175,7 +175,7 @@ export function renderTicketBoard(state: DashboardState, ui: UiState, handlers: 
         { sync: open.length, working: inProgress.length, projects: state.projects?.epics?.length ?? 0 },
         handlers,
       ),
-      mode === 'projects' ? projectPicker(state, ui, handlers) : legend,
+      mode === 'projects' ? null : legend,
     ),
   );
 

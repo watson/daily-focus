@@ -249,6 +249,8 @@ export interface Handlers {
   unsnooze(id: string): void;
   /** Mark a draft pull request ready for review on GitHub. */
   markReady(id: string): void;
+  /** Turn one of the user's open pull requests back into a draft on GitHub. */
+  markDraft(id: string): void;
   /** Merge a pull request, add it to its merge queue, or hand it to the merge helper, once the user has said yes. */
   mergePull(id: string): void;
   /** Have the merge helper merge the stack a pull request tops, bottom first, once the user has said yes. */

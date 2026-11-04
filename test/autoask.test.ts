@@ -272,6 +272,7 @@ function gitHub(now: Date): BoardDeps {
     fetch: async () => ({ login: 'me', pulls, warnings: [], orgs: {}, rateLimitRemaining: null }),
     // Asking ahead never changes anything on GitHub.
     markReady: async () => assert.fail('nothing should be marked ready'),
+    markDraft: async () => assert.fail('nothing should be turned into a draft'),
     merge: async () => assert.fail('nothing should be merged'),
     enqueue: async () => assert.fail('nothing should be queued'),
     requiredApprovals: async () => assert.fail('no merge helper is set'),

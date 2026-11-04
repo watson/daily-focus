@@ -77,6 +77,10 @@ const deps: BoardDeps = {
     write(`ready ${token} ${nodeId}`, () => {
       for (const pull of github.pulls) if (pull.nodeId === nodeId) pull.isDraft = false;
     }),
+  markDraft: (token, nodeId) =>
+    write(`draft ${token} ${nodeId}`, () => {
+      for (const pull of github.pulls) if (pull.nodeId === nodeId) pull.isDraft = true;
+    }),
   merge: (token, nodeId, method, headSha) =>
     write(`merge ${token} ${nodeId} ${method} ${headSha}`, () => {
       github.pulls = github.pulls.filter((pull) => pull.nodeId !== nodeId);
@@ -129,9 +133,9 @@ const row = (state: DashboardState, number: number) => state.board.rows.find((ca
 test('the board offers each row only what the server would do', async () => {
   const state = (await (await fetch(`${server.url}/api/state`)).json()) as DashboardState;
   assert.deepEqual(row(state, 410)?.offers, ['ready']);
-  assert.deepEqual(row(state, 411)?.offers, [], 'not into a branch other than main');
-  assert.deepEqual(row(state, 412)?.offers, ['merge']);
-  assert.deepEqual(row(state, 413)?.offers, ['queue']);
+  assert.deepEqual(row(state, 411)?.offers, ['draft'], 'no merge into a branch other than main');
+  assert.deepEqual(row(state, 412)?.offers, ['draft', 'merge']);
+  assert.deepEqual(row(state, 413)?.offers, ['draft', 'queue']);
 });
 
 test('the routes take a row id and nothing else, behind the same guard as every POST', async () => {
@@ -176,6 +180,25 @@ test("GitHub's refusal is a 409 in GitHub's words", async () => {
     github.refuse = null;
   }
   assert.deepEqual(github.calls, [`merge token-alice PR_kwDOAcme412 SQUASH ${HEAD}`]);
+});
+
+test('an open pull request turns back into a draft once, and a draft is refused', async () => {
+  github.calls = [];
+  const already = await post('/api/board/draft', { id: 'github:pr:acme/payments-api#410' });
+  assert.equal(already.status, 409);
+  assert.deepEqual(await already.json(), { error: 'acme/payments-api#410: it is a draft already' });
+  const notRow = await post('/api/board/draft', { id: 'https://github.com/acme/payments-api/pull/411' });
+  assert.equal(notRow.status, 400, 'a row id, never an address');
+  assert.deepEqual(github.calls, []);
+
+  const drafted = await post('/api/board/draft', { id: 'github:pr:acme/payments-api#411' });
+  assert.equal(drafted.status, 200);
+  const state = (await drafted.json()) as DashboardState;
+  assert.equal(row(state, 411)?.isDraft, true);
+  assert.deepEqual(row(state, 411)?.offers, ['ready'], 'and now it offers the way back');
+  // Back as it was, for the tests after this one.
+  assert.equal((await post('/api/board/ready', { id: 'github:pr:acme/payments-api#411' })).status, 200);
+  assert.deepEqual(github.calls, ['draft token-alice PR_kwDOAcme411', 'ready token-alice PR_kwDOAcme411']);
 });
 
 test('ready, merge and queue each change GitHub once, then answer with the board read back', async () => {

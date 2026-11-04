@@ -281,5 +281,5 @@ export function stateWith(projects: ProjectsState | undefined, overrides: { boar
     statuses: {},
     ...overrides.tickets,
   } as TicketBoardState;
-  return { now: NOW.toISOString(), board, tickets, projects } as unknown as DashboardState;
+  return { now: NOW.toISOString(), items: [], board, tickets, projects } as unknown as DashboardState;
 }

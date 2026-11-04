@@ -12,7 +12,7 @@ import { App } from './app.ts';
 import { setCalendarZone } from './format.ts';
 import { installKeyboard } from './keyboard.ts';
 import { watchPresence } from './presence.ts';
-import { RUN_PREFIX, availableViews, detailRow, detailRun, setDetailFor, state, ui } from './state.ts';
+import { RUN_PREFIX, availableViews, detailRow, detailRun, panelInProject, setDetailFor, state, ui } from './state.ts';
 import { stampedTheme } from './theme.ts';
 import { ZONE_CHECK_MS, browserZone, watchZone } from './zone.ts';
 
@@ -43,7 +43,8 @@ effect(() => {
 effect(() => {
   const current = state.value;
   const open = current !== null && (detailRun(current, ui) !== null || detailRow(current, ui) !== null);
-  document.body.dataset.flyout = open ? 'open' : 'closed';
+  // Inside a project the panel is the project's to place, and the page keeps one column.
+  document.body.dataset.flyout = open ? (panelInProject(current, ui) ? 'inline' : 'open') : 'closed';
 });
 
 /* ---------- what a new state means for the view ---------- */

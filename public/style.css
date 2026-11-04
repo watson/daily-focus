@@ -119,21 +119,27 @@
   --serious: #ec835a;
   --critical: #d03b3b;
   --good-ink: light-dark(#006300, #0ca30c);
+  /* The critical colour as small text: on a dark card the status red alone is too faint to read. */
+  --critical-ink: light-dark(#d03b3b, #ff7b72);
 
   /*
-   * How far a ticket has got, as one hue stepping from the paper towards the
-   * ink: an ordinal ramp, so the order reads in the colour and no stage borrows
-   * a status colour. Darkest is done in light, lightest in dark. Each step is
-   * checked for an even lightness gap and for the lightest clearing the page
-   * and the cards at 2:1 or better.
+   * How far a ticket has got, in the colours a developer already reads a pull
+   * request by: merged purple, ready green, draft grey, review blue, and done
+   * in the ink. A one-hue ramp was tried first and its dark steps couldn't be
+   * told apart. The two that haven't begun are the bar's empty part, warm to sit
+   * on the paper: a track, hatched where work has started, with an edge where it
+   * stands alone, as a key swatch or a gauge. The five coloured ones are checked
+   * against each other in any pairing, since any two cards can be neighbours:
+   * colour-blind separation 8 or more, normal vision 15 or more, and 3:1 on the
+   * page and the cards, in both themes. Every one also carries its name in words.
    */
-  --stage-done: light-dark(#10192a, #d8e0ed);
-  --stage-merged: light-dark(#283347, #bbc6da);
-  --stage-ready: light-dark(#3e4c65, #9fadc6);
-  --stage-review: light-dark(#57657f, #8696b2);
-  --stage-draft: light-dark(#707e96, #707f9a);
-  --stage-progress: light-dark(#8894aa, #5c6981);
-  --stage-not-started: light-dark(#9faabd, #495468);
+  --stage-done: light-dark(#24292f, #e6edf3);
+  --stage-merged: light-dark(#512a97, #d2a8ff);
+  --stage-ready: light-dark(#1a7f37, #3fb950);
+  --stage-review: light-dark(#0969da, #4493f8);
+  --stage-draft: light-dark(#8f897c, #8a857a);
+  --stage-not-started: light-dark(#e4e0d6, #34332e);
+  --stage-edge: light-dark(#9a9588, #6f6c63);
 
   --src-github: light-dark(#2a78d6, #3987e5);
   --src-email: light-dark(#eb6834, #d95926);
@@ -2658,7 +2664,7 @@ a.button {
   --tone: var(--stage-not-started);
 }
 :is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='progress'] {
-  --tone: var(--stage-progress);
+  --tone: var(--stage-edge);
 }
 :is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='draft'] {
   --fill: 25%;
@@ -2691,7 +2697,11 @@ a.button {
   border-radius: 50%;
   background: conic-gradient(var(--tone) var(--fill), var(--surface) 0);
 }
-/* Begun with nothing to show for it: an empty gauge, drawn dashed so it isn't "not started". */
+/* Nothing to show yet: an empty gauge on the edge colour, dashed once work has begun. */
+.stage-glyph[data-stage='not-started'],
+.stage-glyph[data-stage='progress'] {
+  border-color: var(--stage-edge);
+}
 .stage-glyph[data-stage='progress'] {
   border-style: dashed;
 }
@@ -2727,6 +2737,15 @@ a.button {
   min-width: 3px;
   background: var(--tone);
 }
+.progress-strip__seg[data-stage='progress'],
+.stage-key__swatch[data-stage='progress'] {
+  background: repeating-linear-gradient(135deg, var(--stage-edge) 0 1.5px, var(--stage-not-started) 1.5px 4.5px);
+}
+/* The empty part, edged so it reads as the rest of the bar, and a swatch that doesn't vanish. */
+.progress-strip__seg[data-stage='not-started'],
+.stage-key__swatch[data-stage='not-started'] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--stage-edge) 55%, transparent);
+}
 .progress-strip__seg:first-child {
   border-radius: 4px 0 0 4px;
 }
@@ -2753,6 +2772,7 @@ a.button {
 }
 .stage-key__swatch {
   flex: none;
+  box-sizing: border-box;
   width: 10px;
   height: 10px;
   border-radius: 3px;
@@ -2879,12 +2899,40 @@ a.button {
 
 /* A ticket in a project: a card like a row's, but not a row: nothing opens a panel on it. */
 .project-card {
+  /* No stage, or not started: the stripe is the card's own surface, so nothing shows. */
+  --card-tone: var(--surface);
   min-width: 0;
-  padding: 11px 14px 12px;
-  background: var(--surface);
+  padding: 11px 14px 12px 18px;
+  /*
+   * Its stage as a stripe down the left edge, in the strip's colour, so the
+   * list reads as a column of stages at a glance. Painted in the background
+   * rather than as a border: hover and the open card recolour the border.
+   */
+  background: linear-gradient(90deg, var(--card-tone) 0 4px, var(--surface) 0) border-box;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+.project-card[data-stage='done'] {
+  --card-tone: var(--stage-done);
+}
+.project-card[data-stage='merged'] {
+  --card-tone: var(--stage-merged);
+}
+.project-card[data-stage='ready'] {
+  --card-tone: var(--stage-ready);
+}
+.project-card[data-stage='review'] {
+  --card-tone: var(--stage-review);
+}
+.project-card[data-stage='draft'] {
+  --card-tone: var(--stage-draft);
+}
+/* Begun with no pull request: the stripe dashed, as its gauge is. Not started has none. */
+.project-card[data-stage='progress'] {
+  background:
+    repeating-linear-gradient(180deg, var(--stage-edge) 0 4px, transparent 4px 7px) left / 4px 100% no-repeat border-box,
+    var(--surface);
 }
 .project-card__head {
   display: flex;
@@ -2910,16 +2958,16 @@ a.button {
 }
 .project-card__stage {
   flex: none;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-1);
   white-space: nowrap;
 }
 .project-card__stage[data-tone='good'] {
   color: var(--good-ink);
 }
 .project-card__stage[data-tone='critical'] {
-  color: var(--critical);
+  color: var(--critical-ink);
 }
 .project-card__pulls {
   list-style: none;
@@ -2948,7 +2996,41 @@ a.button {
   text-decoration-color: var(--ink-3);
 }
 .project-pull__state--you {
-  color: var(--critical);
+  color: var(--critical-ink);
+}
+/*
+ * Draft or In review: GitHub's draft flag, in the line's own words, and on the
+ * user's own pull requests the way to change it. A dotted underline is the whole
+ * affordance, the way a word that does something reads; a button's chrome would
+ * shout on every line of the card.
+ */
+.project-pull__flag {
+  font-weight: 500;
+  color: var(--ink-1);
+}
+.project-pull__flag--toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink-1);
+  text-decoration: underline dotted;
+  text-decoration-color: var(--ink-3);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.project-pull__flag--toggle:hover {
+  text-decoration-style: solid;
+  text-decoration-color: var(--ink-1);
+}
+.project-pull__flag--toggle:disabled {
+  color: var(--ink-3);
+  cursor: progress;
+}
+.flyout__pulls {
+  margin: 0;
 }
 .project-pull__writes {
   display: inline-flex;
@@ -3001,11 +3083,28 @@ a.button {
  * row as the page allows, the whole card the button. The name is set in the
  * headline's serif, so it reads as the title the page will open under.
  */
-.epic-chooser__help {
-  margin: -2px 0 12px;
+.project-choices__help {
+  margin: 0 0 18px;
   padding: 0 2px;
   font-size: 13px;
   color: var(--ink-3);
+}
+
+/*
+ * A project's list, and the panel beside it when one is open: under the
+ * headline and the strip, which keep the page's width. The panel is sticky in
+ * its column as it is in the page's, so a long list scrolls past it.
+ */
+.project-body[data-panel='true'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 40px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .project-body[data-panel='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .epic-choices {
   display: grid;
@@ -3604,7 +3703,8 @@ body[data-flyout='open'] .layout__side {
     border-radius: 12px 12px 0 0;
   }
   /* The sheet has the bottom, so a toast goes to the top rather than over its field. */
-  body[data-flyout='open'] .toast {
+  body[data-flyout='open'] .toast,
+  body[data-flyout='inline'] .toast {
     bottom: auto;
     top: 22px;
   }

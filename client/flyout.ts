@@ -23,6 +23,7 @@ import { renderMarkdown, renderMarkdownBlocks } from './markdown.ts';
 import { usePanel } from './panel.ts';
 import { RunPanel } from './runs.ts';
 import { RUN_PREFIX, type DetailRow } from './state.ts';
+import { panelPulls } from './projects.ts';
 import { renderTicketControls, typeColor } from './tickets.ts';
 import type { Handlers, UiState } from './types.ts';
 
@@ -70,6 +71,8 @@ function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: Dashboa
       'div',
       { class: 'flyout__body', ref: body, onScroll },
       facts.detail ? el('p', { class: 'flyout__detail' }, renderMarkdown(facts.detail)) : null,
+      // A ticket's pull requests, each with its Draft or In review to change.
+      'key' in row && 'summary' in row ? panelPulls(row.key, !('mine' in row) || row.mine !== false, state, ui, handlers) : null,
       el(
         'section',
         { class: 'flyout__section' },

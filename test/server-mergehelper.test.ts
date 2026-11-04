@@ -64,6 +64,7 @@ const deps: BoardDeps = {
   token: async (_gh, login) => `token-${login ?? 'active'}`,
   fetch: async () => ({ login: 'alice', pulls: pulls.map((each) => ({ ...each })), warnings: [], orgs: {}, rateLimitRemaining: 4000 }),
   markReady: async () => assert.fail('nothing should be marked ready'),
+  markDraft: async () => assert.fail('nothing should be turned into a draft'),
   merge: async () => assert.fail("GitHub's merge is not the way here"),
   enqueue: async () => assert.fail("GitHub's queue is not the way here"),
   requiredApprovals: async () => 1,
@@ -138,7 +139,7 @@ async function answered(): Promise<DashboardState> {
 test("once the helper has answered, its button and Merge stack are on the rows it said, and nothing else's", async () => {
   const state = await answered();
   assert.deepEqual(
-    state.board.rows.map((each) => [each.number, each.offers]),
+    state.board.rows.map((each) => [each.number, each.offers?.filter((offer) => offer !== 'draft')]),
     [
       [410, ['helper']],
       [411, []],
@@ -187,7 +188,7 @@ test("the helper's refusal is a 409 in its own words", async () => {
   const res = await post('/api/board/merge', { id: 'github:pr:acme/payments-api#421', head: 'head-421' });
   assert.equal(res.status, 409);
   assert.deepEqual(await res.json(), { error: 'the queue is closed for acme/payments-api#421' });
-  assert.deepEqual(row(await getState(), 421)?.offers, ['helper'], 'nothing is queued');
+  assert.deepEqual(row(await getState(), 421)?.offers?.filter((offer) => offer !== 'draft'), ['helper'], 'nothing is queued');
 });
 
 test('merge and merge-stack hand over through the helper and answer with what it said, the board read back', async () => {
@@ -197,7 +198,7 @@ test('merge and merge-stack hand over through the helper and answer with what it
   const one = (await merged.json()) as DashboardState & { notice?: string };
   assert.equal(one.notice, 'Queued https://github.com/acme/payments-api/pull/420');
   assert.equal(row(one, 420)?.helperQueued, true);
-  assert.deepEqual(row(one, 420)?.offers, []);
+  assert.deepEqual(row(one, 420)?.offers?.filter((offer) => offer !== 'draft'), []);
 
   const stacked = await post('/api/board/merge-stack', { id: 'github:pr:acme/payments-api#412', heads: HEADS });
   assert.equal(stacked.status, 200);

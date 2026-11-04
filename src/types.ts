@@ -417,7 +417,7 @@ export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
  * - `stack`   have the merge helper merge the whole stack this row tops,
  *             bottom first: `stack` on the row names it.
  */
-export type PullOffer = 'ready' | 'merge' | 'queue' | 'helper' | 'stack';
+export type PullOffer = 'ready' | 'draft' | 'merge' | 'queue' | 'helper' | 'stack';
 
 /**
  * What the merge helper said about a pull request's repository and base branch

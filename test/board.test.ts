@@ -51,8 +51,9 @@ function pull(account: string, number: number): PullRequest {
 }
 
 /** The board's writes, and the merge helper, for a test that expects none: each one fails the test. */
-const NO_WRITES: Pick<BoardDeps, 'markReady' | 'merge' | 'enqueue' | 'requiredApprovals' | 'liveHeads' | 'runHelper'> = {
+const NO_WRITES: Pick<BoardDeps, 'markReady' | 'markDraft' | 'merge' | 'enqueue' | 'requiredApprovals' | 'liveHeads' | 'runHelper'> = {
   markReady: async () => assert.fail('nothing should be marked ready'),
+  markDraft: async () => assert.fail('nothing should be turned into a draft'),
   merge: async () => assert.fail('nothing should be merged'),
   enqueue: async () => assert.fail('nothing should be queued'),
   requiredApprovals: async () => assert.fail('no merge helper is set'),
@@ -669,12 +670,13 @@ test('the rows say what a click may do: ready on a draft, merge or queue on one 
   const offers = Object.fromEntries(board.view([], new Date()).rows.map((row) => [row.number, row.offers]));
   assert.deepEqual(offers, {
     410: ['ready'],
-    411: ['merge'],
-    412: ['queue'],
+    // Any open one that isn't a draft can be turned back into one, unless it is queued to merge.
+    411: ['draft', 'merge'],
+    412: ['draft', 'queue'],
     413: [],
-    414: [],
-    415: [],
-    416: [],
+    414: ['draft'],
+    415: ['draft'],
+    416: ['draft'],
     417: [],
     418: [],
   });

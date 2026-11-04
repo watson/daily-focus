@@ -238,6 +238,16 @@ export function detailRow(current: DashboardState, target: UiState): DetailRow |
 }
 
 /**
+ * Whether the panel opens inside a project rather than in the page's side
+ * column: Projects is showing one that has been read, so the panel can sit
+ * beside its list, under its headline and strip.
+ */
+export function panelInProject(current: DashboardState, target: UiState): boolean {
+  const key = target.projectKey.value;
+  return target.view.value === 'tickets' && target.ticketMode.value === 'projects' && key !== null && Boolean(current.projects?.open?.[key]?.read);
+}
+
+/**
  * The run of the morning agent the panel is open on, if it is open on one. Null
  * once the run has dropped off the list the server sends, which is when the
  * panel has nothing left to show.
