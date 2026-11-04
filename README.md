@@ -70,6 +70,8 @@ The second tab shows your open pull requests in seven buckets:
 | Waiting on checks | Checks are running, or GitHub reports an unstable merge. |
 | Drafts | Pull requests you haven't marked ready for review. |
 
+Click a bucket's heading to fold it away. Nudged and Snoozed start folded.
+
 Snooze a pull request until a date, leave a note, or click **Nudged** after asking
 for a review. Nudged records that you asked; it doesn't send a message. The pull
 request moves to a Nudged section for a day, then goes back to Waiting on reviewers

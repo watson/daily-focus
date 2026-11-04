@@ -564,7 +564,7 @@ test('the done tickets are in a drawer of their own, headed like a section, that
   assert.equal(text(byClass(drawer, 'drawer__verb')[0]), 'Show');
   const opened = view(projectsState({ open: { 'PAY-200': { key: 'PAY-200', read: epicRead(), fetching: false, reason: null } } }), {
     projectKey: 'PAY-200',
-    openDrawers: new Set(['projects:done:PAY-200']),
+    drawers: new Map([['projects:done:PAY-200', true]]),
   });
   assert.equal(text(byClass(doneDrawer(opened), 'drawer__verb')[0]), 'Hide');
   assert.deepEqual(

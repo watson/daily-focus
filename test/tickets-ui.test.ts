@@ -721,7 +721,7 @@ test('an opened drawer stays open when the board is rebuilt', () => {
   closed.dispatchEvent(new Event('toggle'));
   assert.deepEqual(toggled[0], ['tickets:snoozed', true]);
 
-  const reopened = byClass(boardOf({ rows: [snoozed] }, { openDrawers: new Set(['tickets:snoozed']) }), 'drawer')[0] as HTMLDetailsElement;
+  const reopened = byClass(boardOf({ rows: [snoozed] }, { drawers: new Map([['tickets:snoozed', true]]) }), 'drawer')[0] as HTMLDetailsElement;
   assert.equal(reopened.open, true);
 });
 

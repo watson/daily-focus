@@ -242,25 +242,76 @@ test('a nudged row says when it was nudged and when it comes back, and offers no
   assert.deepEqual(buttonLabels(node), ['Snooze']);
 });
 
-test('nudged rows sit in a section of their own, below the reviewers they wait on', () => {
+/** Two waiting on reviewers, one of them nudged, a draft, and one snoozed. */
+function boardOfFour(ui = uiWith(), handlers = handlersWith()): HTMLElement {
   const pulls = [
     pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#1', number: 1 }),
     pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#2', number: 2 }),
     pr({ id: 'github:pr:acme/webapp#3', number: 3, isDraft: true }),
+    pr({ id: 'github:pr:acme/webapp#4', number: 4 }),
   ];
-  const rows = resolveBoard(pulls, [{ id: 'github:pr:acme/webapp#2', action: 'nudge', at: hoursAgo(1) }], NOW, GATES);
+  const actions: Action[] = [
+    { id: 'github:pr:acme/webapp#2', action: 'nudge', at: hoursAgo(1) },
+    { id: 'github:pr:acme/webapp#4', action: 'snooze', at: hoursAgo(1), until: '2026-09-20' },
+  ];
+  const rows = resolveBoard(pulls, actions, NOW, GATES);
   const board = { enabled: true, reason: null, failures: [], fetchedAt: NOW.toISOString(), warnings: [], scope: [], rows } as unknown as BoardState;
-  const root = mount(h('div', null, renderBoard({ ...STATE, board }, uiWith(), handlersWith())));
+  return mount(h('div', null, renderBoard({ ...STATE, board }, ui, handlers)));
+}
 
-  const sections = byClass(root, 'section').map((section) => ({
-    title: byClass(section, 'section__title')[0]?.textContent,
-    ids: byTag(section, 'li').map((li) => li.dataset.id),
+const drawersOf = (root: HTMLElement) => byClass(root, 'drawer') as HTMLDetailsElement[];
+
+test('nudged rows sit in a drawer of their own, below the reviewers they wait on', () => {
+  const drawers = drawersOf(boardOfFour()).map((drawer) => ({
+    title: byClass(drawer, 'drawer__title')[0]?.textContent,
+    ids: byTag(drawer, 'li').map((li) => li.dataset.id),
   }));
-  assert.deepEqual(sections, [
+  assert.deepEqual(drawers, [
     { title: 'Waiting on reviewers', ids: ['github:pr:acme/webapp#1'] },
     { title: 'Nudged', ids: ['github:pr:acme/webapp#2'] },
     { title: 'Drafts', ids: ['github:pr:acme/webapp#3'] },
+    { title: 'Snoozed', ids: ['github:pr:acme/webapp#4'] },
   ]);
+});
+
+/**
+ * Every court folds. One starts open, since it holds what to look at; Nudged and
+ * Snoozed start closed, since there is nothing to do about either until they
+ * come back. The page keeps a fold by hand, so the next state push leaves it be.
+ */
+test('the courts start open and Nudged and Snoozed closed, and a fold by hand is kept', () => {
+  const toggled: [string, boolean][] = [];
+  const handlers = handlersWith({ toggleDrawer: (key, open) => void toggled.push([key, open]) });
+  const drawers = drawersOf(boardOfFour(uiWith(), handlers));
+  assert.deepEqual(
+    drawers.map((drawer) => drawer.open),
+    [true, false, true, false],
+  );
+
+  // Rendered open, a court says so with a toggle of its own, which changes nothing.
+  drawers[0]!.dispatchEvent(new Event('toggle'));
+  assert.deepEqual(toggled, []);
+
+  // happy-dom fires a toggle of its own when `open` is set, and a browser
+  // doesn't until later, so the page is asked to keep what both add up to.
+  drawers[0]!.open = false;
+  drawers[0]!.dispatchEvent(new Event('toggle'));
+  drawers[1]!.open = true;
+  drawers[1]!.dispatchEvent(new Event('toggle'));
+  const folds = new Map<string, boolean>(toggled);
+  assert.deepEqual(
+    [...folds],
+    [
+      ['board:reviewers', false],
+      ['board:nudged', true],
+    ],
+  );
+
+  const kept = drawersOf(boardOfFour(uiWith({ drawers: folds })));
+  assert.deepEqual(
+    kept.map((drawer) => drawer.open),
+    [false, true, true, false],
+  );
 });
 
 test('a ready row is plain: no reason, no nudge', () => {

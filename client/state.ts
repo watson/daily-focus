@@ -66,7 +66,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     noteDraft: signal(initial.noteDraft ?? ''),
     assistantDraft: signal(initial.assistantDraft ?? ''),
     focusField: signal(initial.focusField ?? null),
-    openDrawers: signal(initial.openDrawers ?? new Set<string>()),
+    drawers: signal(initial.drawers ?? new Map<string, boolean>()),
     ticketMode: signal(initial.ticketMode ?? 'sync'),
     projectKey: signal(initial.projectKey ?? null),
     agentReportSeen: signal(initial.agentReportSeen ?? null),

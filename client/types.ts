@@ -123,11 +123,12 @@ export interface UiState {
    */
   focusField: Signal<FocusField | null>;
   /**
-   * Which drawers are open, by key. In memory only, so a reload closes them
-   * all: a drawer is a place you go and look, not part of the page's resting
-   * state.
+   * The drawers opened or closed by hand, by key, true for open. A drawer not
+   * here is as its caller has it by default. In memory only, so a reload puts
+   * them all back: a drawer is a place you go and look, not part of the page's
+   * resting state.
    */
-  openDrawers: Signal<ReadonlySet<string>>;
+  drawers: Signal<ReadonlyMap<string, boolean>>;
   /**
    * Which of the ticket tab's views is showing. In memory only, so a reload
    * opens on the one that asks for action.

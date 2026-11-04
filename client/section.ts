@@ -44,13 +44,14 @@ export function section<T extends { id: string }>(
 }
 
 /**
- * A collapsed list, closed until somebody opens it.
+ * A list that folds, closed until somebody opens it, or with `open`, open until
+ * somebody closes it.
  *
- * Whether it is open is kept in `ui.openDrawers` under `key`, and the element is
+ * Whether it is open is kept in `ui.drawers` under `key`, and the element is
  * told so on every render. The element would remember on its own now that a
  * render keeps it, but a drawer that came and went — snoozed rows appearing after
- * a refresh — would come back shut, and the keyboard's scan of visible rows reads
- * the same fact off the element. One place to keep it is the page's.
+ * a refresh — would come back as it started, and the keyboard's scan of visible
+ * rows reads the same fact off the element. One place to keep it is the page's.
  */
 export function drawer<T extends { id: string }>(
   key: string,
@@ -60,8 +61,9 @@ export function drawer<T extends { id: string }>(
   ui: UiState,
   handlers: Handlers,
   row: RowRenderer<T>,
+  { open: byDefault = false }: { open?: boolean } = {},
 ): JSX.Element {
-  const open = ui.openDrawers.value.has(key);
+  const open = ui.drawers.value.get(key) ?? byDefault;
   // Headed as a section is, its count beside its name, and ruled across to a
   // verb that says what a click does: folded, it is still plainly something to open.
   return el(
@@ -69,7 +71,12 @@ export function drawer<T extends { id: string }>(
     {
       class: 'drawer',
       open,
-      onToggle: (event: Event) => handlers.toggleDrawer(key, (event.currentTarget as HTMLDetailsElement).open),
+      // A drawer rendered open says so with a toggle too. Only a click changes
+      // anything: what the render set is already what the page has.
+      onToggle: (event: Event) => {
+        const shown = (event.currentTarget as HTMLDetailsElement).open;
+        if (shown !== open) handlers.toggleDrawer(key, shown);
+      },
     },
     el(
       'summary',

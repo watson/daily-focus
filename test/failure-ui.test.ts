@@ -38,7 +38,7 @@ function notice(f: ReadFailure, opts: { open?: boolean; onRetry?: () => void; to
     failureNotice(
       f,
       { fold: 'failure:board:0', className: 'banner banner--warning', icon: '!', lastGood: at(9, 12), now: NOW, onRetry: opts.onRetry ?? (() => {}) },
-      uiWith({ openDrawers: new Set(opts.open ? ['failure:board:0'] : []) }),
+      uiWith({ drawers: new Map(opts.open ? [['failure:board:0', true]] : []) }),
       handlersWith({ toggleDrawer: opts.toggled ?? (() => {}) }),
     ),
   );

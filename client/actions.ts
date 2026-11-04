@@ -1128,11 +1128,8 @@ export const handlers: Handlers = {
     void applyAction(id, 'note', { text });
   },
   toggleDrawer: (key, open) => {
-    if (ui.openDrawers.value.has(key) === open) return;
-    const next = new Set(ui.openDrawers.value);
-    if (open) next.add(key);
-    else next.delete(key);
-    ui.openDrawers.value = next;
+    if (ui.drawers.value.get(key) === open) return;
+    ui.drawers.value = new Map(ui.drawers.value).set(key, open);
   },
   setTicketMode,
   openProject: (key) => void openProject(key),
