@@ -241,16 +241,18 @@ export function stageWhy(work: TicketWork): string {
   if (work.basis === 'github') {
     if (open.length === 1) return `From its one open pull request, ${pullRef(open[0]!)}.`;
     if (open.length > 1) return `The least advanced of its ${open.length} open pull requests: a ticket is only as far along as the one furthest behind.`;
-    return 'Every pull request of its has merged, and the ticket is not Done in Jira yet.';
+    return 'No open pull requests remain, and at least one has merged; the ticket is not Done in Jira yet.';
   }
   if (work.basis === 'jira') {
     return work.ticket.mine
       ? "From Jira's summary of its pull requests: GitHub links none of yours to it here."
       : "From Jira's summary of its pull requests.";
   }
+  // A teammate's pull requests aren't read here, so their absence says nothing.
+  if (!work.ticket.mine) return `From its Jira status alone, ${work.ticket.workflowStatus || 'unknown'}: a teammate's pull requests aren't read here.`;
   return work.stage === 'progress'
-    ? `${work.ticket.workflowStatus || 'In progress'} in Jira, with no pull request yet.`
-    : 'Not started in Jira, and no pull request yet.';
+    ? `${work.ticket.workflowStatus || 'In progress'} in Jira, and none of your pull requests links to it yet.`
+    : 'Not started in Jira, and none of your pull requests links to it yet.';
 }
 
 /** What a card says on its right, and in which tone. Colour only agrees with the words. */

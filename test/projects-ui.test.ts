@@ -783,9 +783,17 @@ test("the stage word's hover says how it was worked out", () => {
   const why = (key: string) => byClass(card(node, key), 'project-card__stage')[0]!.title;
   assert.equal(why('PAY-201'), 'From its one open pull request, acme/payments-api #412.');
   assert.equal(why('PAY-210'), 'A reviewer asked for changes on one of its open pull requests.');
-  assert.equal(why('PAY-207'), 'Every pull request of its has merged, and the ticket is not Done in Jira yet.');
-  assert.equal(why('PAY-204'), 'Not started in Jira, and no pull request yet.');
+  assert.equal(why('PAY-207'), 'No open pull requests remain, and at least one has merged; the ticket is not Done in Jira yet.');
+  assert.equal(why('PAY-204'), 'Not started in Jira, and none of your pull requests links to it yet.');
   assert.equal(why('PAY-205'), "From Jira's summary of its pull requests.", "a teammate's, by Jira's roll-up");
+
+  // A teammate's ticket with no roll-up: its status alone, and no claim about pull requests nobody here read.
+  const tickets = epicTickets().map((each) => (each.key === 'PAY-206' ? { ...each, mine: false, assignee: 'Dana Reyes', pulls: null, statusCategory: 'indeterminate' as const, workflowStatus: 'In Progress' } : each));
+  const theirs = view(projectsState({ open: opened(planned(tickets)) }), { projectKey: 'PAY-200' });
+  assert.equal(
+    byClass(card(theirs, 'PAY-206'), 'project-card__stage')[0]!.title,
+    "From its Jira status alone, In Progress: a teammate's pull requests aren't read here.",
+  );
 });
 
 test('a press anywhere but in a menu or on its button closes the open menu', () => {
