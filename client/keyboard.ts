@@ -62,7 +62,25 @@ function tomorrow(): string {
   return addDays(dayKey(new Date()), 1);
 }
 
+/**
+ * Whether a press closes the open menu: anywhere but inside a menu or on the
+ * button that opened one, which toggles it itself. Every menu on the page is
+ * one of `menuFor` or `statusFor`, so this is the whole of dismissing them.
+ */
+export function pressClosesMenu(target: EventTarget | null): boolean {
+  return !(target instanceof Element && target.closest('.menu, [aria-haspopup="menu"]'));
+}
+
 export function installKeyboard(handlers: Handlers): void {
+  // A press outside an open menu closes it, as Escape does.
+  document.addEventListener('pointerdown', (event) => {
+    if (!(ui.menuFor.value || ui.statusFor.value) || !pressClosesMenu(event.target)) return;
+    batch(() => {
+      ui.menuFor.value = null;
+      ui.statusFor.value = null;
+    });
+  });
+
   document.addEventListener('keydown', (event) => {
     const help = document.getElementById('help') as HTMLDialogElement | null;
 

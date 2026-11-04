@@ -46,6 +46,7 @@ import {
   pullSources,
   stageCounts,
   stageLabel,
+  stageWhy,
   ticketPulls,
   type NextStep,
   type PlannedRead,
@@ -728,7 +729,7 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
         ticket.url ? el('a', { href: ticket.url, target: '_blank', rel: 'noopener noreferrer' }, title) : title,
       ),
       ' ',
-      el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain' }, label.text),
+      el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain', title: stageWhy(work) }, label.text),
     ),
     work.pulls.length > 0 ? el('ul', { class: 'project-card__pulls' }, work.pulls.map((pull) => pullLine(pull, now, writes))) : null,
     // The user's own tickets only: the check reads no one else's.
