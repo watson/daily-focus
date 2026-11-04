@@ -17,7 +17,7 @@ import { detailRow, panelInProject } from '../client/state.ts';
 import { renderTicketBoard } from '../client/tickets.ts';
 import type { Handlers, UiValues } from '../client/types.ts';
 import type { ProjectState, ProjectsState, ReadFailure } from '../src/types.ts';
-import { OPS_7, epicRead, epicTickets, hoursAgo, planned, projectsState, stateWith, summary, ticket } from './projectfixtures.ts';
+import { OPS_7, PULLS, epicRead, epicTickets, hoursAgo, linked, planned, projectsState, stateWith, summary, ticket, ticketRows } from './projectfixtures.ts';
 
 const failure = (message: string): ReadFailure => ({ message, detail: '', since: hoursAgo(1), attempts: 2, retryAt: null, retrying: false });
 
@@ -700,4 +700,27 @@ test("the panel lists the ticket's pull requests, each with the same toggle", ()
   assert.deepEqual(byClass(section, 'project-pull').map(text), ['acme/payments-api #420 Draft checks passed']);
   byClass(section, 'project-pull__flag--toggle')[0]!.click();
   assert.deepEqual(clicked, ['github:pr:acme/payments-api#420']);
+});
+
+test("a ticket of the user's the ticket board doesn't list still has its pull requests, and their toggle", () => {
+  // PAY-203 off both of the ticket board's lists, as one in a status it doesn't count as in progress is;
+  // the server hands it its pull requests on the project's ticket instead.
+  const tickets = epicTickets().map((each) => (each.key === 'PAY-203' ? { ...each, github: [linked(PULLS.draft)] } : each));
+  const state = stateWith(projectsState({ open: opened(planned(tickets)) }), { tickets: { inProgress: ticketRows().filter((row) => row.key !== 'PAY-203') } });
+  const node = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' }), handlersWith())));
+  assert.deepEqual(byClass(card(node, 'PAY-203'), 'project-pull').map(text), ['acme/payments-api #420 Draft checks passed']);
+  assert.ok(byClass(card(node, 'PAY-203'), 'project-pull__flag--toggle').length > 0);
+});
+
+test('with one open pull request, the stage word at the top right is its toggle too', () => {
+  const clicked: string[] = [];
+  const node = epic({ markReady: (id) => void clicked.push(`ready ${id}`) });
+  const stage = (key: string) => byClass(card(node, key), 'project-card__stage')[0]!;
+  assert.equal(stage('PAY-203').tagName, 'BUTTON');
+  assert.equal(text(stage('PAY-203')), 'Draft');
+  stage('PAY-203').click();
+  assert.deepEqual(clicked, ['ready github:pr:acme/payments-api#420']);
+  assert.equal(stage('PAY-201').tagName, 'SPAN', 'Ready to merge is a stage, not a draft flag');
+  assert.equal(stage('PAY-210').tagName, 'SPAN', 'nor is Changes requested');
+  assert.equal(stage('PAY-205').tagName, 'SPAN', "nor anything on a teammate's");
 });

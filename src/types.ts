@@ -889,6 +889,12 @@ export interface ProjectTicket {
    * shows. Added as the state is built; never read from Jira.
    */
   notes?: { text: string; at: string }[];
+  /**
+   * The user's pull requests GitHub links to it, from the ticket board's read of
+   * every unfinished ticket of theirs: the board shows only some of those, and
+   * Projects needs the rest. Added as the state is built; never read from Jira.
+   */
+  github?: LinkedPull[];
 }
 
 /** A ticket outside the project that a link inside it names, as the link describes it. */

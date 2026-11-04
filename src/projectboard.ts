@@ -20,17 +20,28 @@ import { canonicalId } from './ids.ts';
 import { planProject } from './projects.ts';
 import type { FoldedActions } from './store.ts';
 import { resolveTool } from './tools.ts';
-import type { ProjectRead, ProjectState, ProjectSummary, ProjectTicket, ProjectsState } from './types.ts';
+import type { LinkedPull, ProjectRead, ProjectState, ProjectSummary, ProjectTicket, ProjectsState } from './types.ts';
 
 /** Never re-read more often than this once reads start failing. */
 const MAX_BACKOFF_MS = 30 * 60_000;
 
 /**
- * The projects' tickets with what the user has noted on each, from the folded
- * action log, so the panel opened on one shows the notes the ticket board would.
+ * The projects' tickets with what the dashboard knows of them besides Jira: what
+ * the user has noted on each, from the folded action log, so the panel shows the
+ * notes the ticket board would; and the user's pull requests GitHub links to
+ * each, by key, from the ticket board's read of every unfinished ticket of
+ * theirs, which its two lists show only some of.
  */
-export function withProjectNotes(view: ProjectsState, folded: ReadonlyMap<string, FoldedActions>): ProjectsState {
-  const noted = (ticket: ProjectTicket): ProjectTicket => ({ ...ticket, notes: folded.get(canonicalId(`jira:${ticket.key}`))?.notes ?? [] });
+export function withProjectFacts(
+  view: ProjectsState,
+  folded: ReadonlyMap<string, FoldedActions>,
+  pulls: ReadonlyMap<string, readonly LinkedPull[]> = new Map(),
+): ProjectsState {
+  const noted = (ticket: ProjectTicket): ProjectTicket => ({
+    ...ticket,
+    notes: folded.get(canonicalId(`jira:${ticket.key}`))?.notes ?? [],
+    ...(ticket.mine && pulls.has(ticket.key.toUpperCase()) ? { github: [...pulls.get(ticket.key.toUpperCase())!] } : {}),
+  });
   const open: ProjectsState['open'] = {};
   for (const [key, entry] of Object.entries(view.open)) {
     open[key] = entry.read ? { ...entry, read: { ...entry.read, tickets: entry.read.tickets.map(noted) } } : entry;
