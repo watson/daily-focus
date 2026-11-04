@@ -11,7 +11,9 @@ import { h } from 'preact';
 
 // Imported ahead of the client, for the document it installs.
 import { byClass, byTag, handlersWith, mount, uiWith } from './dom.ts';
+import { Flyout } from '../client/flyout.ts';
 import { projectStatus } from '../client/projects.ts';
+import { detailRow } from '../client/state.ts';
 import { renderTicketBoard } from '../client/tickets.ts';
 import type { Handlers, UiValues } from '../client/types.ts';
 import type { ProjectState, ProjectsState, ReadFailure } from '../src/types.ts';
@@ -113,8 +115,28 @@ test('epics not read yet, and on their way', () => {
   );
 });
 
-test('with epics to choose from and none chosen, it asks for one', () => {
-  assert.match(text(byClass(view(projectsState()), 'empty')[0]), /^Choose an epic/);
+test('with epics to choose from and none chosen, they are cards to click into', () => {
+  const asked: string[] = [];
+  const node = view(projectsState(), {}, { openProject: (key) => void asked.push(key) });
+  const chooser = byClass(node, 'epic-chooser')[0]!;
+  assert.equal(text(byClass(chooser, 'section__title')[0]), 'Your epics');
+  assert.equal(text(byClass(chooser, 'section__count')[0]), '2');
+  const choices = byClass(chooser, 'epic-choice');
+  assert.deepEqual(
+    choices.map((choice) => text(byClass(choice, 'epic-choice__title')[0])),
+    ['Ledger rewrite', 'Refund flow'],
+  );
+  assert.equal(choices[0]!.tagName, 'BUTTON', 'the whole card is the button');
+  choices[1]!.click();
+  assert.deepEqual(asked, ['PAY-300']);
+});
+
+test('an epic read this session carries its strip and how much is done on its card', () => {
+  const node = view(projectsState({ open: opened() }), {});
+  const [read, unread] = byClass(node, 'epic-choice');
+  assert.ok(byClass(read!, 'progress-strip__seg').length > 0);
+  assert.match(text(byClass(read!, 'epic-choice__count')[0]), /^1 of 10 done, as of /);
+  assert.equal(byClass(unread!, 'progress-strip').length, 0, 'nothing it has not read');
 });
 
 test('a failed read of the epics is a critical banner with a retry, not an empty list', () => {
@@ -208,20 +230,24 @@ test('the breadcrumb zooms out to the parent, and the headline is the summary in
   const asked: string[] = [];
   const node = epic({ openProject: (key) => void asked.push(key) });
   const crumbs = byClass(node, 'project-crumbs')[0]!;
-  assert.match(text(crumbs), /^Payments platform \/ PAY-200/);
+  assert.match(text(crumbs), /^Your epics \/ Payments platform \/ PAY-200/);
   asked.length = 0;
-  byClass(crumbs, 'project-crumbs__up')[0]!.click();
+  byClass(crumbs, 'project-crumbs__up')[1]!.click();
   assert.deepEqual(asked, ['PAY-100']);
   const title = byClass(node, 'project-title')[0]!;
   assert.equal(title.tagName, 'H2');
   assert.equal((byTag(title, 'a')[0] as HTMLAnchorElement).href, 'https://acme.atlassian.net/browse/PAY-200');
 });
 
-test('a project at the top has no way up', () => {
+test('a project at the top has no way up but back to the epics', () => {
+  let closed = 0;
   const read = planned(epicTickets(), { parent: null });
-  const node = view(projectsState({ open: opened(read) }), { projectKey: 'PAY-200' });
-  assert.deepEqual(byClass(node, 'project-crumbs__up'), []);
-  assert.match(text(byClass(node, 'project-crumbs')[0]), /^PAY-200/);
+  const node = view(projectsState({ open: opened(read) }), { projectKey: 'PAY-200' }, { closeProject: () => void closed++ });
+  const ups = byClass(node, 'project-crumbs__up');
+  assert.deepEqual(ups.map((up) => text(up)), ['Your epics']);
+  assert.match(text(byClass(node, 'project-crumbs')[0]), /^Your epics \/ PAY-200/);
+  ups[0]!.click();
+  assert.equal(closed, 1);
 });
 
 test('the strip splits the tickets by stage, furthest along first, each block as wide as its share', () => {
@@ -385,13 +411,59 @@ test("a card lists the user's pull requests in the board's words, with a stack n
   assert.equal(link.href, 'https://github.com/acme/payments-api/pull/412');
 });
 
-test('a card offers the same write on a pull request as Do next, and only that', () => {
+test('a card offers a merge only where Do next does, and Ready for review on any draft the board offers it on', () => {
   const node = epic();
   const writes = (key: string) => byClass(card(node, key), 'project-pull').map(labels);
   assert.deepEqual(writes('PAY-201'), [['Merge']]);
   assert.deepEqual(writes('PAY-202'), [[]], 'it waits for PAY-201, so no merge is offered out of order');
   assert.deepEqual(writes('PAY-203'), [['Ready for review']]);
   assert.deepEqual(writes('PAY-210'), [[]]);
+});
+
+test('a draft Do next does not suggest still offers Ready for review on its card', () => {
+  const state = stateWith(projectsState({ open: opened() }));
+  // Red CI: Do next asks for a fix rather than a review, but marking it ready is still the user's call.
+  for (const row of state.board.rows) if (row.number === 420) row.checks = 'failure';
+  const node = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' }), handlersWith())));
+  assert.ok(!labels(byClass(node, 'project-next')[0]!).includes('Ready for review'), 'not a suggestion now');
+  assert.deepEqual(byClass(card(node, 'PAY-203'), 'project-pull').map(labels), [['Ready for review']]);
+});
+
+/* ---------- the panel and the status, as on the ticket board ---------- */
+
+test('clicking a card opens the panel on its ticket, as a row on the ticket board does', () => {
+  const selected: string[] = [];
+  const node = view(projectsState({ open: opened() }), { projectKey: 'PAY-200', detailFor: 'jira:PAY-202' }, { onSelect: (id) => void selected.push(id) });
+  const target = card(node, 'PAY-201').querySelector('.project-card')! as HTMLElement;
+  target.click();
+  assert.deepEqual(selected, ['jira:PAY-201']);
+  (byTag(target, 'a')[0] as HTMLElement).click();
+  assert.deepEqual(selected, ['jira:PAY-201'], 'a link on the card goes where it says instead');
+  target.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  assert.deepEqual(selected, ['jira:PAY-201', 'jira:PAY-201'], 'and from the keyboard');
+  assert.equal(target.tabIndex, 0);
+  assert.equal((card(node, 'PAY-202').querySelector('.project-card') as HTMLElement).dataset.detail, 'true', 'the one the panel is open on is marked');
+  assert.equal(target.dataset.detail, 'false');
+});
+
+test("the user's own tickets get the ticket board's status menu; a teammate's status is only text", () => {
+  const moved: string[] = [];
+  const toggled: string[] = [];
+  const state = stateWith(projectsState({ open: opened() }), { tickets: { statuses: { PAY: ['To Do', 'In Progress', 'In Review', 'Done'] } } });
+  const handlers = handlersWith({ toggleStatus: (key) => void toggled.push(key), moveTicket: (key, status, from) => void moved.push(`${key} ${status} ${from}`) });
+  const closed = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' }), handlers)));
+  const pill = byClass(card(closed, 'PAY-201'), 'pill--button')[0]!;
+  assert.equal(text(pill), 'In Review');
+  pill.click();
+  assert.deepEqual(toggled, ['project:jira:PAY-201']);
+  assert.deepEqual(byClass(card(closed, 'PAY-205'), 'pill--button'), [], "Dana's ticket: hers to move");
+  assert.equal(text(byClass(card(closed, 'PAY-205'), 'pill--status')[0]), 'In Progress');
+
+  const open = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200', statusFor: 'project:jira:PAY-201' }), handlers)));
+  const items = byTag(byClass(card(open, 'PAY-201'), 'menu--status')[0]!, 'button');
+  assert.deepEqual(items.map((item) => text(item)), ['To Do', 'In Progress', 'Done'], 'everywhere it can go but where it is');
+  items[2]!.click();
+  assert.deepEqual(moved, ['PAY-201 Done In Review']);
 });
 
 test("a teammate's card has no pull requests, and names whose it is", () => {
@@ -404,8 +476,7 @@ test("a teammate's card has no pull requests, and names whose it is", () => {
 test('the meta line carries the Jira status, what it waits for and what it blocks', () => {
   const node = epic();
   const meta = (key: string) => byClass(card(node, key), 'project-card__meta')[0]!;
-  assert.equal(text(byClass(meta('PAY-201'), 'project-card__status')[0]), 'In Review');
-  assert.equal(byClass(meta('PAY-201'), 'pill__dot').length, 1);
+  assert.equal(text(byClass(meta('PAY-201'), 'pill--status')[0]), 'In Review');
   assert.equal(text(byClass(meta('PAY-201'), 'project-card__blocks')[0]), 'Blocks PAY-202 and PAY-203');
   assert.equal(text(byClass(meta('PAY-204'), 'project-card__waits')[0]), 'Waits for PAY-202 and PAY-203');
   assert.ok(!/Alex Moreau/.test(text(meta('PAY-201'))), "the user's own name is left out");
@@ -561,4 +632,22 @@ test('the refresh control spins while the project is being read', () => {
   const state = stateWith(projectsState({ open: opened(epicRead(), { fetching: true }) }));
   const node = mount(h('span', null, projectStatus(state, uiWith({ projectKey: 'PAY-200' }), handlersWith())));
   assert.equal(byClass(node, 'refresh-button')[0]!.dataset.fetching, 'true');
+});
+
+test('the panel opens on a ticket only a project shows, with its notes and, on your own, its status menu', () => {
+  const tickets = epicTickets().map((each) => (each.key === 'PAY-204' ? { ...each, notes: [{ text: 'after the migration', at: hoursAgo(2) }] } : each));
+  // The brief's items too, which a real state always has and the fixture leaves out.
+  const state = { ...stateWith(projectsState({ open: opened(planned(tickets)) }), { tickets: { statuses: { PAY: ['To Do', 'In Progress', 'Done'] } } }), items: [] };
+  const ui = uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: 'PAY-200', detailFor: 'jira:PAY-204' });
+  const row = detailRow(state, ui);
+  assert.equal(row?.id, 'jira:PAY-204', 'not on the ticket board, and found anyway');
+  const panel = mount(h(Flyout, { row, run: null, state, ui, handlers: handlersWith() }));
+  assert.match(text(byClass(panel, 'flyout__title')[0] ?? panel), /PAY-204/);
+  assert.match(text(panel), /after the migration/);
+  assert.equal(text(byClass(panel, 'pill--button')[0]), 'To Do', 'the status, to move from here too');
+
+  const theirs = detailRow(state, uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: 'PAY-200', detailFor: 'jira:PAY-205' }));
+  const theirPanel = mount(h(Flyout, { row: theirs, run: null, state, ui, handlers: handlersWith() }));
+  assert.deepEqual(byClass(theirPanel, 'pill--button'), [], "a teammate's ticket: its status as text");
+  assert.equal(detailRow(state, uiWith({ view: 'tickets', detailFor: 'jira:PAY-999' })), null, 'nothing for a ticket no project has');
 });

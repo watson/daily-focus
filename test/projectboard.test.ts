@@ -11,7 +11,7 @@ import { after, test } from 'node:test';
 
 import { loadConfig, type Config } from '../src/config.ts';
 import { AcliAuthError, JiraSearchError, type JiraIdentity } from '../src/jira.ts';
-import { FRESH_FOR_MS, KEPT_PROJECTS, ProjectBoard, type ProjectBoardDeps } from '../src/projectboard.ts';
+import { FRESH_FOR_MS, KEPT_PROJECTS, ProjectBoard, findProjectTicket, withProjectNotes, type ProjectBoardDeps } from '../src/projectboard.ts';
 import type { ProjectRead, ProjectSummary, ProjectTicket } from '../src/types.ts';
 
 const dirs: string[] = [];
@@ -226,4 +226,16 @@ test('two opens of the same project at once share one read', async () => {
   release();
   await Promise.all([first, second]);
   assert.equal(deps.calls.filter((call) => call.startsWith('project')).length, 1);
+});
+
+test("the state carries each project ticket's notes from the action log, under the ticket board's id", async () => {
+  const deps = fakeDeps({ project: async (key) => read(key, [ticket('PROJ-2'), ticket('PROJ-3')]) });
+  const board = new ProjectBoard(await config(), () => {}, deps);
+  await board.open('PROJ-1');
+  const folded = new Map([['jira:proj-2', { status: 'open' as const, notes: [{ text: 'check the flag first', at: '2026-09-24T10:00:00Z' }] }]]);
+  const view = withProjectNotes(board.view(), folded);
+  const tickets = view.open['PROJ-1']!.read!.tickets;
+  assert.deepEqual(tickets.map((each) => each.notes), [[{ text: 'check the flag first', at: '2026-09-24T10:00:00Z' }], []]);
+  assert.equal(findProjectTicket(view, 'JIRA:PROJ-3')?.key, 'PROJ-3', 'by the id, whatever its case');
+  assert.equal(findProjectTicket(view, 'jira:PROJ-9'), undefined);
 });

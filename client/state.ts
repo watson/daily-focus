@@ -171,8 +171,42 @@ export function availableViews(current: DashboardState | null | undefined): View
   return views;
 }
 
+/**
+ * A ticket only an open project shows, as the panel shows it: what a ticket
+ * board row would carry for the header, the status and the notes, and whether
+ * it is the user's, since only the user's own get the status menu.
+ */
+export interface ProjectTicketRow {
+  id: string;
+  key: string;
+  summary: string;
+  workflowStatus: string;
+  issueType: string;
+  url: string | null;
+  notes: { text: string; at: string }[];
+  mine: boolean;
+}
+
 /** Anything the panel can be open on, other than a run. */
-export type DetailRow = ResolvedItem | BoardRow | TicketRow | InProgressTicket;
+export type DetailRow = ResolvedItem | BoardRow | TicketRow | InProgressTicket | ProjectTicketRow;
+
+/** The id a project's ticket goes by: the ticket board's, so a note or a conversation is one thing wherever it shows. */
+export function projectTicketId(key: string): string {
+  return `jira:${key}`;
+}
+
+/** A ticket in a project kept open, for the panel, by its id. */
+function projectTicketRow(current: DashboardState, id: string): ProjectTicketRow | null {
+  const wanted = id.trim().toLowerCase();
+  for (const entry of Object.values(current.projects?.open ?? {})) {
+    const ticket = entry.read?.tickets.find((each) => projectTicketId(each.key).toLowerCase() === wanted);
+    if (ticket) {
+      const { key, summary, workflowStatus, issueType, url, mine } = ticket;
+      return { id: projectTicketId(key), key, summary, workflowStatus, issueType, url, mine, notes: ticket.notes ?? [] };
+    }
+  }
+  return null;
+}
 
 /**
  * The row the panel is open on, whichever list it is in.
@@ -198,7 +232,9 @@ export function detailRow(current: DashboardState, target: UiState): DetailRow |
     const hit = lists[candidate].find((row) => row.id === id);
     if (hit) return hit;
   }
-  return null;
+  // A ticket the ticket board doesn't list, opened from Projects: not started,
+  // say, or a teammate's.
+  return projectTicketRow(current, id);
 }
 
 /**

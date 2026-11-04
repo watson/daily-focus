@@ -241,6 +241,8 @@ export interface Handlers {
   openProject(key: string): void;
   /** Read the epics, every project kept open, and the boards its stages come from, now. */
   refreshProjects(): void;
+  /** Zoom all the way out, to the epics to choose from. */
+  closeProject(): void;
   setView(view: View): void;
   jumpToTicket(id: string): void;
   nudge(id: string): void;

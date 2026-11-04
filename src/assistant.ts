@@ -54,6 +54,7 @@ import type {
   AssistantTurn,
   BoardRow,
   InProgressTicket,
+  ProjectTicket,
   ResolvedItem,
   TicketRow,
 } from './types.ts';
@@ -178,7 +179,8 @@ export const QUICK_ACTIONS: readonly AssistantQuickAction[] = [
 export interface AskContext {
   item?: ResolvedItem;
   pull?: BoardRow;
-  ticket?: TicketRow | InProgressTicket;
+  /** A ticket board row, or a ticket only an open project has, as the panel shows it. */
+  ticket?: TicketRow | InProgressTicket | ProjectTicket;
 }
 
 /** What a caller asks for: a quick action by id, typed text, or both. */

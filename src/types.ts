@@ -883,6 +883,12 @@ export interface ProjectTicket {
    * what they wait for.
    */
   linksRead: boolean;
+  /**
+   * What the user has noted on it, from the action log, under the `jira:<KEY>`
+   * id the ticket board uses, so a note is the same note wherever the ticket
+   * shows. Added as the state is built; never read from Jira.
+   */
+  notes?: { text: string; at: string }[];
 }
 
 /** A ticket outside the project that a link inside it names, as the link describes it. */

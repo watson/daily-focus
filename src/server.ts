@@ -9,7 +9,7 @@ import { loadConfig, type CliName, type Config } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
 import { dataRoot, launchProfile, layerSettings, oldDotenvWarning, settingSources, tilde, type SettingSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
-import { Store } from './store.ts';
+import { Store, foldActionLog } from './store.ts';
 import { Board, BoardRefusal, type BoardDeps } from './board.ts';
 import { CalendarBoard, helperDeps, type CalendarDeps } from './calendarboard.ts';
 import { runHelper } from './calendar.ts';
@@ -17,7 +17,7 @@ import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.
 import { CALLBACK_PATH, type OAuthClients } from './calendarproviders.ts';
 import { OAUTH_CLIENTS } from './oauthclients.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
-import { ProjectBoard, type ProjectBoardDeps } from './projectboard.ts';
+import { ProjectBoard, findProjectTicket, withProjectNotes, type ProjectBoardDeps } from './projectboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
 import { AutoAsk, AutoCheck } from './autoask.ts';
@@ -708,7 +708,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       connections: { github: connections.github.view(), jira: connections.jira.view() },
       calendarAccounts: calendarAccounts.view(),
       tickets: tickets.view(actions, now),
-      projects: projects.view(),
+      projects: withProjectNotes(projects.view(), foldActionLog(actions, now)),
       organization: organizations.view(),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       doneCheck: checks.view(checksAhead.view()),
@@ -738,7 +738,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     return {
       item: current.items.find((item) => item.id === id),
       pull: current.board.rows.find((row) => row.id === id),
-      ticket: current.tickets.rows.find((row) => row.id === id) ?? current.tickets.inProgress.find((row) => row.id === id),
+      ticket:
+        current.tickets.rows.find((row) => row.id === id) ??
+        current.tickets.inProgress.find((row) => row.id === id) ??
+        // A ticket only an open project shows: the panel opens on it from Projects.
+        findProjectTicket(current.projects, id),
     };
   }
 
