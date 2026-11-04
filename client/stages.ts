@@ -250,6 +250,8 @@ export function stageWhy(work: TicketWork): string {
   }
   // A teammate's pull requests aren't read here, so their absence says nothing.
   if (!work.ticket.mine) return `From its Jira status alone, ${work.ticket.workflowStatus || 'unknown'}: a teammate's pull requests aren't read here.`;
+  // Linked once, but none left open and none merged.
+  if (work.pulls.length > 0) return `${work.ticket.workflowStatus || 'Its status'} in Jira; its pull requests were all closed without merging.`;
   return work.stage === 'progress'
     ? `${work.ticket.workflowStatus || 'In progress'} in Jira, and none of your pull requests links to it yet.`
     : 'Not started in Jira, and none of your pull requests links to it yet.';

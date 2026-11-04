@@ -794,6 +794,11 @@ test("the stage word's hover says how it was worked out", () => {
     byClass(card(theirs, 'PAY-206'), 'project-card__stage')[0]!.title,
     "From its Jira status alone, In Progress: a teammate's pull requests aren't read here.",
   );
+
+  // One of yours whose only pull request was closed without merging: linked, but none left.
+  const closed = epicTickets().map((each) => (each.key === 'PAY-204' ? { ...each, github: [linked(PULLS.draft, 'closed', hoursAgo(5))] } : each));
+  const yours = view(projectsState({ open: opened(planned(closed)) }), { projectKey: 'PAY-200' });
+  assert.equal(byClass(card(yours, 'PAY-204'), 'project-card__stage')[0]!.title, 'To Do in Jira; its pull requests were all closed without merging.');
 });
 
 test('a press anywhere but in a menu or on its button closes the open menu', () => {
