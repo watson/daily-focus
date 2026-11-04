@@ -226,6 +226,37 @@ export function ticketWork(ticket: ProjectTicket, sources: PullSources): TicketW
   return work(ticket.statusCategory === 'indeterminate' ? 'progress' : 'not-started', 'status');
 }
 
+/**
+ * How a card's stage was worked out, for its hover. A ticket is only as far
+ * along as the least advanced of its open pull requests (Draft, then In review,
+ * then Ready to merge), unless one of them needs the user, which is said instead.
+ * Without pull requests of the user's that GitHub links to it, Jira's roll-up of
+ * its pull requests or its status decides.
+ */
+export function stageWhy(work: TicketWork): string {
+  const open = work.pulls.filter((pull) => OPEN_STAGES.includes(pull.stage));
+  if (work.stage === 'done') return 'Done in Jira.';
+  if (work.changesRequested) return 'A reviewer asked for changes on one of its open pull requests.';
+  if (work.needsYou) return 'One of its open pull requests is waiting on you.';
+  if (work.basis === 'github') {
+    if (open.length === 1) return `From its one open pull request, ${pullRef(open[0]!)}.`;
+    if (open.length > 1) return `The least advanced of its ${open.length} open pull requests: a ticket is only as far along as the one furthest behind.`;
+    return 'No open pull requests remain, and at least one has merged; the ticket is not Done in Jira yet.';
+  }
+  if (work.basis === 'jira') {
+    return work.ticket.mine
+      ? "From Jira's summary of its pull requests: GitHub links none of yours to it here."
+      : "From Jira's summary of its pull requests.";
+  }
+  // A teammate's pull requests aren't read here, so their absence says nothing.
+  if (!work.ticket.mine) return `From its Jira status alone, ${work.ticket.workflowStatus || 'unknown'}: a teammate's pull requests aren't read here.`;
+  // Linked once, but none left open and none merged.
+  if (work.pulls.length > 0) return `${work.ticket.workflowStatus || 'Its status'} in Jira; its pull requests were all closed without merging.`;
+  return work.stage === 'progress'
+    ? `${work.ticket.workflowStatus || 'In progress'} in Jira, and none of your pull requests links to it yet.`
+    : 'Not started in Jira, and none of your pull requests links to it yet.';
+}
+
 /** What a card says on its right, and in which tone. Colour only agrees with the words. */
 export function stageLabel(work: TicketWork): { text: string; tone: 'good' | 'critical' | null } {
   if (work.stage === 'done') return { text: STAGE_LABEL.done, tone: null };

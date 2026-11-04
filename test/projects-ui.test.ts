@@ -12,8 +12,9 @@ import { h } from 'preact';
 // Imported ahead of the client, for the document it installs.
 import { byClass, byTag, handlersWith, mount, uiWith } from './dom.ts';
 import { Flyout } from '../client/flyout.ts';
+import { installKeyboard, pressClosesMenu } from '../client/keyboard.ts';
 import { projectStatus } from '../client/projects.ts';
-import { detailRow, panelInProject } from '../client/state.ts';
+import { detailRow, panelInProject, ui as pageUi } from '../client/state.ts';
 import { renderTicketBoard } from '../client/tickets.ts';
 import type { Handlers, UiValues } from '../client/types.ts';
 import type { ProjectState, ProjectsState, ReadFailure } from '../src/types.ts';
@@ -775,4 +776,52 @@ test('a ticket blocking itself is named as a loop back to itself', () => {
     byClass(node, 'banner__text').some((banner) => /These tickets block each other: PAY-209 → PAY-209\b/.test(text(banner))),
     byClass(node, 'banner__text').map(text).join(' | '),
   );
+});
+
+test("the stage word's hover says how it was worked out", () => {
+  const node = epic();
+  const why = (key: string) => byClass(card(node, key), 'project-card__stage')[0]!.title;
+  assert.equal(why('PAY-201'), 'From its one open pull request, acme/payments-api #412.');
+  assert.equal(why('PAY-210'), 'A reviewer asked for changes on one of its open pull requests.');
+  assert.equal(why('PAY-207'), 'No open pull requests remain, and at least one has merged; the ticket is not Done in Jira yet.');
+  assert.equal(why('PAY-204'), 'Not started in Jira, and none of your pull requests links to it yet.');
+  assert.equal(why('PAY-205'), "From Jira's summary of its pull requests.", "a teammate's, by Jira's roll-up");
+
+  // A teammate's ticket with no roll-up: its status alone, and no claim about pull requests nobody here read.
+  const tickets = epicTickets().map((each) => (each.key === 'PAY-206' ? { ...each, mine: false, assignee: 'Dana Reyes', pulls: null, statusCategory: 'indeterminate' as const, workflowStatus: 'In Progress' } : each));
+  const theirs = view(projectsState({ open: opened(planned(tickets)) }), { projectKey: 'PAY-200' });
+  assert.equal(
+    byClass(card(theirs, 'PAY-206'), 'project-card__stage')[0]!.title,
+    "From its Jira status alone, In Progress: a teammate's pull requests aren't read here.",
+  );
+
+  // One of yours whose only pull request was closed without merging: linked, but none left.
+  const closed = epicTickets().map((each) => (each.key === 'PAY-204' ? { ...each, github: [linked(PULLS.draft, 'closed', hoursAgo(5))] } : each));
+  const yours = view(projectsState({ open: opened(planned(closed)) }), { projectKey: 'PAY-200' });
+  assert.equal(byClass(card(yours, 'PAY-204'), 'project-card__stage')[0]!.title, 'To Do in Jira; its pull requests were all closed without merging.');
+});
+
+test('a press anywhere but in a menu or on its button closes the open menu', () => {
+  const node = view(projectsState({ open: opened() }), { projectKey: 'PAY-200', statusFor: 'pull:card:github:pr:acme/payments-api#420' });
+  const menu = byClass(node, 'menu--pull')[0]!;
+  assert.equal(pressClosesMenu(byTag(menu, 'button')[0]!), false, 'its own item');
+  assert.equal(pressClosesMenu(byClass(card(node, 'PAY-203'), 'project-pull__flag--toggle')[0]!), false, 'the button that toggles it');
+  assert.equal(pressClosesMenu(byClass(card(node, 'PAY-201'), 'project-card__title')[0]!), true, 'another card');
+  assert.equal(pressClosesMenu(document.body), true, 'the page');
+});
+
+test("the page's listener closes an open menu on a press outside it, and leaves it on a press inside", () => {
+  installKeyboard(handlersWith());
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  document.body.append(menu);
+  pageUi.statusFor.value = 'pull:card:github:pr:acme/payments-api#420';
+  menu.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+  assert.equal(pageUi.statusFor.value, 'pull:card:github:pr:acme/payments-api#420', 'a press inside keeps it');
+  document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+  assert.equal(pageUi.statusFor.value, null, 'a press outside closes it');
+  pageUi.menuFor.value = 'snooze:github:pr:acme/payments-api#412';
+  document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+  assert.equal(pageUi.menuFor.value, null, 'and any other menu');
+  menu.remove();
 });
