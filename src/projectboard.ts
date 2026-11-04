@@ -16,12 +16,37 @@
 import type { Config } from './config.ts';
 import { errorDetail, extend, toReadFailure, unexpectedDetail, type Failure, type Streak } from './failure.ts';
 import { AcliAuthError, AcliMissingError, acliIdentity, fetchAssignedEpics, fetchProject, type JiraIdentity } from './jira.ts';
+import { canonicalId } from './ids.ts';
 import { planProject } from './projects.ts';
+import type { FoldedActions } from './store.ts';
 import { resolveTool } from './tools.ts';
-import type { ProjectRead, ProjectState, ProjectSummary, ProjectsState } from './types.ts';
+import type { ProjectRead, ProjectState, ProjectSummary, ProjectTicket, ProjectsState } from './types.ts';
 
 /** Never re-read more often than this once reads start failing. */
 const MAX_BACKOFF_MS = 30 * 60_000;
+
+/**
+ * The projects' tickets with what the user has noted on each, from the folded
+ * action log, so the panel opened on one shows the notes the ticket board would.
+ */
+export function withProjectNotes(view: ProjectsState, folded: ReadonlyMap<string, FoldedActions>): ProjectsState {
+  const noted = (ticket: ProjectTicket): ProjectTicket => ({ ...ticket, notes: folded.get(canonicalId(`jira:${ticket.key}`))?.notes ?? [] });
+  const open: ProjectsState['open'] = {};
+  for (const [key, entry] of Object.entries(view.open)) {
+    open[key] = entry.read ? { ...entry, read: { ...entry.read, tickets: entry.read.tickets.map(noted) } } : entry;
+  }
+  return { ...view, open };
+}
+
+/** A ticket in a project kept open, by the `jira:<KEY>` id the panel and the action log use. */
+export function findProjectTicket(view: ProjectsState | undefined, id: string): ProjectTicket | undefined {
+  const wanted = canonicalId(id);
+  for (const entry of Object.values(view?.open ?? {})) {
+    const ticket = entry.read?.tickets.find((each) => canonicalId(`jira:${each.key}`) === wanted);
+    if (ticket) return ticket;
+  }
+  return undefined;
+}
 
 /** How many projects are kept. The one opened least recently goes first. */
 export const KEPT_PROJECTS = 5;

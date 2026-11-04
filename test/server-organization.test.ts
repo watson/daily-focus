@@ -144,7 +144,7 @@ test('the POSTs are behind the guard, and take the setup and the commit its revi
   assert.equal((await post('/api/organization/dismiss', { commit: C1 })).status, 400);
   const stale = await post('/api/organization/adopt', { org: 'acme', commit: 'b2'.repeat(20) });
   assert.equal(stale.status, 409);
-  assert.match(((await stale.json()) as { error: string }).error, /changed since you opened it/);
+  assert.match(((await stale.json()) as { error: string }).error, /changed since you opened them/);
   assert.equal((await post('/api/organization/leave', {})).status, 409, 'none in use');
   assert.equal((await post('/api/organization/nothing', {})).status, 404);
   assert.equal(await readFile(join(store, 'organization.json'), 'utf8').catch(() => null), null, 'nothing written');
@@ -211,7 +211,7 @@ test('a setup whose values can’t be used with the store’s own is set aside a
     const conflicted = await startServer({ ...env, DAILY_FOCUS_DATA: other });
     try {
       const current = (await (await fetch(`${conflicted.url}/api/state`)).json()) as DashboardState;
-      assert.ok(current.setupWarnings.some((warning) => /Acme's setup has a value the dashboard can't use with yours, so it is ignoring the setup/.test(warning)));
+      assert.ok(current.setupWarnings.some((warning) => /Acme's Daily Focus settings have a value the dashboard can't use with yours, so it is ignoring them/.test(warning)));
       assert.ok(!current.setupWarnings.some((warning) => /ignoring the whole file/.test(warning)), 'the store’s own settings stand');
     } finally {
       await conflicted.close();

@@ -340,27 +340,6 @@ export function stageCounts(works: Iterable<TicketWork>): StageCounts {
 }
 
 /**
- * The strip's caption: "2 of 11 done, and one more only needs closing in Jira.
- * 1 ready to merge, 2 in review, 2 drafts and 3 not started."
- */
-export function progressSentence(counts: StageCounts): string {
-  const total = STAGES.reduce((sum, stage) => sum + counts[stage], 0);
-  if (total === 0) return 'No tickets in it yet.';
-  let first = `${counts.done} of ${total} done`;
-  if (counts.merged > 0) {
-    first += `, and ${counts.merged === 1 ? 'one more only needs' : `${counts.merged} more only need`} closing in Jira`;
-  }
-  const rest = [
-    counts.ready > 0 ? `${counts.ready} ready to merge` : '',
-    counts.review > 0 ? `${counts.review} in review` : '',
-    counts.draft > 0 ? `${counts.draft} ${counts.draft === 1 ? 'draft' : 'drafts'}` : '',
-    counts.progress > 0 ? `${counts.progress} in progress without a pull request` : '',
-    counts['not-started'] > 0 ? `${counts['not-started']} not started` : '',
-  ].filter(Boolean);
-  return rest.length > 0 ? `${first}. ${listOf(rest)}.` : `${first}.`;
-}
-
-/**
  * A ticket named where it waits or blocks: its key, and for one outside the
  * project what it is and where it stands, as "OPS-7 (another epic, In Review)".
  */

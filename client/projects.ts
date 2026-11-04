@@ -28,6 +28,8 @@ import { cssId, onCard } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer } from './section.ts';
+import { projectTicketId } from './state.ts';
+import { statusControl } from './tickets.ts';
 import {
   STAGES,
   STAGE_LABEL,
@@ -37,7 +39,6 @@ import {
   loopPath,
   nameTicket,
   nextSteps,
-  progressSentence,
   projectWork,
   pullSources,
   pullWording,
@@ -171,7 +172,7 @@ function projectParts(
   }
 
   if (!key) {
-    parts.push(el('p', { class: 'empty' }, noProjectLine(projects)));
+    parts.push(projects.epics.length > 0 ? epicChooser(state, projects, handlers) : el('p', { class: 'empty' }, noProjectLine(projects)));
     return parts;
   }
 
@@ -194,12 +195,72 @@ function projectParts(
     );
   }
   if (!entry?.read) {
-    if (!entry?.reason) parts.push(el('p', { class: 'empty' }, `Reading ${key}…`));
+    if (!entry?.reason) parts.push(loadingView(key, projects));
     return parts;
   }
 
   parts.push(...readView(entry.read, state, ui, handlers, now));
   return parts;
+}
+
+/**
+ * A project on its way, read for the first time: in the middle of the page, with
+ * its name when the page already knows it, so a click shows where it went.
+ */
+function loadingView(key: string, projects: ProjectsState): JSX.Element {
+  const known = [...projects.epics, ...Object.values(projects.open ?? {}).flatMap((entry) => [entry.read?.parent, ...(entry.read?.epics ?? [])])].find(
+    (summary) => summary?.key === key,
+  );
+  return el(
+    'div',
+    { class: 'project-loading', role: 'status' },
+    el('span', { class: 'project-loading__spinner', 'aria-hidden': 'true' }),
+    known?.summary ? el('p', { class: 'project-loading__title' }, known.summary) : null,
+    el('p', { class: 'project-loading__line' }, `Reading ${key} from Jira…`),
+  );
+}
+
+/**
+ * The epics to choose from, as cards to click into: the first thing Projects
+ * shows. A project read in this session carries its strip and how much of it is
+ * done; the rest name only what Jira's search says of them.
+ */
+function epicChooser(state: DashboardState, projects: ProjectsState, handlers: Handlers): JSX.Element {
+  const sources = pullSources(state);
+  return el(
+    'section',
+    { class: 'section epic-chooser' },
+    sectionHeader('Your epics', projects.epics.length),
+    el('p', { class: 'epic-chooser__help' }, 'Open one to see what is left in it, and the order it can land in.'),
+    el(
+      'ul',
+      { class: 'epic-choices' },
+      projects.epics.map((epic) => {
+        const read = projects.open?.[epic.key]?.read ?? null;
+        const project = read ? projectWork(read, sources) : null;
+        const works = project ? project.order.map((key) => project.works.get(key)!) : [];
+        const done = works.filter((work) => work.stage === 'done').length;
+        return el(
+          'li',
+          { key: epic.key },
+          el(
+            'button',
+            { type: 'button', class: 'epic-choice', title: `Open ${epic.key}`, onClick: () => handlers.openProject(epic.key) },
+            el(
+              'span',
+              { class: 'epic-choice__line' },
+              el('span', { class: 'item__ref' }, epic.key),
+              el('span', { class: 'epic-choice__facts' }, [epic.issueType, epic.workflowStatus].filter(Boolean).join(', ')),
+            ),
+            el('span', { class: 'epic-choice__title' }, epic.summary || epic.key),
+            read && works.length > 0
+              ? [progressStrip(works, 'progress-strip--mini'), el('span', { class: 'epic-choice__count' }, `${done} of ${works.length} done, as of ${formatTime(read.fetchedAt)}`)]
+              : null,
+          ),
+        );
+      }),
+    ),
+  );
 }
 
 /** What to say with no project chosen: why there is nothing to choose, or that there is. */
@@ -247,6 +308,8 @@ function projectHeader(read: PlannedRead, handlers: Handlers): JSX.Element {
     el(
       'p',
       { class: 'project-crumbs' },
+      el('button', { type: 'button', class: 'project-crumbs__up', title: 'Back to your epics', onClick: () => handlers.closeProject() }, 'Your epics'),
+      el('span', { class: 'project-crumbs__sep', 'aria-hidden': 'true' }, ' / '),
       parent
         ? [
             el(
@@ -275,41 +338,63 @@ export function stageGlyph(stage: Stage, props: Props = {}): JSX.Element {
   return el('span', { class: 'stage-glyph', 'data-stage': stage, 'aria-hidden': 'true', ...props });
 }
 
+/** The stages as the strip lays them out: furthest along first, so the bar fills from the left. */
+const STRIP_ORDER: readonly Stage[] = [...STAGES].reverse();
+
+/** The tickets a strip's block stands for, named on hover; a long list is cut short. */
+function blockTitle(stage: Stage, keys: readonly string[]): string {
+  const named = keys.length <= 8 ? listOf(keys) : `${keys.slice(0, 8).join(', ')} and ${keys.length - 8} more`;
+  return `${STAGE_LABEL[stage]}: ${named}`;
+}
+
 /**
- * One bar per ticket, in merge order, each filled as far as its ticket has got.
- * Hidden from a screen reader, which is given the sentence under it instead.
+ * The tickets split by stage: a block per stage, as wide as its share of them,
+ * furthest along at the left, in one hue that darkens as work gets further.
+ * Hidden from a screen reader, which reads the key under it instead.
  */
 function progressStrip(works: readonly TicketWork[], className = ''): JSX.Element {
+  const byStage = new Map<Stage, string[]>();
+  for (const work of works) byStage.set(work.stage, [...(byStage.get(work.stage) ?? []), work.ticket.key]);
   return el(
     'div',
     { class: `progress-strip${className ? ` ${className}` : ''}`, 'aria-hidden': 'true' },
-    works.map((work) =>
+    STRIP_ORDER.filter((stage) => byStage.has(stage)).map((stage) =>
       el('span', {
-        key: work.ticket.key,
+        key: stage,
         class: 'progress-strip__seg',
-        'data-stage': work.stage,
-        title: `${work.ticket.key}: ${stageLabel(work).text}`,
+        'data-stage': stage,
+        style: `flex-grow:${byStage.get(stage)!.length}`,
+        title: blockTitle(stage, byStage.get(stage)!),
       }),
     ),
   );
 }
 
+/** How far the project has got: its tickets split by stage, with the key to the split under it. */
 function progressView(works: readonly TicketWork[]): JSX.Element {
+  const counts = stageCounts(works);
   return el(
     'section',
-    { class: 'progress', 'aria-label': 'How far it has got' },
-    progressStrip(works),
-    el('p', { class: 'progress__sentence' }, progressSentence(stageCounts(works))),
-    stageLegend(),
-  );
-}
-
-/** The key to the glyphs, read once beside the strip. Each carries its name in words. */
-function stageLegend(): JSX.Element {
-  return el(
-    'p',
-    { class: 'legend stage-legend' },
-    STAGES.map((stage) => el('span', { class: 'legend__entry', key: stage }, stageGlyph(stage), STAGE_LABEL[stage])),
+    { class: 'progress' },
+    sectionHeader('Tickets', works.length),
+    works.length === 0
+      ? el('p', { class: 'empty' }, 'No tickets in it yet.')
+      : [
+          progressStrip(works),
+          el(
+            'ul',
+            { class: 'stage-key' },
+            STRIP_ORDER.filter((stage) => counts[stage] > 0).map((stage) =>
+              el(
+                'li',
+                { key: stage, class: 'stage-key__entry' },
+                el('span', { class: 'stage-key__swatch', 'data-stage': stage, 'aria-hidden': 'true' }),
+                `${STAGE_LABEL[stage]} `,
+                el('span', { class: 'stage-key__count' }, String(counts[stage])),
+              ),
+            ),
+          ),
+        ],
   );
 }
 
@@ -343,9 +428,13 @@ function writeButtons(row: BoardRow | null, kinds: readonly PullWrite[] | undefi
   return renderPullWrites(row, ui, handlers, kinds);
 }
 
-/** What a card needs to offer the board's writes on its pull requests. */
+/**
+ * What a card needs to act: the board's writes on its pull requests where Do
+ * next suggests them, and the page, for the panel and the status menu.
+ */
 interface CardWrites {
   writes: Writes;
+  state: DashboardState;
   ui: UiState;
   handlers: Handlers;
 }
@@ -358,7 +447,7 @@ function epicView(project: ProjectWork, state: DashboardState, ui: UiState, hand
   const done = project.order.filter((key) => project.works.get(key)!.stage === 'done');
 
   const steps = nextSteps(project, now);
-  const writes: CardWrites = { writes: writesOf(steps), ui, handlers };
+  const writes: CardWrites = { writes: writesOf(steps), state, ui, handlers };
   if (steps.length > 0) parts.push(nextList(steps, writes));
   else if (open.length > 0) parts.push(el('p', { class: 'empty' }, 'Nothing of yours to move on here right now.'));
 
@@ -368,8 +457,8 @@ function epicView(project: ProjectWork, state: DashboardState, ui: UiState, hand
   if (done.length > 0) {
     const rows = done.map((key) => ({ id: key, work: project.works.get(key)! }));
     parts.push(
-      drawer(`projects:done:${project.read.root.key}`, `Done (${done.length})`, rows, state, ui, handlers, (row) =>
-        el('li', { key: row.id, class: 'project-done' }, ticketCard(row.work, project, now)),
+      drawer(`projects:done:${project.read.root.key}`, 'Done', rows, state, ui, handlers, (row) =>
+        el('li', { key: row.id, class: 'project-done' }, ticketCard(row.work, project, now, writes)),
       ),
     );
   }
@@ -570,9 +659,30 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
   const ticket = work.ticket;
   const label = stageLabel(work);
   const title: ComponentChild[] = [el('span', { class: 'item__ref' }, ticket.key), ' ', ticket.summary];
+  const id = projectTicketId(ticket.key);
+  // Opens the panel beside the list, as a row on the ticket board does: its
+  // notes and the assistant, and its status again. A click on a link or a
+  // button on the card does what that says instead.
+  const open = writes ? () => writes.handlers.onSelect(id) : null;
   return el(
     'article',
-    { class: 'project-card', 'data-stage': work.stage, 'data-mine': String(ticket.mine) },
+    {
+      class: 'project-card',
+      'data-stage': work.stage,
+      'data-mine': String(ticket.mine),
+      'data-id': id,
+      'data-openable': String(open !== null),
+      'data-detail': String(writes?.ui.detailFor.value === id),
+      tabIndex: open ? 0 : undefined,
+      onClick: open ? (event: MouseEvent) => onCard(event) && open() : undefined,
+      onKeyDown: open
+        ? (event: KeyboardEvent) => {
+            if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+            event.preventDefault();
+            open();
+          }
+        : undefined,
+    },
     el(
       'div',
       { class: 'project-card__head' },
@@ -587,15 +697,21 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
     work.pulls.length > 0 ? el('ul', { class: 'project-card__pulls' }, work.pulls.map((pull) => pullLine(pull, now, writes))) : null,
     // The user's own tickets only: the check reads no one else's.
     ticket.mine ? doneCheckLine(ticket.key, project.checks, now, writes ? { ui: writes.ui, handlers: writes.handlers } : null) : null,
-    ticketMeta(work, project),
+    ticketMeta(work, project, writes),
     !ticket.linksRead && ticket.statusCategory !== 'done'
       ? el('p', { class: 'item__reason item__reason--waiting' }, 'Its links could not be read, so it may wait for more than this says.')
       : null,
   );
 }
 
+/**
+ * One of a ticket's pull requests. Ready for review is offered on any draft the
+ * board offers it on, since marking one ready merges nothing; a merge only where
+ * Do next says, so nothing here invites merging out of order.
+ */
 function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): JSX.Element {
-  const buttons = writes ? writeButtons(pull.row, writes.writes.get(pull.url), writes.ui, writes.handlers) : [];
+  const kinds: PullWrite[] = writes ? [...new Set<PullWrite>([...(writes.writes.get(pull.url) ?? []), 'ready'])] : [];
+  const buttons = writes ? writeButtons(pull.row, kinds, writes.ui, writes.handlers) : [];
   return el(
     'li',
     { key: pull.url, class: 'project-pull', 'data-stage': pull.stage },
@@ -608,16 +724,13 @@ function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): JSX.Ele
   );
 }
 
-function ticketMeta(work: TicketWork, project: ProjectWork): JSX.Element {
+function ticketMeta(work: TicketWork, project: ProjectWork, writes: CardWrites | null): JSX.Element {
   const ticket = work.ticket;
-  const bits: ComponentChild[] = [
-    el(
-      'span',
-      { class: 'pill pill--status project-card__status', title: 'Its status in Jira' },
-      el('span', { class: 'pill__dot', 'aria-hidden': 'true' }),
-      ticket.workflowStatus || '—',
-    ),
-  ];
+  const id = projectTicketId(ticket.key);
+  const bits: ComponentChild[] = writes
+    ? // The ticket board's own pill and menu, through the same move; only the user's own tickets open it.
+      statusControl({ id, key: ticket.key, workflowStatus: ticket.workflowStatus, mine: ticket.mine }, writes.state, writes.ui, writes.handlers, `project:${id}`)
+    : [el('span', { class: 'pill pill--status', title: 'Its status in Jira' }, ticket.workflowStatus || '—')];
   if (!ticket.mine) bits.push(el('span', null, ticket.assignee ?? 'Unassigned'));
   if (work.stage !== 'done') {
     const waits = project.waitsFor[ticket.key] ?? [];
@@ -680,7 +793,7 @@ function initiativeView(project: ProjectWork, state: DashboardState, ui: UiState
   if (done.length > 0) {
     const rows = done.map((group) => ({ id: group.epic.key, group }));
     parts.push(
-      drawer(`projects:done:${read.root.key}`, `Done (${done.length})`, rows, state, ui, handlers, (row) =>
+      drawer(`projects:done:${read.root.key}`, 'Done', rows, state, ui, handlers, (row) =>
         epicCard(row.group.epic, row.group.keys, project, handlers, now),
       ),
     );

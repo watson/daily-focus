@@ -9,7 +9,7 @@ import { loadConfig, type CliName, type Config } from './config.ts';
 import { ABSENT, readEditable, saveEditable, setFocusFields } from './editable.ts';
 import { dataRoot, launchProfile, layerSettings, oldDotenvWarning, settingSources, tilde, type SettingSources } from './env.ts';
 import { tempPathFor } from './fs.ts';
-import { Store } from './store.ts';
+import { Store, foldActionLog } from './store.ts';
 import { Board, BoardRefusal, type BoardDeps } from './board.ts';
 import { CalendarBoard, helperDeps, type CalendarDeps } from './calendarboard.ts';
 import { runHelper } from './calendar.ts';
@@ -17,7 +17,7 @@ import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.
 import { CALLBACK_PATH, type OAuthClients } from './calendarproviders.ts';
 import { OAUTH_CLIENTS } from './oauthclients.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
-import { ProjectBoard, type ProjectBoardDeps } from './projectboard.ts';
+import { ProjectBoard, findProjectTicket, withProjectNotes, type ProjectBoardDeps } from './projectboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
 import { AutoAsk, AutoCheck } from './autoask.ts';
@@ -233,7 +233,7 @@ function configure(sources: SettingSources): { config: Config; warnings: string[
     warnings.push(`${sources.settingsError}. The dashboard is ignoring it; saving on the settings page writes a fresh one.`);
   }
   if (sources.organizationError) {
-    warnings.push(`${sources.organizationError}. The dashboard is ignoring it; stop using the organization's setup on the settings page, or use it again.`);
+    warnings.push(`${sources.organizationError}. The dashboard is ignoring it; stop using the organization's Daily Focus settings on the settings page, or use them again.`);
   }
   try {
     return { config: loadConfig(layerSettings(sources)), warnings };
@@ -244,8 +244,8 @@ function configure(sources: SettingSources): { config: Config; warnings: string[
     const settingsIgnored =
       `\`${sources.settingsPath}\` has a value the dashboard can't use, so it is ignoring the whole file: ${why}. Fix it on the settings page.`;
     const setupIgnored =
-      `${sources.organization?.name ?? 'The organization'}'s setup has a value the dashboard can't use with yours, so it is ignoring the setup: ` +
-      `${why}. Change yours on the settings page, or stop using the setup.`;
+      `${sources.organization?.name ?? 'The organization'}'s Daily Focus settings have a value the dashboard can't use with yours, so it is ignoring them: ` +
+      `${why}. Change yours on the settings page, or stop using them.`;
     // The store's own settings win over the organization's, so the setup is
     // set aside first; then the store's settings; then both.
     const attempts: { settings: Readonly<Record<string, string>>; organization: OrganizationLayer | null; said: string[] }[] = [];
@@ -708,7 +708,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       connections: { github: connections.github.view(), jira: connections.jira.view() },
       calendarAccounts: calendarAccounts.view(),
       tickets: tickets.view(actions, now),
-      projects: projects.view(),
+      projects: withProjectNotes(projects.view(), foldActionLog(actions, now)),
       organization: organizations.view(),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       doneCheck: checks.view(checksAhead.view()),
@@ -738,7 +738,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
     return {
       item: current.items.find((item) => item.id === id),
       pull: current.board.rows.find((row) => row.id === id),
-      ticket: current.tickets.rows.find((row) => row.id === id) ?? current.tickets.inProgress.find((row) => row.id === id),
+      ticket:
+        current.tickets.rows.find((row) => row.id === id) ??
+        current.tickets.inProgress.find((row) => row.id === id) ??
+        // A ticket only an open project shows: the panel opens on it from Projects.
+        findProjectTicket(current.projects, id),
     };
   }
 
@@ -1466,7 +1470,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       const org = url.searchParams.get('org') ?? '';
       const review = organizations.review(org);
       if (!review) {
-        sendJSON(res, 404, { error: `No Daily Focus setup from ${org || 'that organization'} is on offer` });
+        sendJSON(res, 404, { error: `No Daily Focus settings from ${org || 'that organization'} are on offer` });
         return;
       }
       sendJSON(res, 200, review);
@@ -1493,7 +1497,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         refused = await organizations.leave();
         restartAfter = refused === null;
       } else if (path === '/api/organization/check') {
-        if (!config.github.enabled) refused = 'GitHub is off, so Daily Focus doesn’t look for organization setups';
+        if (!config.github.enabled) refused = 'GitHub is off, so Daily Focus doesn’t look for your organizations’ Daily Focus settings';
         else await organizations.check();
       } else {
         sendJSON(res, 404, { error: `no such organization action: ${path}` });

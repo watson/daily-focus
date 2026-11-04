@@ -188,8 +188,8 @@ export function parseSetup(raw: unknown, org: string, context: { profile: Profil
           ? 'is not a setting on the settings page'
           : PROGRAM_SETTINGS.includes(key)
             ? ORGANIZATION_FILE_SETTINGS.includes(key)
-              ? 'names a program to run, so a setup sets it only under "files", to a file in its repository'
-              : 'names a program to run, which a setup never sets'
+              ? 'names a program to run, so an organization sets it only under "files", to a file in its repository'
+              : 'names a program to run, which an organization never sets'
             : PERMISSION_SETTINGS.includes(key)
               ? 'grants the coding CLIs tool permissions, which only you set'
               : text === null
@@ -230,7 +230,7 @@ export function parseSetup(raw: unknown, org: string, context: { profile: Profil
       skippedFiles.push({
         setting,
         path: shown(given),
-        why: `can't be set to a file; a setup pins files only for ${ORGANIZATION_FILE_SETTINGS.join(', ')}`,
+        why: `can't be set to a file; an organization pins files only for ${ORGANIZATION_FILE_SETTINGS.join(', ')}`,
       });
     } else if (!path) {
       skippedFiles.push({ setting, path: shown(given), why: 'is not a path inside the repository' });
@@ -478,7 +478,7 @@ export class Organizations {
     this.#checking = this.#look()
       .catch((err: unknown) => {
         // A failed read is not "none": what was found before stands.
-        this.#warnings = [`Couldn't look for your organizations' Daily Focus setups: ${(err as Error).message}`];
+        this.#warnings = [`Couldn't look for your organizations' Daily Focus settings: ${(err as Error).message}`];
       })
       .finally(() => {
         this.#checking = null;
@@ -508,7 +508,7 @@ export class Organizations {
     const listed = new Set<string>();
     for (const account of accounts) {
       if (!account.token) {
-        warnings.push(`Couldn't look for organization setups as ${account.login}: ${account.error ?? 'no token'}`);
+        warnings.push(`Couldn't look for your organizations' Daily Focus settings as ${account.login}: ${account.error ?? 'no token'}`);
         incomplete = true;
         continue;
       }
@@ -516,7 +516,7 @@ export class Organizations {
       try {
         orgs = await this.#reads.organizations(account.token);
       } catch (err) {
-        warnings.push(`Couldn't list the organizations ${account.login} is in, to look for their Daily Focus setups: ${(err as Error).message}`);
+        warnings.push(`Couldn't list the organizations ${account.login} is in, to look for their Daily Focus settings: ${(err as Error).message}`);
         incomplete = true;
         continue;
       }
@@ -549,7 +549,7 @@ export class Organizations {
       if (reading?.kind === 'found') found.set(key(org), reading.found);
       else if (reading?.kind === 'unusable') warnings.push(reading.warning);
       else if (errors.length > 0) {
-        warnings.push(`Couldn't look for ${org}'s Daily Focus setup ${errors.join('; ')}`);
+        warnings.push(`Couldn't look for ${org}'s Daily Focus settings ${errors.join('; ')}`);
         failed.add(key(org));
       }
     }
@@ -580,7 +580,7 @@ export class Organizations {
     try {
       bytes = await this.#reads.file(token, repository, SETUP_FILE, repo.commit);
     } catch (err) {
-      if (err instanceof RepositoryFileProblem) return { kind: 'unusable', warning: `${org}'s Daily Focus setup can't be used: ${err.message} in ${where}` };
+      if (err instanceof RepositoryFileProblem) return { kind: 'unusable', warning: `${org}'s Daily Focus settings can't be used: ${err.message} in ${where}` };
       throw err;
     }
     if (!bytes) return { kind: 'unusable', warning: `${repository} has no ${SETUP_FILE} on its default branch, ${repo.branch}` };
@@ -589,10 +589,10 @@ export class Organizations {
       raw = JSON.parse(new TextDecoder().decode(bytes));
     } catch (err) {
       // Not the parser's own words: they quote the file, and its values may be private.
-      return { kind: 'unusable', warning: `${org}'s Daily Focus setup can't be used: ${SETUP_FILE} in ${where} is not valid JSON` };
+      return { kind: 'unusable', warning: `${org}'s Daily Focus settings can't be used: ${SETUP_FILE} in ${where} is not valid JSON` };
     }
     const parsed = parseSetup(raw, org, { profile: this.#config.profile, dataDir: this.#config.dataDir });
-    if ('error' in parsed) return { kind: 'unusable', warning: `${org}'s Daily Focus setup can't be used: ${parsed.error}` };
+    if ('error' in parsed) return { kind: 'unusable', warning: `${org}'s Daily Focus settings can't be used: ${parsed.error}` };
 
     const setup: ParsedSetup = { ...parsed, files: [], skippedFiles: [...parsed.skippedFiles] };
     const files = new Map<string, { source: string; bytes: Uint8Array; sha256: string }>();
@@ -778,10 +778,10 @@ export class Organizations {
   adopt(org: string, commit: string): Promise<string | null> {
     return this.#serial(async () => {
       const found = this.#found.get(key(org));
-      if (!found) return `No Daily Focus setup from ${org} has been found`;
-      if (found.commit !== commit) return `${found.setup.name}'s setup has changed since you opened it. Review it again`;
+      if (!found) return `No Daily Focus settings from ${org} have been found`;
+      if (found.commit !== commit) return `${found.setup.name}'s Daily Focus settings have changed since you opened them. Review them again`;
       const current = this.#record.adopted;
-      if (current && key(current.org) !== key(found.org)) return `You're using ${current.name}'s setup. Stop using it first`;
+      if (current && key(current.org) !== key(found.org)) return `You're using ${current.name}'s Daily Focus settings. Stop using them first`;
 
       const files: Record<string, AdoptedFile> = {};
       const taken = new Set<string>();
@@ -802,7 +802,7 @@ export class Organizations {
         sources: found.setup.sources,
       };
       const refused = this.#deps.check(organizationLayer({ adopted, dismissed: [] }, this.#config.dataDir)!);
-      if (refused) return `${found.setup.name}'s setup can't be used with your own settings: ${refused}`;
+      if (refused) return `${found.setup.name}'s Daily Focus settings can't be used with your own: ${refused}`;
 
       // The files first and the record last: until the record names a file's
       // new hash, a run of it is refused rather than run unapproved.
@@ -830,7 +830,7 @@ export class Organizations {
   dismiss(org: string, commit: string): Promise<string | null> {
     return this.#serial(async () => {
       const found = this.#found.get(key(org));
-      if (!found || found.commit !== commit) return `No Daily Focus setup from ${org} at ${short(commit)} has been found`;
+      if (!found || found.commit !== commit) return `No Daily Focus settings from ${org} at ${short(commit)} have been found`;
       this.#record = {
         adopted: this.#record.adopted,
         dismissed: [
@@ -853,7 +853,7 @@ export class Organizations {
   leave(): Promise<string | null> {
     return this.#serial(async () => {
       const adopted = this.#record.adopted;
-      if (!adopted) return "No organization's setup is in use";
+      if (!adopted) return "No organization's Daily Focus settings are in use";
       await rm(this.#config.organizationDir, { recursive: true, force: true });
       const commit = this.#found.get(key(adopted.org))?.commit ?? adopted.commit;
       this.#record = {

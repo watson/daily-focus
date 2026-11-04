@@ -13,7 +13,6 @@ import {
   loopPath,
   nameTicket,
   nextSteps,
-  progressSentence,
   projectWork,
   pullSources,
   pullWording,
@@ -145,16 +144,10 @@ test("a pull request is described in the board's words", () => {
   assert.ok(rows.length > 0);
 });
 
-test('the progress sentence counts every stage it has, in the order work goes', () => {
-  const project = projectWork(epicRead(), SOURCES);
-  assert.equal(
-    progressSentence(stageCounts(project.works.values())),
-    '1 of 10 done, and one more only needs closing in Jira. 2 ready to merge, 3 in review, 1 draft and 2 not started.',
-  );
-  const counts = stageCounts([]);
-  assert.equal(progressSentence(counts), 'No tickets in it yet.');
-  assert.equal(progressSentence({ ...counts, done: 2, merged: 3 }), '2 of 5 done, and 3 more only need closing in Jira.');
-  assert.equal(progressSentence({ ...counts, progress: 1, draft: 2 }), '0 of 3 done. 2 drafts and 1 in progress without a pull request.');
+test('the stage counts tally every ticket by how far it has got', () => {
+  const counts = stageCounts(projectWork(epicRead(), SOURCES).works.values());
+  assert.deepEqual(counts, { 'not-started': 2, progress: 0, draft: 1, review: 3, ready: 2, merged: 1, done: 1 });
+  assert.equal(Object.values(stageCounts([])).reduce((a, b) => a + b, 0), 0);
 });
 
 test('a ticket outside the project is named with where it stands', () => {

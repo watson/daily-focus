@@ -14,11 +14,18 @@ import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer, section } from './section.ts';
 import { ProjectsView, projectPicker } from './projects.ts';
-import { PANEL_PREFIX } from './state.ts';
+import { PANEL_PREFIX, type ProjectTicketRow } from './state.ts';
 import type { Handlers, TicketMode, UiState } from './types.ts';
 
 /** Either kind of row this board shows. A row in a court is a `TicketRow`; one in Working on carries no court. */
 export type AnyTicketRow = TicketRow | InProgressTicket;
+
+/**
+ * What the status pill needs of a ticket: the ticket board's rows, and a
+ * project's tickets, which open the same menu. One that says it isn't the
+ * user's gets the status as text: the board only ever offered moving your own.
+ */
+type StatusRow = Pick<AnyTicketRow, 'id' | 'key' | 'workflowStatus'> & { mine?: boolean };
 
 /**
  * What each court claims, in the words the README uses for it.
@@ -259,7 +266,7 @@ function outOfSyncView(board: TicketBoardState, open: TicketRow[], state: Dashbo
 
   const snoozed = board.rows.filter((row) => row.status === 'snoozed');
   if (snoozed.length > 0) {
-    parts.push(drawer('tickets:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers, renderTicketRow));
+    parts.push(drawer('tickets:snoozed', 'Snoozed', snoozed, state, ui, handlers, renderTicketRow));
   }
   return parts;
 }
@@ -327,7 +334,7 @@ export function ticketStatus(board: TicketBoardState, handlers: Handlers, mode: 
 }
 
 /** Whether a row is one of the flagged kind, with a court and a snooze status. */
-function flagged(row: AnyTicketRow): row is TicketRow {
+function flagged(row: AnyTicketRow | ProjectTicketRow): row is TicketRow {
   return 'court' in row && typeof row.court === 'string';
 }
 
@@ -403,7 +410,7 @@ const SNOOZE_MENU = { indefinite: false, longRange: true };
  * middle of the panel. The menus open under `PANEL_PREFIX`, which keeps the
  * card's copies of these buttons closed while the panel's are open.
  */
-export function renderTicketControls(row: AnyTicketRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
+export function renderTicketControls(row: AnyTicketRow | ProjectTicketRow, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
   const menuKey = `${PANEL_PREFIX}${row.id}`;
   return el(
     'div',
@@ -434,14 +441,14 @@ function renderTicketStatus(row: AnyTicketRow, state: DashboardState, ui: UiStat
  * limitation taken on purpose — a free-text field would invite naming statuses
  * that don't exist, and the answer to those is a refusal nobody needed to see.
  */
-function statusControl(
-  row: AnyTicketRow,
+export function statusControl(
+  row: StatusRow,
   state: DashboardState,
   ui: UiState,
   handlers: Handlers,
   menuKey: string,
 ): JSX.Element[] {
-  const offered = ticketStatusOptions(row, state);
+  const offered = row.mine === false ? [] : ticketStatusOptions(row, state);
   if (offered.length === 0) return [el('span', { class: 'pill pill--status' }, row.workflowStatus || '—')];
 
   const open = ui.statusFor.value === menuKey;
@@ -474,14 +481,14 @@ function statusControl(
  * running "In Progress" and "In progress" in two of them, and offering one
  * project's vocabulary on another's ticket is offering a refusal for certain.
  */
-function ticketStatusOptions(row: AnyTicketRow, state: DashboardState): string[] {
+function ticketStatusOptions(row: StatusRow, state: DashboardState): string[] {
   const project = /^([A-Za-z][A-Za-z0-9_]*)-\d+$/.exec(row.key.trim())?.[1]?.toUpperCase();
   const all = (project && state.tickets?.statuses?.[project]) || [];
   const current = row.workflowStatus.trim().toLowerCase();
   return all.filter((status) => status.trim().toLowerCase() !== current);
 }
 
-function renderStatusMenu(row: AnyTicketRow, offered: readonly string[], ui: UiState, handlers: Handlers): JSX.Element {
+function renderStatusMenu(row: StatusRow, offered: readonly string[], ui: UiState, handlers: Handlers): JSX.Element {
   const busy = ui.pending.value.has(row.id);
   return h(
     Menu,

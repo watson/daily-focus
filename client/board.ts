@@ -96,7 +96,7 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
 
   const snoozed = board.rows.filter((row) => row.status === 'snoozed');
   if (snoozed.length > 0) {
-    parts.push(drawer('board:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers, renderPullRow));
+    parts.push(drawer('board:snoozed', 'Snoozed', snoozed, state, ui, handlers, renderPullRow));
   }
 
   return parts;

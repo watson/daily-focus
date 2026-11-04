@@ -120,6 +120,21 @@
   --critical: #d03b3b;
   --good-ink: light-dark(#006300, #0ca30c);
 
+  /*
+   * How far a ticket has got, as one hue stepping from the paper towards the
+   * ink: an ordinal ramp, so the order reads in the colour and no stage borrows
+   * a status colour. Darkest is done in light, lightest in dark. Each step is
+   * checked for an even lightness gap and for the lightest clearing the page
+   * and the cards at 2:1 or better.
+   */
+  --stage-done: light-dark(#10192a, #d8e0ed);
+  --stage-merged: light-dark(#283347, #bbc6da);
+  --stage-ready: light-dark(#3e4c65, #9fadc6);
+  --stage-review: light-dark(#57657f, #8696b2);
+  --stage-draft: light-dark(#707e96, #707f9a);
+  --stage-progress: light-dark(#8894aa, #5c6981);
+  --stage-not-started: light-dark(#9faabd, #495468);
+
   --src-github: light-dark(#2a78d6, #3987e5);
   --src-email: light-dark(#eb6834, #d95926);
   --src-calendar: light-dark(#1baf7a, #199e70);
@@ -1810,28 +1825,74 @@ body:has(.today__masthead) .agenda__title {
 
 /* ---------- done drawer ---------- */
 
+/*
+ * Headed as a section is, so its name and count line up with the headings above
+ * it, then ruled across to a verb and a chevron at the right: the whole line is
+ * the target, and folded it still plainly opens.
+ */
 .drawer {
-  margin-top: 12px;
+  margin-top: 24px;
 }
 .drawer > summary {
-  padding: 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 2px;
   cursor: pointer;
-  color: var(--ink-2);
-  font-size: 13px;
   list-style: none;
-}
-.drawer > summary:hover {
-  color: var(--ink-1);
+  user-select: none;
 }
 .drawer > summary::-webkit-details-marker {
   display: none;
 }
-.drawer > summary::before {
-  content: '▸ ';
-  color: var(--ink-3);
+.drawer__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-1);
 }
-.drawer[open] > summary::before {
-  content: '▾ ';
+.drawer__count {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.drawer__rule {
+  flex: 1;
+  height: 1px;
+  margin: 0 4px;
+  background: var(--hairline);
+}
+.drawer__verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.drawer__verb::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+.drawer[open] .drawer__verb::after {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+.drawer > summary:hover .drawer__verb {
+  color: var(--ink-1);
+}
+.drawer > summary:hover .drawer__rule {
+  background: var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer__verb::after {
+    transition: none;
+  }
 }
 .drawer .list {
   padding: 0 0 8px;
@@ -2236,7 +2297,9 @@ body[data-view='settings'] .layout {
   columns: 2 460px;
   column-gap: 10px;
 }
-#tickets .list > .item {
+#tickets .list > .item,
+#tickets .list > .project-done,
+#tickets .list > .epic-card {
   break-inside: avoid;
   margin-bottom: 8px;
 }
@@ -2541,39 +2604,81 @@ a.button {
   text-decoration-color: var(--ink-3);
 }
 
+/* A project on its way: in the middle of the page, its name in the headline's serif when known. */
+.project-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40vh;
+  padding: 48px 16px;
+  text-align: center;
+}
+.project-loading__spinner {
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--hairline);
+  border-top-color: var(--ink-2);
+  border-radius: 50%;
+  animation: refresh-spin 0.9s linear infinite;
+}
+.project-loading__title {
+  max-width: 40ch;
+  margin: 6px 0 0;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.project-loading__line {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+/* Still says it is busy without the motion: the ring stays, dimmed, and the words say what. */
+@media (prefers-reduced-motion: reduce) {
+  .project-loading__spinner {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 /*
- * How far each ticket has got, as a gauge: a quarter for a draft, half for a
- * review, three quarters once it is ready to merge, full once merged, and full
- * and darker once done. Shared by the strip's bars and the glyphs, so the two
- * can never disagree. Ready also takes the good colour; every stage is named in
- * words beside it too, so the colour only agrees.
+ * How far each ticket has got: its stage's step of the ramp, shared by the
+ * strip's blocks, the key's swatches and the rail's glyphs so the three can
+ * never disagree. The glyph is a gauge as well: a quarter for a draft, half for
+ * a review, three quarters once ready to merge, full once merged or done.
  */
-.stage-glyph,
-.progress-strip__seg {
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch) {
   --fill: 0%;
-  --tone: var(--ink-3);
+  --tone: var(--stage-not-started);
 }
-.stage-glyph[data-stage='draft'],
-.progress-strip__seg[data-stage='draft'] {
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='progress'] {
+  --tone: var(--stage-progress);
+}
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='draft'] {
   --fill: 25%;
+  --tone: var(--stage-draft);
 }
-.stage-glyph[data-stage='review'],
-.progress-strip__seg[data-stage='review'] {
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='review'] {
   --fill: 50%;
+  --tone: var(--stage-review);
 }
-.stage-glyph[data-stage='ready'],
-.progress-strip__seg[data-stage='ready'] {
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='ready'] {
   --fill: 75%;
-  --tone: var(--good);
+  --tone: var(--stage-ready);
 }
-.stage-glyph[data-stage='merged'],
-.progress-strip__seg[data-stage='merged'] {
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='merged'] {
   --fill: 100%;
+  --tone: var(--stage-merged);
 }
-.stage-glyph[data-stage='done'],
-.progress-strip__seg[data-stage='done'] {
+:is(.stage-glyph, .progress-strip__seg, .stage-key__swatch)[data-stage='done'] {
   --fill: 100%;
-  --tone: var(--ink-1);
+  --tone: var(--stage-done);
 }
 
 .stage-glyph {
@@ -2602,48 +2707,61 @@ a.button {
   transform: rotate(45deg);
 }
 
+/*
+ * The tickets split by stage: one thin bar, a block per stage as wide as its
+ * share, the paper showing through a 2px gap between blocks, and only the bar's
+ * two ends rounded. The key under it names each block in the same order, with
+ * its count, which is what makes the bar readable at all.
+ */
 .progress {
-  margin: 0 0 28px;
+  margin: 0 0 30px;
 }
 .progress-strip {
   display: flex;
-  gap: 3px;
-  height: 10px;
+  gap: 2px;
+  height: 8px;
+  padding: 0 2px;
 }
 .progress-strip__seg {
-  position: relative;
   flex: 1 1 0;
-  min-width: 2px;
-  max-width: 56px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--surface-sunken);
-  box-shadow: inset 0 0 0 1px var(--hairline);
-}
-.progress-strip__seg::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--fill);
+  min-width: 3px;
   background: var(--tone);
 }
-.progress__sentence {
-  margin: 10px 0 6px;
-  max-width: 68ch;
-  font-family: var(--font-serif);
-  font-size: 15px;
-  line-height: 1.5;
+.progress-strip__seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.progress-strip__seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.progress-strip__seg:only-child {
+  border-radius: 4px;
+}
+.stage-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 12px 0 0;
+  padding: 0 2px;
+  list-style: none;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
-.stage-legend .stage-glyph {
+.stage-key__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stage-key__swatch {
+  flex: none;
   width: 10px;
   height: 10px;
+  border-radius: 3px;
+  background: var(--tone);
 }
-.stage-legend .stage-glyph[data-stage='done']::after {
-  left: 2px;
-  top: -0.5px;
-  width: 2.5px;
-  height: 5px;
+.stage-key__count {
+  color: var(--ink-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -2864,11 +2982,87 @@ a.button {
   flex-direction: column;
   gap: 8px;
 }
-.epic-card[data-openable='true'] {
+.epic-card[data-openable='true'],
+.project-card[data-openable='true'] {
   cursor: pointer;
 }
-.epic-card[data-openable='true']:hover {
+.epic-card[data-openable='true']:hover,
+.project-card[data-openable='true']:hover {
   border-color: var(--ink-3);
+}
+/* The card the panel is open on, marked as a row on the ticket board is. */
+.project-card[data-detail='true'] {
+  border-color: var(--accent);
+  box-shadow: inset -3px 0 0 var(--accent), var(--shadow);
+}
+
+/*
+ * The epics to choose from, before one is open: a card each, two or three to a
+ * row as the page allows, the whole card the button. The name is set in the
+ * headline's serif, so it reads as the title the page will open under.
+ */
+.epic-chooser__help {
+  margin: -2px 0 12px;
+  padding: 0 2px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.epic-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.epic-choices > li {
+  display: flex;
+}
+.epic-choice {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 13px 15px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.epic-choice:hover {
+  border-color: var(--ink-3);
+}
+.epic-choice__line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 10px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.epic-choice__title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.epic-choice .progress-strip--mini {
+  margin: auto 0 0;
+  padding-top: 6px;
+  height: 12px;
+  box-sizing: border-box;
+}
+.epic-choice__count {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
 }
 .epic-card__open {
   padding: 0;
@@ -2892,6 +3086,7 @@ a.button {
 .progress-strip--mini {
   height: 6px;
   margin: 8px 0 2px;
+  padding: 0;
 }
 .epic-card__next {
   margin: 6px 0 0;

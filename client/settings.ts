@@ -347,7 +347,7 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
                   class: 'segmented__option',
                   'aria-checked': String(checked),
                   disabled: locked,
-                  title: isDefault ? (fromSetup !== null ? `From ${organization}'s setup` : 'The default') : undefined,
+                  title: isDefault ? (fromSetup !== null ? `From ${organization}'s settings` : 'The default') : undefined,
                   onClick: () => handlers.editSetting(setting.key, isDefault ? null : choice.value),
                 },
                 choice.label,
@@ -362,7 +362,7 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
               'option',
               { value: '' },
               fromSetup !== null
-                ? `From ${organization}'s setup: ${choices.find((choice) => choice.value === fromSetup)?.label ?? fromSetup}`
+                ? `From ${organization}'s settings: ${choices.find((choice) => choice.value === fromSetup)?.label ?? fromSetup}`
                 : `Default: ${setting.fallback}`,
             ),
             choices.map((choice) => el('option', { value: choice.value, key: choice.value }, choice.label)),
@@ -392,8 +392,8 @@ function settingField(setting: SettingView, draft: ReadonlyMap<string, string | 
           'p',
           { class: 'field__source' },
           setting.source === 'organization'
-            ? `From ${organization}'s setup.`
-            : `${organization}'s setup sets ${fromSetup}. Clear yours to use it.`,
+            ? `From ${organization}'s settings.`
+            : `${organization}'s settings set ${fromSetup}. Clear yours to use it.`,
         )
       : null,
     el('p', { class: 'field__help' }, setting.help),

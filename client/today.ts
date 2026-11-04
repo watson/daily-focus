@@ -182,7 +182,7 @@ export function renderSections(state: DashboardState, ui: UiState, handlers: Han
 
   const snoozed = actionable.filter((item) => item.status === 'snoozed');
   if (snoozed.length > 0) {
-    sections.push(drawer('today:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers, renderItem));
+    sections.push(drawer('today:snoozed', 'Snoozed', snoozed, state, ui, handlers, renderItem));
   }
 
   const now = new Date(state.now);
@@ -193,7 +193,7 @@ export function renderSections(state: DashboardState, ui: UiState, handlers: Han
       daysFromToday(item.statusAt, now) === 0,
   );
   if (cleared.length > 0) {
-    sections.push(drawer('today:cleared', `Cleared today (${cleared.length})`, cleared, state, ui, handlers, renderItem));
+    sections.push(drawer('today:cleared', 'Cleared today', cleared, state, ui, handlers, renderItem));
   }
 
   return el('div', { id: 'sections' }, sections);

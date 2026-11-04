@@ -419,6 +419,8 @@ async function moveTicket(key: string, status: string, from: string | null): Pro
   try {
     adoptState(await api.postTicketTransition(key, status));
     showToast(`${key} moved to ${status}`, from ? () => void moveTicket(key, from, null) : null);
+    // Projects read Jira on their own clock; read the open ones again so the card moves too.
+    if (state.value?.projects?.enabled && Object.keys(state.value.projects.open ?? {}).length > 0) void refreshProjects();
   } catch (err) {
     // Jira refusing the move is the expected failure, not an exception: the board
     // offers the statuses it has seen, never the transitions the workflow allows.
@@ -1125,6 +1127,14 @@ export const handlers: Handlers = {
   setTicketMode,
   openProject: (key) => void openProject(key),
   refreshProjects: () => void refreshProjects(),
+  closeProject: () => {
+    batch(() => {
+      ui.projectKey.value = null;
+      ui.selectedId.value = null;
+      closeMenus();
+    });
+    remember(PROJECT_KEY, null);
+  },
   setView,
   // From the flag on a Working on row: over to Out of sync, with that ticket's
   // row selected and on screen, so the jump lands on the thing it named.
@@ -1233,17 +1243,17 @@ export const handlers: Handlers = {
   },
   adoptOrganization: (org, commit) => {
     const name = reviewName(org);
-    void organizationRequest(() => api.postOrganizationAdopt(org, commit), `Using ${name}’s setup. Restarting the dashboard to apply it…`);
+    void organizationRequest(() => api.postOrganizationAdopt(org, commit), `Using ${name}’s Daily Focus settings. Restarting the dashboard to apply them…`);
   },
   dismissOrganization: (org, commit) => {
     const name = reviewName(org);
-    void organizationRequest(() => api.postOrganizationDismiss(org, commit), `${name}’s setup is put off until it changes. Settings still lists it.`);
+    void organizationRequest(() => api.postOrganizationDismiss(org, commit), `${name}’s Daily Focus settings are put off until they change. The settings page still lists them.`);
   },
   leaveOrganization: () => {
     const name = state.value?.organization?.adopted?.name ?? 'the organization';
-    void organizationRequest(() => api.postOrganizationLeave(), `Stopped using ${name}’s setup. Restarting the dashboard…`);
+    void organizationRequest(() => api.postOrganizationLeave(), `Stopped using ${name}’s Daily Focus settings. Restarting the dashboard…`);
   },
-  checkOrganizations: () => void organizationRequest(() => api.postOrganizationCheck(), 'Looked for organization setups again'),
+  checkOrganizations: () => void organizationRequest(() => api.postOrganizationCheck(), 'Looked again for your organizations’ Daily Focus settings'),
 };
 
 /** What the setup under review calls itself, for a toast. */
