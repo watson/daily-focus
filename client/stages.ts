@@ -296,10 +296,25 @@ export function reasonText(reason: CourtReason, row: BoardRow, now: Date): strin
     case 'behind':
       return 'the branch is behind its base';
     case 'activity':
-      return reason.login ? `@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${relativeTime(reason.at, now)}` : '';
+      return activityText(reason, now);
     default:
       return '';
   }
+}
+
+/**
+ * "@bob reviewed 2 h ago", or, on an approved pull request, "@bob commented 2 h
+ * ago, after approving": that comment is the only thing keeping the row out of
+ * Ready to merge, so the wording names the approval it came after. Anything said
+ * after the newest approval is a comment, whether a thread reply, which GitHub
+ * files as a review, or one in the conversation.
+ */
+export function activityText(reason: CourtReason, now: Date): string {
+  if (!reason.login) return '';
+  const when = relativeTime(reason.at, now);
+  if (!reason.approval) return `@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${when}`;
+  const after = reason.approval.login === reason.login ? 'after approving' : `after @${reason.approval.login} approved`;
+  return `@${reason.login} commented ${when}, ${after}`;
 }
 
 /**

@@ -153,12 +153,22 @@ export function judge(
   // is ready, not your move. Anything by others newer than the newest approval is
   // by definition not that approval: a comment in the conversation, an inline
   // review comment, a "one more thing before you merge". That puts it back in
-  // your court.
-  const afterApproval = others !== null && approval !== undefined && others.at > approval.at;
+  // your court until you answer it. A reply or a push after it leaves the
+  // approval standing, just as a push after the approval itself does.
+  const afterApproval = theirMove && others !== null && approval !== undefined && others.at > approval.at;
   const approved = decision === 'APPROVED' && !afterApproval;
 
   if (theirMove && others && !approved) {
-    reasons.push({ kind: 'activity', login: others.login, at: others.at, activity: others.kind });
+    const reason: CourtReason = { kind: 'activity', login: others.login, at: others.at, activity: others.kind };
+    // Approved, and held here only by what was said since. The reason names the
+    // approval, since the row otherwise reads as approved and quiet, and says
+    // whether an answer is all it takes: the same pull request, judged with you
+    // having spoken last, can't recurse again.
+    if (decision === 'APPROVED' && approval) {
+      reason.approval = { login: approval.login, at: approval.at };
+      if (judge({ ...pr, lastActivityByYou: others.at }, now, nudgedAt, gates, reviews).court === 'ready') reason.readyOnAnswer = true;
+    }
+    reasons.push(reason);
   }
 
   if (reasons.length > 0) {
