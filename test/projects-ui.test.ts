@@ -130,9 +130,18 @@ test('a failed read of the epics is a critical banner with a retry, not an empty
   assert.deepEqual(retried, ['refresh']);
 });
 
-test('a project being read for the first time says so', () => {
-  const node = view(projectsState({ open: { 'PAY-200': { key: 'PAY-200', read: null, fetching: true, reason: null } } }), { projectKey: 'PAY-200' });
-  assert.equal(text(byClass(node, 'empty')[0]), 'Reading PAY-200…');
+test('a project being read for the first time says so, with its name when the page knows it', () => {
+  const reading = (key: string) => ({ [key]: { key, read: null, fetching: true, reason: null } });
+  const node = view(projectsState({ open: reading('PAY-200') }), { projectKey: 'PAY-200' });
+  const loading = byClass(node, 'project-loading')[0]!;
+  assert.equal(loading.getAttribute('role'), 'status');
+  assert.equal(byClass(loading, 'project-loading__spinner').length, 1);
+  assert.equal(text(byClass(loading, 'project-loading__title')[0]), 'Ledger rewrite', 'from the epics the picker lists');
+  assert.equal(text(byClass(loading, 'project-loading__line')[0]), 'Reading PAY-200 from Jira…');
+
+  const unknown = view(projectsState({ open: reading('PAY-999') }), { projectKey: 'PAY-999' });
+  assert.deepEqual(byClass(unknown, 'project-loading__title'), [], 'no name it does not have');
+  assert.equal(text(byClass(unknown, 'project-loading__line')[0]), 'Reading PAY-999 from Jira…');
 });
 
 test('a project whose read failed with nothing read before shows the failure and nothing else', () => {
@@ -215,27 +224,43 @@ test('a project at the top has no way up', () => {
   assert.match(text(byClass(node, 'project-crumbs')[0]), /^PAY-200/);
 });
 
-test('the strip has a bar per ticket in merge order, each at its stage, and a sentence under it', () => {
-  const node = epic();
-  const bars = byClass(byClass(node, 'progress')[0]!, 'progress-strip__seg');
+test('the strip splits the tickets by stage, furthest along first, each block as wide as its share', () => {
+  const progress = byClass(epic(), 'progress')[0]!;
+  assert.equal(text(byClass(progress, 'section__title')[0]), 'Tickets');
+  assert.equal(text(byClass(progress, 'section__count')[0]), '10');
+  const blocks = byClass(progress, 'progress-strip__seg');
   assert.deepEqual(
-    bars.map((bar) => bar.dataset.stage),
-    ['done', 'ready', 'ready', 'draft', 'not-started', 'review', 'not-started', 'merged', 'review', 'review'],
+    blocks.map((block) => [block.dataset.stage, block.style.flexGrow]),
+    [
+      ['done', '1'],
+      ['merged', '1'],
+      ['ready', '2'],
+      ['review', '3'],
+      ['draft', '1'],
+      ['not-started', '2'],
+    ],
+    'a stage with no tickets draws nothing',
   );
-  assert.equal(bars[1]!.title, 'PAY-201: Ready to merge');
-  assert.equal(
-    text(byClass(node, 'progress__sentence')[0]),
-    '1 of 10 done, and one more only needs closing in Jira. 2 ready to merge, 3 in review, 1 draft and 2 not started.',
+  assert.equal(blocks[2]!.title, 'Ready to merge: PAY-201 and PAY-202');
+});
+
+test('the key names each block in the same order, with its count, beside a swatch of its colour', () => {
+  const key = byClass(epic(), 'stage-key')[0]!;
+  assert.deepEqual(
+    byClass(key, 'stage-key__entry').map((entry) => text(entry)),
+    ['Done 1', 'Merged 1', 'Ready to merge 2', 'In review 3', 'Draft 1', 'Not started 2'],
+  );
+  assert.deepEqual(
+    byClass(key, 'stage-key__swatch').map((swatch) => swatch.dataset.stage),
+    ['done', 'merged', 'ready', 'review', 'draft', 'not-started'],
   );
 });
 
-test('the legend names every stage beside its glyph, so the fill is never the only cue', () => {
-  const legend = byClass(epic(), 'stage-legend')[0]!;
-  assert.deepEqual(
-    byClass(legend, 'legend__entry').map((entry) => entry.textContent),
-    ['Not started', 'In progress, no pull request', 'Draft', 'In review', 'Ready to merge', 'Merged', 'Done'],
-  );
-  assert.equal(byClass(legend, 'stage-glyph').length, 7);
+test('a project with no tickets says so in place of the strip', () => {
+  const node = view(projectsState({ open: opened(planned([])) }), { projectKey: 'PAY-200' });
+  const progress = byClass(node, 'progress')[0]!;
+  assert.equal(text(byClass(progress, 'empty')[0]), 'No tickets in it yet.');
+  assert.deepEqual(byClass(progress, 'progress-strip'), []);
 });
 
 /* ---------- do next ---------- */
@@ -433,10 +458,18 @@ test('a loop in the links is a warning naming the way round it', () => {
   );
 });
 
-test('the done tickets are in a drawer of their own', () => {
+const doneDrawer = (node: HTMLElement) => byClass(node, 'drawer').find((each) => text(byClass(each, 'drawer__title')[0]) === 'Done')!;
+
+test('the done tickets are in a drawer of their own, headed like a section, that says it opens', () => {
   const node = epic();
-  const drawer = byClass(node, 'drawer').find((each) => /^Done/.test(text(byTag(each, 'summary')[0])))!;
-  assert.equal(text(byTag(drawer, 'summary')[0]), 'Done (1)');
+  const drawer = doneDrawer(node);
+  assert.equal(text(byClass(drawer, 'drawer__count')[0]), '1', 'a count as the sections above carry it, not in brackets');
+  assert.equal(text(byClass(drawer, 'drawer__verb')[0]), 'Show');
+  const opened = view(projectsState({ open: { 'PAY-200': { key: 'PAY-200', read: epicRead(), fetching: false, reason: null } } }), {
+    projectKey: 'PAY-200',
+    openDrawers: new Set(['projects:done:PAY-200']),
+  });
+  assert.equal(text(byClass(doneDrawer(opened), 'drawer__verb')[0]), 'Hide');
   assert.deepEqual(
     byClass(drawer, 'project-card').map((each) => text(byClass(each, 'item__ref')[0])),
     ['PAY-208'],
@@ -483,7 +516,7 @@ test('an initiative is a card per epic, in the order their work can land', () =>
   assert.equal(text(byClass(epics[0]!, 'epic-card__next')[0]), 'Next: Start PAY-222');
   assert.match(text(byClass(epics[1]!, 'project-card__meta')[0]), /Waits for PAY-200/);
   assert.deepEqual(byClass(node, 'merge-order'), [], 'the epics stand in for the merge order');
-  assert.equal(byClass(node, 'progress-strip__seg').length, 4 + 2 + 1 + 1, 'the whole strip, and a mini one per epic, the done one in its drawer included');
+  assert.equal(byClass(node, 'progress-strip__seg').length, 2 + 2 + 1 + 1, 'a block per stage: the whole strip, and a mini one per epic, the done one in its drawer included');
 });
 
 test("clicking an epic zooms into it, by its title or anywhere on its card but a link", () => {
@@ -501,8 +534,8 @@ test("clicking an epic zooms into it, by its title or anywhere on its card but a
 
 test("an initiative's finished epics are in the Done drawer", () => {
   const node = view(projectsState({ open: opened(initiative()) }), { projectKey: 'PAY-100' });
-  const drawer = byClass(node, 'drawer').find((each) => /^Done/.test(text(byTag(each, 'summary')[0])))!;
-  assert.equal(text(byTag(drawer, 'summary')[0]), 'Done (1)');
+  const drawer = doneDrawer(node);
+  assert.equal(text(byClass(drawer, 'drawer__count')[0]), '1');
   assert.deepEqual(
     byClass(drawer, 'epic-card').map((each) => each.dataset.key),
     ['PAY-400'],
