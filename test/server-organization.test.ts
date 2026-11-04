@@ -46,6 +46,7 @@ const github: BoardDeps = {
   token: async () => 'token-alice',
   fetch: async () => ({ login: 'alice', pulls: [], warnings: [], orgs: {}, rateLimitRemaining: 4000 }),
   markReady: async () => assert.fail('no writes'),
+  markDraft: async () => assert.fail('nothing should be turned into a draft'),
   merge: async () => assert.fail('no writes'),
   enqueue: async () => assert.fail('no writes'),
   requiredApprovals: async () => 1,

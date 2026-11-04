@@ -605,6 +605,7 @@ test('a pinned merge helper that changed since it was approved is never run, and
     token: async () => 'token-alice',
     fetch: async () => ({ login: 'alice', pulls: [pull()], warnings: [], orgs: {}, rateLimitRemaining: 4000 }),
     markReady: async () => assert.fail('no writes here'),
+    markDraft: async () => assert.fail('nothing should be turned into a draft'),
     merge: async () => assert.fail('no writes here'),
     enqueue: async () => assert.fail('no writes here'),
     requiredApprovals: async () => 1,

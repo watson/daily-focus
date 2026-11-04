@@ -18,7 +18,7 @@ import { Flyout } from './flyout.ts';
 import { OnboardingView } from './onboarding.ts';
 import { OrganizationReviewDialog } from './organization.ts';
 import { SettingsView } from './settings.ts';
-import { detailRow, detailRun, state } from './state.ts';
+import { detailRow, detailRun, panelInProject, state } from './state.ts';
 import { TicketsView } from './tickets.ts';
 import { TodayView } from './today.ts';
 import type { Handlers, UiState } from './types.ts';
@@ -72,9 +72,12 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
         { class: 'layout__side', 'aria-label': "Today's agenda" },
         el('div', { id: 'agenda' }, current && view === 'today' ? renderAgenda(current, ui, handlers) : null),
       ),
-      current
-        ? h(Flyout, { row, run, state: current, ui, handlers })
-        : el('aside', { class: 'flyout', id: 'flyout', 'aria-label': 'Item details', hidden: true }),
+      // Inside a project, Projects places the panel itself, beside its list.
+      current && panelInProject(current, ui)
+        ? null
+        : current
+          ? h(Flyout, { row, run, state: current, ui, handlers })
+          : el('aside', { class: 'flyout', id: 'flyout', 'aria-label': 'Item details', hidden: true }),
     ),
     h(OrganizationReviewDialog, { ui, handlers }),
     h(Toast, { ui, handlers }),

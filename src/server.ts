@@ -962,7 +962,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       return;
     }
 
-    if ((path === '/api/board/ready' || path === '/api/board/merge') && req.method === 'POST') {
+    if ((path === '/api/board/ready' || path === '/api/board/draft' || path === '/api/board/merge') && req.method === 'POST') {
       const body = await readJsonObject(req, res);
       if (!body) return;
       // A row of the board's, by its id, and nothing else: no URL, owner, repo or
@@ -984,6 +984,7 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       try {
         const actions = await store.readActions();
         if (path === '/api/board/ready') await board.markReady(id, actions);
+        else if (path === '/api/board/draft') await board.markDraft(id, actions);
         else ({ notice } = await board.merge(id, actions, head as string));
       } catch (err) {
         // GitHub's own words, and a 409, as for a transition: the request was

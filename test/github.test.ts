@@ -25,8 +25,10 @@ import {
   readEnqueueReply,
   readMergeReply,
   readReadyReply,
+  readDraftReply,
   readRequiredApprovals,
   readyRequest,
+  draftRequest,
   rollupTruncated,
   summarizeChecks,
   toMergeState,
@@ -787,6 +789,10 @@ test('each write names the pull request by node id, and merging pins the head co
   assert.match(ready.query, /markPullRequestReadyForReview\(input: \{ pullRequestId: \$id \}\)/);
   assert.deepEqual(ready.variables, { id: 'PR_kwDOAcme412' });
 
+  const draft = draftRequest('PR_kwDOAcme412');
+  assert.match(draft.query, /convertPullRequestToDraft\(input: \{ pullRequestId: \$id \}\)/);
+  assert.deepEqual(draft.variables, { id: 'PR_kwDOAcme412' });
+
   const merge = mergeRequest('PR_kwDOAcme412', 'SQUASH', '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432');
   assert.match(merge.query, /mergePullRequest\(input: \{ pullRequestId: \$id, mergeMethod: \$method, expectedHeadOid: \$head \}\)/);
   assert.match(merge.query, /\$head: GitObjectID!/, 'the head commit is required, never optional');
@@ -800,6 +806,7 @@ test('each write names the pull request by node id, and merging pins the head co
 
 test("a reply counts as done only when it says so, and a refusal is GitHub's own words", () => {
   readReadyReply({ data: { markPullRequestReadyForReview: { pullRequest: { id: 'PR_kwDOAcme412', isDraft: false } } }, errors: [] });
+  readDraftReply({ data: { convertPullRequestToDraft: { pullRequest: { id: 'PR_kwDOAcme412', isDraft: true } } }, errors: [] });
   readMergeReply({ data: { mergePullRequest: { pullRequest: { id: 'PR_kwDOAcme412', merged: true } } }, errors: [] });
   readEnqueueReply({ data: { enqueuePullRequest: { mergeQueueEntry: { id: 'MQE_kwDOAcme9' } } }, errors: [] });
 
@@ -822,6 +829,7 @@ test("a reply counts as done only when it says so, and a refusal is GitHub's own
   );
   // Silence is not success.
   assert.throws(() => readReadyReply({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: true } } }, errors: [] }), GitHubRefusedError);
+  assert.throws(() => readDraftReply({ data: { convertPullRequestToDraft: { pullRequest: { isDraft: false } } }, errors: [] }), GitHubRefusedError);
   assert.throws(() => readMergeReply({ data: { mergePullRequest: { pullRequest: { merged: false } } }, errors: [] }), GitHubRefusedError);
   assert.throws(() => readEnqueueReply({ data: null, errors: [] }), GitHubRefusedError);
 });

@@ -20,6 +20,8 @@ import {
   ANY_PR,
   AcliAuthError,
   EPICS_JQL,
+  JiraSearchError,
+  PROJECTS_JQL,
   OPEN_PR,
   PROJECT_TICKET_LIMIT,
   acliIdentity,
@@ -628,7 +630,7 @@ test('blocks links are read in both directions, and other link types are ignored
  */
 async function projectAcli(
   t: { after(fn: () => Promise<void>): void },
-  world: { views: Record<string, unknown>; children: Record<string, unknown[]>; mine: string[]; epics?: unknown[] },
+  world: { views: Record<string, unknown>; children: Record<string, unknown[]>; mine: string[]; epics?: unknown[]; refuseProjects?: string },
 ): Promise<{ acli: string; calls(): Promise<string[]> }> {
   const dir = await mkdtemp(join(tmpdir(), 'daily-focus-acli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -647,7 +649,8 @@ if (args[2] === 'view') {
 } else {
   const jql = args[args.indexOf('--jql') + 1];
   appendFileSync(${JSON.stringify(log)}, 'search ' + jql + '\\n');
-  if (jql.startsWith('issuetype = Epic')) { console.log(JSON.stringify(world.epics ?? [])); return; }
+  if (jql.startsWith('issuetype in (Epic, Initiative)') && world.refuseProjects) fail(world.refuseProjects);
+  if (jql.startsWith('issuetype = Epic') || jql.startsWith('issuetype in (Epic, Initiative)')) { console.log(JSON.stringify(world.epics ?? [])); return; }
   const parents = [...jql.split(' ORDER BY')[0].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   const all = parents.flatMap((key) => world.children[key] ?? []);
   console.log(JSON.stringify(jql.includes('currentUser()') ? all.filter((i) => world.mine.includes(i.key)) : all));
@@ -768,6 +771,28 @@ test('a project bigger than the limit is read in part, and says so', async (t) =
   const read = await fetchProject(acli, 'PROJ-1', null);
   assert.equal(read.tickets.length, PROJECT_TICKET_LIMIT);
   assert.match(read.warnings[0]!, new RegExp(`has ${PROJECT_TICKET_LIMIT + 3} tickets; only the first ${PROJECT_TICKET_LIMIT} were read`));
+});
+
+test('the initiatives and epics to offer are searched for together', () => {
+  assert.match(PROJECTS_JQL, /^issuetype in \(Epic, Initiative\) AND assignee = currentUser\(\) AND statusCategory != Done ORDER BY updated DESC$/);
+});
+
+test('a site with no initiative type falls back on its epics alone', async (t) => {
+  const { acli, calls } = await projectAcli(t, {
+    views: {},
+    children: {},
+    mine: [],
+    epics: [child('PROJ-1', 'indeterminate', null, 1)],
+    refuseProjects: "✗ Error: The value 'Initiative' does not exist for the field 'issuetype'.",
+  });
+  const epics = await fetchAssignedEpics(acli, 'acme.atlassian.net');
+  assert.deepEqual(epics.map((epic) => epic.key), ['PROJ-1']);
+  assert.deepEqual((await calls()).map((call) => call.split(' AND ')[0]), ['search issuetype in (Epic, Initiative)', 'search issuetype = Epic']);
+});
+
+test('any other refusal of that search is the read failing, not an empty list', async (t) => {
+  const { acli } = await projectAcli(t, { views: {}, children: {}, mine: [], epics: [], refuseProjects: '✗ Error: Jira is unavailable.' });
+  await assert.rejects(fetchAssignedEpics(acli, 'acme.atlassian.net'), JiraSearchError);
 });
 
 test('the epics to offer are read and summarised', async (t) => {

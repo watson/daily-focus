@@ -96,6 +96,7 @@ async function helpedBoard(opts: {
       return { login: 'alice', pulls: opts.pulls(), warnings: [], orgs: {}, rateLimitRemaining: 4000 };
     },
     markReady: async () => assert.fail('nothing should be marked ready'),
+    markDraft: async () => assert.fail('nothing should be turned into a draft'),
     merge: async () => assert.fail("GitHub's merge is not the way here"),
     enqueue: async () => assert.fail("GitHub's queue is not the way here"),
     requiredApprovals: async (token, repo, branch) => {
@@ -120,7 +121,9 @@ async function helpedBoard(opts: {
   return { board, calls, envs, dataDir };
 }
 
-const offersOf = (board: Board) => Object.fromEntries(board.view([], new Date()).rows.map((row) => [row.number, row.offers]));
+// Merges only: turning a pull request back into a draft is offered on every open one, and is not what this file is about.
+const merges = (row: { offers?: string[] }) => row.offers?.filter((offer) => offer !== 'draft');
+const offersOf = (board: Board) => Object.fromEntries(board.view([], new Date()).rows.map((row) => [row.number, merges(row)]));
 
 async function refusal(action: Promise<unknown>): Promise<{ status: number; message: string }> {
   const err = await action.then(
@@ -367,7 +370,7 @@ test('merge stack hands the top to the helper with --stack, and shows every pull
     'fetch',
   ]);
   const rows = board.view([], new Date()).rows;
-  assert.deepEqual(rows.map((row) => [row.number, row.helperQueued, row.offers]), [
+  assert.deepEqual(rows.map((row) => [row.number, row.helperQueued, merges(row)]), [
     [410, true, []],
     [411, true, []],
     [412, true, []],

@@ -13,7 +13,7 @@ import { h } from 'preact';
 import { byClass, byTag, handlersWith, mount, uiWith } from './dom.ts';
 import { Flyout } from '../client/flyout.ts';
 import { projectStatus } from '../client/projects.ts';
-import { detailRow } from '../client/state.ts';
+import { detailRow, panelInProject } from '../client/state.ts';
 import { renderTicketBoard } from '../client/tickets.ts';
 import type { Handlers, UiValues } from '../client/types.ts';
 import type { ProjectState, ProjectsState, ReadFailure } from '../src/types.ts';
@@ -70,33 +70,12 @@ test('pressing Projects on the switch asks for it', () => {
   assert.deepEqual(asked, ['projects']);
 });
 
-test('the picker lists the epics by key and summary, and choosing one opens it', () => {
-  const asked: string[] = [];
-  const node = view(projectsState(), {}, { openProject: (key) => void asked.push(key) });
-  const select = byClass(node, 'project-picker')[0] as HTMLSelectElement;
-  assert.ok(select, 'the picker is on the switch line');
-  assert.deepEqual(
-    [...select.options].map((option) => option.textContent),
-    ['Choose an epic…', 'PAY-200 · Ledger rewrite', 'PAY-300 · Refund flow'],
-  );
-  select.value = 'PAY-300';
-  select.dispatchEvent(new Event('change', { bubbles: true }));
-  assert.deepEqual(asked, ['PAY-300']);
+test('Projects has no picker: its cards and its breadcrumb are the way about it', () => {
+  assert.deepEqual(byClass(view(projectsState()), 'project-picker'), []);
+  assert.deepEqual(byClass(epic(), 'project-picker'), []);
 });
 
-test('a project open that is not one of the epics, as a parent zoomed out to, is still named in the picker', () => {
-  const parent = planned([ticket('PAY-201', { parent: 'PAY-200' })], {
-    root: summary('PAY-100', { summary: 'Payments platform', issueType: 'Initiative', level: 2 }),
-    parent: null,
-    epics: [summary('PAY-200', { summary: 'Ledger rewrite' })],
-  });
-  const node = view(projectsState({ open: opened(parent) }), { projectKey: 'PAY-100' });
-  const select = byClass(node, 'project-picker')[0] as HTMLSelectElement;
-  assert.equal(select.options[1]?.textContent, 'PAY-100 · Payments platform');
-  assert.equal(select.value, 'PAY-100');
-});
-
-test('the type key gives way to the picker, since no row here carries a type dot', () => {
+test('the type key is left off, since no row here carries a type dot', () => {
   assert.deepEqual(byClass(epic(), 'legend__dot'), []);
 });
 
@@ -115,13 +94,13 @@ test('epics not read yet, and on their way', () => {
   );
 });
 
-test('with epics to choose from and none chosen, they are cards to click into', () => {
+test('with nothing chosen, the epics are cards to click into, and no Initiatives section without any', () => {
   const asked: string[] = [];
   const node = view(projectsState(), {}, { openProject: (key) => void asked.push(key) });
-  const chooser = byClass(node, 'epic-chooser')[0]!;
-  assert.equal(text(byClass(chooser, 'section__title')[0]), 'Your epics');
-  assert.equal(text(byClass(chooser, 'section__count')[0]), '2');
-  const choices = byClass(chooser, 'epic-choice');
+  const sections = byClass(node, 'project-choices');
+  assert.deepEqual(sections.map((section) => text(byClass(section, 'section__title')[0])), ['Epics']);
+  assert.equal(text(byClass(sections[0]!, 'section__count')[0]), '2');
+  const choices = byClass(sections[0]!, 'epic-choice');
   assert.deepEqual(
     choices.map((choice) => text(byClass(choice, 'epic-choice__title')[0])),
     ['Ledger rewrite', 'Refund flow'],
@@ -131,9 +110,21 @@ test('with epics to choose from and none chosen, they are cards to click into', 
   assert.deepEqual(asked, ['PAY-300']);
 });
 
+test('initiatives have a section of their own, first, including one above an epic read this session', () => {
+  const assigned = view(projectsState({ epics: [...projectsState().epics, summary('PAY-900', { summary: 'Checkout revamp', issueType: 'Initiative', level: 2 })] }), {});
+  const sections = byClass(assigned, 'project-choices');
+  assert.deepEqual(sections.map((section) => text(byClass(section, 'section__title')[0])), ['Initiatives', 'Epics']);
+  assert.deepEqual(byClass(sections[0]!, 'epic-choice__title').map(text), ['Checkout revamp']);
+
+  // PAY-200's parent is the initiative PAY-100, which Jira's search for your own doesn't name.
+  const above = byClass(byClass(view(projectsState({ open: opened() }), {}), 'project-choices')[0]!, 'epic-choice__title').map(text);
+  assert.deepEqual(above, ['Payments platform']);
+});
+
 test('an epic read this session carries its strip and how much is done on its card', () => {
   const node = view(projectsState({ open: opened() }), {});
-  const [read, unread] = byClass(node, 'epic-choice');
+  const epics = byClass(node, 'project-choices').find((section) => text(byClass(section, 'section__title')[0]) === 'Epics')!;
+  const [read, unread] = byClass(epics, 'epic-choice');
   assert.ok(byClass(read!, 'progress-strip__seg').length > 0);
   assert.match(text(byClass(read!, 'epic-choice__count')[0]), /^1 of 10 done, as of /);
   assert.equal(byClass(unread!, 'progress-strip').length, 0, 'nothing it has not read');
@@ -230,7 +221,7 @@ test('the breadcrumb zooms out to the parent, and the headline is the summary in
   const asked: string[] = [];
   const node = epic({ openProject: (key) => void asked.push(key) });
   const crumbs = byClass(node, 'project-crumbs')[0]!;
-  assert.match(text(crumbs), /^Your epics \/ Payments platform \/ PAY-200/);
+  assert.match(text(crumbs), /^Projects \/ Payments platform \/ PAY-200/);
   asked.length = 0;
   byClass(crumbs, 'project-crumbs__up')[1]!.click();
   assert.deepEqual(asked, ['PAY-100']);
@@ -244,8 +235,8 @@ test('a project at the top has no way up but back to the epics', () => {
   const read = planned(epicTickets(), { parent: null });
   const node = view(projectsState({ open: opened(read) }), { projectKey: 'PAY-200' }, { closeProject: () => void closed++ });
   const ups = byClass(node, 'project-crumbs__up');
-  assert.deepEqual(ups.map((up) => text(up)), ['Your epics']);
-  assert.match(text(byClass(node, 'project-crumbs')[0]), /^Your epics \/ PAY-200/);
+  assert.deepEqual(ups.map((up) => text(up)), ['Projects']);
+  assert.match(text(byClass(node, 'project-crumbs')[0]), /^Projects \/ PAY-200/);
   ups[0]!.click();
   assert.equal(closed, 1);
 });
@@ -400,33 +391,55 @@ test("a card names its stage on the right, in the stage's tone", () => {
   assert.equal(text(stage('PAY-207')), 'Merged');
 });
 
-test("a card lists the user's pull requests in the board's words, with a stack named", () => {
+test("a card lists the user's pull requests: Draft or In review, then the board's words, with a stack named", () => {
   const node = epic();
   const lines = (key: string) => byClass(card(node, key), 'project-pull').map(text);
-  assert.deepEqual(lines('PAY-201'), ['acme/payments-api #412 Ready to merge Merge']);
-  assert.deepEqual(lines('PAY-202'), ['acme/payments-api #415 Ready to merge Stacked on #412']);
-  assert.deepEqual(lines('PAY-203'), ['acme/payments-api #420 Draft, checks passed Ready for review']);
-  assert.deepEqual(lines('PAY-209'), ['acme/web #88 Waiting on reviewers for 3 days']);
+  assert.deepEqual(lines('PAY-201'), ['acme/payments-api #412 In review Ready to merge Merge']);
+  assert.deepEqual(lines('PAY-202'), ['acme/payments-api #415 In review Ready to merge Stacked on #412']);
+  assert.deepEqual(lines('PAY-203'), ['acme/payments-api #420 Draft checks passed']);
+  assert.deepEqual(lines('PAY-209'), ['acme/web #88 In review Waiting on reviewers for 3 days']);
   const link = byTag(card(node, 'PAY-201'), 'a').find((a) => a.textContent === 'acme/payments-api #412') as HTMLAnchorElement;
   assert.equal(link.href, 'https://github.com/acme/payments-api/pull/412');
 });
 
-test('a card offers a merge only where Do next does, and Ready for review on any draft the board offers it on', () => {
+const toggles = new Set(['Draft', 'In review']);
+
+test('a card offers a merge only where Do next does', () => {
   const node = epic();
-  const writes = (key: string) => byClass(card(node, key), 'project-pull').map(labels);
-  assert.deepEqual(writes('PAY-201'), [['Merge']]);
-  assert.deepEqual(writes('PAY-202'), [[]], 'it waits for PAY-201, so no merge is offered out of order');
-  assert.deepEqual(writes('PAY-203'), [['Ready for review']]);
-  assert.deepEqual(writes('PAY-210'), [[]]);
+  const merges = (key: string) => byClass(card(node, key), 'project-pull').map((line) => labels(line).filter((label) => !toggles.has(label)));
+  assert.deepEqual(merges('PAY-201'), [['Merge']]);
+  assert.deepEqual(merges('PAY-202'), [[]], 'it waits for PAY-201, so no merge is offered out of order');
+  assert.deepEqual(merges('PAY-203'), [[]]);
+  assert.deepEqual(merges('PAY-210'), [[]]);
 });
 
-test('a draft Do next does not suggest still offers Ready for review on its card', () => {
+test('Draft or In review is the toggle: a draft is marked ready, an open one turned back into a draft', () => {
+  const clicked: string[] = [];
+  const node = epic({ markReady: (id) => void clicked.push(`ready ${id}`), markDraft: (id) => void clicked.push(`draft ${id}`) });
+  const toggle = (key: string) => byClass(card(node, key), 'project-pull__flag--toggle')[0]!;
+  assert.equal(text(toggle('PAY-203')), 'Draft');
+  assert.equal(toggle('PAY-203').getAttribute('aria-label'), 'Draft: mark ready for review');
+  toggle('PAY-203').click();
+  assert.equal(text(toggle('PAY-201')), 'In review');
+  toggle('PAY-201').click();
+  assert.deepEqual(clicked, ['ready github:pr:acme/payments-api#420', 'draft github:pr:acme/payments-api#412']);
+});
+
+test('where the board offers no toggle, Draft or In review is only text', () => {
+  const state = stateWith(projectsState({ open: opened() }));
+  for (const row of state.board.rows) row.offers = [];
+  const node = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' }), handlersWith())));
+  assert.deepEqual(byClass(card(node, 'PAY-203'), 'project-pull__flag--toggle'), []);
+  assert.equal(text(byClass(card(node, 'PAY-203'), 'project-pull__flag')[0]), 'Draft');
+});
+
+test('a draft Do next does not suggest can still be marked ready from its card', () => {
   const state = stateWith(projectsState({ open: opened() }));
   // Red CI: Do next asks for a fix rather than a review, but marking it ready is still the user's call.
   for (const row of state.board.rows) if (row.number === 420) row.checks = 'failure';
   const node = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' }), handlersWith())));
   assert.ok(!labels(byClass(node, 'project-next')[0]!).includes('Ready for review'), 'not a suggestion now');
-  assert.deepEqual(byClass(card(node, 'PAY-203'), 'project-pull').map(labels), [['Ready for review']]);
+  assert.equal(text(byClass(card(node, 'PAY-203'), 'project-pull__flag--toggle')[0]), 'Draft');
 });
 
 /* ---------- the panel and the status, as on the ticket board ---------- */
@@ -650,4 +663,41 @@ test('the panel opens on a ticket only a project shows, with its notes and, on y
   const theirPanel = mount(h(Flyout, { row: theirs, run: null, state, ui, handlers: handlersWith() }));
   assert.deepEqual(byClass(theirPanel, 'pill--button'), [], "a teammate's ticket: its status as text");
   assert.equal(detailRow(state, uiWith({ view: 'tickets', detailFor: 'jira:PAY-999' })), null, 'nothing for a ticket no project has');
+});
+
+test('a project still on its way, or one whose first read failed, has the crumb back to the projects', () => {
+  let closed = 0;
+  const loading = view(projectsState({ open: { 'PAY-200': { key: 'PAY-200', read: null, fetching: true, reason: null } } }), { projectKey: 'PAY-200' }, { closeProject: () => void closed++ });
+  assert.match(text(byClass(loading, 'project-crumbs')[0]), /^Projects \/ PAY-200$/);
+  byClass(loading, 'project-crumbs__up')[0]!.click();
+  const failed = view(projectsState({ open: opened(epicRead(), { read: null, reason: failure('could not read PAY-200 from Jira: gone') }) }), { projectKey: 'PAY-200' });
+  assert.match(text(byClass(failed, 'project-crumbs')[0]), /^Projects \/ PAY-200$/);
+  assert.equal(closed, 1);
+});
+
+test('with a card open, the panel sits inside the project beside its list, under the headline and the strip', () => {
+  const state = stateWith(projectsState({ open: opened() }));
+  const ui = uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: 'PAY-200', detailFor: 'jira:PAY-203' });
+  const node = mount(h('div', null, renderTicketBoard(state, ui, handlersWith())));
+  const body = byClass(node, 'project-body')[0]!;
+  assert.equal(body.dataset.panel, 'true');
+  assert.ok(body.querySelector('aside.flyout'), 'the panel is in the body');
+  assert.equal(body.querySelector('.project-head'), null, 'the headline is above it, at the full width');
+  assert.equal(body.querySelector('.progress'), null, 'and so is the strip');
+  assert.equal(panelInProject(state, ui), true, 'so the page keeps its single column');
+  assert.equal(panelInProject(state, uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: null })), false);
+
+  const closed = mount(h('div', null, renderTicketBoard(state, uiWith({ ticketMode: 'projects', projectKey: 'PAY-200' }), handlersWith())));
+  assert.equal(byClass(closed, 'project-body')[0]!.dataset.panel, 'false');
+});
+
+test("the panel lists the ticket's pull requests, each with the same toggle", () => {
+  const clicked: string[] = [];
+  const state = stateWith(projectsState({ open: opened() }));
+  const ui = uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: 'PAY-200', detailFor: 'jira:PAY-203' });
+  const panel = mount(h(Flyout, { row: detailRow(state, ui), run: null, state, ui, handlers: handlersWith({ markReady: (id) => void clicked.push(id) }) }));
+  const section = byClass(panel, 'flyout__section').find((each) => text(byClass(each, 'flyout__label')[0]) === 'Pull requests')!;
+  assert.deepEqual(byClass(section, 'project-pull').map(text), ['acme/payments-api #420 Draft checks passed']);
+  byClass(section, 'project-pull__flag--toggle')[0]!.click();
+  assert.deepEqual(clicked, ['github:pr:acme/payments-api#420']);
 });

@@ -173,24 +173,30 @@ function rollUpStage(pulls: ProjectPulls | null): Stage | null {
  * least one merged. Without those, Jira's roll-up decides, and without that the
  * status: begun or not.
  */
+/**
+ * The user's pull requests for a ticket, joined to their rows on the pull request
+ * board, open ones first. Shared by the cards and the panel.
+ */
+export function ticketPulls(key: string, sources: PullSources): PullWork[] {
+  const pulls = (sources.linked.get(key.toUpperCase()) ?? []).map((pull): PullWork => {
+    const row = pull.state === 'open' || pull.state === 'draft' ? (sources.rows.get(pull.url) ?? null) : null;
+    return {
+      repo: pull.repo,
+      number: pull.number,
+      title: pull.title,
+      url: pull.url,
+      state: pull.state,
+      closedAt: pull.closedAt,
+      stage: pullStage(pull, row),
+      row,
+      stackedOn: stackedOn(row, sources),
+    };
+  });
+  return pulls.sort((a, b) => Number(!OPEN_STAGES.includes(a.stage)) - Number(!OPEN_STAGES.includes(b.stage)));
+}
+
 export function ticketWork(ticket: ProjectTicket, sources: PullSources): TicketWork {
-  const pulls: PullWork[] = ticket.mine
-    ? (sources.linked.get(ticket.key.toUpperCase()) ?? []).map((pull) => {
-        const row = pull.state === 'open' || pull.state === 'draft' ? (sources.rows.get(pull.url) ?? null) : null;
-        return {
-          repo: pull.repo,
-          number: pull.number,
-          title: pull.title,
-          url: pull.url,
-          state: pull.state,
-          closedAt: pull.closedAt,
-          stage: pullStage(pull, row),
-          row,
-          stackedOn: stackedOn(row, sources),
-        };
-      })
-    : [];
-  pulls.sort((a, b) => Number(!OPEN_STAGES.includes(a.stage)) - Number(!OPEN_STAGES.includes(b.stage)));
+  const pulls: PullWork[] = ticket.mine ? ticketPulls(ticket.key, sources) : [];
 
   const open = pulls.filter((pull) => OPEN_STAGES.includes(pull.stage));
   const needsYou = open.some((pull) => pull.row?.court === 'you');
@@ -292,6 +298,27 @@ export function pullWording(pull: PullWork, now: Date): string {
     default:
       return 'Open';
   }
+}
+
+/**
+ * An open pull request's draft flag, the one thing a click on its state changes:
+ * a draft, or not, which GitHub calls ready for review and the page calls In
+ * review. Null once it is merged or closed.
+ */
+export function pullDraftState(pull: PullWork): 'draft' | 'review' | null {
+  if (pull.stage === 'merged' || pull.stage === 'closed') return null;
+  return pull.stage === 'draft' ? 'draft' : 'review';
+}
+
+/**
+ * What follows that state: "checks passed" after Draft, the board's own words
+ * after In review ("Ready to merge"), and the whole wording once merged or
+ * closed. Empty when the state says it all.
+ */
+export function pullDetail(pull: PullWork, now: Date): string {
+  const wording = pullWording(pull, now);
+  if (pull.stage === 'draft') return wording.replace(/^Draft,?\s*/, '');
+  return wording === 'Open' ? '' : wording;
 }
 
 /* ---------- a project ---------- */

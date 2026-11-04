@@ -989,6 +989,17 @@ const BLOCKS_LINK = 'blocks';
  */
 export const EPICS_JQL = 'issuetype = Epic AND assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
 
+/**
+ * The same with initiatives too, which Projects lists in a section of their own.
+ * `Initiative` is the name the hierarchy above epics usually goes by, but unlike
+ * `Epic` not every site has it, and a search naming a type a site doesn't have
+ * is refused whole: `fetchAssignedEpics` falls back on `EPICS_JQL` then.
+ */
+export const PROJECTS_JQL = 'issuetype in (Epic, Initiative) AND assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC';
+
+/** Jira refusing a search for naming an issue type the site doesn't have. */
+const UNKNOWN_TYPE = /does not exist for the field ['"]?(issuetype|type)['"]?/i;
+
 /** The children of one or more issues, oldest first, which is the order the page falls back on. */
 export function childrenJql(parents: readonly string[], extra: string | null = null): string {
   const clause = parents.length === 1 ? `parent = ${quoteJql(parents[0]!)}` : `parent IN (${parents.map(quoteJql).join(', ')})`;
@@ -1081,7 +1092,14 @@ async function viewIssue(acliPath: string, key: string, fields: string): Promise
 
 /** The epics to offer in the picker. See `EPICS_JQL`. */
 export async function fetchAssignedEpics(acliPath: string, site: string | null): Promise<ProjectSummary[]> {
-  const raw = await search(acliPath, EPICS_JQL, { limit: 50, paginate: false });
+  let raw: Awaited<ReturnType<typeof search>>;
+  try {
+    raw = await search(acliPath, PROJECTS_JQL, { limit: 50, paginate: false });
+  } catch (err) {
+    // A site with no initiatives: its epics alone. Any other refusal is the read failing.
+    if (!(err instanceof JiraSearchError) || !UNKNOWN_TYPE.test(`${err.message} ${err.detail}`)) throw err;
+    raw = await search(acliPath, EPICS_JQL, { limit: 50, paginate: false });
+  }
   return raw.flatMap((issue) => toProjectSummary(issue, site) ?? []);
 }
 

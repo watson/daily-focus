@@ -346,6 +346,19 @@ export function refuseReady(row: OfferFacts): string | null {
 }
 
 /**
+ * Why the board won't turn this pull request back into a draft: null when it
+ * will. The other half of `refuseReady`: any open one of the user's that isn't a
+ * draft, as the account that read it, unless it is queued to merge, which a draft
+ * can't be.
+ */
+export function refuseDraft(row: OfferFacts): string | null {
+  if (row.court === 'draft') return 'it is a draft already';
+  if (!row.nodeId || !row.account) return UNREAD;
+  if (row.inMergeQueue || row.helperQueued) return 'it is in the merge queue';
+  return null;
+}
+
+/**
  * Why the board won't merge this pull request: null when it will.
  *
  * Only one in the ready court, so GitHub has said the merge would work, and only
@@ -386,6 +399,7 @@ export function mergeRoute(row: OfferFacts): 'helper' | 'queue' | 'merge' {
 export function pullOffers(row: OfferFacts): PullOffer[] {
   const offers: PullOffer[] = [];
   if (refuseReady(row) === null) offers.push('ready');
+  if (refuseDraft(row) === null) offers.push('draft');
   if (refuseMerge(row) === null) offers.push(mergeRoute(row));
   return offers;
 }

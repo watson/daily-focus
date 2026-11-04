@@ -144,6 +144,11 @@ export function postPullReady(id: string): Promise<DashboardState> {
   return post('/api/board/ready', { id });
 }
 
+/** Turn one of the board's pull requests back into a draft. Resolves and rejects as `postPullReady` does. */
+export function postPullDraft(id: string): Promise<DashboardState> {
+  return post('/api/board/draft', { id });
+}
+
 /** The board read back after a merge, and what the merge helper said, when it was the helper's. */
 export interface Landed {
   state: DashboardState;

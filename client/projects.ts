@@ -28,7 +28,8 @@ import { cssId, onCard } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer } from './section.ts';
-import { projectTicketId } from './state.ts';
+import { Flyout } from './flyout.ts';
+import { detailRow, detailRun, projectTicketId } from './state.ts';
 import { statusControl } from './tickets.ts';
 import {
   STAGES,
@@ -40,13 +41,16 @@ import {
   nameTicket,
   nextSteps,
   projectWork,
+  pullDetail,
+  pullDraftState,
   pullSources,
-  pullWording,
   stageCounts,
   stageLabel,
+  ticketPulls,
   type NextStep,
   type PlannedRead,
   type ProjectWork,
+  type PullSources,
   type PullWork,
   type Rail,
   type Stage,
@@ -58,36 +62,6 @@ import type { Handlers, UiState } from './types.ts';
 export const NEXT_SHOWN = 6;
 
 /* ---------- the picker ---------- */
-
-/**
- * The epics to zoom into, as a select: the ones assigned to the user, and the
- * one showing when it is not among them, which is how a parent or an epic
- * opened from an initiative stays named.
- */
-export function projectPicker(state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element | null {
-  const projects = state.projects;
-  if (!projects?.enabled) return null;
-  const key = ui.projectKey.value;
-  const options = projects.epics.map((epic) => ({ key: epic.key, label: `${epic.key} · ${epic.summary}` }));
-  if (key && !options.some((option) => option.key === key)) {
-    const root = projects.open?.[key]?.read?.root;
-    options.unshift({ key, label: root ? `${key} · ${root.summary}` : key });
-  }
-  return el(
-    'select',
-    {
-      class: 'project-picker',
-      'aria-label': 'Which epic to show',
-      value: key ?? '',
-      onChange: (event: Event) => {
-        const value = (event.currentTarget as HTMLSelectElement).value;
-        if (value) handlers.openProject(value);
-      },
-    },
-    el('option', { value: '', disabled: true }, options.length > 0 ? 'Choose an epic…' : 'No epics assigned to you'),
-    options.map((option) => el('option', { value: option.key, key: option.key }, option.label)),
-  );
-}
 
 /* ---------- the header's refresh control ---------- */
 
@@ -172,11 +146,13 @@ function projectParts(
   }
 
   if (!key) {
-    parts.push(projects.epics.length > 0 ? epicChooser(state, projects, handlers) : el('p', { class: 'empty' }, noProjectLine(projects)));
+    parts.push(...chooser(state, projects, handlers));
     return parts;
   }
 
   const entry = projects.open?.[key];
+  // Nothing read yet, so no breadcrumb from a read: the way back, all the same.
+  if (!entry?.read) parts.push(backCrumbs(key, handlers));
   if (entry?.reason) {
     parts.push(
       failureNotice(
@@ -221,46 +197,84 @@ function loadingView(key: string, projects: ProjectsState): JSX.Element {
 }
 
 /**
- * The epics to choose from, as cards to click into: the first thing Projects
- * shows. A project read in this session carries its strip and how much of it is
- * done; the rest name only what Jira's search says of them.
+ * What to open, before anything is: the initiatives and the epics assigned to
+ * the user, each a section of cards to click into, and a section only when it has
+ * any. An initiative above an epic read this session is listed too, since Jira's
+ * search for the user's own may not name it. A project read this session carries
+ * its strip and how much of it is done; the rest name only what Jira says of them.
  */
-function epicChooser(state: DashboardState, projects: ProjectsState, handlers: Handlers): JSX.Element {
+function chooser(state: DashboardState, projects: ProjectsState, handlers: Handlers): ComponentChild[] {
+  const known = new Map<string, ProjectSummary>(projects.epics.map((summary) => [summary.key, summary]));
+  for (const entry of Object.values(projects.open ?? {})) {
+    for (const summary of [entry.read?.root, entry.read?.parent]) {
+      if (summary && summary.level >= 2 && !known.has(summary.key)) known.set(summary.key, summary);
+    }
+  }
+  const all = [...known.values()];
+  const initiatives = all.filter((summary) => summary.level >= 2);
+  const epics = all.filter((summary) => summary.level < 2);
+  if (all.length === 0) return [el('p', { class: 'empty' }, noProjectLine(projects))];
+
   const sources = pullSources(state);
-  return el(
-    'section',
-    { class: 'section epic-chooser' },
-    sectionHeader('Your epics', projects.epics.length),
-    el('p', { class: 'epic-chooser__help' }, 'Open one to see what is left in it, and the order it can land in.'),
-    el(
-      'ul',
-      { class: 'epic-choices' },
-      projects.epics.map((epic) => {
-        const read = projects.open?.[epic.key]?.read ?? null;
-        const project = read ? projectWork(read, sources) : null;
-        const works = project ? project.order.map((key) => project.works.get(key)!) : [];
-        const done = works.filter((work) => work.stage === 'done').length;
-        return el(
-          'li',
-          { key: epic.key },
+  const section = (title: string, summaries: readonly ProjectSummary[]): JSX.Element | null =>
+    summaries.length === 0
+      ? null
+      : el(
+          'section',
+          { class: 'section project-choices', key: title },
+          sectionHeader(title, summaries.length),
           el(
-            'button',
-            { type: 'button', class: 'epic-choice', title: `Open ${epic.key}`, onClick: () => handlers.openProject(epic.key) },
-            el(
-              'span',
-              { class: 'epic-choice__line' },
-              el('span', { class: 'item__ref' }, epic.key),
-              el('span', { class: 'epic-choice__facts' }, [epic.issueType, epic.workflowStatus].filter(Boolean).join(', ')),
-            ),
-            el('span', { class: 'epic-choice__title' }, epic.summary || epic.key),
-            read && works.length > 0
-              ? [progressStrip(works, 'progress-strip--mini'), el('span', { class: 'epic-choice__count' }, `${done} of ${works.length} done, as of ${formatTime(read.fetchedAt)}`)]
-              : null,
+            'ul',
+            { class: 'epic-choices' },
+            summaries.map((summary) => choiceCard(summary, projects, sources, handlers)),
           ),
         );
-      }),
+  return [
+    el('p', { class: 'project-choices__help' }, 'Open one to see what is left in it, and the order it can land in.'),
+    section('Initiatives', initiatives),
+    section('Epics', epics),
+  ];
+}
+
+function choiceCard(summary: ProjectSummary, projects: ProjectsState, sources: PullSources, handlers: Handlers): JSX.Element {
+  const read = projects.open?.[summary.key]?.read ?? null;
+  const project = read ? projectWork(read, sources) : null;
+  const works = project ? project.order.map((key) => project.works.get(key)!) : [];
+  const done = works.filter((work) => work.stage === 'done').length;
+  return el(
+    'li',
+    { key: summary.key },
+    el(
+      'button',
+      { type: 'button', class: 'epic-choice', title: `Open ${summary.key}`, onClick: () => handlers.openProject(summary.key) },
+      el(
+        'span',
+        { class: 'epic-choice__line' },
+        el('span', { class: 'item__ref' }, summary.key),
+        el('span', { class: 'epic-choice__facts' }, [summary.issueType, summary.workflowStatus].filter(Boolean).join(', ')),
+      ),
+      el('span', { class: 'epic-choice__title' }, summary.summary || summary.key),
+      read && works.length > 0
+        ? [progressStrip(works, 'progress-strip--mini'), el('span', { class: 'epic-choice__count' }, `${done} of ${works.length} done, as of ${formatTime(read.fetchedAt)}`)]
+        : null,
     ),
   );
+}
+
+/** The crumb back to the projects, over a project still on its way or one whose first read failed. */
+function backCrumbs(key: string, handlers: Handlers): JSX.Element {
+  return el(
+    'p',
+    { class: 'project-crumbs' },
+    projectsCrumb(handlers),
+    el('span', { class: 'project-crumbs__sep', 'aria-hidden': 'true' }, ' / '),
+    el('span', { class: 'project-crumbs__key' }, key),
+  );
+}
+
+/** The first crumb, everywhere: back to what there is to open. */
+function projectsCrumb(handlers: Handlers): JSX.Element {
+  return el('button', { type: 'button', class: 'project-crumbs__up', title: 'Back to your initiatives and epics', onClick: () => handlers.closeProject() }, 'Projects');
 }
 
 /** What to say with no project chosen: why there is nothing to choose, or that there is. */
@@ -283,9 +297,28 @@ function readView(read: PlannedRead, state: DashboardState, ui: UiState, handler
   const all = project.order.map((key) => project.works.get(key)!);
   parts.push(progressView(all));
 
-  if (read.epics.length > 0) parts.push(...initiativeView(project, state, ui, handlers, now));
-  else parts.push(...epicView(project, state, ui, handlers, now));
+  const body = read.epics.length > 0 ? initiativeView(project, state, ui, handlers, now) : epicView(project, state, ui, handlers, now);
+  parts.push(projectBody(body, state, ui, handlers));
   return parts;
+}
+
+/**
+ * What can be done in the project, with the panel beside it when one is open:
+ * under the headline and the strip rather than beside them, so opening a card
+ * leaves both where they were. The page's own side column stays shut meanwhile
+ * (`panelInProject`), and on a narrow window the panel is the same sheet up from
+ * the bottom it is everywhere.
+ */
+function projectBody(children: ComponentChild[], state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element {
+  const run = detailRun(state, ui);
+  const row = run ? null : detailRow(state, ui);
+  const open = run !== null || row !== null;
+  return el(
+    'div',
+    { class: 'project-body', 'data-panel': String(open) },
+    el('div', { class: 'project-body__main' }, children),
+    open ? h(Flyout, { row, run, state, ui, handlers }) : null,
+  );
 }
 
 /** "These tickets block each other: PROJ-2 → PROJ-3 → PROJ-2. Fix the links in Jira." */
@@ -308,7 +341,7 @@ function projectHeader(read: PlannedRead, handlers: Handlers): JSX.Element {
     el(
       'p',
       { class: 'project-crumbs' },
-      el('button', { type: 'button', class: 'project-crumbs__up', title: 'Back to your epics', onClick: () => handlers.closeProject() }, 'Your epics'),
+      projectsCrumb(handlers),
       el('span', { class: 'project-crumbs__sep', 'aria-hidden': 'true' }, ' / '),
       parent
         ? [
@@ -709,18 +742,72 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
  * board offers it on, since marking one ready merges nothing; a merge only where
  * Do next says, so nothing here invites merging out of order.
  */
-function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): JSX.Element {
-  const kinds: PullWrite[] = writes ? [...new Set<PullWrite>([...(writes.writes.get(pull.url) ?? []), 'ready'])] : [];
+export function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): JSX.Element {
+  // Ready for review is the state's own toggle now, so only a merge Do next suggests is a button here.
+  const kinds = (writes?.writes.get(pull.url) ?? []).filter((kind) => kind !== 'ready');
   const buttons = writes ? writeButtons(pull.row, kinds, writes.ui, writes.handlers) : [];
+  const flag = pullDraftState(pull);
+  const detail = pullDetail(pull, now);
   return el(
     'li',
     { key: pull.url, class: 'project-pull', 'data-stage': pull.stage },
     // The spaces read as words to a screen reader; the flex gap is what shows.
     el('a', { class: 'project-pull__ref', href: pull.url, target: '_blank', rel: 'noopener noreferrer', title: pull.title }, `${pull.repo} #${pull.number}`),
     ' ',
-    el('span', { class: `project-pull__state${pull.row?.court === 'you' ? ' project-pull__state--you' : ''}` }, pullWording(pull, now)),
+    flag ? [draftToggle(pull, flag, writes), ' '] : null,
+    detail ? el('span', { class: `project-pull__state${pull.row?.court === 'you' ? ' project-pull__state--you' : ''}` }, detail) : null,
     pull.stackedOn ? [' ', el('span', { class: 'pill pill--tag', title: pull.stackedOn.title }, `Stacked on #${pull.stackedOn.number}`)] : null,
     buttons.length > 0 ? [' ', el('span', { class: 'project-pull__writes' }, buttons)] : null,
+  );
+}
+
+/**
+ * Draft or In review, as a pull request is on GitHub, and the way to change it:
+ * a click marks a draft ready for review or turns one back into a draft, where
+ * the board offers that on the user's own. Underlined dotted, the way a word
+ * that does something reads. Text where it can't: a teammate's, or one the board
+ * hasn't read.
+ */
+function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrites | null): JSX.Element {
+  const label = flag === 'draft' ? 'Draft' : 'In review';
+  const row = pull.row;
+  const offer = flag === 'draft' ? 'ready' : 'draft';
+  if (!writes || !row || row.status !== 'open' || !(row.offers ?? []).includes(offer)) {
+    return el('span', { class: 'project-pull__flag', 'data-flag': flag }, label);
+  }
+  const pending = writes.ui.pending.value.has(row.id);
+  const action = flag === 'draft' ? 'Mark ready for review' : 'Turn back into a draft';
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'project-pull__flag project-pull__flag--toggle',
+      'data-flag': flag,
+      title: action,
+      'aria-label': `${label}: ${action.toLowerCase()}`,
+      disabled: pending,
+      'aria-busy': pending ? 'true' : undefined,
+      onClick: () => (flag === 'draft' ? writes.handlers.markReady(row.id) : writes.handlers.markDraft(row.id)),
+    },
+    label,
+  );
+}
+
+/**
+ * The panel's list of a ticket's pull requests, each with the same toggle as on
+ * its card. The user's own tickets only: a teammate's are theirs to change.
+ */
+export function panelPulls(key: string, mine: boolean, state: DashboardState, ui: UiState, handlers: Handlers): JSX.Element | null {
+  if (!mine) return null;
+  const pulls = ticketPulls(key, pullSources(state));
+  if (pulls.length === 0) return null;
+  const writes: CardWrites = { writes: new Map(), state, ui, handlers };
+  const now = new Date(state.now);
+  return el(
+    'section',
+    { class: 'flyout__section' },
+    el('h3', { class: 'flyout__label' }, 'Pull requests'),
+    el('ul', { class: 'project-card__pulls flyout__pulls' }, pulls.map((pull) => pullLine(pull, now, writes))),
   );
 }
 

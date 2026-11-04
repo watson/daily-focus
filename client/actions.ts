@@ -493,6 +493,7 @@ async function writePull(
   send: () => Promise<api.Landed>,
   done: string,
   refused: string,
+  undo: (() => void) | null = null,
 ): Promise<void> {
   if (ids.some((id) => ui.pending.value.has(id))) return;
   batch(() => {
@@ -502,7 +503,7 @@ async function writePull(
   try {
     const { state: next, notice } = await send();
     adoptState(next);
-    showToast(notice || done);
+    showToast(notice || done, undo);
   } catch (err) {
     showToast(`${refused}: ${(err as Error).message}`);
     await refresh();
@@ -515,13 +516,22 @@ function pullRow(id: string): BoardRow | undefined {
   return state.value?.board?.rows.find((row) => row.id === id);
 }
 
-/** Mark a draft ready for review. It doesn't ask: GitHub turns a pull request back into a draft just as easily. */
+/** Mark a draft ready for review. It doesn't ask: the toast's Undo turns it back into a draft. */
 async function markReady(id: string): Promise<void> {
   const row = pullRow(id);
   if (!row) return;
   const ref = `${row.repo}#${row.number}`;
   const send = async () => ({ state: await api.postPullReady(id), notice: null });
-  await writePull([id], send, `${ref} is ready for review`, `GitHub would not mark ${ref} ready`);
+  await writePull([id], send, `${ref} is ready for review`, `GitHub would not mark ${ref} ready`, () => void markDraft(id));
+}
+
+/** Turn a pull request back into a draft. It doesn't ask either: the toast's Undo marks it ready again. */
+async function markDraft(id: string): Promise<void> {
+  const row = pullRow(id);
+  if (!row) return;
+  const ref = `${row.repo}#${row.number}`;
+  const send = async () => ({ state: await api.postPullDraft(id), notice: null });
+  await writePull([id], send, `${ref} is a draft again`, `GitHub would not turn ${ref} into a draft`, () => void markReady(id));
 }
 
 /**
@@ -1151,6 +1161,7 @@ export const handlers: Handlers = {
   nudge: (id) => void applyAction(id, 'nudge'),
   unsnooze: (id) => void undo(id),
   markReady: (id) => void markReady(id),
+  markDraft: (id) => void markDraft(id),
   mergePull: (id) => void mergePull(id),
   mergeStack: (id) => void mergeStack(id),
   refreshBoard: () => void refreshBoard(),

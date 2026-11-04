@@ -15,6 +15,7 @@ import {
   ghToken,
   listGhAccounts,
   markReadyForReview,
+  convertToDraft,
   mergePull,
   toMergeMethod,
   toMergeState,
@@ -25,7 +26,7 @@ import {
 import { canonicalId } from './ids.ts';
 import { CHECK_FRESH_MS, HelperError, MergeHelper, runMergeHelper, type RunHelper } from './mergehelper.ts';
 import { approvedFileProblem, inOrganizationFolder } from './organizationfile.ts';
-import { countBoard, findStack, mergeRoute, refuseMerge, refuseReady, resolveBoard, type MergeContext } from './prs.ts';
+import { countBoard, findStack, mergeRoute, refuseDraft, refuseMerge, refuseReady, resolveBoard, type MergeContext } from './prs.ts';
 import { resolveTool } from './tools.ts';
 import type {
   Action,
@@ -61,6 +62,7 @@ export interface BoardDeps {
   token(ghPath: string, login: string | null): Promise<string>;
   fetch(token: string, scope: readonly string[], expectedLogin: string | null, signal?: AbortSignal): Promise<AccountFetch>;
   markReady(token: string, nodeId: string): Promise<void>;
+  markDraft(token: string, nodeId: string): Promise<void>;
   merge(token: string, nodeId: string, method: MergeMethod, headSha: string): Promise<void>;
   enqueue(token: string, nodeId: string, headSha: string): Promise<void>;
   /** The approvals a branch's rules require, for a stack merge's pull requests above the bottom. A read. */
@@ -75,6 +77,7 @@ const realDeps: BoardDeps = {
   token: ghToken,
   fetch: fetchPulls,
   markReady: markReadyForReview,
+  markDraft: convertToDraft,
   merge: mergePull,
   enqueue: enqueuePull,
   requiredApprovals: fetchRequiredApprovals,
@@ -369,6 +372,12 @@ export class Board {
   async markReady(id: string, actions: readonly Action[]): Promise<void> {
     const { row } = this.#actionable(id, actions, refuseReady);
     await this.#write(row, (token) => this.#deps.markReady(token, row.nodeId!));
+  }
+
+  /** Turn an open pull request back into a draft, then read the board back. Refuses as `markReady` does. */
+  async markDraft(id: string, actions: readonly Action[]): Promise<void> {
+    const { row } = this.#actionable(id, actions, refuseDraft);
+    await this.#write(row, (token) => this.#deps.markDraft(token, row.nodeId!));
   }
 
   /**
