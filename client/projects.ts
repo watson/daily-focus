@@ -323,9 +323,8 @@ function projectBody(children: ComponentChild[], state: DashboardState, ui: UiSt
 
 /** "These tickets block each other: PROJ-2 → PROJ-3 → PROJ-2. Fix the links in Jira." */
 function loopBanner(members: readonly string[], project: ProjectWork): JSX.Element {
-  // The way round from the links the plan used, stacks included and the Jira links they overruled left out.
-  const links = project.read.tickets.map((ticket) => ({ ...ticket, blockedBy: [...(project.waitsFor[ticket.key] ?? [])], blocks: [] }));
-  const { path, others } = loopPath(members, links);
+  // The way round from the links the plan was made from: stacks in, the Jira links they overruled out.
+  const { path, others } = loopPath(members, project.links);
   const also = others.length > 0 ? `, with ${listOf(others)} caught in it too` : '';
   return banner('warning', '!', `These tickets block each other: ${path.join(' → ')}${also}. Fix the links in Jira.`);
 }

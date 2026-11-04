@@ -354,6 +354,8 @@ export interface ProjectWork {
   stackedOn: ReadonlyMap<string, readonly string[]>;
   /** Where Jira's links said the opposite of a stack, which won: `ticket` is stacked on `over`, though Jira said it blocks `over`. */
   overruled: readonly { ticket: string; over: string }[];
+  /** The tickets with the links the plan was made from: Jira's, with the stacks in and the links they overruled out. */
+  links: readonly ProjectTicket[];
 }
 
 /**
@@ -384,7 +386,10 @@ function ticketStacks(works: ReadonlyMap<string, TicketWork>): Map<string, strin
  * the stack wins rather than the two making a loop. Null when there are no
  * stacks between tickets, and the server's plan stands as it is.
  */
-function stackedPlan(read: PlannedRead, stacks: ReadonlyMap<string, readonly string[]>): { plan: ProjectPlan; overruled: { ticket: string; over: string }[] } | null {
+function stackedPlan(
+  read: PlannedRead,
+  stacks: ReadonlyMap<string, readonly string[]>,
+): { plan: ProjectPlan; overruled: { ticket: string; over: string }[]; tickets: ProjectTicket[] } | null {
   if (stacks.size === 0) return null;
   const overruled: { ticket: string; over: string }[] = [];
   const contradicted = (child: string, parent: string): boolean => (stacks.get(child) ?? []).includes(parent);
@@ -404,7 +409,7 @@ function stackedPlan(read: PlannedRead, stacks: ReadonlyMap<string, readonly str
   }
   // Said once per pair, however many of the two tickets named the link.
   const once = new Map(overruled.map((each) => [`${each.ticket}>${each.over}`, each]));
-  return { plan: planProject(tickets, read.outside), overruled: [...once.values()] };
+  return { plan: planProject(tickets, read.outside), overruled: [...once.values()], tickets };
 }
 
 export function projectWork(read: PlannedRead, sources: PullSources, checks: DoneCheckState | null = null): ProjectWork {
@@ -434,6 +439,7 @@ export function projectWork(read: PlannedRead, sources: PullSources, checks: Don
     plan,
     stackedOn: stacks,
     overruled: restacked?.overruled ?? [],
+    links: restacked?.tickets ?? read.tickets,
   };
 }
 

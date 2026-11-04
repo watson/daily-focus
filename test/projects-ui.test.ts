@@ -767,3 +767,12 @@ test('a loop made of a stack and Jira links is named the way the plan sees it', 
     byClass(node, 'banner__text').map(text).join(' | '),
   );
 });
+
+test('a ticket blocking itself is named as a loop back to itself', () => {
+  const tickets = epicTickets().map((each) => (each.key === 'PAY-209' ? { ...each, blockedBy: ['PAY-209', ...each.blockedBy] } : each));
+  const node = view(projectsState({ open: opened(planned(tickets)) }), { projectKey: 'PAY-200' });
+  assert.ok(
+    byClass(node, 'banner__text').some((banner) => /These tickets block each other: PAY-209 → PAY-209\b/.test(text(banner))),
+    byClass(node, 'banner__text').map(text).join(' | '),
+  );
+});
