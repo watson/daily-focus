@@ -11,7 +11,7 @@ import { after, test } from 'node:test';
 
 import { loadConfig, type Config } from '../src/config.ts';
 import { AcliAuthError, JiraSearchError, type JiraIdentity } from '../src/jira.ts';
-import { FRESH_FOR_MS, KEPT_PROJECTS, ProjectBoard, findProjectTicket, withProjectNotes, type ProjectBoardDeps } from '../src/projectboard.ts';
+import { FRESH_FOR_MS, KEPT_PROJECTS, ProjectBoard, findProjectTicket, withProjectFacts, type ProjectBoardDeps } from '../src/projectboard.ts';
 import type { ProjectRead, ProjectSummary, ProjectTicket } from '../src/types.ts';
 
 const dirs: string[] = [];
@@ -233,9 +233,18 @@ test("the state carries each project ticket's notes from the action log, under t
   const board = new ProjectBoard(await config(), () => {}, deps);
   await board.open('PROJ-1');
   const folded = new Map([['jira:proj-2', { status: 'open' as const, notes: [{ text: 'check the flag first', at: '2026-09-24T10:00:00Z' }] }]]);
-  const view = withProjectNotes(board.view(), folded);
+  const view = withProjectFacts(board.view(), folded);
   const tickets = view.open['PROJ-1']!.read!.tickets;
   assert.deepEqual(tickets.map((each) => each.notes), [[{ text: 'check the flag first', at: '2026-09-24T10:00:00Z' }], []]);
   assert.equal(findProjectTicket(view, 'JIRA:PROJ-3')?.key, 'PROJ-3', 'by the id, whatever its case');
   assert.equal(findProjectTicket(view, 'jira:PROJ-9'), undefined);
+});
+
+test("only the user's own project tickets are handed their pull requests, by key", async () => {
+  const deps = fakeDeps({ project: async (key) => read(key, [ticket('PROJ-2'), { ...ticket('PROJ-3'), mine: false }]) });
+  const board = new ProjectBoard(await config(), () => {}, deps);
+  await board.open('PROJ-1');
+  const pull = { repo: 'acme/api', number: 7, title: 'Do it', url: 'https://github.com/acme/api/pull/7', state: 'draft' as const, closedAt: null };
+  const view = withProjectFacts(board.view(), new Map(), new Map([['PROJ-2', [pull]], ['PROJ-3', [pull]]]));
+  assert.deepEqual(view.open['PROJ-1']!.read!.tickets.map((each) => each.github), [[pull], undefined]);
 });

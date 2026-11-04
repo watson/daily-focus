@@ -17,7 +17,7 @@ import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.
 import { CALLBACK_PATH, type OAuthClients } from './calendarproviders.ts';
 import { OAUTH_CLIENTS } from './oauthclients.ts';
 import { TicketBoard, type TicketBoardDeps } from './ticketboard.ts';
-import { ProjectBoard, findProjectTicket, withProjectNotes, type ProjectBoardDeps } from './projectboard.ts';
+import { ProjectBoard, findProjectTicket, withProjectFacts, type ProjectBoardDeps } from './projectboard.ts';
 import { AgentRunner } from './agent.ts';
 import { Assistant, type AskContext } from './assistant.ts';
 import { AutoAsk, AutoCheck } from './autoask.ts';
@@ -708,7 +708,11 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
       connections: { github: connections.github.view(), jira: connections.jira.view() },
       calendarAccounts: calendarAccounts.view(),
       tickets: tickets.view(actions, now),
-      projects: withProjectNotes(projects.view(), foldActionLog(actions, now)),
+      projects: withProjectFacts(
+        projects.view(),
+        foldActionLog(actions, now),
+        new Map(tickets.tickets().map((ticket) => [ticket.key.toUpperCase(), ticket.pulls ?? []])),
+      ),
       organization: organizations.view(),
       assistant: { ...assistant.view(), auto: ahead.view(pulls.rows) },
       doneCheck: checks.view(checksAhead.view()),

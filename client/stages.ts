@@ -111,13 +111,20 @@ const headKey = (repo: string, branch: string): string => `${repo}\n${branch}`;
  * The pull request facts in a state. The ticket board carries a ticket once per
  * view it is in, so its pull requests are gathered from both and kept once each.
  */
-export function pullSources(state: Pick<DashboardState, 'tickets' | 'board'>): PullSources {
+export function pullSources(state: Pick<DashboardState, 'tickets' | 'board'> & Partial<Pick<DashboardState, 'projects'>>): PullSources {
   const linked = new Map<string, LinkedPull[]>();
-  for (const ticket of [...(state.tickets?.rows ?? []), ...(state.tickets?.inProgress ?? [])]) {
-    const key = ticket.key.toUpperCase();
-    const list = linked.get(key) ?? [];
-    for (const pull of ticket.pulls ?? []) if (!list.some((known) => known.url === pull.url)) list.push(pull);
-    linked.set(key, list);
+  const add = (key: string, pulls: readonly LinkedPull[]): void => {
+    const name = key.toUpperCase();
+    const list = linked.get(name) ?? [];
+    for (const pull of pulls) if (!list.some((known) => known.url === pull.url)) list.push(pull);
+    linked.set(name, list);
+  };
+  for (const ticket of [...(state.tickets?.rows ?? []), ...(state.tickets?.inProgress ?? [])]) add(ticket.key, ticket.pulls ?? []);
+  // The ticket board shows only some of the user's tickets (flagged, or in an
+  // in-progress status); the server hands each project ticket of theirs its
+  // own, so one "In Review", say, still has its pull requests here.
+  for (const entry of Object.values(state.projects?.open ?? {})) {
+    for (const ticket of entry.read?.tickets ?? []) if (ticket.github) add(ticket.key, ticket.github);
   }
   const boardRows = state.board?.enabled ? (state.board.rows ?? []) : [];
   return {

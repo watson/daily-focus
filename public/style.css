@@ -3029,6 +3029,11 @@ a.button {
   color: var(--ink-3);
   cursor: progress;
 }
+/* The card's stage word as the toggle: the stage's own size and weight, with the toggle's underline. */
+.project-card__stage.project-pull__flag--toggle {
+  font-size: 13px;
+  font-weight: 600;
+}
 .flyout__pulls {
   margin: 0;
 }

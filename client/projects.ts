@@ -725,7 +725,7 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
         ticket.url ? el('a', { href: ticket.url, target: '_blank', rel: 'noopener noreferrer' }, title) : title,
       ),
       ' ',
-      el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain' }, label.text),
+      stageWord(work, label, writes),
     ),
     work.pulls.length > 0 ? el('ul', { class: 'project-card__pulls' }, work.pulls.map((pull) => pullLine(pull, now, writes))) : null,
     // The user's own tickets only: the check reads no one else's.
@@ -768,11 +768,10 @@ export function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): 
  * that does something reads. Text where it can't: a teammate's, or one the board
  * hasn't read.
  */
-function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrites | null): JSX.Element {
+function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrites | null, extra = ''): JSX.Element {
   const label = flag === 'draft' ? 'Draft' : 'In review';
   const row = pull.row;
-  const offer = flag === 'draft' ? 'ready' : 'draft';
-  if (!writes || !row || row.status !== 'open' || !(row.offers ?? []).includes(offer)) {
+  if (!writes || !row || !canFlip(pull, flag)) {
     return el('span', { class: 'project-pull__flag', 'data-flag': flag }, label);
   }
   const pending = writes.ui.pending.value.has(row.id);
@@ -781,7 +780,7 @@ function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrite
     'button',
     {
       type: 'button',
-      class: 'project-pull__flag project-pull__flag--toggle',
+      class: `project-pull__flag project-pull__flag--toggle${extra}`,
       'data-flag': flag,
       title: action,
       'aria-label': `${label}: ${action.toLowerCase()}`,
@@ -791,6 +790,27 @@ function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrite
     },
     label,
   );
+}
+
+/** Whether the board offers turning this pull request the other way: a draft ready, or an open one back into a draft. */
+function canFlip(pull: PullWork, flag: 'draft' | 'review'): boolean {
+  const row = pull.row;
+  return row !== null && row.status === 'open' && (row.offers ?? []).includes(flag === 'draft' ? 'ready' : 'draft');
+}
+
+/**
+ * The card's stage, top right. Where it is Draft or In review and the ticket has
+ * one open pull request the board can turn the other way, the word is that
+ * pull request's toggle too, the first place anyone looks for it. With several,
+ * each pull request's line has its own, and the stage is only the least
+ * advanced of them.
+ */
+function stageWord(work: TicketWork, label: ReturnType<typeof stageLabel>, writes: CardWrites | null): JSX.Element {
+  const open = work.pulls.filter((pull) => pullDraftState(pull) !== null);
+  const flag = open.length === 1 ? pullDraftState(open[0]!) : null;
+  const words = flag === 'draft' ? STAGE_LABEL.draft : STAGE_LABEL.review;
+  if (writes && flag && label.text === words && canFlip(open[0]!, flag)) return draftToggle(open[0]!, flag, writes, ' project-card__stage');
+  return el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain' }, label.text);
 }
 
 /**
