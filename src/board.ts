@@ -899,6 +899,7 @@ export function normalizeStoredPull(raw: unknown): PullRequest | null {
     mergeQueue: raw.mergeQueue === true,
     inMergeQueue: raw.inMergeQueue === true,
     stacked: raw.stacked === true,
+    basePushable: typeof raw.basePushable === 'boolean' ? raw.basePushable : null,
   };
 }
 

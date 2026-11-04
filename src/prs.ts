@@ -83,6 +83,18 @@ function gatesWantOnlyApprovals(gate: readonly PendingCheck[], reviews: RegExp |
   return gate.every((check) => reviews.test(check.description ?? ''));
 }
 
+/**
+ * Whether only a queue may merge into the pull request's base branch, and the
+ * merge helper's queue merges it: GitHub's rule for the branch says the user
+ * may not push to it, and `queue` is the helper saying it merges the branch.
+ * Then GitHub reports the merge blocked whatever else holds, so blocked alone
+ * says nothing against it. Unknown is not no: a cache from before it was read
+ * waits for the next poll.
+ */
+function queuedOnly(pr: Pick<PullRequest, 'basePushable'>, queue: boolean): boolean {
+  return queue && pr.basePushable === false;
+}
+
 /** The newest review in a given state, or undefined. */
 function newest(pr: PullRequest, state: string): { login: string; at: string } | undefined {
   return pr.reviews.filter((review) => review.state === state).sort((a, b) => (a.at < b.at ? 1 : -1))[0];
@@ -100,7 +112,8 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  * `gates` are the configured merge-gate check names, from `mergeGateChecks`.
  * Nothing is a gate by default — the list arrives from the user's private config,
  * and an empty one simply leaves those rows in `checks`. `reviews` is the gate
- * title meaning only approvals are missing, from `mergeGateReviews`.
+ * title meaning only approvals are missing, from `mergeGateReviews`. `queue` is
+ * whether the user's merge helper said it merges this pull request's branch.
  *
  * The order the questions are asked in is the whole design, so it is written out
  * rather than left implicit:
@@ -111,7 +124,9 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *   3. a review GitHub itself still requires, or one a pending gate says it is
  *      missing and nothing else, which outranks any check
  *   4. a configured merge gate that hasn't finished
- *   5. GitHub reporting the merge blocked without naming an unfinished check
+ *   5. GitHub reporting the merge blocked without naming an unfinished check,
+ *      unless it is approved, the user may not push to the base branch, and
+ *      the merge helper merges it: ready
  *   6. GitHub reporting an ordinary check wait or an unstable merge
  *   7. ready, which needs GitHub to agree the merge would work
  *   8. otherwise, waiting on reviewers
@@ -122,6 +137,7 @@ export function judge(
   nudgedAt: string | null,
   gates: readonly string[] = [],
   reviews: RegExp | null = null,
+  queue = false,
 ): Judgement {
   const decision = deriveDecision(pr);
   // `?? null`: a pull read back from an older file may lack the key entirely.
@@ -190,6 +206,7 @@ export function judge(
     nudge: false,
     since: waitingSince,
   });
+  const ready = (): Judgement => ({ court: 'ready', decision, reasons: [], stale: false, nudge: false, since: approval?.at ?? pr.updatedAt });
 
   // GitHub's own "a review is still required" outranks every check, including a
   // gate: a gate that is waiting for that same approval would otherwise hide the
@@ -212,8 +229,11 @@ export function judge(
 
     // Blocked with nothing pending to blame: a required check that never ran, or
     // a ruleset whose decision has no check of its own. It is not a check wait.
+    // Unless GitHub also says the user may not push to the base branch, and the
+    // merge helper merges it: then the block is only that a queue's bot alone
+    // may merge there, and approved, it is ready. The queue has the last word.
     if (mergeState === 'BLOCKED' && pending.length === 0) {
-      return settled('blocked', { kind: 'merge-blocked' });
+      return queuedOnly(pr, queue) && approved ? ready() : settled('blocked', { kind: 'merge-blocked' });
     }
     if (mergeState === 'BLOCKED' || mergeState === 'UNSTABLE') return settled('checks', running);
     // GitHub computes the merge state lazily, so a pull request it hasn't looked
@@ -222,9 +242,7 @@ export function judge(
     if (mergeState === 'UNKNOWN') return settled('checks', { kind: 'mergeability-unknown' });
 
     if (approved) {
-      if (mergeState === 'CLEAN' || mergeState === 'HAS_HOOKS') {
-        return { court: 'ready', decision, reasons: [], stale: false, nudge: false, since: approval?.at ?? pr.updatedAt };
-      }
+      if (mergeState === 'CLEAN' || mergeState === 'HAS_HOOKS') return ready();
       // No merge state at all: a cache written before the field was fetched, or a
       // token GitHub won't tell. The pre-merge-state reading of ready still
       // applies, but only where nothing visible is outstanding — a refresh fills
@@ -233,10 +251,7 @@ export function judge(
       // wait, not a reviewer one: nudging would not move it.
       if (mergeState === null) {
         const unfinished = pr.checks === 'pending' || pending.length > 0;
-        if (!unfinished) {
-          return { court: 'ready', decision, reasons: [], stale: false, nudge: false, since: approval?.at ?? pr.updatedAt };
-        }
-        return settled('checks', running);
+        return unfinished ? settled('checks', running) : ready();
       }
     }
   }
@@ -283,16 +298,14 @@ export function resolveBoard(
 
   const rows = pulls.map((pr): BoardRow => {
     const log = folded.get(canonicalId(pr.id));
-    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates, reviews);
+    // Only a branch the helper is asked about: the default one.
+    const helper = merging && pr.defaultBranch && pr.baseRef === pr.defaultBranch ? merging.helper(pr.repo, pr.baseRef) : null;
+    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates, reviews, helper?.kind === 'queue');
 
     const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes: log?.notes ?? [] };
     if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;
-    if (merging) {
-      // Only a branch the helper is asked about: the default one.
-      const helper = pr.defaultBranch && pr.baseRef === pr.defaultBranch ? merging.helper(pr.repo, pr.baseRef) : null;
-      if (helper) row.mergeHelper = helper;
-      if (merging.queued(pr.id)) row.helperQueued = true;
-    }
+    if (helper) row.mergeHelper = helper;
+    if (merging?.queued(pr.id)) row.helperQueued = true;
     row.offers = pullOffers(row);
     return row;
   });
@@ -334,6 +347,7 @@ type OfferFacts = Pick<
   | 'mergeStateStatus'
   | 'mergeHelper'
   | 'helperQueued'
+  | 'basePushable'
 >;
 
 /** Said when a row comes from a cache older than the facts an action needs: the next poll reads them. */
@@ -380,21 +394,26 @@ export function refuseDraft(row: OfferFacts): string | null {
  * here has seen.
  *
  * Where the user's merge helper said the branch merges through it, these rules
- * still decide, and the helper merges in GitHub's place (`mergeRoute`). While it
- * hasn't said, nothing is offered: a merge can't be taken back, and the answer
- * is seconds away.
+ * still decide, but for GitHub saying blocked where only a queue may merge
+ * (`queuedOnly`), and the helper merges in GitHub's place (`mergeRoute`). While
+ * it hasn't said, nothing is offered: a merge can't be taken back, and the
+ * answer is seconds away.
  */
 export function refuseMerge(row: OfferFacts): string | null {
   if (row.court !== 'ready') return 'it is not ready to merge';
   // The ready court also holds an approved, quiet pull request whose merge
-  // state couldn't be read, so the court alone is not GitHub saying yes.
-  if (row.mergeStateStatus !== 'CLEAN' && row.mergeStateStatus !== 'HAS_HOOKS') return "GitHub hasn't said the merge would work";
+  // state couldn't be read, so the court alone is not GitHub saying yes. Nor is
+  // blocked, but for a branch only the helper's queue may merge into, where
+  // `judge` let it in with nothing else holding it up.
+  const queue = row.mergeHelper?.kind === 'queue';
+  const works = row.mergeStateStatus === 'CLEAN' || row.mergeStateStatus === 'HAS_HOOKS' || (row.mergeStateStatus === 'BLOCKED' && queuedOnly(row, queue));
+  if (!works) return "GitHub hasn't said the merge would work";
   if (!row.nodeId || !row.account || !row.headSha || !row.defaultBranch) return UNREAD;
   if (row.stacked) return 'it is part of a stack on GitHub, which merges there';
   if (row.baseRef !== row.defaultBranch) return `it targets ${row.baseRef}, not ${row.defaultBranch}`;
   if (row.inMergeQueue || row.helperQueued) return 'it is in the merge queue already';
   if (row.mergeHelper?.kind === 'asking') return ASKING;
-  if (row.mergeHelper?.kind === 'queue' || row.mergeQueue) return null;
+  if (queue || row.mergeQueue) return null;
   if (!row.mergeMethod) return UNREAD;
   return null;
 }

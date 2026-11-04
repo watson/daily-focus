@@ -399,6 +399,13 @@ export interface PullRequest {
   inMergeQueue?: boolean;
   /** It is part of a GitHub stack, which merges through the stack's own API: never offered here. */
   stacked?: boolean;
+  /**
+   * Whether this account may push to the base branch, as the branch's rule says.
+   * False is how a branch only a queue's bot may merge into reads, and what lets
+   * the merge helper's button past GitHub saying blocked. Null when there is no
+   * rule GitHub will show, or it didn't say.
+   */
+  basePushable?: boolean | null;
 }
 
 /** GitHub's merge methods, by their GraphQL names. */
@@ -453,14 +460,17 @@ export interface PullsFile {
  *
  * - `you`        changes requested, CI red, conflicts, a stale branch, or someone
  *                acted after you did.
- * - `ready`      approved, nothing red, and GitHub says the merge would work.
+ * - `ready`      approved, nothing red, and GitHub says the merge would work, or
+ *                only that it's blocked, where just the merge helper's queue may
+ *                merge into the branch.
  * - `reviewers`  waiting on a review, or on a re-review since your last push,
  *                including one a pending gate says is all it is missing.
  * - `gate`       a check the user named as the repository's aggregate merge-policy
  *                decision hasn't finished. Nobody here knows whose move that is —
  *                the gate's own rules are private to whatever implements them.
  * - `blocked`    GitHub says the merge is blocked, but returned no unfinished check
- *                to explain it. This may be any repository or ruleset policy.
+ *                to explain it. This may be any repository or ruleset policy, or
+ *                one letting only a queue's bot merge, with no helper to ask it.
  * - `checks`     an unfinished check is named, or GitHub says the merge is unstable.
  * - `draft`      not yet asking anyone for anything.
  */

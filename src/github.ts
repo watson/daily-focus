@@ -363,11 +363,16 @@ query($q: String!, $first: Int!, $after: String) {
  * silently keeps yesterday's rows. Asked for by node id and nothing else, fifty at
  * a time come back in about seven seconds. Two modest requests beat one that
  * doesn't answer.
+ *
+ * With it, whether the account may push to the base branch, the other half of
+ * whether its merge would work: a branch that only a queue's bot may merge into
+ * reads blocked to everyone else (`judge` in `prs.ts`). A rule lookup, not a
+ * trial merge, and GitHub shows it to anyone who can write to the repository.
  */
 const MERGE_STATE_QUERY = `
 query($ids: [ID!]!) {
   nodes(ids: $ids) {
-    ... on PullRequest { id mergeStateStatus }
+    ... on PullRequest { id mergeStateStatus baseRef { refUpdateRule { viewerCanPush } } }
   }
 }`;
 
@@ -479,6 +484,7 @@ function applyChecks(pull: PullRequest, rollup: RawRollup | null | undefined): v
 export interface RawMergeState {
   id?: string;
   mergeStateStatus?: string | null;
+  baseRef?: { refUpdateRule?: { viewerCanPush?: boolean | null } | null } | null;
 }
 
 /** Read the merge-state reply into a map keyed by node id. One odd node costs itself. */
@@ -489,6 +495,21 @@ export function mergeStatesFromNodes(nodes: readonly (RawMergeState | null | und
     states.set(node.id, toMergeState(node.mergeStateStatus));
   }
   return states;
+}
+
+/**
+ * Whether the account may push to each pull request's base branch, by node id,
+ * as the branch's rule says. Null where it has no rule GitHub will show, or
+ * GitHub didn't say: only a rule saying no is a fact anything acts on.
+ */
+export function basePushFromNodes(nodes: readonly (RawMergeState | null | undefined)[]): Map<string, boolean | null> {
+  const pushable = new Map<string, boolean | null>();
+  for (const node of nodes) {
+    if (!node || typeof node.id !== 'string' || node.id === '') continue;
+    const can = node.baseRef?.refUpdateRule?.viewerCanPush;
+    pushable.set(node.id, typeof can === 'boolean' ? can : null);
+  }
+  return pushable;
 }
 
 /** Loosely typed: the shape of one `search.nodes` entry, as far as the board reads it. */
@@ -1120,14 +1141,15 @@ async function fetchMergeStates(
   token: string,
   ids: readonly string[],
   signal?: AbortSignal,
-): Promise<{ states: Map<string, MergeStateStatus | null>; rateLimitRemaining: number | null }> {
-  if (ids.length === 0) return { states: new Map(), rateLimitRemaining: null };
+): Promise<{ states: Map<string, MergeStateStatus | null>; pushable: Map<string, boolean | null>; rateLimitRemaining: number | null }> {
+  if (ids.length === 0) return { states: new Map(), pushable: new Map(), rateLimitRemaining: null };
   const result = await graphql<{ nodes?: (RawMergeState | null)[] }>(token, MERGE_STATE_QUERY, { ids }, signal);
   const fatal = result.errors.filter((error) => !isSamlError(error));
   if (result.data?.nodes === undefined && fatal.length > 0) {
     throw new GitHubRequestError(fatal.map((error) => error.message).join('; '));
   }
-  return { states: mergeStatesFromNodes(result.data?.nodes ?? []), rateLimitRemaining: result.rateLimitRemaining };
+  const nodes = result.data?.nodes ?? [];
+  return { states: mergeStatesFromNodes(nodes), pushable: basePushFromNodes(nodes), rateLimitRemaining: result.rateLimitRemaining };
 }
 
 export async function fetchPulls(
@@ -1214,6 +1236,7 @@ export async function fetchPulls(
       rateLimitRemaining = states.rateLimitRemaining ?? rateLimitRemaining;
       for (const [nodeId, pull] of found) {
         if (states.states.has(nodeId)) pull.mergeStateStatus = states.states.get(nodeId) ?? null;
+        if (states.pushable.has(nodeId)) pull.basePushable = states.pushable.get(nodeId) ?? null;
       }
     } catch (err) {
       if (!mergeStateWarned) {

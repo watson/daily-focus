@@ -63,7 +63,7 @@ The second tab shows your open pull requests in seven buckets:
 | Bucket | What it means |
 |---|---|
 | Waiting on you | A failure, conflict, requested change, outdated branch, or new activity needs your attention. |
-| Ready to merge | Required reviews and checks are satisfied, and GitHub allows the merge. |
+| Ready to merge | Required reviews and checks are satisfied, and GitHub allows the merge, or only your merge helper's queue may merge it. |
 | Waiting on reviewers | A review is still needed, by GitHub or by a merge gate that says approvals are all it's missing. The board flags when it may be time to ask. |
 | Waiting on merge gate | A check you've configured as a merge gate is pending for some other reason. |
 | Merge blocked by GitHub | GitHub reports a policy block without an unfinished check to explain it. |
@@ -88,7 +88,10 @@ pushed since the board last looked, GitHub refuses the merge and the board says 
 If your company merges through a queue of its own, set a **Merge helper** under Pull
 requests in Settings: a small program of yours that the board asks how each
 repository merges, and hands a pull request to from its own button, or a whole stack
-from its top with **Merge stack**. Pull requests it took read "in merge queue". The
+from its top with **Merge stack**. Pull requests it took read "in merge queue". Where
+only the queue's bot may merge into a branch, GitHub calls everyone else's merge
+blocked; the board counts such a pull request ready when nothing else holds it up,
+and offers the helper's button. The
 [setup guide](https://dailyfocus.dev/setup/#merge-helper) says what it is asked.
 
 Cancelled checks appear as "cancelled, no verdict" rather than failures.
