@@ -84,8 +84,16 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
   for (const notice of state.setupNotices ?? []) {
     banners.push(banner('info', 'i', renderMarkdown(notice)));
   }
+  // The brief's own, which nothing on the page can fix before the next brief:
+  // each may be put away until then, and only then.
+  const briefAt = state.brief.generatedAt;
+  const seen = ui.warningsSeen.value;
   for (const warning of state.warnings) {
-    banners.push(banner('warning', '!', warning));
+    if (briefAt === null) {
+      banners.push(banner('warning', '!', warning));
+    } else if (seen?.brief !== briefAt || !seen.warnings.includes(warning)) {
+      banners.push(banner('warning', '!', warning, dismissButton(() => handlers.dismissWarning(briefAt, warning))));
+    }
   }
   // An organization's setup on offer, until it is used or put off. The banner
   // only opens the review; nothing applies without the review's own click.
@@ -98,6 +106,10 @@ export function renderBanners(state: DashboardState, ui: UiState, handlers: Hand
 
 function runNowButton(handlers: Handlers): JSX.Element {
   return el('button', { type: 'button', class: 'button banner__action', onClick: () => handlers.runAgent() }, 'Run it now');
+}
+
+function dismissButton(dismiss: () => void): JSX.Element {
+  return el('button', { type: 'button', class: 'button banner__action', onClick: dismiss }, 'Dismiss');
 }
 
 /**
@@ -149,11 +161,7 @@ function agentRunBanner(run: AgentRun, state: DashboardState, handlers: Handlers
       : `The morning agent failed at ${ended}: ${run.error}.`,
     [
       runNowButton(handlers),
-      el(
-        'button',
-        { type: 'button', class: 'button banner__action', onClick: () => handlers.dismissAgentRun(run.id) },
-        'Dismiss',
-      ),
+      dismissButton(() => handlers.dismissAgentRun(run.id)),
     ],
     strip,
   );

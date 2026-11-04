@@ -12,7 +12,7 @@
  * Exits non-zero if anything failed, so it can gate a run.
  */
 
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { loadConfig } from '../src/config.ts';
@@ -22,7 +22,7 @@ import { linkState } from '../src/links.ts';
 import { Store } from '../src/store.ts';
 import { parseBrief, setsStatus } from '../src/validate.ts';
 import { runContractChecks } from '../src/checks.ts';
-import { readArchiveIndex } from '../src/archive.ts';
+import { readArchiveIndex, readPreviousBrief } from '../src/archive.ts';
 import { fingerprintId } from '../src/ids.ts';
 import { workingMsBetween } from '../src/time.ts';
 import { BRIEF_REFRESH_GRACE_HOURS, describeSchedule, describeTime, nextRunDate, resolveSchedule, runsOn } from '../src/schedule.ts';
@@ -54,7 +54,10 @@ function section(title: string): void {
   console.log(`\n[1m${title}[0m`);
 }
 
-/** `--against <path>`, else the newest archived brief from a different run. */
+/**
+ * `--against <path>`, else the brief the dashboard's own check compares with: the
+ * newest archived one from an earlier day.
+ */
 async function findPrevious(current: Brief): Promise<{ brief: Brief; from: string } | null> {
   const flag = process.argv.indexOf('--against');
   if (flag !== -1 && process.argv[flag + 1]) {
@@ -62,24 +65,8 @@ async function findPrevious(current: Brief): Promise<{ brief: Brief; from: strin
     return { brief: JSON.parse(await readFile(path, 'utf8')) as Brief, from: path };
   }
 
-  let names: string[];
-  try {
-    names = (await readdir(config.archiveDir)).filter((n) => /^items-\d{4}-\d{2}-\d{2}\.json$/.test(n));
-  } catch {
-    return null;
-  }
-
-  for (const name of names.sort().reverse()) {
-    const path = resolve(config.archiveDir, name);
-    try {
-      const brief = JSON.parse(await readFile(path, 'utf8')) as Brief;
-      // Skip the archive entry that is just a copy of the brief we're auditing.
-      if (brief.generatedAt !== current.generatedAt) return { brief, from: path };
-    } catch {
-      continue;
-    }
-  }
-  return null;
+  const previous = await readPreviousBrief(config, current);
+  return previous ? { brief: previous.brief, from: resolve(config.archiveDir, `items-${previous.date}.json`) } : null;
 }
 
 /* ---------- store ---------- */
@@ -179,11 +166,13 @@ section('Contract checks');
 
 const focus = await store.readFocus();
 const history = await readArchiveIndex(config);
+const previous = await findPrevious(brief);
 const issues = runContractChecks({
   brief,
   items: resolveItems(brief.items, await store.readActions(), new Date()),
   focus,
   history,
+  previous: previous?.brief ?? null,
 });
 
 // Exactly the checks that surface as banners on the page â€” shared implementation,
@@ -229,7 +218,6 @@ if (stillSnoozed.length) warn('snoozed items present', `${stillSnoozed.length} â
 
 section('Continuity');
 
-const previous = await findPrevious(brief);
 if (!previous) {
   warn('no earlier brief to compare against', 'id stability unverified');
 } else {

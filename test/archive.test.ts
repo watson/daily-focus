@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, test } from 'node:test';
 
-import { archiveBrief, briefDateKey, computeObjectiveProgress, readArchiveIndex } from '../src/archive.ts';
+import { archiveBrief, briefDateKey, computeObjectiveProgress, readArchiveIndex, readPreviousBrief } from '../src/archive.ts';
 import type { ArchivedItem } from '../src/archive.ts';
 import { loadConfig, type Config } from '../src/config.ts';
 import type { Action, Brief } from '../src/types.ts';
@@ -111,6 +111,37 @@ test('one corrupt snapshot does not blind the rest', async () => {
 
   const index = await readArchiveIndex(config);
   assert.equal(index.get('good')?.advancesObjective, true);
+});
+
+/* ---------- the brief before ---------- */
+
+test('the brief before is the newest snapshot from an earlier day', async () => {
+  const config = await makeConfig();
+  await archiveBrief(config, brief('2026-09-07', '2026-09-07T06:00:00Z', [item('older')]));
+  // Friday's, then the weekend off: Monday's brief comes after Friday's.
+  await archiveBrief(config, brief('2026-09-11', '2026-09-11T06:00:00Z', [item('friday')]));
+  const today = brief('2026-09-14', '2026-09-14T06:00:00Z', [item('monday')]);
+  await archiveBrief(config, today);
+
+  const previous = await readPreviousBrief(config, today);
+  assert.equal(previous?.date, '2026-09-11');
+  assert.deepEqual(previous?.brief.items.map((i) => i.id), ['friday']);
+  // Not yet archived, today's brief still finds the same one.
+  assert.equal((await readPreviousBrief(config, brief('2026-09-14', '2026-09-14T09:00:00Z')))?.date, '2026-09-11');
+});
+
+test('no earlier snapshot, or an unreadable one, means no brief before', async () => {
+  const config = await makeConfig();
+  const today = brief('2026-09-10', '2026-09-10T06:00:00Z');
+  assert.equal(await readPreviousBrief(config, today), null);
+
+  await archiveBrief(config, today);
+  assert.equal(await readPreviousBrief(config, today), null);
+
+  // An older snapshot would pass off an item that left and came back as carried.
+  await archiveBrief(config, brief('2026-09-08', '2026-09-08T06:00:00Z', [item('a')]));
+  await writeFile(resolve(config.archiveDir, 'items-2026-09-09.json'), '{ broken');
+  assert.equal(await readPreviousBrief(config, today), null);
 });
 
 /* ---------- the metric ---------- */

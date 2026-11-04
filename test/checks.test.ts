@@ -35,13 +35,17 @@ function history(entries: Record<string, Partial<ArchivedItem>>): Map<string, Ar
   );
 }
 
-function check(items: Item[], opts: { focus?: Focus | null; history?: Map<string, ArchivedItem> } = {}) {
+function check(
+  items: Item[],
+  opts: { focus?: Focus | null; history?: Map<string, ArchivedItem>; previous?: Item[] } = {},
+) {
   const b = brief(items);
   return runContractChecks({
     brief: b,
     items: resolveItems(b.items, [], NOW),
     focus: opts.focus === undefined ? focus() : opts.focus,
     history: opts.history ?? new Map(),
+    previous: opts.previous ? brief(opts.previous) : null,
   });
 }
 
@@ -85,23 +89,47 @@ test('flags a generously applied objective flag', () => {
 
 /* ---------- firstSeen ---------- */
 
-test('flags firstSeen being moved forward', () => {
-  const problems = check([item('a', { firstSeen: '2026-09-10' })], {
-    history: history({ a: { firstSeen: '2026-09-01' } }),
+test('flags firstSeen being moved forward on an item carried over from the brief before', () => {
+  const problems = check([item('a', { firstSeen: '2026-09-10', advancesObjective: true })], {
+    previous: [item('a', { firstSeen: '2026-09-01' })],
   });
-  assert.match(problems.join(' '), /"first seen" date moved forward/);
+  assert.deepEqual(problems, [
+    '1 item(s) had their "first seen" date moved forward, which resets how old they look. Oldest affected: title for a',
+  ]);
+});
+
+test('names the reset item that was first seen longest ago', () => {
+  const problems = check(
+    [item('b', { firstSeen: '2026-09-10', advancesObjective: true }), item('a', { firstSeen: '2026-09-10' })],
+    { previous: [item('b', { firstSeen: '2026-09-05' }), item('a', { firstSeen: '2026-09-01' })] },
+  );
+  assert.match(problems.join(' '), /^2 item\(s\) .* Oldest affected: title for a$/);
 });
 
 test('an unchanged or earlier firstSeen is fine', () => {
   const unchanged = check([item('a', { firstSeen: '2026-09-01', advancesObjective: true })], {
-    history: history({ a: { firstSeen: '2026-09-01' } }),
+    previous: [item('a', { firstSeen: '2026-09-01' })],
   });
   assert.deepEqual(unchanged, []);
 
   const earlier = check([item('a', { firstSeen: '2026-08-20', advancesObjective: true })], {
-    history: history({ a: { firstSeen: '2026-09-01' } }),
+    previous: [item('a', { firstSeen: '2026-09-01' })],
   });
   assert.deepEqual(earlier, []);
+});
+
+test('an item back after a day away dates from its return', () => {
+  // Raised on the 1st, handled upstream so the brief before dropped it, and
+  // back today: older briefs knowing it doesn't make today's date a reset.
+  const problems = check([item('a', { firstSeen: '2026-09-10', advancesObjective: true })], {
+    history: history({ a: {} }),
+    previous: [item('b', { firstSeen: '2026-09-01' })],
+  });
+  assert.deepEqual(problems, []);
+});
+
+test('with no brief before, there is nothing to carry over', () => {
+  assert.deepEqual(check([item('a', { firstSeen: '2026-09-10', advancesObjective: true })]), []);
 });
 
 /* ---------- id drift ---------- */
