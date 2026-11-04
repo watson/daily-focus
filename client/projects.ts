@@ -24,7 +24,7 @@ import { doneCheckLine } from './donecheck.ts';
 import { el, type Props } from './el.ts';
 import { failureNotice } from './failure.ts';
 import { formatTime } from './format.ts';
-import { cssId, onCard } from './items.ts';
+import { Menu, cssId, onCard } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
 import { drawer } from './section.ts';
@@ -291,7 +291,7 @@ function readView(read: PlannedRead, state: DashboardState, ui: UiState, handler
   // Where each pull request stands, and what it offers, is the board's last good read.
   if (state.board?.enabled) parts.push(...boardFailures(state.board, now, ui, handlers));
   for (const warning of read.warnings) parts.push(banner('warning', '!', renderMarkdown(warning)));
-  for (const loop of read.plan.loops ?? []) parts.push(loopBanner(loop, read));
+  for (const loop of project.plan.loops ?? []) parts.push(loopBanner(loop, project));
 
   parts.push(projectHeader(read, handlers));
   const all = project.order.map((key) => project.works.get(key)!);
@@ -322,8 +322,9 @@ function projectBody(children: ComponentChild[], state: DashboardState, ui: UiSt
 }
 
 /** "These tickets block each other: PROJ-2 → PROJ-3 → PROJ-2. Fix the links in Jira." */
-function loopBanner(members: readonly string[], read: PlannedRead): JSX.Element {
-  const { path, others } = loopPath(members, read.tickets);
+function loopBanner(members: readonly string[], project: ProjectWork): JSX.Element {
+  // The way round from the links the plan was made from: stacks in, the Jira links they overruled out.
+  const { path, others } = loopPath(members, project.links);
   const also = others.length > 0 ? `, with ${listOf(others)} caught in it too` : '';
   return banner('warning', '!', `These tickets block each other: ${path.join(' → ')}${also}. Fix the links in Jira.`);
 }
@@ -468,6 +469,8 @@ function writeButtons(row: BoardRow | null, kinds: readonly PullWrite[] | undefi
 interface CardWrites {
   writes: Writes;
   state: DashboardState;
+  /** Where the card is drawn, for its menus' keys: the same pull request can be on a card and in the panel at once. */
+  place?: 'card' | 'panel';
   ui: UiState;
   handlers: Handlers;
 }
@@ -725,7 +728,7 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
         ticket.url ? el('a', { href: ticket.url, target: '_blank', rel: 'noopener noreferrer' }, title) : title,
       ),
       ' ',
-      stageWord(work, label, writes),
+      el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain' }, label.text),
     ),
     work.pulls.length > 0 ? el('ul', { class: 'project-card__pulls' }, work.pulls.map((pull) => pullLine(pull, now, writes))) : null,
     // The user's own tickets only: the check reads no one else's.
@@ -734,6 +737,16 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
     !ticket.linksRead && ticket.statusCategory !== 'done'
       ? el('p', { class: 'item__reason item__reason--waiting' }, 'Its links could not be read, so it may wait for more than this says.')
       : null,
+    // Where Jira said the opposite of the stack: the order follows the stack, and says so.
+    project.overruled
+      .filter((each) => each.ticket === ticket.key)
+      .map((each) =>
+        el(
+          'p',
+          { class: 'item__reason item__reason--waiting', key: `over:${each.over}` },
+          `Jira says it blocks ${each.over}, but its pull request is stacked on ${each.over}'s, so it is shown after ${each.over}, as it will land.`,
+        ),
+      ),
   );
 }
 
@@ -762,55 +775,64 @@ export function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): 
 }
 
 /**
- * Draft or In review, as a pull request is on GitHub, and the way to change it:
- * a click marks a draft ready for review or turns one back into a draft, where
- * the board offers that on the user's own. Underlined dotted, the way a word
- * that does something reads. Text where it can't: a teammate's, or one the board
- * hasn't read.
+ * Draft or In review, as a pull request is on GitHub, and the way to change it,
+ * where the board offers that on the user's own. Underlined dotted, the way a
+ * word that does something reads; a click opens a menu that says what it would
+ * do, "Mark as ready for review" or "Convert to draft", and only choosing that
+ * does it, since a hover's title is too easy to miss. Text where it can't
+ * change: a teammate's, or one the board hasn't read.
  */
-function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrites | null, extra = ''): JSX.Element {
+function draftToggle(pull: PullWork, flag: 'draft' | 'review', writes: CardWrites | null): ComponentChild {
   const label = flag === 'draft' ? 'Draft' : 'In review';
   const row = pull.row;
   if (!writes || !row || !canFlip(pull, flag)) {
     return el('span', { class: 'project-pull__flag', 'data-flag': flag }, label);
   }
+  const menuKey = `pull:${writes.place ?? 'card'}:${row.id}`;
+  const open = writes.ui.statusFor.value === menuKey;
   const pending = writes.ui.pending.value.has(row.id);
-  const action = flag === 'draft' ? 'Mark ready for review' : 'Turn back into a draft';
-  return el(
+  const action = flag === 'draft' ? 'Mark as ready for review' : 'Convert to draft';
+  const ref = `${row.repo}#${row.number}`;
+  const button = el(
     'button',
     {
       type: 'button',
-      class: `project-pull__flag project-pull__flag--toggle${extra}`,
+      class: 'project-pull__flag project-pull__flag--toggle',
       'data-flag': flag,
-      title: action,
-      'aria-label': `${label}: ${action.toLowerCase()}`,
+      title: `${label} on GitHub. Click to change it`,
+      'aria-haspopup': 'menu',
+      'aria-expanded': String(open),
       disabled: pending,
       'aria-busy': pending ? 'true' : undefined,
-      onClick: () => (flag === 'draft' ? writes.handlers.markReady(row.id) : writes.handlers.markDraft(row.id)),
+      onClick: () => writes.handlers.toggleStatus(menuKey),
     },
     label,
   );
+  if (!open) return button;
+  return [
+    button,
+    h(
+      Menu,
+      { class: 'menu menu--pull', label: `${ref} on GitHub` },
+      el('p', { class: 'menu__note' }, flag === 'draft' ? `${ref} is a draft on GitHub.` : `${ref} is ready for review on GitHub.`),
+      el(
+        'button',
+        {
+          type: 'button',
+          role: 'menuitem',
+          disabled: pending,
+          onClick: () => (flag === 'draft' ? writes.handlers.markReady(row.id) : writes.handlers.markDraft(row.id)),
+        },
+        action,
+      ),
+    ),
+  ];
 }
 
 /** Whether the board offers turning this pull request the other way: a draft ready, or an open one back into a draft. */
 function canFlip(pull: PullWork, flag: 'draft' | 'review'): boolean {
   const row = pull.row;
   return row !== null && row.status === 'open' && (row.offers ?? []).includes(flag === 'draft' ? 'ready' : 'draft');
-}
-
-/**
- * The card's stage, top right. Where it is Draft or In review and the ticket has
- * one open pull request the board can turn the other way, the word is that
- * pull request's toggle too, the first place anyone looks for it. With several,
- * each pull request's line has its own, and the stage is only the least
- * advanced of them.
- */
-function stageWord(work: TicketWork, label: ReturnType<typeof stageLabel>, writes: CardWrites | null): JSX.Element {
-  const open = work.pulls.filter((pull) => pullDraftState(pull) !== null);
-  const flag = open.length === 1 ? pullDraftState(open[0]!) : null;
-  const words = flag === 'draft' ? STAGE_LABEL.draft : STAGE_LABEL.review;
-  if (writes && flag && label.text === words && canFlip(open[0]!, flag)) return draftToggle(open[0]!, flag, writes, ' project-card__stage');
-  return el('span', { class: 'project-card__stage', 'data-tone': label.tone ?? 'plain' }, label.text);
 }
 
 /**
@@ -821,7 +843,7 @@ export function panelPulls(key: string, mine: boolean, state: DashboardState, ui
   if (!mine) return null;
   const pulls = ticketPulls(key, pullSources(state));
   if (pulls.length === 0) return null;
-  const writes: CardWrites = { writes: new Map(), state, ui, handlers };
+  const writes: CardWrites = { writes: new Map(), state, ui, handlers, place: 'panel' };
   const now = new Date(state.now);
   return el(
     'section',
@@ -840,7 +862,9 @@ function ticketMeta(work: TicketWork, project: ProjectWork, writes: CardWrites |
     : [el('span', { class: 'pill pill--status', title: 'Its status in Jira' }, ticket.workflowStatus || '—')];
   if (!ticket.mine) bits.push(el('span', null, ticket.assignee ?? 'Unassigned'));
   if (work.stage !== 'done') {
-    const waits = project.waitsFor[ticket.key] ?? [];
+    const stacked = project.stackedOn.get(ticket.key) ?? [];
+    const waits = (project.waitsFor[ticket.key] ?? []).filter((key) => !stacked.includes(key));
+    if (stacked.length > 0) bits.push(el('span', { class: 'project-card__stacked' }, 'Stacked on ', ticketNames(stacked, project)));
     if (waits.length > 0) bits.push(el('span', { class: 'project-card__waits' }, 'Waits for ', ticketNames(waits, project)));
     const held = blocksOf(ticket.key, project);
     if (held.length > 0) bits.push(el('span', { class: 'project-card__blocks' }, 'Blocks ', ticketNames(held, project)));

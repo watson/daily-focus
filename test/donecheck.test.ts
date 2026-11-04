@@ -194,9 +194,15 @@ function fakeRunner(enabled = true) {
 const said = (reply: string): CheckOutcome => ({ ok: true, reply, error: null, cause: null });
 const failed = (error: string, cause: CheckOutcome['cause'] = null): CheckOutcome => ({ ok: false, reply: '', error, cause });
 
-/** Let file writes and promise chains land; the clock is mocked, so this can't wait on it. */
+/**
+ * Let file writes and promise chains land. `setTimeout` is mocked, so this
+ * yields with `setImmediate`, and gives up after real seconds rather than a
+ * count of turns: on a slow Windows runner a write can outlast thousands of
+ * them, and the test failed with nothing wrong.
+ */
 async function until(condition: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 5000; i++) {
+  const deadline = performance.now() + 10_000;
+  while (performance.now() < deadline) {
     if (condition()) return;
     await new Promise((resolve) => setImmediate(resolve));
   }

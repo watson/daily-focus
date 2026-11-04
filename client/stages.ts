@@ -30,6 +30,7 @@ import type {
   ProjectRead,
   ProjectTicket,
 } from '../src/types.ts';
+import { planProject } from '../src/projects.ts';
 import { relativeTime, waitedFor } from './format.ts';
 
 /* ---------- stages ---------- */
@@ -347,22 +348,99 @@ export interface ProjectWork {
   outside: ReadonlyMap<string, OutsideTicket>;
   /** What the done check says about the user's own tickets, shown on their cards; null from an older server. */
   checks: DoneCheckState | null;
+  /** The plan the order comes from: the server's, or one made again with the pull requests' stacks in it. */
+  plan: ProjectPlan;
+  /** For each ticket, the tickets whose pull requests its own are stacked on. */
+  stackedOn: ReadonlyMap<string, readonly string[]>;
+  /** Where Jira's links said the opposite of a stack, which won: `ticket` is stacked on `over`, though Jira said it blocks `over`. */
+  overruled: readonly { ticket: string; over: string }[];
+  /** The tickets with the links the plan was made from: Jira's, with the stacks in and the links they overruled out. */
+  links: readonly ProjectTicket[];
+}
+
+/**
+ * The stacks between tickets: a ticket whose pull request is stacked on
+ * another ticket's pull request merges after that ticket, whatever Jira's links
+ * say, since a stack is the order the code will actually land in. Stacks inside
+ * one ticket are its own business.
+ */
+function ticketStacks(works: ReadonlyMap<string, TicketWork>): Map<string, string[]> {
+  const ticketOf = new Map<string, string>();
+  for (const work of works.values()) for (const pull of work.pulls) ticketOf.set(pull.url, work.ticket.key);
+  const stacks = new Map<string, string[]>();
+  for (const work of works.values()) {
+    for (const pull of work.pulls) {
+      const parent = pull.stackedOn ? ticketOf.get(pull.stackedOn.url) : undefined;
+      if (!parent || parent === work.ticket.key) continue;
+      const parents = stacks.get(work.ticket.key) ?? [];
+      if (!parents.includes(parent)) parents.push(parent);
+      stacks.set(work.ticket.key, parents);
+    }
+  }
+  return stacks;
+}
+
+/**
+ * The plan with the stacks in it. Each stack becomes a link the plan honours, and
+ * a Jira link pointing the other way between the same two tickets is dropped, so
+ * the stack wins rather than the two making a loop. Null when there are no
+ * stacks between tickets, and the server's plan stands as it is.
+ */
+function stackedPlan(
+  read: PlannedRead,
+  stacks: ReadonlyMap<string, readonly string[]>,
+): { plan: ProjectPlan; overruled: { ticket: string; over: string }[]; tickets: ProjectTicket[] } | null {
+  if (stacks.size === 0) return null;
+  const overruled: { ticket: string; over: string }[] = [];
+  const contradicted = (child: string, parent: string): boolean => (stacks.get(child) ?? []).includes(parent);
+  const tickets = read.tickets.map((ticket) => {
+    const parents = stacks.get(ticket.key) ?? [];
+    // Jira saying a ticket stacked on this one blocks it: the stack says the reverse.
+    const blockedBy = ticket.blockedBy.filter((blocker) => {
+      if (!contradicted(blocker, ticket.key)) return true;
+      overruled.push({ ticket: blocker, over: ticket.key });
+      return false;
+    });
+    const blocks = ticket.blocks.filter((blocked) => !contradicted(ticket.key, blocked));
+    return { ...ticket, blockedBy: [...new Set([...blockedBy, ...parents])], blocks };
+  });
+  for (const ticket of read.tickets) {
+    for (const blocked of ticket.blocks) if (contradicted(ticket.key, blocked)) overruled.push({ ticket: ticket.key, over: blocked });
+  }
+  // Said once per pair, however many of the two tickets named the link.
+  const once = new Map(overruled.map((each) => [`${each.ticket}>${each.over}`, each]));
+  return { plan: planProject(tickets, read.outside), overruled: [...once.values()], tickets };
 }
 
 export function projectWork(read: PlannedRead, sources: PullSources, checks: DoneCheckState | null = null): ProjectWork {
   const works = new Map(read.tickets.map((ticket) => [ticket.key, ticketWork(ticket, sources)]));
-  const order = read.plan.order.filter((key) => works.has(key));
+  const stacks = ticketStacks(works);
+  const restacked = stackedPlan(read, stacks);
+  const plan = restacked?.plan ?? read.plan;
+  const order = plan.order.filter((key) => works.has(key));
   // A ticket the order missed still gets a place, at the end: dropped, it
   // would be the one thing on the project nobody sees.
   for (const ticket of read.tickets) if (!order.includes(ticket.key)) order.push(ticket.key);
   const waitsFor: Record<string, readonly string[]> = {};
-  for (const key of order) waitsFor[key] = read.plan.waitsFor?.[key] ?? [];
+  for (const key of order) waitsFor[key] = plan.waitsFor?.[key] ?? [];
   const dependents = new Map<string, string[]>(order.map((key) => [key, []]));
   for (const key of order) {
     if (works.get(key)!.stage === 'done') continue;
     for (const blocker of waitsFor[key]!) dependents.get(blocker)?.push(key);
   }
-  return { read, works, order, waitsFor, dependents, outside: new Map(read.outside.map((ticket) => [ticket.key, ticket])), checks };
+  return {
+    read,
+    works,
+    order,
+    waitsFor,
+    dependents,
+    outside: new Map(read.outside.map((ticket) => [ticket.key, ticket])),
+    checks,
+    plan,
+    stackedOn: stacks,
+    overruled: restacked?.overruled ?? [],
+    links: restacked?.tickets ?? read.tickets,
+  };
 }
 
 export type StageCounts = Record<Stage, number>;
