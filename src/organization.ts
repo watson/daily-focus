@@ -589,7 +589,7 @@ export class Organizations {
       raw = JSON.parse(new TextDecoder().decode(bytes));
     } catch (err) {
       // Not the parser's own words: they quote the file, and its values may be private.
-      return { kind: 'unusable', warning: `${org}'s Daily Focus setup can't be used: ${SETUP_FILE} in ${where} is not valid JSON` };
+      return { kind: 'unusable', warning: `${org}'s Daily Focus settings can't be used: ${SETUP_FILE} in ${where} is not valid JSON` };
     }
     const parsed = parseSetup(raw, org, { profile: this.#config.profile, dataDir: this.#config.dataDir });
     if ('error' in parsed) return { kind: 'unusable', warning: `${org}'s Daily Focus settings can't be used: ${parsed.error}` };
