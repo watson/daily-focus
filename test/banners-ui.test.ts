@@ -165,3 +165,30 @@ test('a lost connection is a header pill, not a banner', () => {
   const container = render({ refreshPending: false, stale: false });
   assert.doesNotMatch(container.textContent!, /connection/i);
 });
+
+function renderWarnings(warnings: string[], ui: Partial<UiValues> = {}, generatedAt: string | null = '2026-09-10T06:30:00Z') {
+  const calls: string[][] = [];
+  const state = {
+    brief: { generatedAt, ageHours: 2, refreshPending: false, stale: false },
+    schedule: { runsToday: true },
+    problem: null,
+    warnings,
+  } as unknown as DashboardState;
+  const handlers = handlersWith({ dismissWarning: (brief, text) => void calls.push([brief, text]) });
+  const container = mount(h('div', null, renderBanners(state, uiWith(ui), handlers)));
+  return { container, calls };
+}
+
+test("each of the brief's warnings can be put away until the next brief", () => {
+  const { container, calls } = renderWarnings(['First warning', 'Second warning']);
+  assert.equal(byClass(container, 'banner--warning').length, 2);
+  assert.deepEqual(buttonLabels(container), ['Dismiss', 'Dismiss']);
+  byTag(byClass(container, 'banner--warning')[1]!, 'button')[0]!.click();
+  assert.deepEqual(calls, [['2026-09-10T06:30:00Z', 'Second warning']]);
+
+  const putAway = { warningsSeen: { brief: '2026-09-10T06:30:00Z', warnings: ['Second warning'] } };
+  assert.equal(renderWarnings(['First warning', 'Second warning'], putAway).container.textContent, '!First warningDismiss');
+  // A new brief brings its warnings back, the same words included.
+  const next = renderWarnings(['First warning', 'Second warning'], putAway, '2026-09-11T06:30:00Z');
+  assert.equal(byClass(next.container, 'banner--warning').length, 2);
+});

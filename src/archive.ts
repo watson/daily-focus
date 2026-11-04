@@ -76,8 +76,6 @@ export async function archiveBrief(config: Config, brief: Brief): Promise<boolea
 export interface ArchivedItem {
   title: string;
   advancesObjective: boolean;
-  /** The oldest firstSeen we've recorded, so a later reset is detectable. */
-  firstSeen?: string | undefined;
 }
 
 /**
@@ -119,25 +117,39 @@ export async function readArchiveIndex(config: Config): Promise<Map<string, Arch
       continue; // One corrupt snapshot shouldn't blind the whole metric.
     }
     for (const item of brief.items ?? []) {
-      if (!item?.id) continue;
-      const existing = index.get(item.id);
-      if (!existing) {
-        index.set(item.id, {
-          title: item.title ?? item.id,
-          advancesObjective: item.advancesObjective === true,
-          firstSeen: item.firstSeen,
-        });
-        continue;
-      }
-      // Walking newest-first, so the newest title wins but the *oldest* firstSeen
-      // does — that's the one a later run would be resetting.
-      if (item.firstSeen && (!existing.firstSeen || item.firstSeen < existing.firstSeen)) {
-        existing.firstSeen = item.firstSeen;
-      }
+      if (!item?.id || index.has(item.id)) continue;
+      index.set(item.id, {
+        title: item.title ?? item.id,
+        advancesObjective: item.advancesObjective === true,
+      });
     }
   }
 
   return index;
+}
+
+/**
+ * The brief before this one: the newest snapshot from an earlier day.
+ *
+ * It stands in for the previous `items.json`, which is what the agent is told to
+ * carry each item's `firstSeen` from. Today's own snapshot is skipped, being this
+ * brief or an earlier run of the same day. Null when there is none, or when that
+ * one doesn't read: an older brief would make an item that left the brief and
+ * came back look like a carried one.
+ */
+export async function readPreviousBrief(
+  config: Config,
+  current: Brief,
+): Promise<{ date: string; brief: Brief } | null> {
+  const today = briefDateKey(current);
+  const date = (await listArchivedDates(config)).filter((d) => d < today).at(-1);
+  if (!date) return null;
+  try {
+    const brief = JSON.parse(await readFile(archivePath(config, date), 'utf8')) as Brief;
+    return Array.isArray(brief?.items) ? { date, brief } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

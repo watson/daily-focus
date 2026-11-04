@@ -13,8 +13,9 @@ import { fingerprintId } from './ids.ts';
  *     while the thing being measured stands still;
  *   - the objective flag has been applied so freely that the progress counter is
  *     flattering rather than reporting;
- *   - `firstSeen` reset, so the ageing pills quietly stop appearing — and an
- *     absent nag is invisible by construction;
+ *   - `firstSeen` reset on an item carried over from the brief before, so the
+ *     ageing pills quietly stop appearing — and an absent nag is invisible by
+ *     construction;
  *   - an id drifted, orphaning a completed item so it returns tomorrow;
  *   - the private half of focus.md was echoed into something rendered.
  *
@@ -33,9 +34,11 @@ export interface CheckInput {
   focus: Focus | null;
   /** Everything the archive knows about ids we've seen before. */
   history: ReadonlyMap<string, ArchivedItem>;
+  /** The brief before this one (`readPreviousBrief`), whose `firstSeen`s should carry over. */
+  previous: Brief | null;
 }
 
-export function runContractChecks({ brief, items, focus, history }: CheckInput): string[] {
+export function runContractChecks({ brief, items, focus, history, previous }: CheckInput): string[] {
   const problems: string[] = [];
 
   if (focus?.objective) {
@@ -59,11 +62,19 @@ export function runContractChecks({ brief, items, focus, history }: CheckInput):
     }
   }
 
-  // firstSeen must survive across runs or the ageing display silently restarts.
-  const reset = brief.items.filter((item) => {
-    const previous = history.get(item.id)?.firstSeen;
-    return previous && item.firstSeen && previous < item.firstSeen;
-  });
+  // firstSeen must survive from one brief to the next or the ageing display
+  // silently restarts. Only from the brief before, as the prompt asks: an item
+  // that left the brief and came back was raised again, and dates from then.
+  const carried = new Map<string, string>();
+  for (const item of previous?.items ?? []) {
+    if (typeof item?.id === 'string' && typeof item.firstSeen === 'string') carried.set(item.id, item.firstSeen);
+  }
+  const reset = brief.items
+    .filter((item) => {
+      const before = carried.get(item.id);
+      return before !== undefined && item.firstSeen && before < item.firstSeen;
+    })
+    .sort((a, b) => carried.get(a.id)!.localeCompare(carried.get(b.id)!));
   if (reset.length > 0) {
     problems.push(
       `${reset.length} item(s) had their "first seen" date moved forward, which resets how old they look. ` +

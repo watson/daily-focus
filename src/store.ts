@@ -12,7 +12,7 @@ import type {
   ResolvedItem,
 } from './types.ts';
 import type { Config } from './config.ts';
-import { archiveBrief, computeObjectiveProgress, readArchiveIndex } from './archive.ts';
+import { archiveBrief, computeObjectiveProgress, readArchiveIndex, readPreviousBrief } from './archive.ts';
 import { buildAgenda } from './agenda.ts';
 import { parseFocus, toPublicFocus, type Focus } from './focus.ts';
 import { parseActionLine, parseBrief } from './validate.ts';
@@ -238,10 +238,12 @@ export class Store {
 
     // History is needed both for the progress metric and for the contract checks,
     // so read it once. Skipped entirely when there's no brief to check.
-    const history = brief ? await readArchiveIndex(this.config) : new Map();
+    const [history, previous] = brief
+      ? await Promise.all([readArchiveIndex(this.config), readPreviousBrief(this.config, brief)])
+      : [new Map(), null];
 
     const contractIssues = brief
-      ? runContractChecks({ brief, items, focus, history })
+      ? runContractChecks({ brief, items, focus, history, previous: previous?.brief ?? null })
       : [];
 
     // Only meaningful when there's an objective to measure progress against.
@@ -254,7 +256,6 @@ export class Store {
           withToday.set(item.id, {
             title: item.title,
             advancesObjective: item.advancesObjective === true,
-            firstSeen: item.firstSeen,
           });
         }
       }

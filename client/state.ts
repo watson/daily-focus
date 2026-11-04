@@ -16,7 +16,7 @@ import type {
   ResolvedItem,
   TicketRow,
 } from '../src/types.ts';
-import type { UiState, UiValues, View } from './types.ts';
+import type { UiState, UiValues, View, WarningsSeen } from './types.ts';
 
 /**
  * The panels, by name. Each name is also the id of its panel element, which is
@@ -41,6 +41,7 @@ export const PANEL_PREFIX = 'panel:';
 
 export const VIEW_KEY = 'daily-focus:view';
 export const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';
+export const WARNINGS_SEEN_KEY = 'daily-focus:warnings-seen';
 /** The project the Projects view is zoomed into, by key. */
 export const PROJECT_KEY = 'daily-focus:project';
 /**
@@ -69,6 +70,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     ticketMode: signal(initial.ticketMode ?? 'sync'),
     projectKey: signal(initial.projectKey ?? null),
     agentReportSeen: signal(initial.agentReportSeen ?? null),
+    warningsSeen: signal(initial.warningsSeen ?? null),
     messageOpen: signal(initial.messageOpen ?? new Map<string, boolean>()),
     view: signal(initial.view ?? 'today'),
     theme: signal(initial.theme ?? 'system'),
@@ -96,6 +98,18 @@ function isView(value: unknown): value is View {
   return typeof value === 'string' && (VIEWS as readonly string[]).includes(value);
 }
 
+/** The warnings put away, as remembered; null for nothing, or for anything that isn't what was written. */
+export function readWarningsSeen(raw: string | null): WarningsSeen | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<WarningsSeen> | null;
+    if (typeof value?.brief !== 'string' || !Array.isArray(value.warnings)) return null;
+    return { brief: value.brief, warnings: value.warnings.filter((w): w is string => typeof w === 'string') };
+  } catch {
+    return null;
+  }
+}
+
 /** What this browser remembered. Nothing, where there is no storage to ask. */
 function remembered(): Partial<UiValues> {
   try {
@@ -104,6 +118,7 @@ function remembered(): Partial<UiValues> {
       // Settings is a page to visit, so a reload returns to the view underneath.
       view: isView(view) && view !== 'settings' ? view : 'today',
       agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
+      warningsSeen: readWarningsSeen(localStorage.getItem(WARNINGS_SEEN_KEY)),
       projectKey: localStorage.getItem(PROJECT_KEY),
       detailFor: sessionStorage.getItem(DETAIL_KEY),
     };

@@ -87,7 +87,7 @@
         "people": { "type": "array", "items": { "type": "string" } },
         "firstSeen": {
           "type": "string",
-          "description": "ISO date this item was FIRST raised. Carry it forward across runs so the dashboard can age it."
+          "description": "ISO date this item was FIRST raised. Carry it forward from the previous brief so the dashboard can age it; an item the previous brief didn't have dates from today."
         },
         "advancesObjective": {
           "type": "boolean",

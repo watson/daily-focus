@@ -88,8 +88,10 @@ of inaction. Never re-derive a completed item from source state.
 **Read the previous `items.json`** and keep each surviving item's `firstSeen`. If an
 item you are raising today also appeared yesterday under the same `id`, carry its
 original `firstSeen` across verbatim. Only assign `firstSeen` = today to genuinely
-new items. Resetting it every run destroys the ageing display, which is what makes
-neglected things look neglected.
+new items, and to one returning under an `id` the previous `items.json` didn't have,
+such as a pull request back in the user's court after they reviewed it: it is
+waiting on them from today. Resetting it every run destroys the ageing display,
+which is what makes neglected things look neglected.
 
 **Source lookback windows govern discovery, not retention.** Reconsider every task
 from the previous `items.json` whose folded action status is open, even when its

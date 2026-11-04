@@ -148,6 +148,12 @@ export interface UiState {
    */
   agentReportSeen: Signal<string | null>;
   /**
+   * Which of the brief's warnings have been put away, and for which brief. In
+   * localStorage, as `agentReportSeen` is, and for its reason. Only the brief
+   * named holds them away, so the next brief's warnings show, a repeat included.
+   */
+  warningsSeen: Signal<WarningsSeen | null>;
+  /**
    * Which of a run's messages are unfolded in its panel, by `runId:index`, when
    * the reader has said so; otherwise the latest is. In memory only.
    */
@@ -200,6 +206,12 @@ export interface UiState {
 }
 
 /** The same facts as plain values, which is how a test says what it wants. */
+/** The brief's warnings put away, by their text, and the brief they were put away on, by its `generatedAt`. */
+export interface WarningsSeen {
+  brief: string;
+  warnings: readonly string[];
+}
+
 export type UiValues = { [K in keyof UiState]: UiState[K] extends Signal<infer T> ? T : never };
 
 export interface ActionExtra {
@@ -255,6 +267,8 @@ export interface Handlers {
   stopAgent(): void;
   askAgent(run: string, text: string): void;
   dismissAgentRun(id: string): void;
+  /** Put one of the brief's warnings away until the next brief, `brief` naming this one by its `generatedAt`. */
+  dismissWarning(brief: string, text: string): void;
   /** Null forgets the key: the fold is back at its default. */
   toggleMessage(key: string, open: boolean | null): void;
   /** Light, dark or the system's, from the header's menu, which the choice closes. */

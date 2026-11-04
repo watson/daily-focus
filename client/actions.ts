@@ -27,6 +27,7 @@ import {
   PROJECT_KEY,
   RUN_PREFIX,
   VIEW_KEY,
+  WARNINGS_SEEN_KEY,
   availableViews,
   setDetailFor,
   state,
@@ -1158,6 +1159,13 @@ export const handlers: Handlers = {
   dismissAgentRun: (id) => {
     ui.agentReportSeen.value = id;
     remember(AGENT_RUN_SEEN_KEY, id);
+  },
+  dismissWarning: (brief, text) => {
+    const seen = ui.warningsSeen.value;
+    // Another brief's are dropped here, so the list never outgrows one brief's warnings.
+    const warnings = seen?.brief === brief ? [...seen.warnings, text] : [text];
+    ui.warningsSeen.value = { brief, warnings };
+    remember(WARNINGS_SEEN_KEY, JSON.stringify({ brief, warnings }));
   },
   toggleMessage: (key, open) => {
     const next = new Map(ui.messageOpen.value);
