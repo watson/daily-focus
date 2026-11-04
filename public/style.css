@@ -1810,28 +1810,74 @@ body:has(.today__masthead) .agenda__title {
 
 /* ---------- done drawer ---------- */
 
+/*
+ * Headed as a section is, so its name and count line up with the headings above
+ * it, then ruled across to a verb and a chevron at the right: the whole line is
+ * the target, and folded it still plainly opens.
+ */
 .drawer {
-  margin-top: 12px;
+  margin-top: 24px;
 }
 .drawer > summary {
-  padding: 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 2px;
   cursor: pointer;
-  color: var(--ink-2);
-  font-size: 13px;
   list-style: none;
-}
-.drawer > summary:hover {
-  color: var(--ink-1);
+  user-select: none;
 }
 .drawer > summary::-webkit-details-marker {
   display: none;
 }
-.drawer > summary::before {
-  content: '▸ ';
-  color: var(--ink-3);
+.drawer__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-1);
 }
-.drawer[open] > summary::before {
-  content: '▾ ';
+.drawer__count {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.drawer__rule {
+  flex: 1;
+  height: 1px;
+  margin: 0 4px;
+  background: var(--hairline);
+}
+.drawer__verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.drawer__verb::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+.drawer[open] .drawer__verb::after {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+.drawer > summary:hover .drawer__verb {
+  color: var(--ink-1);
+}
+.drawer > summary:hover .drawer__rule {
+  background: var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer__verb::after {
+    transition: none;
+  }
 }
 .drawer .list {
   padding: 0 0 8px;

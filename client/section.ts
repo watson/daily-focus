@@ -61,14 +61,25 @@ export function drawer<T extends { id: string }>(
   handlers: Handlers,
   row: RowRenderer<T>,
 ): JSX.Element {
+  const open = ui.openDrawers.value.has(key);
+  // Headed as a section is, its count beside its name, and ruled across to a
+  // verb that says what a click does: folded, it is still plainly something to open.
   return el(
     'details',
     {
       class: 'drawer',
-      open: ui.openDrawers.value.has(key),
+      open,
       onToggle: (event: Event) => handlers.toggleDrawer(key, (event.currentTarget as HTMLDetailsElement).open),
     },
-    el('summary', null, title),
+    el(
+      'summary',
+      null,
+      el('span', { class: 'drawer__title' }, title),
+      el('span', { class: 'drawer__count' }, String(items.length)),
+      el('span', { class: 'drawer__rule', 'aria-hidden': 'true' }),
+      // The element says whether it is open; the verb is for the eye.
+      el('span', { class: 'drawer__verb', 'aria-hidden': 'true' }, open ? 'Hide' : 'Show'),
+    ),
     el(
       'ul',
       { class: 'list' },

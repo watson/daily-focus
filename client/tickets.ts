@@ -259,7 +259,7 @@ function outOfSyncView(board: TicketBoardState, open: TicketRow[], state: Dashbo
 
   const snoozed = board.rows.filter((row) => row.status === 'snoozed');
   if (snoozed.length > 0) {
-    parts.push(drawer('tickets:snoozed', `Snoozed (${snoozed.length})`, snoozed, state, ui, handlers, renderTicketRow));
+    parts.push(drawer('tickets:snoozed', 'Snoozed', snoozed, state, ui, handlers, renderTicketRow));
   }
   return parts;
 }
