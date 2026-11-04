@@ -54,7 +54,7 @@ function review(overrides: Partial<OrganizationReview> = {}): OrganizationReview
     dismissed: false,
     settings: [{ key: 'DAILY_FOCUS_GITHUB_SCOPE', label: 'Only these organisations or repositories', value: 'org:acme', change: 'added', was: null }],
     removed: [],
-    skipped: [{ key: 'DAILY_FOCUS_GH', label: 'Path to gh', value: '/opt/acme/gh', why: 'names a program to run, which a setup never sets' }],
+    skipped: [{ key: 'DAILY_FOCUS_GH', label: 'Path to gh', value: '/opt/acme/gh', why: 'names a program to run, which an organization never sets' }],
     files: [
       {
         setting: 'DAILY_FOCUS_MERGE_HELPER',
@@ -79,13 +79,13 @@ test('a setup on offer is a banner whose Review opens the review, and one put of
   const opened: string[] = [];
   const handlers = handlersWith({ reviewOrganization: (org) => opened.push(org) });
   const container = mount(h('div', null, renderBanners(stateWith({ offers: [NEW_OFFER] }), uiWith(), handlers)));
-  assert.match(container.textContent!, /Acme has a Daily Focus setup\./);
+  assert.match(container.textContent!, /Found Acme's Daily Focus settings\. Nothing changes until you review and apply them\./);
   const button = byTag(container, 'button').find((node) => node.textContent === 'Review')!;
   button.click();
   assert.deepEqual(opened, ['acme']);
 
   const changed = mount(h('div', null, renderBanners(stateWith({ offers: [{ ...NEW_OFFER, commit: C2, kind: 'update' }] }), uiWith(), handlers)));
-  assert.match(changed.textContent!, /Acme's setup changed\./);
+  assert.match(changed.textContent!, /Acme's Daily Focus settings changed\. Review the update before it applies\./);
 
   const putOff = mount(h('div', null, renderBanners(stateWith({ offers: [{ ...NEW_OFFER, dismissed: true }] }), uiWith(), handlers)));
   assert.doesNotMatch(putOff.textContent!, /Acme/);
@@ -103,17 +103,17 @@ test('the review lists every setting, file, what was left out and why, and the s
   const container = mount(h(OrganizationReviewDialog, { ui, handlers }));
   const dialog = container.querySelector('[role="dialog"]')!;
   assert.ok(dialog, 'a dialog');
-  assert.match(dialog.textContent!, /Acme's Daily Focus setup/);
+  assert.match(dialog.textContent!, /Acme's Daily Focus settings/);
   assert.match(dialog.textContent!, /Only these organisations or repositories\s*org:acme/);
-  assert.match(dialog.textContent!, /Path to gh names a program to run, which a setup never sets\./);
+  assert.match(dialog.textContent!, /Path to gh names a program to run, which an organization never sets\./);
   const links = byTag(container, 'a').map((node) => (node as HTMLAnchorElement).href);
   assert.ok(links.includes(`https://github.com/acme/.daily-focus/blob/${C1}/bin/merge-helper`), 'the file on GitHub, at the commit');
   assert.match(dialog.textContent!, new RegExp(`SHA-256 ${'ab'.repeat(32)}`));
   assert.equal(byClass(container, 'org-review__sources')[0]!.textContent, '- The #payments-oncall channel\n');
   assert.match(dialog.textContent!, /never adds these to your source list/);
 
-  assert.deepEqual(buttonLabels(container), ['Copy', 'Use it', 'Not now', 'Close']);
-  for (const label of ['Copy', 'Use it', 'Not now', 'Close']) byTag(container, 'button').find((node) => node.textContent === label)!.click();
+  assert.deepEqual(buttonLabels(container), ['Copy', 'Apply', 'Not now', 'Close']);
+  for (const label of ['Copy', 'Apply', 'Not now', 'Close']) byTag(container, 'button').find((node) => node.textContent === label)!.click();
   assert.deepEqual(calls, ['copy - The #payments-oncall channel\n', `adopt acme ${C1}`, `dismiss acme ${C1}`, 'close']);
 
   ui.organizationReview.value = { org: 'acme', review: review(), busy: false, error: 'Acme’s setup can’t be used with your own settings' };
@@ -133,8 +133,8 @@ test('an update says what changed, links the comparison, and offers Apply', () =
     sources: null,
   });
   const container = mount(h(OrganizationReviewDialog, { ui: uiWith({ organizationReview: { org: 'acme', review: update, busy: false, error: null } }), handlers: handlersWith() }));
-  assert.match(container.textContent!, /What changed in Acme's setup/);
-  assert.match(container.textContent!, /Nothing changes until you apply it: until then the setup you use stays at 1111111/);
+  assert.match(container.textContent!, /What changed in Acme's Daily Focus settings/);
+  assert.match(container.textContent!, /Nothing changes until you apply the update: until then you keep them as they were at 1111111/);
   assert.match(container.textContent!, /was org:acme/);
   assert.match(container.textContent!, /no longer set; was Blocked/);
   assert.ok(byTag(container, 'a').some((node) => (node as HTMLAnchorElement).href === `https://github.com/acme/.daily-focus/compare/${C1}...${C2}`));
@@ -144,7 +144,7 @@ test('an update says what changed, links the comparison, and offers Apply', () =
 test('the setup in use, reviewed, has nothing to use', () => {
   const inUse = review({ kind: 'update', adoptedCommit: C1, settings: [] });
   const container = mount(h(OrganizationReviewDialog, { ui: uiWith({ organizationReview: { org: 'acme', review: inUse, busy: false, error: null } }), handlers: handlersWith() }));
-  assert.match(container.textContent!, /Acme's setup, in use/);
+  assert.match(container.textContent!, /Acme's Daily Focus settings, in use/);
   assert.deepEqual(buttonLabels(container).filter((label) => label !== 'Copy'), ['Close']);
 });
 
@@ -156,9 +156,9 @@ test('the settings page’s card offers stopping the setup in use, and says what
     warnings: ["Couldn't look for globex's Daily Focus setup as alice: GitHub answered 502"],
   });
   const card = mount(organizationCard(state, handlers));
-  assert.match(card.textContent!, /Using Acme's setup, from acme\/\.daily-focus at 1111111/);
+  assert.match(card.textContent!, /Using Acme's Daily Focus settings, from acme\/\.daily-focus at 1111111/);
   assert.match(card.textContent!, /GitHub answered 502/);
-  byTag(card, 'button').find((node) => node.textContent === "Stop using Acme's setup")!.click();
+  byTag(card, 'button').find((node) => node.textContent === "Stop using Acme's settings")!.click();
   byTag(card, 'button').find((node) => node.textContent === 'Look again')!.click();
   assert.deepEqual(calls, ['leave', 'check']);
 
@@ -167,7 +167,7 @@ test('the settings page’s card offers stopping the setup in use, and says what
   assert.match(failed.textContent!, /couldn’t look through all of your GitHub organizations/);
   assert.doesNotMatch(failed.textContent!, /None of your GitHub organizations/);
   const none = mount(organizationCard(stateWith({}), handlers));
-  assert.match(none.textContent!, /None of your GitHub organizations has a Daily Focus setup/);
+  assert.match(none.textContent!, /None of your GitHub organizations shares Daily Focus settings/);
 
   assert.equal(organizationCard(stateWith({ enabled: false }), handlers), null, 'nothing to say with GitHub off and none in use');
   const off = mount(organizationCard(stateWith({ enabled: false, adopted: state.organization!.adopted }), handlers));
@@ -228,7 +228,7 @@ test('a setting the setup sets says so, shows its value when empty, and says wha
   assert.equal(scope.value, '', 'empty, as a default is');
   assert.equal(scope.placeholder, 'org:acme');
   const sources = byClass(container, 'field__source').map((node) => node.textContent);
-  assert.deepEqual(sources, ["From Acme's setup.", "Acme's setup sets alice. Clear yours to use it.", "From Acme's setup."]);
+  assert.deepEqual(sources, ["From Acme's settings.", "Acme's settings set alice. Clear yours to use it.", "From Acme's settings."]);
   assert.equal(container.querySelector<HTMLInputElement>('#setting-DAILY_FOCUS_GITHUB_ACCOUNTS')!.value, 'bob');
   const off = byTag(container, 'button').find((node) => node.getAttribute('role') === 'radio' && node.getAttribute('aria-checked') === 'true')!;
   assert.match(off.textContent!, /^OffAcme's$/, 'the setup’s choice stands in for the default');
@@ -237,7 +237,7 @@ test('a setting the setup sets says so, shows its value when empty, and says wha
 test('the setup screen says a setup is on offer, and its Review opens the review', () => {
   const opened: string[] = [];
   const notice = mount(organizationNotice(stateWith({ offers: [NEW_OFFER] }), handlersWith({ reviewOrganization: (org) => opened.push(org) })));
-  assert.match(notice.textContent!, /Acme has a Daily Focus setup\..*suggests sources you can copy/);
+  assert.match(notice.textContent!, /Found Acme's Daily Focus settings\..*suggests sources you can copy/);
   byTag(notice, 'button')[0]!.click();
   assert.deepEqual(opened, ['acme']);
   assert.equal(organizationNotice(stateWith({ offers: [{ ...NEW_OFFER, dismissed: true }] }), handlersWith()), null);

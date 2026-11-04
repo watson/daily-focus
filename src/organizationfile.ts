@@ -219,7 +219,7 @@ export async function approvedFileProblem(storeDir: string, path: string): Promi
   const record = await readOrganizationRecordAsync(resolve(storeDir, ORGANIZATION_FILE));
   const adopted = record.adopted;
   const pinned = adopted ? Object.values(adopted.files).find((file) => resolve(storeDir, file.path) === full) : undefined;
-  if (!pinned) return `wasn't run: ${path} is in the organization setup's folder, but no setup in use approved it`;
+  if (!pinned) return `wasn't run: ${path} came with an organization's Daily Focus settings, but none in use approved it`;
   let bytes: Uint8Array;
   try {
     bytes = await readFile(full);
@@ -227,7 +227,7 @@ export async function approvedFileProblem(storeDir: string, path: string): Promi
     return `wasn't run: ${path} could not be read to check it is the file you approved (${(err as Error).message})`;
   }
   if (sha256(bytes) !== pinned.sha256) {
-    return `wasn't run: ${path} has changed since you approved it with ${adopted!.name}'s setup, so its SHA-256 no longer matches`;
+    return `wasn't run: ${path} has changed since you approved it with ${adopted!.name}'s Daily Focus settings, so its SHA-256 no longer matches`;
   }
   return null;
 }

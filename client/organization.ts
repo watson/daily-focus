@@ -25,7 +25,9 @@ const short = (commit: string): string => commit.slice(0, 7);
 
 /** What an offer says, in the banner (`banners.ts`), on the settings page and on the setup screen. */
 export function offerText(offer: OrganizationOffer): string {
-  return offer.kind === 'new' ? `${offer.name} has a Daily Focus setup.` : `${offer.name}'s setup changed.`;
+  return offer.kind === 'new'
+    ? `Found ${offer.name}'s Daily Focus settings. Nothing changes until you review and apply them.`
+    : `${offer.name}'s Daily Focus settings changed. Review the update before it applies.`;
 }
 
 export function reviewButton(org: string, handlers: Handlers, extra = ''): JSX.Element {
@@ -73,11 +75,11 @@ export function OrganizationReviewDialog({ ui, handlers }: { ui: UiState; handle
 function reviewBody(open: OrganizationReviewUi, handlers: Handlers): (JSX.Element | null)[] {
   const close = el('button', { type: 'button', class: 'button', onClick: () => handlers.closeOrganizationReview() }, 'Close');
   if (open.review === 'loading') {
-    return [el('h2', { id: 'org-review-title', class: 'org-review__title' }, `${open.org}'s setup`), el('p', { class: 'empty' }, 'Reading it…'), el('div', { class: 'org-review__actions' }, close)];
+    return [el('h2', { id: 'org-review-title', class: 'org-review__title' }, `${open.org}'s Daily Focus settings`), el('p', { class: 'empty' }, 'Reading them…'), el('div', { class: 'org-review__actions' }, close)];
   }
   if ('error' in open.review) {
     return [
-      el('h2', { id: 'org-review-title', class: 'org-review__title' }, `${open.org}'s setup`),
+      el('h2', { id: 'org-review-title', class: 'org-review__title' }, `${open.org}'s Daily Focus settings`),
       el('p', { class: 'settings-card__warning', role: 'alert' }, open.review.error),
       el('div', { class: 'org-review__actions' }, close),
     ];
@@ -89,23 +91,28 @@ function reviewBody(open: OrganizationReviewUi, handlers: Handlers): (JSX.Elemen
     el(
       'h2',
       { id: 'org-review-title', class: 'org-review__title' },
-      inUse ? `${review.name}'s setup, in use` : update ? `What changed in ${review.name}'s setup` : `${review.name}'s Daily Focus setup`,
+      inUse
+        ? `${review.name}'s Daily Focus settings, in use`
+        : update
+          ? `What changed in ${review.name}'s Daily Focus settings`
+          : `${review.name}'s Daily Focus settings`,
     ),
     el(
       'p',
       { class: 'org-review__lede' },
-      'From ',
-      el('a', { href: review.url, target: '_blank', rel: 'noopener' }, `${review.repository} at ${short(review.commit)}`),
-      review.account ? `, found as @${review.account}` : '',
+      `Shared by ${review.name} in `,
+      el('a', { href: review.url, target: '_blank', rel: 'noopener' }, review.repository),
+      ` (at ${short(review.commit)})`,
+      review.account ? `, which your account @${review.account} can see` : '',
       '. ',
       inUse
-        ? 'This is what it sets now.'
+        ? 'These are in use now.'
         : update
           ? [
-              `Nothing changes until you apply it: until then the setup you use stays at ${short(review.adoptedCommit ?? '')}. `,
+              `Nothing changes until you apply the update: until then you keep them as they were at ${short(review.adoptedCommit ?? '')}. `,
               review.compareUrl ? el('a', { href: review.compareUrl, target: '_blank', rel: 'noopener' }, 'Every change on GitHub') : null,
             ]
-          : 'Nothing changes until you use it. A value you save on the settings page always wins over the setup’s.',
+          : 'Nothing changes until you choose Apply, and anything you set yourself on the settings page stays as it is.',
     ),
     settingsPart(review, update),
     filesPart(review, update),
@@ -121,7 +128,7 @@ function reviewBody(open: OrganizationReviewUi, handlers: Handlers): (JSX.Elemen
             el(
               'button',
               { type: 'button', class: 'button button--primary', disabled: open.busy, onClick: () => handlers.adoptOrganization(review.org, review.commit) },
-              open.busy ? 'Working…' : update ? 'Apply' : 'Use it',
+              open.busy ? 'Working…' : 'Apply',
             ),
             review.dismissed
               ? null
@@ -143,7 +150,7 @@ function settingsPart(review: OrganizationReview, update: boolean): JSX.Element 
   return el(
     'div',
     { class: 'org-review__part' },
-    el('h3', null, 'Settings it sets'),
+    el('h3', null, 'Settings'),
     review.settings.length === 0 && review.removed.length === 0
       ? el('p', { class: 'empty' }, 'None.')
       : el(
@@ -201,11 +208,11 @@ function filesPart(review: OrganizationReview, update: boolean): JSX.Element | n
   return el(
     'div',
     { class: 'org-review__part' },
-    el('h3', null, 'Programs it runs'),
+    el('h3', null, review.adoptedCommit === review.commit ? 'Programs it runs' : 'Programs it would run'),
     el(
       'p',
       { class: 'org-review__help' },
-      'Daily Focus keeps a copy of each in its folder and runs it only while it has the SHA-256 shown here. Read it on GitHub before you use it.',
+      'Daily Focus keeps a copy of each in its folder and runs it only while it has the SHA-256 shown here. Read it on GitHub before you apply these settings.',
     ),
     el(
       'dl',
@@ -248,7 +255,7 @@ function sourcesPart(review: OrganizationReview, handlers: Handlers): JSX.Elemen
   return el(
     'div',
     { class: 'org-review__part' },
-    el('h3', null, 'Sources it suggests'),
+    el('h3', null, 'Suggested sources'),
     el(
       'p',
       { class: 'org-review__help' },
@@ -285,7 +292,7 @@ export function organizationCard(state: DashboardState, handlers: Handlers): JSX
     el(
       'p',
       { class: 'settings-card__help' },
-      'An organization can publish a Daily Focus setup in a private repository named ',
+      'An organization can share Daily Focus settings in a private repository named ',
       el('code', null, '.daily-focus'),
       '. Daily Focus finds it through your GitHub sign-in, and uses it only when you say so. ',
       el('a', { href: GUIDE, target: '_blank', rel: 'noopener' }, 'How it works'),
@@ -298,15 +305,15 @@ export function organizationCard(state: DashboardState, handlers: Handlers): JSX
           el(
             'p',
             { class: 'field__note' },
-            `Using ${adopted.name}'s setup, from ${adopted.repository} at ${short(adopted.commit)}`,
+            `Using ${adopted.name}'s Daily Focus settings, from ${adopted.repository} at ${short(adopted.commit)}`,
             since ? `, since ${relativeDay(adopted.adoptedAt, now)} ${formatTime(adopted.adoptedAt)}` : '',
-            `. A setting it sets says “From ${adopted.name}'s setup”. A value you save wins over it, and clearing yours goes back to it.`,
+            `. A setting they set says “From ${adopted.name}'s settings”. A value you save wins over it, and clearing yours goes back to it.`,
           ),
           el(
             'div',
             { class: 'org-card__actions' },
             el('button', { type: 'button', class: 'button', onClick: () => handlers.reviewOrganization(adopted.org) }, 'See what it sets'),
-            el('button', { type: 'button', class: 'button', onClick: () => handlers.leaveOrganization() }, `Stop using ${adopted.name}'s setup`),
+            el('button', { type: 'button', class: 'button', onClick: () => handlers.leaveOrganization() }, `Stop using ${adopted.name}'s settings`),
           ),
         )
       : null,
@@ -327,8 +334,8 @@ export function organizationCard(state: DashboardState, handlers: Handlers): JSX
             organization.checking || organization.checkedAt === null
               ? 'Looking through your GitHub organizations…'
               : organization.warnings.length > 0
-                ? 'Daily Focus couldn’t look through all of your GitHub organizations, so one of them may still have a setup.'
-                : 'None of your GitHub organizations has a Daily Focus setup that Daily Focus can use.',
+                ? 'Daily Focus couldn’t look through all of your GitHub organizations, so one of them may still share Daily Focus settings.'
+                : 'None of your GitHub organizations shares Daily Focus settings that Daily Focus can use.',
           )
         : null,
     organization.warnings.map((warning) => el('p', { class: 'settings-card__warning', key: warning }, warning)),

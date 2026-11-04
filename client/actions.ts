@@ -1233,17 +1233,17 @@ export const handlers: Handlers = {
   },
   adoptOrganization: (org, commit) => {
     const name = reviewName(org);
-    void organizationRequest(() => api.postOrganizationAdopt(org, commit), `Using ${name}’s setup. Restarting the dashboard to apply it…`);
+    void organizationRequest(() => api.postOrganizationAdopt(org, commit), `Using ${name}’s Daily Focus settings. Restarting the dashboard to apply them…`);
   },
   dismissOrganization: (org, commit) => {
     const name = reviewName(org);
-    void organizationRequest(() => api.postOrganizationDismiss(org, commit), `${name}’s setup is put off until it changes. Settings still lists it.`);
+    void organizationRequest(() => api.postOrganizationDismiss(org, commit), `${name}’s Daily Focus settings are put off until they change. The settings page still lists them.`);
   },
   leaveOrganization: () => {
     const name = state.value?.organization?.adopted?.name ?? 'the organization';
-    void organizationRequest(() => api.postOrganizationLeave(), `Stopped using ${name}’s setup. Restarting the dashboard…`);
+    void organizationRequest(() => api.postOrganizationLeave(), `Stopped using ${name}’s Daily Focus settings. Restarting the dashboard…`);
   },
-  checkOrganizations: () => void organizationRequest(() => api.postOrganizationCheck(), 'Looked for organization setups again'),
+  checkOrganizations: () => void organizationRequest(() => api.postOrganizationCheck(), 'Looked again for your organizations’ Daily Focus settings'),
 };
 
 /** What the setup under review calls itself, for a toast. */

