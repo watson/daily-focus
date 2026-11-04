@@ -10,6 +10,7 @@ import { formatTime, relativeDay, relativeTime, waitedFor } from './format.ts';
 import { cssId, onCard, renderAhead, renderSnoozeMenu, rowPills, sourceColor, type RowProps } from './items.ts';
 import { renderMarkdown } from './markdown.ts';
 import { refreshControl } from './refresh.ts';
+import { activityText } from './stages.ts';
 import { drawer } from './section.ts';
 import { connecting, connectionView } from './connect.ts';
 import type { Handlers, UiState } from './types.ts';
@@ -307,7 +308,9 @@ function describeReason(reason: CourtReason, row: BoardRow, now: Date): Componen
     case 'behind':
       return ['the branch is behind its base — update it to merge'];
     case 'activity':
-      return [`@${reason.login} ${reason.activity === 'review' ? 'reviewed' : 'commented'} ${relativeTime(reason.at, now)}`];
+      // Approved, green and mergeable, and here only because of a comment: say
+      // what moves it, as the stale branch's reason does.
+      return [`${activityText(reason, now)}${reason.readyOnAnswer ? ' — reply to move it to Ready to merge' : ''}`];
     case 'merge-gate':
       // What the gate is waiting for, only in its own words. Its rules are the
       // repository's, not ours, and the link is where they are readable.

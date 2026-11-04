@@ -211,6 +211,30 @@ test('a branch behind its base is your move, in red', () => {
   assert.ok(!reason?.className.includes('item__reason--waiting'), 'something is wrong here, and it looks it');
 });
 
+test('a comment after the approval says that is all that keeps the row from Ready to merge', () => {
+  const reasonOf = (overrides: Partial<PullRequest>) => {
+    const { row, node } = render(overrides);
+    assert.equal(row.court, 'you');
+    return byClass(node, 'item__reason')[0]?.textContent;
+  };
+  const after = { at: hoursAgo(2), login: 'bob', kind: 'review' as const };
+  assert.equal(
+    reasonOf({ lastActivityByOthers: after }),
+    '@bob commented 2 h ago, after approving — reply to move it to Ready to merge',
+  );
+  assert.equal(
+    reasonOf({ lastActivityByOthers: { ...after, login: 'carol', kind: 'comment' } }),
+    '@carol commented 2 h ago, after @bob approved — reply to move it to Ready to merge',
+  );
+  // A reply would leave it behind its base, so the row doesn't promise one is enough.
+  assert.equal(
+    reasonOf({ lastActivityByOthers: after, mergeStateStatus: 'BEHIND' }),
+    'the branch is behind its base — update it to merge · @bob commented 2 h ago, after approving',
+  );
+  // Nobody approved: the comment is just the last word, as before.
+  assert.equal(reasonOf({ reviewDecision: null, reviews: [], lastActivityByOthers: after }), '@bob reviewed 2 h ago');
+});
+
 test('only a row waiting on reviewers is offered the nudge', () => {
   const { row, node } = render({
     reviewDecision: 'REVIEW_REQUIRED',

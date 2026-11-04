@@ -488,6 +488,13 @@ export interface CourtReason {
   login?: string;
   at?: string;
   activity?: 'review' | 'comment';
+  /**
+   * For `activity` on an approved pull request: the newest approval, which the
+   * activity came after. Only that activity keeps the approval from counting.
+   */
+  approval?: { login: string; at: string };
+  /** With `approval`: an answer from you, a reply or a push, would make the row ready to merge. */
+  readyOnAnswer?: boolean;
   /** The checks this reason is about, for the gate and pending-check kinds. */
   checks?: PendingCheck[];
 }

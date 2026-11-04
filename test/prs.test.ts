@@ -195,6 +195,55 @@ test('a comment after the approval puts it back in your court', () => {
     null,
   );
   assert.equal(verdict.court, 'you');
+  assert.deepEqual(verdict.reasons, [
+    {
+      kind: 'activity',
+      login: 'bob',
+      at: hoursAgo(1),
+      activity: 'comment',
+      approval: { login: 'bob', at: hoursAgo(6) },
+      readyOnAnswer: true,
+    },
+  ]);
+});
+
+test('answering a comment after the approval makes it ready to merge again', () => {
+  const verdict = judge(
+    pr({
+      reviewDecision: 'APPROVED',
+      reviews: [{ login: 'bob', state: 'APPROVED', at: hoursAgo(6) }],
+      lastActivityByOthers: { at: hoursAgo(1), login: 'bob', kind: 'review' },
+      // A reply in the thread, or a push: either is you having spoken last.
+      lastActivityByYou: hoursAgo(0.5),
+    }),
+    NOW,
+    null,
+  );
+  assert.equal(verdict.court, 'ready', 'the approval stands, and nobody is waiting on anybody');
+  assert.deepEqual(verdict.reasons, []);
+});
+
+test('a comment after the approval says when an answer would not be enough', () => {
+  const comment = { lastActivityByOthers: { at: hoursAgo(1), login: 'bob', kind: 'comment' as const } };
+  // Behind its base: the reason says so on its own, and answering leaves it yours.
+  const behind = judge(approved({ ...comment, mergeStateStatus: 'BEHIND' }), NOW, null);
+  assert.equal(behind.court, 'you');
+  assert.deepEqual(
+    behind.reasons.map((reason) => reason.kind),
+    ['behind', 'activity'],
+  );
+  assert.equal(behind.reasons[1]?.readyOnAnswer, undefined);
+  assert.deepEqual(behind.reasons[1]?.approval, { login: 'bob', at: hoursAgo(6) });
+
+  // Checks still running: answering would leave it waiting on them, not ready.
+  const running = judge(approved({ ...comment, mergeStateStatus: 'BLOCKED', checks: 'pending', pendingChecks: [pending('ci/test')] }), NOW, null);
+  assert.equal(running.court, 'you');
+  assert.equal(running.reasons[0]?.readyOnAnswer, undefined);
+});
+
+test('a comment on a pull request nobody approved names no approval', () => {
+  const verdict = judge(pr({ lastActivityByOthers: { at: hoursAgo(1), login: 'bob', kind: 'comment' } }), NOW, null);
+  assert.equal(verdict.court, 'you');
   assert.deepEqual(verdict.reasons, [{ kind: 'activity', login: 'bob', at: hoursAgo(1), activity: 'comment' }]);
 });
 
@@ -215,7 +264,16 @@ test('an inline review comment after the approval counts the same as a comment',
     null,
   );
   assert.equal(verdict.court, 'you');
-  assert.deepEqual(verdict.reasons, [{ kind: 'activity', login: 'carol', at: hoursAgo(1), activity: 'review' }]);
+  assert.deepEqual(verdict.reasons, [
+    {
+      kind: 'activity',
+      login: 'carol',
+      at: hoursAgo(1),
+      activity: 'review',
+      approval: { login: 'bob', at: hoursAgo(6) },
+      readyOnAnswer: true,
+    },
+  ]);
 });
 
 test('a pull read back without optional keys is judged, not thrown on', () => {
