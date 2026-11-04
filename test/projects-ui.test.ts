@@ -413,16 +413,28 @@ test('a card offers a merge only where Do next does', () => {
   assert.deepEqual(merges('PAY-210'), [[]]);
 });
 
-test('Draft or In review is the toggle: a draft is marked ready, an open one turned back into a draft', () => {
+test('Draft or In review opens a menu that names the action, and only choosing it changes GitHub', () => {
   const clicked: string[] = [];
-  const node = epic({ markReady: (id) => void clicked.push(`ready ${id}`), markDraft: (id) => void clicked.push(`draft ${id}`) });
-  const toggle = (key: string) => byClass(card(node, key), 'project-pull__flag--toggle')[0]!;
-  assert.equal(text(toggle('PAY-203')), 'Draft');
-  assert.equal(toggle('PAY-203').getAttribute('aria-label'), 'Draft: mark ready for review');
-  toggle('PAY-203').click();
-  assert.equal(text(toggle('PAY-201')), 'In review');
-  toggle('PAY-201').click();
-  assert.deepEqual(clicked, ['ready github:pr:acme/payments-api#420', 'draft github:pr:acme/payments-api#412']);
+  const handlers = {
+    toggleStatus: (key: string) => void clicked.push(`menu ${key}`),
+    markReady: (id: string) => void clicked.push(`ready ${id}`),
+    markDraft: (id: string) => void clicked.push(`draft ${id}`),
+  };
+  const closed = epic(handlers);
+  const toggle = (node: HTMLElement, key: string) => byClass(card(node, key), 'project-pull__flag--toggle')[0]!;
+  assert.equal(text(toggle(closed, 'PAY-203')), 'Draft');
+  assert.equal(toggle(closed, 'PAY-203').getAttribute('aria-haspopup'), 'menu');
+  toggle(closed, 'PAY-203').click();
+  assert.deepEqual(clicked, ['menu pull:card:github:pr:acme/payments-api#420'], 'a click only opens the menu');
+
+  const draftMenu = view(projectsState({ open: opened() }), { projectKey: 'PAY-200', statusFor: 'pull:card:github:pr:acme/payments-api#420' }, handlers);
+  const menu = byClass(card(draftMenu, 'PAY-203'), 'menu--pull')[0]!;
+  assert.match(text(menu), /acme\/payments-api#420 is a draft on GitHub\./);
+  byTag(menu, 'button').find((button) => text(button) === 'Mark as ready for review')!.click();
+
+  const reviewMenu = view(projectsState({ open: opened() }), { projectKey: 'PAY-200', statusFor: 'pull:card:github:pr:acme/payments-api#412' }, handlers);
+  byTag(byClass(card(reviewMenu, 'PAY-201'), 'menu--pull')[0]!, 'button').find((button) => text(button) === 'Convert to draft')!.click();
+  assert.deepEqual(clicked.slice(1), ['ready github:pr:acme/payments-api#420', 'draft github:pr:acme/payments-api#412']);
 });
 
 test('where the board offers no toggle, Draft or In review is only text', () => {
@@ -530,14 +542,15 @@ test('each card has a node on the rail, in its lane, without breaking where noth
 });
 
 test('a loop in the links is a warning naming the way round it', () => {
+  // Two tickets with no stack between their pull requests, which would settle the order instead.
   const tickets = [
-    ticket('PAY-201', { blockedBy: ['PAY-202'] }),
-    ticket('PAY-202', { blockedBy: ['PAY-201'] }),
+    ticket('PAY-209', { blockedBy: ['PAY-210'] }),
+    ticket('PAY-210', { blockedBy: ['PAY-209'] }),
   ];
   const node = view(projectsState({ open: opened(planned(tickets)) }), { projectKey: 'PAY-200' });
   assert.ok(
     byClass(node, 'banner__text').some(
-      (banner) => text(banner) === 'These tickets block each other: PAY-201 → PAY-202 → PAY-201. Fix the links in Jira.',
+      (banner) => text(banner) === 'These tickets block each other: PAY-209 → PAY-210 → PAY-209. Fix the links in Jira.',
     ),
   );
 });
@@ -691,15 +704,21 @@ test('with a card open, the panel sits inside the project beside its list, under
   assert.equal(byClass(closed, 'project-body')[0]!.dataset.panel, 'false');
 });
 
-test("the panel lists the ticket's pull requests, each with the same toggle", () => {
+test("the panel lists the ticket's pull requests, each with the same toggle and menu", () => {
   const clicked: string[] = [];
   const state = stateWith(projectsState({ open: opened() }));
+  const handlers = handlersWith({ toggleStatus: (key) => void clicked.push(`menu ${key}`), markReady: (id) => void clicked.push(`ready ${id}`) });
   const ui = uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: 'PAY-200', detailFor: 'jira:PAY-203' });
-  const panel = mount(h(Flyout, { row: detailRow(state, ui), run: null, state, ui, handlers: handlersWith({ markReady: (id) => void clicked.push(id) }) }));
+  const panel = mount(h(Flyout, { row: detailRow(state, ui), run: null, state, ui, handlers }));
   const section = byClass(panel, 'flyout__section').find((each) => text(byClass(each, 'flyout__label')[0]) === 'Pull requests')!;
   assert.deepEqual(byClass(section, 'project-pull').map(text), ['acme/payments-api #420 Draft checks passed']);
   byClass(section, 'project-pull__flag--toggle')[0]!.click();
-  assert.deepEqual(clicked, ['github:pr:acme/payments-api#420']);
+  assert.deepEqual(clicked, ['menu pull:panel:github:pr:acme/payments-api#420'], "its own menu, not the card's");
+
+  const open = uiWith({ view: 'tickets', ticketMode: 'projects', projectKey: 'PAY-200', detailFor: 'jira:PAY-203', statusFor: 'pull:panel:github:pr:acme/payments-api#420' });
+  const withMenu = mount(h(Flyout, { row: detailRow(state, open), run: null, state, ui: open, handlers }));
+  byTag(byClass(withMenu, 'menu--pull')[0]!, 'button').find((button) => text(button) === 'Mark as ready for review')!.click();
+  assert.deepEqual(clicked.slice(1), ['ready github:pr:acme/payments-api#420']);
 });
 
 test("a ticket of the user's the ticket board doesn't list still has its pull requests, and their toggle", () => {
@@ -712,15 +731,21 @@ test("a ticket of the user's the ticket board doesn't list still has its pull re
   assert.ok(byClass(card(node, 'PAY-203'), 'project-pull__flag--toggle').length > 0);
 });
 
-test('with one open pull request, the stage word at the top right is its toggle too', () => {
-  const clicked: string[] = [];
-  const node = epic({ markReady: (id) => void clicked.push(`ready ${id}`) });
+test('the stage word at the top right is never a toggle: that is each pull request line', () => {
+  const node = epic();
   const stage = (key: string) => byClass(card(node, key), 'project-card__stage')[0]!;
-  assert.equal(stage('PAY-203').tagName, 'BUTTON');
-  assert.equal(text(stage('PAY-203')), 'Draft');
-  stage('PAY-203').click();
-  assert.deepEqual(clicked, ['ready github:pr:acme/payments-api#420']);
-  assert.equal(stage('PAY-201').tagName, 'SPAN', 'Ready to merge is a stage, not a draft flag');
-  assert.equal(stage('PAY-210').tagName, 'SPAN', 'nor is Changes requested');
-  assert.equal(stage('PAY-205').tagName, 'SPAN', "nor anything on a teammate's");
+  for (const key of ['PAY-201', 'PAY-203', 'PAY-205', 'PAY-210']) assert.equal(stage(key).tagName, 'SPAN', key);
+});
+
+test('a card stacked on another ticket says so, and says when Jira had the order the other way', () => {
+  // PAY-202's pull request is stacked on PAY-201's; here Jira says PAY-202 blocks PAY-201 instead.
+  const tickets = epicTickets().map((each) =>
+    each.key === 'PAY-201' ? { ...each, blockedBy: ['PAY-202'] } : each.key === 'PAY-202' ? { ...each, blockedBy: [], blocks: ['PAY-201', ...each.blocks] } : each,
+  );
+  const node = view(projectsState({ open: opened(planned(tickets)) }), { projectKey: 'PAY-200' });
+  const order = cards(node).map((row) => row.dataset.key);
+  assert.ok(order.indexOf('PAY-201') < order.indexOf('PAY-202'), 'the stack wins: PAY-201 lands first');
+  assert.equal(text(byClass(card(node, 'PAY-202'), 'project-card__stacked')[0]), 'Stacked on PAY-201');
+  assert.match(text(card(node, 'PAY-202')), /Jira says it blocks PAY-201, but its pull request is stacked on PAY-201's, so it is shown after PAY-201/);
+  assert.deepEqual(byClass(node, 'banner--warning').filter((banner) => /block each other/.test(text(banner))), [], 'and no loop');
 });

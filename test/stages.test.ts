@@ -256,6 +256,29 @@ test('a ticket waiting on one outside the project is not started, merged or mark
   assert.deepEqual(steps, []);
 });
 
+test('a stack between two tickets orders them though Jira links neither', () => {
+  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.stacked)] }, [PULLS.ready, PULLS.stacked]);
+  const project = projectWork(planned([ticket('PAY-2'), ticket('PAY-1')]), sources);
+  assert.deepEqual(project.order, ['PAY-1', 'PAY-2']);
+  assert.deepEqual(project.waitsFor['PAY-2'], ['PAY-1']);
+  assert.deepEqual(project.stackedOn.get('PAY-2'), ['PAY-1']);
+  assert.deepEqual(project.overruled, []);
+});
+
+test('a stack wins over a Jira link that says the opposite, and that is kept to say so', () => {
+  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.stacked)] }, [PULLS.ready, PULLS.stacked]);
+  const tickets = [ticket('PAY-1', { blockedBy: ['PAY-2'] }), ticket('PAY-2', { blocks: ['PAY-1'] })];
+  const project = projectWork(planned(tickets), sources);
+  assert.deepEqual(project.order, ['PAY-1', 'PAY-2']);
+  assert.deepEqual(project.plan.loops, [], 'one order, not a loop');
+  assert.deepEqual(project.overruled, [{ ticket: 'PAY-2', over: 'PAY-1' }]);
+});
+
+test('without stacks between tickets the server plan stands as it is', () => {
+  const read = planned([ticket('PAY-1', { blockedBy: ['PAY-2'] }), ticket('PAY-2')]);
+  assert.equal(projectWork(read, SOURCES).plan, read.plan);
+});
+
 test('a ticket whose links could not be read is never offered to merge', () => {
   const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)] }, [PULLS.ready]);
   const steps = nextSteps(projectWork(planned([ticket('PAY-1', { linksRead: false })]), sources), NOW);
