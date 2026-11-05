@@ -276,6 +276,24 @@ test('an inline review comment after the approval counts the same as a comment',
   ]);
 });
 
+test('an approval short of the reviews GitHub requires waits on the reviewers still to come', () => {
+  const partly = {
+    reviewDecision: 'REVIEW_REQUIRED' as const,
+    mergeStateStatus: 'BLOCKED' as const,
+    requestedReviewers: ['webapp-owners'],
+    reviews: [{ login: 'bob', state: 'APPROVED', at: hoursAgo(5) }],
+  };
+  const verdict = judge(pr({ ...partly, lastActivityByOthers: { at: hoursAgo(5), login: 'bob', kind: 'review' } }), NOW, null);
+  assert.equal(verdict.court, 'reviewers', 'the approval asks nothing of you, and the rest is up to the other reviewers');
+  assert.deepEqual(verdict.reasons, []);
+  assert.equal(verdict.since, daysAgo(2), 'the wait on the others still runs from your last push');
+
+  // Anything said after it is still yours to answer, and names no approval, since the row doesn't read as approved.
+  const asked = judge(pr({ ...partly, lastActivityByOthers: { at: hoursAgo(1), login: 'carol', kind: 'comment' } }), NOW, null);
+  assert.equal(asked.court, 'you');
+  assert.deepEqual(asked.reasons, [{ kind: 'activity', login: 'carol', at: hoursAgo(1), activity: 'comment' }]);
+});
+
 test('a pull read back without optional keys is judged, not thrown on', () => {
   const partial = { ...pr(), lastActivityByOthers: undefined, lastActivityByYou: undefined } as unknown as PullRequest;
   assert.equal(judge(partial, NOW, null).court, 'reviewers');
