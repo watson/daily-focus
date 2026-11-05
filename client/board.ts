@@ -23,16 +23,18 @@ const COURT_TITLE = {
   gate: 'Waiting on merge gate',
   blocked: 'Merge blocked by GitHub',
   checks: 'Waiting on checks',
+  queue: 'In merge queue',
   draft: 'Drafts',
 };
 
-const COURT_ORDER = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'draft'] as const;
+const COURT_ORDER = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'queue', 'draft'] as const;
 
 /**
  * The courts whose rows carry a reason worth printing under the title. A
- * reviewers row has one only when a merge gate is what wants the review.
+ * reviewers row has one only when a merge gate is what wants the review, and a
+ * queued one only when a check is still running, often the queue's own.
  */
-const COURTS_WITH_REASONS = new Set<string>(['you', 'reviewers', 'gate', 'checks']);
+const COURTS_WITH_REASONS = new Set<string>(['you', 'reviewers', 'gate', 'checks', 'queue']);
 
 export function BoardView({ state, ui, handlers }: { state: DashboardState; ui: UiState; handlers: Handlers }): JSX.Element[] {
   return renderBoard(state, ui, handlers);

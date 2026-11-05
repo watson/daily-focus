@@ -341,6 +341,8 @@ export function pullWording(pull: PullWork, now: Date): string {
       return 'Merge blocked by GitHub';
     case 'checks':
       return 'Waiting on checks';
+    case 'queue':
+      return 'In merge queue';
     case 'draft':
       return row.checks === 'success'
         ? 'Draft, checks passed'

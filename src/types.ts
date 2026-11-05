@@ -476,9 +476,11 @@ export interface PullsFile {
  *                to explain it. This may be any repository or ruleset policy, or
  *                one letting only a queue's bot merge, with no helper to ask it.
  * - `checks`     an unfinished check is named, or GitHub says the merge is unstable.
+ * - `queue`      in GitHub's merge queue, or the merge helper's, and nothing only
+ *                you can fix holds it up. A queue may run checks of its own on it.
  * - `draft`      not yet asking anyone for anything.
  */
-export type Court = 'you' | 'ready' | 'reviewers' | 'gate' | 'blocked' | 'checks' | 'draft';
+export type Court = 'you' | 'ready' | 'reviewers' | 'gate' | 'blocked' | 'checks' | 'queue' | 'draft';
 
 /** Why a pull request sits where it does. Formatted by the client, since the times are relative. */
 export interface CourtReason {

@@ -141,6 +141,7 @@ test("a pull request is described in the board's words", () => {
   assert.equal(pullWording(work('PAY-209'), NOW), 'Waiting on reviewers for 3 days');
   assert.equal(pullWording(work('PAY-210'), NOW), 'Waiting on you: changes requested by @sam');
   assert.equal(pullWording(work('PAY-207'), NOW), 'Merged 30 h ago');
+  assert.equal(pullWording({ ...work('PAY-209'), row: { ...work('PAY-209').row!, court: 'queue' } }, NOW), 'In merge queue');
   assert.ok(rows.length > 0);
 });
 

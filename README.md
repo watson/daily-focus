@@ -58,7 +58,7 @@ the theme button opens a menu to pick light or dark mode, or follow the system.
 
 ## The pull request board
 
-The second tab shows your open pull requests in seven buckets:
+The second tab shows your open pull requests in eight buckets:
 
 | Bucket | What it means |
 |---|---|
@@ -68,6 +68,7 @@ The second tab shows your open pull requests in seven buckets:
 | Waiting on merge gate | A check you've configured as a merge gate is pending for some other reason. |
 | Merge blocked by GitHub | GitHub reports a policy block without an unfinished check to explain it. |
 | Waiting on checks | Checks are running, or GitHub reports an unstable merge. |
+| In merge queue | GitHub's merge queue, or your merge helper's, has it, and nothing needs your attention. |
 | Drafts | Pull requests you haven't marked ready for review. |
 
 Click a bucket's heading to fold it away. Nudged and Snoozed start folded.
@@ -97,7 +98,7 @@ If your company merges through a queue of its own, set a **Merge helper** under 
 requests in Settings: a small program of yours that the board asks how each
 repository merges, and hands a pull request to from its own button, or a whole stack
 from its top with **Merge stack**. GitHub's own merge stays beside its button, for
-when you may skip the queue. Pull requests it took read "in merge queue". Where
+when you may skip the queue. Pull requests it took move to In merge queue. Where
 only the queue's bot may merge into a branch, GitHub calls everyone else's merge
 blocked; the board counts such a pull request ready when nothing else holds it up,
 and offers the helper's button alone. The

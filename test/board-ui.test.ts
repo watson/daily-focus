@@ -192,6 +192,29 @@ test('a check row lists what is still running, without inventing a link', () => 
   assert.deepEqual(buttonLabels(node), ['Snooze']);
 });
 
+test('a queued row sits under In merge queue, naming the check the queue runs, with no wait it would mislead about', () => {
+  const merging = { name: 'queue/merge', kind: 'check-run' as const, detailsUrl: 'https://queue.example.com/acme/webapp/3421' };
+  const queued = { mergeStateStatus: 'BLOCKED' as const, checks: 'pending' as const, pendingChecks: [merging], inMergeQueue: true };
+  const { row, node } = render(queued);
+  assert.equal(row.court, 'queue');
+
+  const reason = byClass(node, 'item__reason')[0];
+  assert.equal(reason?.textContent, 'still running: queue/merge');
+  assert.ok(reason?.className.includes('item__reason--waiting'));
+  assert.equal((byTag(reason!, 'a')[0] as HTMLAnchorElement | undefined)?.href, 'https://queue.example.com/acme/webapp/3421');
+
+  const pills = byClass(node, 'pill').map((pill) => pill.textContent ?? '');
+  assert.ok(pills.includes('in merge queue'), pills.join(' | '));
+  // Its wait began at the last push, not when the queue took it, which the board doesn't know.
+  assert.ok(!pills.some((pill) => pill.startsWith('waiting ')), pills.join(' | '));
+  assert.deepEqual(buttonLabels(node), ['Snooze']);
+
+  const rows = resolveBoard([pr({ ...queued, id: 'github:pr:acme/webapp#1', number: 1 }), pr({ ...queued, id: 'github:pr:acme/webapp#2', number: 2, inMergeQueue: false })], [], NOW, GATES);
+  const board = { enabled: true, reason: null, failures: [], fetchedAt: NOW.toISOString(), warnings: [], scope: [], rows } as unknown as BoardState;
+  const titles = drawersOf(mount(h('div', null, renderBoard({ ...STATE, board }, UI, HANDLERS)))).map((drawer) => byClass(drawer, 'drawer__title')[0]?.textContent);
+  assert.deepEqual(titles, ['Waiting on checks', 'In merge queue']);
+});
+
 test('a blocked merge with nothing pending is not presented as a check wait', () => {
   const { row, node } = render({ mergeStateStatus: 'BLOCKED' });
   assert.equal(row.court, 'blocked');
