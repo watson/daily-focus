@@ -16,7 +16,7 @@ import type {
   ResolvedItem,
   TicketRow,
 } from '../src/types.ts';
-import type { UiState, UiValues, View, WarningsSeen, WriteFailure, WriteRetry } from './types.ts';
+import type { PullOrder, UiState, UiValues, View, WarningsSeen, WriteFailure, WriteRetry } from './types.ts';
 
 /**
  * The panels, by name. Each name is also the id of its panel element, which is
@@ -44,6 +44,8 @@ export const AGENT_RUN_SEEN_KEY = 'daily-focus:agent-run-seen';
 export const WARNINGS_SEEN_KEY = 'daily-focus:warnings-seen';
 /** The project the Projects view is zoomed into, by key. */
 export const PROJECT_KEY = 'daily-focus:project';
+/** How each group of pull requests is ordered, as JSON: drawer key to order. */
+export const BOARD_ORDER_KEY = 'daily-focus:board-order';
 /**
  * Which row the panel is open on, by item id. Persisted per tab in
  * sessionStorage rather than localStorage: it should survive the self-reload a
@@ -69,6 +71,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     assistantDraft: signal(initial.assistantDraft ?? ''),
     focusField: signal(initial.focusField ?? null),
     drawers: signal(initial.drawers ?? new Map<string, boolean>()),
+    boardOrder: signal(initial.boardOrder ?? new Map<string, PullOrder>()),
     ticketMode: signal(initial.ticketMode ?? 'sync'),
     projectKey: signal(initial.projectKey ?? null),
     agentReportSeen: signal(initial.agentReportSeen ?? null),
@@ -148,6 +151,26 @@ export function readWriteFailures(raw: string | null): Map<string, WriteFailure>
   return out;
 }
 
+/**
+ * The groups' orders, as remembered. Only the orders this page knows are kept,
+ * so a key from another version, or a hand edit, costs that group its order and
+ * nothing else. The board's own order is never written, so it isn't kept either.
+ */
+export function readBoardOrder(raw: string | null): Map<string, PullOrder> {
+  const orders = new Map<string, PullOrder>();
+  if (!raw) return orders;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return orders;
+    for (const [key, order] of Object.entries(value)) {
+      if (order === 'newest' || order === 'touched') orders.set(key, order);
+    }
+  } catch {
+    // Not JSON: every group is back in the board's order.
+  }
+  return orders;
+}
+
 /** What this browser remembered. Nothing, where there is no storage to ask. */
 function remembered(): Partial<UiValues> {
   try {
@@ -158,6 +181,7 @@ function remembered(): Partial<UiValues> {
       agentReportSeen: localStorage.getItem(AGENT_RUN_SEEN_KEY),
       warningsSeen: readWarningsSeen(localStorage.getItem(WARNINGS_SEEN_KEY)),
       projectKey: localStorage.getItem(PROJECT_KEY),
+      boardOrder: readBoardOrder(localStorage.getItem(BOARD_ORDER_KEY)),
       detailFor: sessionStorage.getItem(DETAIL_KEY),
       writeFailures: readWriteFailures(sessionStorage.getItem(WRITE_FAILURES_KEY)),
     };

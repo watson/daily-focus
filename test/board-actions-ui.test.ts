@@ -11,7 +11,7 @@ import { afterEach, test } from 'node:test';
 // Imported ahead of the client, for the document it installs.
 import { settle } from './dom.ts';
 import { handlers, mergeQuestion } from '../client/actions.ts';
-import { state, ui } from '../client/state.ts';
+import { BOARD_ORDER_KEY, state, ui } from '../client/state.ts';
 import type { BoardRow, DashboardState } from '../src/types.ts';
 
 function row(number: number, overrides: Partial<BoardRow> = {}): BoardRow {
@@ -177,4 +177,20 @@ test("GitHub's refusal goes on the row's card, the toast points to it, and the p
     requests.map((request) => `${request.method} ${request.path}`),
     ['POST /api/board/merge', 'GET /api/state'],
   );
+});
+
+test("a group's order is remembered in this browser, and the board's own order is the absence of one", () => {
+  handlers.orderBoard('board:draft', 'newest');
+  handlers.orderBoard('board:ready', 'touched');
+  assert.deepEqual([...ui.boardOrder.value], [
+    ['board:draft', 'newest'],
+    ['board:ready', 'touched'],
+  ]);
+  assert.deepEqual(JSON.parse(localStorage.getItem(BOARD_ORDER_KEY) ?? 'null'), { 'board:draft': 'newest', 'board:ready': 'touched' });
+
+  handlers.orderBoard('board:draft', 'waiting');
+  assert.deepEqual(JSON.parse(localStorage.getItem(BOARD_ORDER_KEY) ?? 'null'), { 'board:ready': 'touched' });
+  handlers.orderBoard('board:ready', 'waiting');
+  assert.equal(localStorage.getItem(BOARD_ORDER_KEY), null);
+  assert.equal(ui.boardOrder.value.size, 0);
 });

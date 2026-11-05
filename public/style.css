@@ -1837,6 +1837,7 @@ body:has(.today__masthead) .agenda__title {
  * the target, and folded it still plainly opens.
  */
 .drawer {
+  position: relative;
   margin-top: 24px;
 }
 /* The pull request board is drawers all the way down, and its first starts where a section would. */
@@ -1875,7 +1876,10 @@ body:has(.today__masthead) .agenda__title {
 .drawer__verb {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 7px;
+  /* Wide enough for "Hide" or "Show" and the chevron, so what sits beside it can be placed by it. */
+  min-width: 3.5em;
   font-size: 12.5px;
   color: var(--ink-2);
 }
@@ -1906,6 +1910,103 @@ body:has(.today__masthead) .agenda__title {
 }
 .drawer .list {
   padding: 0 0 8px;
+}
+/*
+ * A control for the list, set on the heading's rule just before the verb, on
+ * the paper's colour so the rule stops either side of it. It follows the
+ * summary in the document (see `drawer`), so it is placed onto the summary's
+ * line, in ems of the verb's size, so larger text moves it with the verb: the
+ * verb's width and a gap from the right, and the title's line plus the
+ * summary's padding for its height.
+ */
+.drawer__aside {
+  position: absolute;
+  top: 0;
+  right: calc(3.5em + 6px);
+  display: flex;
+  align-items: center;
+  height: calc(1.68em + 8px);
+  padding: 0 4px 0 8px;
+  background: var(--page);
+  font-size: 12.5px;
+}
+/*
+ * As quiet as the verb beside it in the board's own order, which is as faint
+ * as small text can be and still be read; once its reader has chosen another,
+ * in the ink and heavier, so a choice remembered from yesterday stands out
+ * from the defaults repeated down the page by more than colour.
+ */
+.drawer__order {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 1.92em;
+  padding: 0 18px 0 6px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.drawer__order[data-chosen='true'] {
+  color: var(--ink-1);
+  font-weight: 500;
+}
+/* Drawn in the text's colour, so it brightens with it under the pointer and in dark. */
+.drawer__order::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M7 15l5 5 5-5M7 9l5-5 5 5'/></svg>")
+    no-repeat center / contain;
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M7 15l5 5 5-5M7 9l5-5 5 5'/></svg>")
+    no-repeat center / contain;
+  pointer-events: none;
+}
+/* Forced colours would paint the chevron the page's colour: it is text, so it gets the text's. */
+@media (forced-colors: active) {
+  .drawer__order::after {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+.drawer__order select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.drawer__order:hover {
+  background-color: var(--surface-sunken);
+  color: var(--ink-1);
+}
+/* The select is unseen, so its focus ring is drawn on the words it lies over. */
+.drawer__order:has(select:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/*
+ * Where the heading's line has no room for it, on a phone or with larger text,
+ * under it, at the end, instead. Measured on the drawer in its own ems, so the
+ * text growing moves the point as the width shrinking does.
+ */
+.drawer:has(> .drawer__aside) {
+  container-type: inline-size;
+}
+@container (max-width: 34em) {
+  .drawer__aside {
+    position: static;
+    justify-content: flex-end;
+    height: auto;
+    margin: -6px 0 6px;
+    padding: 0;
+    background: none;
+  }
 }
 
 /* ---------- toast ---------- */

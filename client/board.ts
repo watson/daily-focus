@@ -13,7 +13,7 @@ import { refreshControl } from './refresh.ts';
 import { activityText } from './stages.ts';
 import { drawer } from './section.ts';
 import { connecting, connectionView } from './connect.ts';
-import type { Handlers, UiState } from './types.ts';
+import type { Handlers, PullOrder, UiState } from './types.ts';
 import { writeFailureNote } from './writefailure.ts';
 
 const COURT_TITLE = {
@@ -70,6 +70,12 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
   if (connection && (board.connect || connecting(connection))) parts.push(connectionView('github', connection, handlers));
 
   // Every court folds, as Snoozed does, and starts open: it holds what to look at.
+  // Each is in the order its reader chose for it (`orderRows`).
+  const group = (key: string, title: string, rows: readonly BoardRow[], open = false): JSX.Element =>
+    drawer(key, title, orderRows(rows, ui.boardOrder.value.get(key) ?? 'waiting'), state, ui, handlers, renderPullRow, {
+      open,
+      aside: rows.length > 1 ? orderControl(key, title, ui, handlers) : null,
+    });
   const open = board.rows.filter((row) => row.status === 'open');
   for (const court of COURT_ORDER) {
     const rows = open.filter((row) => row.court === court);
@@ -77,10 +83,8 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
     // it until it asks again. It sits apart until then, folded, and comes back on its own.
     const nudged = court === 'reviewers' ? rows.filter((row) => row.nudgedAt) : [];
     const waiting = rows.filter((row) => !row.nudgedAt);
-    if (waiting.length > 0) {
-      parts.push(drawer(`board:${court}`, COURT_TITLE[court], waiting, state, ui, handlers, renderPullRow, { open: true }));
-    }
-    if (nudged.length > 0) parts.push(drawer('board:nudged', 'Nudged', nudged, state, ui, handlers, renderPullRow));
+    if (waiting.length > 0) parts.push(group(`board:${court}`, COURT_TITLE[court], waiting, true));
+    if (nudged.length > 0) parts.push(group('board:nudged', 'Nudged', nudged));
   }
 
   if (open.length === 0 && !board.reason) {
@@ -100,11 +104,87 @@ export function renderBoard(state: DashboardState, ui: UiState, handlers: Handle
   }
 
   const snoozed = board.rows.filter((row) => row.status === 'snoozed');
-  if (snoozed.length > 0) {
-    parts.push(drawer('board:snoozed', 'Snoozed', snoozed, state, ui, handlers, renderPullRow));
-  }
+  if (snoozed.length > 0) parts.push(group('board:snoozed', 'Snoozed', snoozed));
 
   return parts;
+}
+
+/**
+ * The orders a group of pull requests can be read in. The board's own is the
+ * longest wait first, by the clock each court is judged on (`since`), which is
+ * how a queue reads best. The others go by what every row prints, newest first:
+ * when it was opened, and when it was last touched. They are for finding one,
+ * like the draft opened an hour ago, which the board's own order puts last.
+ *
+ * Each group keeps its own, so turning Drafts around leaves the queues as they
+ * were, and the choice is remembered in this browser (`boardOrder`).
+ */
+export const PULL_ORDERS: readonly PullOrder[] = ['waiting', 'newest', 'touched'];
+
+function orderLabel(order: PullOrder, key: string): string {
+  if (order === 'newest') return 'Recently opened first';
+  if (order === 'touched') return 'Recently touched first';
+  // A draft waits on nobody: its clock is when you last touched it.
+  if (key === 'board:draft') return 'Untouched longest first';
+  // Snoozed holds every court, which the server sorts by before the wait, so
+  // its own order is not the longest wait first, and doesn't say it is.
+  if (key === 'board:snoozed') return 'Board order';
+  return 'Longest wait first';
+}
+
+/**
+ * The rows in `order`. The board's own is the order the server sent, and the
+ * others are stable over it, so rows that tie keep their place.
+ */
+export function orderRows(rows: readonly BoardRow[], order: PullOrder): readonly BoardRow[] {
+  if (order === 'waiting') return rows;
+  const at = order === 'newest' ? (row: BoardRow) => row.createdAt : lastTouched;
+  // A copy: the rows are the state's, which every other group reads too. The
+  // times are compared as GitHub writes them, in UTC, as the server's sort does.
+  return [...rows].sort((a, b) => {
+    const x = at(a);
+    const y = at(b);
+    return x === y ? 0 : x > y ? -1 : 1;
+  });
+}
+
+/**
+ * When the row's "last touched by" says it was: the later of your last move
+ * and anyone else's, or when it was opened where neither is known.
+ */
+function lastTouched(row: BoardRow): string {
+  const you = row.lastActivityByYou;
+  const others = row.lastActivityByOthers?.at ?? null;
+  if (you && others) return others > you ? others : you;
+  return you ?? others ?? row.createdAt;
+}
+
+/**
+ * What orders a group, on its heading's line: the order in words, with the
+ * select laid over it, unseen. A select on its own is as wide as its longest
+ * option, which left the shorter ones adrift from their chevron; this way the
+ * line shows the words and the select still does the choosing, keyboard and
+ * screen reader included. A group in an order of its reader's says so in a
+ * darker ink than one in the board's, which is how a choice remembered from
+ * yesterday is told apart from the default at a glance.
+ */
+function orderControl(key: string, title: string, ui: UiState, handlers: Handlers): JSX.Element {
+  const current = ui.boardOrder.value.get(key) ?? 'waiting';
+  return el(
+    'span',
+    { class: 'drawer__order', 'data-chosen': String(current !== 'waiting') },
+    el('span', { class: 'drawer__order-label', 'aria-hidden': 'true' }, orderLabel(current, key)),
+    el(
+      'select',
+      {
+        'aria-label': `Order of ${title}`,
+        title: `Change how ${title} is ordered`,
+        value: current,
+        onChange: (event: Event) => handlers.orderBoard(key, (event.currentTarget as HTMLSelectElement).value as PullOrder),
+      },
+      PULL_ORDERS.map((order) => el('option', { value: order, selected: order === current }, orderLabel(order, key))),
+    ),
+  );
 }
 
 /** "as of 10:42 · polling alice, bob every 5 min", on the refresh control. */

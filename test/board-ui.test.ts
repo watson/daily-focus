@@ -13,8 +13,9 @@ import { test } from 'node:test';
 import { h } from 'preact';
 
 import { buttonLabels, byClass, byTag, handlersWith, mount, mountOne, uiWith } from './dom.ts';
-import { renderBoard, renderPullRow } from '../client/board.ts';
+import { orderRows, renderBoard, renderPullRow } from '../client/board.ts';
 import { connectionView } from '../client/connect.ts';
+import { readBoardOrder } from '../client/state.ts';
 import { formatTime } from '../client/format.ts';
 import { DEFAULT_MERGE_GATE_REVIEWS, mergeGateReviewPattern } from '../src/config.ts';
 import { resolveBoard } from '../src/prs.ts';
@@ -336,6 +337,128 @@ test('the courts start open and Nudged and Snoozed closed, and a fold by hand is
     kept.map((drawer) => drawer.open),
     [false, true, true, false],
   );
+});
+
+/**
+ * Three drafts, each the first by one order: the one untouched longest by the
+ * board's own, the one opened last by Newest first, and the one somebody else
+ * commented on an hour ago by Last touched first. Two waiting on reviewers too,
+ * to show that ordering Drafts leaves the other groups as they were.
+ */
+function boardToOrder(ui = uiWith(), handlers = handlersWith()): HTMLElement {
+  const draft = (number: number, created: number, yours: number, theirs: number | null = null): PullRequest =>
+    pr({
+      id: `github:pr:acme/webapp#${number}`,
+      number,
+      isDraft: true,
+      createdAt: hoursAgo(created),
+      lastActivityByYou: hoursAgo(yours),
+      lastActivityByOthers: theirs === null ? null : { at: hoursAgo(theirs), login: 'bob', kind: 'comment' },
+    });
+  const pulls = [
+    draft(10, 400, 300),
+    draft(11, 2, 2),
+    draft(12, 200, 100, 1),
+    pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#20', number: 20, createdAt: hoursAgo(90), lastActivityByYou: hoursAgo(90) }),
+    pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#21', number: 21, createdAt: hoursAgo(5), lastActivityByYou: hoursAgo(5) }),
+  ];
+  const rows = resolveBoard(pulls, [], NOW, GATES);
+  const board = { enabled: true, reason: null, failures: [], fetchedAt: NOW.toISOString(), warnings: [], scope: [], rows } as unknown as BoardState;
+  return mount(h('div', null, renderBoard({ ...STATE, board }, ui, handlers)));
+}
+
+const numbersIn = (drawer: HTMLElement | undefined) => byTag(drawer!, 'li').map((li) => Number(li.dataset.id?.split('#')[1]));
+
+test("each group starts in the board's own order, longest wait first, and says so on its heading", () => {
+  const [reviewers, drafts] = drawersOf(boardToOrder());
+  assert.deepEqual(numbersIn(reviewers), [20, 21]);
+  assert.deepEqual(numbersIn(drafts), [10, 12, 11]);
+  // A draft waits on nobody, so its clock is named for what it is.
+  assert.equal(byClass(reviewers!, 'drawer__order-label')[0]?.textContent, 'Longest wait first');
+  assert.equal(byClass(drafts!, 'drawer__order-label')[0]?.textContent, 'Untouched longest first');
+  const select = byTag(drafts!, 'select')[0] as HTMLSelectElement;
+  assert.equal(select.getAttribute('aria-label'), 'Order of Drafts');
+  assert.deepEqual(
+    byTag(select, 'option').map((option) => option.textContent),
+    ['Untouched longest first', 'Recently opened first', 'Recently touched first'],
+  );
+});
+
+test('a group ordered recently opened or recently touched first is, and the other groups keep theirs', () => {
+  const newest = drawersOf(boardToOrder(uiWith({ boardOrder: new Map([['board:draft', 'newest']]) })));
+  assert.deepEqual(numbersIn(newest[0]), [20, 21]);
+  assert.deepEqual(numbersIn(newest[1]), [11, 12, 10]);
+  assert.equal(byClass(newest[1]!, 'drawer__order-label')[0]?.textContent, 'Recently opened first');
+  // In the ink once chosen, so a remembered choice doesn't pass for the board's own.
+  assert.equal(byClass(newest[1]!, 'drawer__order')[0]?.dataset.chosen, 'true');
+  assert.equal(byClass(newest[0]!, 'drawer__order')[0]?.dataset.chosen, 'false');
+
+  // Touched is the later of your move and anyone else's, as the row prints it.
+  const touched = drawersOf(boardToOrder(uiWith({ boardOrder: new Map([['board:draft', 'touched']]) })));
+  assert.deepEqual(numbersIn(touched[1]), [12, 11, 10]);
+});
+
+test('choosing an order asks the page to keep it, for that group alone', () => {
+  const chosen: [string, string][] = [];
+  const drafts = drawersOf(boardToOrder(uiWith(), handlersWith({ orderBoard: (key, order) => void chosen.push([key, order]) })))[1]!;
+  const select = byTag(drafts, 'select')[0] as HTMLSelectElement;
+  select.value = 'newest';
+  select.dispatchEvent(new Event('change'));
+  assert.deepEqual(chosen, [['board:draft', 'newest']]);
+});
+
+test('a group of one, or one folded away, has nothing to order', () => {
+  // Boarded as four: one waiting on reviewers, one nudged, one draft, one snoozed.
+  assert.equal(byClass(boardOfFour(), 'drawer__order').length, 0);
+  const folded = boardToOrder(uiWith({ drawers: new Map([['board:draft', false]]) }));
+  assert.deepEqual(
+    drawersOf(folded).map((drawer) => byClass(drawer, 'drawer__order').length),
+    [1, 0],
+  );
+});
+
+test("Snoozed, which holds every court, calls its own order the board's, not the longest wait", () => {
+  const pulls = [
+    pr({ ...UNREVIEWED, id: 'github:pr:acme/webapp#30', number: 30, lastActivityByYou: hoursAgo(200) }),
+    pr({ id: 'github:pr:acme/webapp#31', number: 31, isDraft: true }),
+  ];
+  const actions: Action[] = pulls.map((pull) => ({ id: pull.id, action: 'snooze', at: hoursAgo(1), until: '2026-09-20' }));
+  const rows = resolveBoard(pulls, actions, NOW, GATES);
+  const board = { enabled: true, reason: null, failures: [], fetchedAt: NOW.toISOString(), warnings: [], scope: [], rows } as unknown as BoardState;
+  const node = mount(h('div', null, renderBoard({ ...STATE, board }, uiWith({ drawers: new Map([['board:snoozed', true]]) }), HANDLERS)));
+  const [snoozed] = drawersOf(node);
+  assert.equal(byClass(snoozed!, 'drawer__title')[0]?.textContent, 'Snoozed');
+  assert.equal(byClass(snoozed!, 'drawer__order-label')[0]?.textContent, 'Board order');
+});
+
+test('an order other than the board\'s copies the rows, keeps ties where the server put them, and falls back to when one was opened', () => {
+  const at = hoursAgo(10);
+  const rows = resolveBoard(
+    [
+      pr({ id: 'github:pr:acme/webapp#40', number: 40, isDraft: true, createdAt: at, lastActivityByYou: null, lastActivityByOthers: null }),
+      pr({ id: 'github:pr:acme/webapp#41', number: 41, isDraft: true, createdAt: at, lastActivityByYou: null, lastActivityByOthers: null }),
+      pr({ id: 'github:pr:acme/webapp#42', number: 42, isDraft: true, createdAt: hoursAgo(20), lastActivityByYou: hoursAgo(5), lastActivityByOthers: null }),
+    ],
+    [],
+    NOW,
+  );
+  const before = rows.map((row) => row.number);
+  assert.deepEqual(before, [40, 41, 42]);
+  // Opened at the same moment: the server's order between them stands.
+  assert.deepEqual(orderRows(rows, 'newest').map((row) => row.number), [40, 41, 42]);
+  // Nobody has touched 40 or 41, so they go by when they were opened, after 42's touch.
+  assert.deepEqual(orderRows(rows, 'touched').map((row) => row.number), [42, 40, 41]);
+  assert.deepEqual(rows.map((row) => row.number), before);
+  assert.equal(orderRows(rows, 'waiting'), rows);
+});
+
+test('a remembered order that this page does not know costs that group its order and nothing else', () => {
+  assert.deepEqual([...readBoardOrder(JSON.stringify({ 'board:draft': 'newest', 'board:ready': 'sideways', 'board:you': 'waiting' }))], [
+    ['board:draft', 'newest'],
+  ]);
+  assert.deepEqual([...readBoardOrder('not json')], []);
+  assert.deepEqual([...readBoardOrder('["newest"]')], []);
+  assert.deepEqual([...readBoardOrder(null)], []);
 });
 
 test('a ready row is plain: no reason, no nudge', () => {

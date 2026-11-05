@@ -72,6 +72,12 @@ The second tab shows your open pull requests in seven buckets:
 
 Click a bucket's heading to fold it away. Nudged and Snoozed start folded.
 
+Each bucket above lists the longest wait first; a draft's wait is the time since
+you last touched it. Snoozed lists its pull requests bucket by bucket, in the order
+above. To find a pull request you opened or worked on recently, choose
+**Recently opened first** or **Recently touched first** on that bucket's heading.
+The choice applies to that bucket only, and this browser remembers it.
+
 Snooze a pull request until a date, leave a note, or click **Nudged** after asking
 for a review. Nudged records that you asked; it doesn't send a message. The pull
 request moves to a Nudged section for a day, then goes back to Waiting on reviewers

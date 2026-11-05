@@ -52,6 +52,11 @@ export function section<T extends { id: string }>(
  * render keeps it, but a drawer that came and went — snoozed rows appearing after
  * a refresh — would come back as it started, and the keyboard's scan of visible
  * rows reads the same fact off the element. One place to keep it is the page's.
+ *
+ * `aside` is a control for the list, such as how it is ordered, shown on the
+ * heading's line while the drawer is open. It follows the summary rather than
+ * sitting in it: a control inside the summary would be a button inside a
+ * button, and a press on it would fold the drawer.
  */
 export function drawer<T extends { id: string }>(
   key: string,
@@ -61,7 +66,7 @@ export function drawer<T extends { id: string }>(
   ui: UiState,
   handlers: Handlers,
   row: RowRenderer<T>,
-  { open: byDefault = false }: { open?: boolean } = {},
+  { open: byDefault = false, aside = null }: { open?: boolean; aside?: JSX.Element | null } = {},
 ): JSX.Element {
   const open = ui.drawers.value.get(key) ?? byDefault;
   // Headed as a section is, its count beside its name, and ruled across to a
@@ -87,6 +92,7 @@ export function drawer<T extends { id: string }>(
       // The element says whether it is open; the verb is for the eye.
       el('span', { class: 'drawer__verb', 'aria-hidden': 'true' }, open ? 'Hide' : 'Show'),
     ),
+    open && aside ? el('div', { class: 'drawer__aside' }, aside) : null,
     el(
       'ul',
       { class: 'list' },

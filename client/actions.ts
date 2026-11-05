@@ -24,6 +24,7 @@ import { HELPER_LABEL, MERGE_VERB, helperLabel } from './board.ts';
 import { checkPending } from './donecheck.ts';
 import {
   AGENT_RUN_SEEN_KEY,
+  BOARD_ORDER_KEY,
   PROJECT_KEY,
   RUN_PREFIX,
   VIEW_KEY,
@@ -1394,6 +1395,14 @@ export const handlers: Handlers = {
   toggleDrawer: (key, open) => {
     if (ui.drawers.value.get(key) === open) return;
     ui.drawers.value = new Map(ui.drawers.value).set(key, open);
+  },
+  orderBoard: (key, order) => {
+    const next = new Map(ui.boardOrder.value);
+    // The board's own order is the absence of one, so it is never written down.
+    if (order === 'waiting') next.delete(key);
+    else next.set(key, order);
+    ui.boardOrder.value = next;
+    remember(BOARD_ORDER_KEY, next.size > 0 ? JSON.stringify(Object.fromEntries(next)) : null);
   },
   setTicketMode,
   openProject: (key) => void openProject(key),

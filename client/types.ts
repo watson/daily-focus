@@ -65,6 +65,8 @@ export interface OrganizationReviewUi {
 export type SetupSources = { text: string | null; kept: boolean } | 'loading' | { error: string };
 
 export type TicketMode = 'sync' | 'working' | 'projects';
+/** How a group of pull requests is ordered; see `PULL_ORDERS` in `board.ts`. */
+export type PullOrder = 'waiting' | 'newest' | 'touched';
 export type FocusField = 'note' | 'assistant';
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -169,6 +171,13 @@ export interface UiState {
    * resting state.
    */
   drawers: Signal<ReadonlyMap<string, boolean>>;
+  /**
+   * How each group of pull requests is ordered, by its drawer's key, where it
+   * isn't the board's own longest wait first. In localStorage, unlike the
+   * drawers: an order is a way someone likes to read a group, and it should
+   * still be there tomorrow.
+   */
+  boardOrder: Signal<ReadonlyMap<string, PullOrder>>;
   /**
    * Which of the ticket tab's views is showing. In memory only, so a reload
    * opens on the one that asks for action.
@@ -284,6 +293,8 @@ export interface Handlers {
   openRun(id?: string | null): void;
   saveNote(id: string, text: string): void;
   toggleDrawer(key: string, open: boolean): void;
+  /** Order a group of pull requests, by its drawer's key; `waiting` is the board's own order. */
+  orderBoard(key: string, order: PullOrder): void;
   setTicketMode(mode: TicketMode): void;
   /** Zoom the Projects view into an epic, an initiative or a ticket, and read it. */
   openProject(key: string): void;
