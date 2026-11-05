@@ -323,7 +323,7 @@ test("Do next offers the board's own Merge and Ready for review where it says to
   const rows = byClass(section, 'next-step');
   assert.deepEqual(
     rows.map(labels),
-    [['Merge'], [], [], ['Ready for review'], [], []],
+    [['Squash and merge'], [], [], ['Ready for review'], [], []],
     'a merge that waits for another gets its link only, as does everything else',
   );
   byTag(rows[0]!, 'button')[0]!.click();
@@ -365,7 +365,7 @@ test('a failed read of the pull request board is shown here too, over the rows i
   assert.match(text(byClass(node, 'banner--warning')[0]), /could not read acme\/payments-api/);
   (byTag(critical, 'button')[0] as HTMLButtonElement).click();
   assert.equal(retried, 1);
-  assert.ok(labels(byClass(node, 'project-next')[0]!).includes('Merge'), 'the rows kept still offer what they did');
+  assert.ok(labels(byClass(node, 'project-next')[0]!).includes('Squash and merge'), 'the rows kept still offer what they did');
 });
 
 /* ---------- the merge order ---------- */
@@ -395,7 +395,7 @@ test("a card names its stage on the right, in the stage's tone", () => {
 test("a card lists the user's pull requests: Draft or In review, then the board's words, with a stack named", () => {
   const node = epic();
   const lines = (key: string) => byClass(card(node, key), 'project-pull').map(text);
-  assert.deepEqual(lines('PAY-201'), ['acme/payments-api #412 In review Ready to merge Merge']);
+  assert.deepEqual(lines('PAY-201'), ['acme/payments-api #412 In review Ready to merge Squash and merge']);
   assert.deepEqual(lines('PAY-202'), ['acme/payments-api #415 In review Ready to merge Stacked on #412']);
   assert.deepEqual(lines('PAY-203'), ['acme/payments-api #420 Draft checks passed']);
   assert.deepEqual(lines('PAY-209'), ['acme/web #88 In review Waiting on reviewers for 3 days']);
@@ -408,7 +408,7 @@ const toggles = new Set(['Draft', 'In review']);
 test('a card offers a merge only where Do next does', () => {
   const node = epic();
   const merges = (key: string) => byClass(card(node, key), 'project-pull').map((line) => labels(line).filter((label) => !toggles.has(label)));
-  assert.deepEqual(merges('PAY-201'), [['Merge']]);
+  assert.deepEqual(merges('PAY-201'), [['Squash and merge']]);
   assert.deepEqual(merges('PAY-202'), [[]], 'it waits for PAY-201, so no merge is offered out of order');
   assert.deepEqual(merges('PAY-203'), [[]]);
   assert.deepEqual(merges('PAY-210'), [[]]);

@@ -1,7 +1,7 @@
 /**
- * The merge helper on the page: its button where the server offers it, Merge
- * stack on a stack's top, "in merge queue" on what it took, and what a click
- * asks, sends and says. Rows come from the server's own reading (`resolveBoard`)
+ * The merge helper on the page: its button where the server offers it, with
+ * GitHub's merge beside it, Merge stack on a stack's top, "in merge queue" on
+ * what it took, and what a click asks, sends and says. Rows come from the server's own reading (`resolveBoard`)
  * with the helper's answers handed in; the server is a stand-in for `fetch`.
  */
 
@@ -74,17 +74,21 @@ const button = (node: HTMLElement, label: string) => byTag(node, 'button').find(
 
 /* ---------- the row ---------- */
 
-test("the helper's button, in its own words, takes Merge's place, and sends the row's id", () => {
+test("the helper's button, in its own words, comes first, GitHub's merge beside it, and each sends the row's id and its way", () => {
   const clicked: string[] = [];
-  const mine = handlersWith({ mergePull: (id) => clicked.push(id) });
+  const mine = handlersWith({ mergePull: (id, route) => clicked.push(`${route} ${id}`) });
   const node = render(byNumber(rows([pull(412)], { kind: 'queue', label: 'Queue with the merge bot', stacks: false }), 412), mine);
-  assert.deepEqual(buttonLabels(node), ['Queue with the merge bot', 'Snooze']);
+  assert.deepEqual(buttonLabels(node), ['Queue with the merge bot', 'Squash and merge', 'Snooze']);
   assert.match(button(node, 'Queue with the merge bot')!.title, /merge helper for main/);
+  assert.match(button(node, 'Squash and merge')!.title, /into main on GitHub, without the merge queue/);
   button(node, 'Queue with the merge bot')!.click();
-  assert.deepEqual(clicked, ['github:pr:acme/payments-api#412']);
+  button(node, 'Squash and merge')!.click();
+  assert.deepEqual(clicked, ['helper github:pr:acme/payments-api#412', 'merge github:pr:acme/payments-api#412']);
 
-  // queue: false, or a check that failed, is GitHub's Merge as before; still asking is no merge at all.
-  assert.deepEqual(buttonLabels(render(byNumber(rows([pull(412)], null), 412))), ['Merge', 'Snooze']);
+  // Not where GitHub's own queue is on, which a merge straight in would bypass.
+  assert.deepEqual(buttonLabels(render(byNumber(rows([pull(412, { mergeQueue: true })]), 412))), ['Add to merge queue', 'Snooze']);
+  // queue: false, or a check that failed, is GitHub's merge alone; still asking is no merge at all.
+  assert.deepEqual(buttonLabels(render(byNumber(rows([pull(412)], null), 412))), ['Squash and merge', 'Snooze']);
   assert.deepEqual(buttonLabels(render(byNumber(rows([pull(412)], { kind: 'asking' }), 412))), ['Snooze']);
 });
 
@@ -92,7 +96,7 @@ test('Merge stack is on the top of a stack only, and sends the top row’s id', 
   const clicked: string[] = [];
   const mine = handlersWith({ mergeStack: (id) => clicked.push(id), mergePull: (id) => clicked.push(`one ${id}`) });
   const board = rows([pull(410), above(411, 410), above(412, 411)]);
-  assert.deepEqual(buttonLabels(render(byNumber(board, 410), mine)), ['Add to merge queue', 'Snooze']);
+  assert.deepEqual(buttonLabels(render(byNumber(board, 410), mine)), ['Add to merge queue', 'Squash and merge', 'Snooze']);
   assert.deepEqual(buttonLabels(render(byNumber(board, 411), mine)), ['Snooze']);
   const top = render(byNumber(board, 412), mine);
   assert.deepEqual(buttonLabels(top), ['Merge stack', 'Snooze']);
@@ -164,6 +168,12 @@ function confirmWith(answer: boolean): void {
 
 test('the questions name the pull requests, and a stack in the order it merges', () => {
   assert.equal(mergeQuestion(byNumber(rows([pull(412)]), 412)), 'Add acme/payments-api #412 to the merge queue?');
+  assert.equal(mergeQuestion(byNumber(rows([pull(412)]), 412), 'helper'), 'Add acme/payments-api #412 to the merge queue?');
+  assert.equal(
+    mergeQuestion(byNumber(rows([pull(412)]), 412), 'merge'),
+    'Squash and merge acme/payments-api #412 into main on GitHub, without the merge queue?',
+    'skipping the queue says so',
+  );
   assert.equal(mergeQuestion(byNumber(rows([pull(412)], { kind: 'queue', label: 'Ship with the bot', stacks: false }), 412)), 'Ship with the bot: acme/payments-api #412?');
   const board = rows([pull(410), above(411, 410), above(412, 411)]);
   assert.equal(stackQuestion([410, 411, 412].map((number) => byNumber(board, number))), 'Merge this stack of 3 pull requests from the bottom: #410, #411, #412?');
@@ -176,9 +186,29 @@ test("handing one to the helper asks first, sends the head shown, and the toast 
   handlers.mergePull('github:pr:acme/payments-api#412');
   await until(() => ui.toast.value !== null && ui.pending.value.size === 0);
   assert.deepEqual(asked, ['Add acme/payments-api #412 to the merge queue?']);
-  assert.deepEqual(requests, [{ method: 'POST', path: '/api/board/merge', body: { id: 'github:pr:acme/payments-api#412', head: 'head-412' } }]);
+  assert.deepEqual(requests, [{ method: 'POST', path: '/api/board/merge', body: { id: 'github:pr:acme/payments-api#412', head: 'head-412', route: 'helper' } }]);
   assert.equal(ui.toast.value?.message, 'Queued at position 3');
   assert.equal('notice' in (state.value as object), false, 'the notice is not part of the state');
+});
+
+test("GitHub's merge beside the helper asks as GitHub's, sends its way, and says it merged", async () => {
+  state.value = stateWith(rows([pull(412)]));
+  const requests = server(() => reply(stateWith([])));
+  confirmWith(true);
+  handlers.mergePull('github:pr:acme/payments-api#412', 'merge');
+  await until(() => ui.toast.value !== null && ui.pending.value.size === 0);
+  assert.deepEqual(asked, ['Squash and merge acme/payments-api #412 into main on GitHub, without the merge queue?']);
+  assert.deepEqual(requests, [{ method: 'POST', path: '/api/board/merge', body: { id: 'github:pr:acme/payments-api#412', head: 'head-412', route: 'merge' } }]);
+  assert.equal(ui.toast.value?.message, 'acme/payments-api#412 merged into main');
+
+  // A way the row doesn't offer asks nothing and sends nothing.
+  handlers.hideToast();
+  asked.length = 0;
+  state.value = stateWith(rows([pull(413, { mergeQueue: true })]));
+  handlers.mergePull('github:pr:acme/payments-api#413', 'merge');
+  await settle();
+  assert.deepEqual(asked, []);
+  assert.equal(requests.length, 1);
 });
 
 test('a helper that says nothing gets a toast of ours; its refusal is the toast, in its words', async () => {

@@ -141,11 +141,11 @@ test("once the helper has answered, its button and Merge stack are on the rows i
   assert.deepEqual(
     state.board.rows.map((each) => [each.number, each.offers?.filter((offer) => offer !== 'draft')]),
     [
-      [410, ['helper']],
+      [410, ['helper', 'merge']],
       [411, []],
       [412, ['stack']],
-      [420, ['helper']],
-      [421, ['helper']],
+      [420, ['helper', 'merge']],
+      [421, ['helper', 'merge']],
     ],
   );
   assert.deepEqual(row(state, 420)?.mergeHelper, { kind: 'queue', label: 'Queue it', stacks: true });
@@ -188,7 +188,22 @@ test("the helper's refusal is a 409 in its own words", async () => {
   const res = await post('/api/board/merge', { id: 'github:pr:acme/payments-api#421', head: 'head-421' });
   assert.equal(res.status, 409);
   assert.deepEqual(await res.json(), { error: 'the queue is closed for acme/payments-api#421' });
-  assert.deepEqual(row(await getState(), 421)?.offers?.filter((offer) => offer !== 'draft'), ['helper'], 'nothing is queued');
+  assert.deepEqual(row(await getState(), 421)?.offers?.filter((offer) => offer !== 'draft'), ['helper', 'merge'], 'nothing is queued');
+});
+
+test('merge takes the way the click asked for, among those the row offers', async () => {
+  await answered();
+  const before = (await helperLog()).length;
+  for (const route of ['squash', 7, null]) {
+    const res = await post('/api/board/merge', { id: 'github:pr:acme/payments-api#420', head: 'head-420', route });
+    assert.equal(res.status, 400, String(route));
+  }
+  const queue = await post('/api/board/merge', { id: 'github:pr:acme/payments-api#420', head: 'head-420', route: 'queue' });
+  assert.equal(queue.status, 409);
+  assert.deepEqual(await queue.json(), {
+    error: "acme/payments-api#420: it merges through the merge helper or with GitHub's merge, not through GitHub's merge queue",
+  });
+  assert.equal((await helperLog()).length, before, 'the helper heard of none of it');
 });
 
 test('merge and merge-stack hand over through the helper and answer with what it said, the board read back', async () => {

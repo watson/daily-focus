@@ -14,13 +14,13 @@ import type {
   CalendarProvider,
   DashboardState,
   ItemStatus,
-  MergeMethod,
+  MergeRoute,
   OnboardingAnswer,
   Service,
   TicketRow,
 } from '../src/types.ts';
 import * as api from './api.ts';
-import { HELPER_LABEL, helperLabel } from './board.ts';
+import { HELPER_LABEL, MERGE_VERB, helperLabel } from './board.ts';
 import { checkPending } from './donecheck.ts';
 import {
   AGENT_RUN_SEEN_KEY,
@@ -451,18 +451,25 @@ async function checkTicket(key: string): Promise<void> {
 
 /* ---------- changing a pull request on GitHub ---------- */
 
-/** GitHub's own names for its merge buttons. */
-const MERGE_VERB: Record<MergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
+/** The way a click on the row's merge goes when it doesn't say: the first the row offers. */
+function firstRoute(row: BoardRow): MergeRoute | null {
+  return row.offers?.find((offer): offer is MergeRoute => offer === 'helper' || offer === 'queue' || offer === 'merge') ?? null;
+}
 
-/** What Merge asks before it does anything: which pull request, into which branch, and how. */
-export function mergeQuestion(row: BoardRow): string {
+/**
+ * What Merge asks before it does anything: which pull request, into which
+ * branch, and how. GitHub's merge beside the merge helper says it skips the
+ * queue, which can't be taken back either.
+ */
+export function mergeQuestion(row: BoardRow, route: MergeRoute | null = firstRoute(row)): string {
   const ref = `${row.repo} #${row.number}`;
-  if (row.offers?.includes('helper')) {
+  if (route === 'helper') {
     const label = helperLabel(row);
     return label === HELPER_LABEL ? `Add ${ref} to the merge queue?` : `${label}: ${ref}?`;
   }
-  if (row.offers?.includes('queue')) return `Add ${ref} to the merge queue for ${row.baseRef}?`;
-  return `${MERGE_VERB[row.mergeMethod ?? 'MERGE']} ${ref} into ${row.baseRef}?`;
+  if (route === 'queue') return `Add ${ref} to the merge queue for ${row.baseRef}?`;
+  const past = row.offers?.includes('helper') ? ' on GitHub, without the merge queue' : '';
+  return `${MERGE_VERB[row.mergeMethod ?? 'MERGE']} ${ref} into ${row.baseRef}${past}?`;
 }
 
 /** The rows a stack merge from `row` would land, bottom first, as the page shows them; null when one isn't there. */
@@ -535,24 +542,26 @@ async function markDraft(id: string): Promise<void> {
 }
 
 /**
- * Merge a pull request, queue it, or hand it to the merge helper, once the user
- * has said yes: a merge can't be taken back.
+ * Merge a pull request, queue it, or hand it to the merge helper, by `route`,
+ * the button clicked, once the user has said yes: a merge can't be taken back.
  */
-async function mergePull(id: string): Promise<void> {
+async function mergePull(id: string, asked?: MergeRoute): Promise<void> {
   const row = pullRow(id);
   if (!row || ui.pending.value.has(id)) return;
+  const route = asked ?? firstRoute(row);
+  if (!route || !row.offers?.includes(route)) return;
   // The commit being asked about: a poll while the question is open may move
   // the row on, and the server merges only if it is still this one.
   const head = row.headSha;
   if (!head) return;
-  if (!window.confirm(mergeQuestion(row))) return;
+  if (!window.confirm(mergeQuestion(row, route))) return;
   const ref = `${row.repo}#${row.number}`;
-  const send = () => api.postPullMerge(id, head);
-  if (row.offers?.includes('helper')) {
+  const send = () => api.postPullMerge(id, head, route);
+  if (route === 'helper') {
     await writePull([id], send, `${ref} went to your merge helper`, `Your merge helper would not take ${ref}`);
     return;
   }
-  const queue = row.offers?.includes('queue') ?? false;
+  const queue = route === 'queue';
   await writePull(
     [id],
     send,
@@ -1159,7 +1168,7 @@ export const handlers: Handlers = {
   unsnooze: (id) => void undo(id),
   markReady: (id) => void markReady(id),
   markDraft: (id) => void markDraft(id),
-  mergePull: (id) => void mergePull(id),
+  mergePull: (id, route) => void mergePull(id, route),
   mergeStack: (id) => void mergeStack(id),
   refreshBoard: () => void refreshBoard(),
   refreshTickets: () => void refreshTickets(),

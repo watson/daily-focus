@@ -321,7 +321,7 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Merge helper',
     help:
       "The path to a program of your own that merges pull requests through your company's merge queue. Where it says a repository merges that way, " +
-      "the board offers its button in place of GitHub's Merge. See Merge through your own queue in the setup guide for what it is asked.",
+      "the board offers its button there, beside GitHub's own merge. See Merge through your own queue in the setup guide for what it is asked.",
     kind: 'text',
     fallback: always("None: GitHub's own merge"),
     advanced: true,

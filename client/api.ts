@@ -1,7 +1,7 @@
 /** Everything that talks to the server. */
 
 import type { OrganizationReview } from '../src/organization.ts';
-import type { CalendarProvider, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
+import type { CalendarProvider, DashboardState, MergeRoute, OnboardingAnswer, Service } from '../src/types.ts';
 import type { CalendarName, SettingsPage, TextName } from './types.ts';
 
 async function stateFrom(res: Response, what: string): Promise<DashboardState> {
@@ -164,13 +164,13 @@ async function landed(path: string, body: unknown): Promise<Landed> {
 
 /**
  * Merge a pull request that is ready, by its board row's id, add it to its
- * branch's merge queue, or hand it to the merge helper: the server decides which
- * from the row. Resolves once it has and the board has been read back; rejects
- * with GitHub's or the helper's own words when it refuses, as GitHub does when
- * the head moved since the board looked.
+ * branch's merge queue, or hand it to the merge helper: `route`, which the
+ * server refuses unless the row offers it. Resolves once it has and the board
+ * has been read back; rejects with GitHub's or the helper's own words when it
+ * refuses, as GitHub does when the head moved since the board looked.
  */
-export function postPullMerge(id: string, head: string): Promise<Landed> {
-  return landed('/api/board/merge', { id, head });
+export function postPullMerge(id: string, head: string, route: MergeRoute): Promise<Landed> {
+  return landed('/api/board/merge', { id, head, route });
 }
 
 /**

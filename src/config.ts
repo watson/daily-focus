@@ -64,7 +64,7 @@ export interface GitHubConfig {
   ghPath: string;
   /**
    * The user's merge helper: a program of their own that queues or merges a
-   * pull request the way their company does, which the board offers instead of
+   * pull request the way their company does, which the board offers beside
    * GitHub's merge where it says so. Null when none is set, the default. See
    * `mergehelper.ts` for what it is asked.
    */

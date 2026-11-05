@@ -1,6 +1,6 @@
 /**
- * What the board offers once a merge helper is set: its button in place of
- * GitHub's merge where it said so, nothing while it hasn't, and Merge stack on
+ * What the board offers once a merge helper is set: its button where it said
+ * so, with GitHub's merge beside it, nothing while it hasn't, and Merge stack on
  * the top of a stack it can merge whole, under the same rules as GitHub's merge
  * and a few of its own. Pure: the helper's answers are handed in.
  */
@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { findStack, resolveBoard, type MergeContext } from '../src/prs.ts';
+import { findStack, refuseMergeBy, resolveBoard, type MergeContext } from '../src/prs.ts';
 import type { BoardRow, MergeHelperView, PullRequest } from '../src/types.ts';
 
 const NOW = new Date('2026-11-03T12:00:00Z');
@@ -76,15 +76,36 @@ function board(pulls: PullRequest[], merging: MergeContext | null = context()): 
 const merges = (row: BoardRow | undefined) => row?.offers?.filter((offer) => offer !== 'draft');
 const offers = (rows: Map<number, BoardRow>) => Object.fromEntries([...rows].map(([number, row]) => [number, merges(row)]));
 
-test("the helper's button takes the place of GitHub's merge only where it said the branch merges through it", () => {
+test("the helper's button is offered only where it said the branch merges through it", () => {
   const pulls = [pull(411), pull(412, { mergeQueue: true }), pull(410, { isDraft: true })];
   assert.deepEqual(offers(board(pulls, null)), { 411: ['merge'], 412: ['queue'], 410: ['ready'] }, 'no helper set');
-  assert.deepEqual(offers(board(pulls)), { 411: ['helper'], 412: ['helper'], 410: ['ready'] }, 'queue: true');
+  assert.deepEqual(offers(board(pulls)), { 411: ['helper', 'merge'], 412: ['helper'], 410: ['ready'] }, 'queue: true, and GitHub\'s merge beside it but where GitHub queues');
   assert.deepEqual(offers(board(pulls, context({ helper: null }))), { 411: ['merge'], 412: ['queue'], 410: ['ready'] }, "queue: false, or a check that failed");
   assert.deepEqual(offers(board(pulls, context({ helper: { kind: 'asking' } }))), { 411: [], 412: [], 410: ['ready'] }, 'nothing to merge with until it says');
 
   const row = board([pull(411)]).get(411)!;
   assert.deepEqual(row.mergeHelper, QUEUE);
+});
+
+test("GitHub's merge is offered beside the helper's only where it would go straight in, by the method its button would use", () => {
+  const rows = board([pull(411), pull(412, { mergeQueue: true }), pull(413, { mergeMethod: null }), pull(415, { basePushable: false })]);
+  assert.deepEqual(offers(rows), { 411: ['helper', 'merge'], 412: ['helper'], 413: ['helper'], 415: ['helper'] });
+  // Ready only because the queue alone may merge there: GitHub would refuse its own merge.
+  const queuedOnly = board([pull(421, { mergeStateStatus: 'BLOCKED', basePushable: false })]).get(421)!;
+  assert.deepEqual(merges(queuedOnly), ['helper']);
+  assert.equal(refuseMergeBy(queuedOnly, 'merge'), "it merges through the merge helper, not with GitHub's merge");
+  assert.equal(refuseMergeBy(rows.get(411)!, 'helper'), null);
+  assert.equal(refuseMergeBy(rows.get(411)!, 'merge'), null);
+  assert.equal(refuseMergeBy(rows.get(411)!, 'queue'), "it merges through the merge helper or with GitHub's merge, not through GitHub's merge queue");
+  assert.equal(refuseMergeBy(rows.get(412)!, 'merge'), "it merges through the merge helper, not with GitHub's merge");
+  assert.match(refuseMergeBy(rows.get(413)!, 'merge')!, /hasn't read what that needs from GitHub yet/);
+
+  // Without a helper, one way each, as before.
+  const plain = board([pull(411), pull(412, { mergeQueue: true })], null);
+  assert.equal(refuseMergeBy(plain.get(411)!, 'helper'), "it merges with GitHub's merge, not through the merge helper");
+  assert.equal(refuseMergeBy(plain.get(412)!, 'merge'), "it merges through GitHub's merge queue, not with GitHub's merge");
+  // And what refuses every way still comes first.
+  assert.equal(refuseMergeBy(board([pull(414, { baseRef: 'release/2026.11' })]).get(414)!, 'merge'), 'it targets release/2026.11, not main');
 });
 
 test('GitHub’s rules for a merge still decide whether the helper is offered', () => {
@@ -155,11 +176,11 @@ const STACK = () => [pull(410), above(411, 410), above(412, 411)];
 
 test('a stack offers Merge stack on its top, naming every pull request in it, bottom first', () => {
   const rows = board(STACK());
-  assert.deepEqual(offers(rows), { 410: ['helper'], 411: [], 412: ['stack'] });
+  assert.deepEqual(offers(rows), { 410: ['helper', 'merge'], 411: [], 412: ['stack'] });
   assert.deepEqual(rows.get(412)?.stack, ['github:pr:acme/payments-api#410', 'github:pr:acme/payments-api#411', 'github:pr:acme/payments-api#412']);
   assert.equal(rows.get(411)?.stack, undefined);
   // Two is a stack too.
-  assert.deepEqual(offers(board([pull(410), above(411, 410)])), { 410: ['helper'], 411: ['stack'] });
+  assert.deepEqual(offers(board([pull(410), above(411, 410)])), { 410: ['helper', 'merge'], 411: ['stack'] });
 });
 
 test('no stack merge without a helper that merges stacks, or while it or the approvals are unknown', () => {

@@ -26,7 +26,7 @@ import {
 import { canonicalId } from './ids.ts';
 import { CHECK_FRESH_MS, HelperError, MergeHelper, runMergeHelper, type RunHelper } from './mergehelper.ts';
 import { approvedFileProblem, inOrganizationFolder } from './organizationfile.ts';
-import { countBoard, findStack, mergeRoute, refuseDraft, refuseMerge, refuseReady, resolveBoard, type MergeContext } from './prs.ts';
+import { countBoard, findStack, mergeRoute, refuseDraft, refuseMergeBy, refuseReady, resolveBoard, type MergeContext } from './prs.ts';
 import { resolveTool } from './tools.ts';
 import type {
   Action,
@@ -35,6 +35,7 @@ import type {
   BoardState,
   CheckState,
   MergeMethod,
+  MergeRoute,
   MergeableState,
   PendingCheck,
   PullActivity,
@@ -87,7 +88,7 @@ const realDeps: BoardDeps = {
 
 /** How a merge went: GitHub's merge, its merge queue, or the merge helper, with what the helper said. */
 export interface MergeOutcome {
-  route: 'merge' | 'queue' | 'helper';
+  route: MergeRoute;
   /** The merge helper's line, for the page to show; null for GitHub's own merge. */
   notice: string | null;
 }
@@ -384,17 +385,20 @@ export class Board {
    * Merge a pull request that is ready, into its default branch, or add it to
    * that branch's merge queue when it has one, or hand it to the merge helper
    * where that said the branch merges through it; then read the board back.
+   * `via` is the way the click asked for, which the row must offer
+   * (`mergeRoutes`): beside the helper, GitHub's own merge may be offered too.
+   * Without it, from a page older than that, the way the row offers first.
    * Says which it did. Refuses as `markReady` does, and when `head`, the commit
    * the page showed when the user said yes, is no longer the row's: a poll while
    * the question was open must not get commits merged that nobody looked at.
    * GitHub refuses for itself when the head has moved since the row was read.
    */
-  async merge(id: string, actions: readonly Action[], head: string): Promise<MergeOutcome> {
-    const { row } = this.#actionable(id, actions, refuseMerge);
+  async merge(id: string, actions: readonly Action[], head: string, via?: MergeRoute): Promise<MergeOutcome> {
+    const { row } = this.#actionable(id, actions, (each) => refuseMergeBy(each, via ?? mergeRoute(each)));
     if (row.headSha !== head) {
       throw new BoardRefusal(409, `${row.repo}#${row.number}: it has new commits since you looked; check them and try again`);
     }
-    const route = mergeRoute(row);
+    const route = via ?? mergeRoute(row);
     if (route === 'helper') {
       const helper = this.#helper!;
       const notice = await this.#handOver([row], async () => {

@@ -420,11 +420,15 @@ export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
  * - `queue`   add it to its default branch's merge queue.
  * - `helper`  hand it to the user's merge helper, which queues or merges it
  *             (`mergehelper.ts`), where the helper said its repository's
- *             default branch merges that way. In place of `merge` and `queue`.
+ *             default branch merges that way. In place of `queue`, and
+ *             beside `merge` unless GitHub's own queue is on (`mergeRoutes`).
  * - `stack`   have the merge helper merge the whole stack this row tops,
  *             bottom first: `stack` on the row names it.
  */
 export type PullOffer = 'ready' | 'draft' | 'merge' | 'queue' | 'helper' | 'stack';
+
+/** The offers that merge one pull request: the way a click on Merge asks for. */
+export type MergeRoute = 'merge' | 'queue' | 'helper';
 
 /**
  * What the merge helper said about a pull request's repository and base branch

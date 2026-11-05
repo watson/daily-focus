@@ -118,7 +118,7 @@ test('a no sends nothing', async () => {
   assert.equal(ui.pending.value.size, 0);
 });
 
-test('a yes sends the row id alone, and the row is pending until the server answers', async () => {
+test('a yes sends the row id and the way to merge, and the row is pending until the server answers', async () => {
   const merged = stateWith([]);
   let answer: (res: Response) => void = () => {};
   state.value = stateWith([row(412)]);
@@ -127,7 +127,7 @@ test('a yes sends the row id alone, and the row is pending until the server answ
 
   handlers.mergePull('github:pr:acme/payments-api#412');
   await until(() => requests.length === 1);
-  assert.deepEqual(requests, [{ method: 'POST', path: '/api/board/merge', body: { id: 'github:pr:acme/payments-api#412', head: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432' } }]);
+  assert.deepEqual(requests, [{ method: 'POST', path: '/api/board/merge', body: { id: 'github:pr:acme/payments-api#412', head: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432', route: 'merge' } }]);
   assert.ok(ui.pending.value.has('github:pr:acme/payments-api#412'), 'pending while GitHub merges');
 
   // A second click meanwhile asks nothing and sends nothing.

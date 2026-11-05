@@ -1,4 +1,4 @@
-import type { Action, BoardRow, Court, CourtReason, MergeHelperView, PendingCheck, PullOffer, PullRequest, ReviewDecision } from './types.ts';
+import type { Action, BoardRow, Court, CourtReason, MergeHelperView, MergeRoute, PendingCheck, PullOffer, PullRequest, ReviewDecision } from './types.ts';
 import { canonicalId } from './ids.ts';
 import { foldActionLog } from './store.ts';
 import { laterISO, parseISO } from './time.ts';
@@ -395,9 +395,9 @@ export function refuseDraft(row: OfferFacts): string | null {
  *
  * Where the user's merge helper said the branch merges through it, these rules
  * still decide, but for GitHub saying blocked where only a queue may merge
- * (`queuedOnly`), and the helper merges in GitHub's place (`mergeRoute`). While
- * it hasn't said, nothing is offered: a merge can't be taken back, and the
- * answer is seconds away.
+ * (`queuedOnly`), for its button and for GitHub's merge beside it
+ * (`mergeRoutes`). While it hasn't said, nothing is offered: a merge can't be
+ * taken back, and the answer is seconds away.
  */
 export function refuseMerge(row: OfferFacts): string | null {
   if (row.court !== 'ready') return 'it is not ready to merge';
@@ -418,10 +418,51 @@ export function refuseMerge(row: OfferFacts): string | null {
   return null;
 }
 
-/** How a merge the board offers would go: through the merge helper, into GitHub's merge queue, or straight in. */
-export function mergeRoute(row: OfferFacts): 'helper' | 'queue' | 'merge' {
-  if (row.mergeHelper?.kind === 'queue') return 'helper';
-  return row.mergeQueue ? 'queue' : 'merge';
+/**
+ * The ways a merge the board offers may go, the usual one first: through the
+ * merge helper, into GitHub's merge queue, or straight in.
+ *
+ * Where the helper merges the branch, GitHub's own merge is offered beside it
+ * where GitHub says that merge would work, since a user may be allowed to skip
+ * the queue. Not where it says blocked, which `refuseMerge` lets past for the
+ * helper alone where only a queue's bot may push to the branch (`queuedOnly`),
+ * nor where the user may not push to it, nor where GitHub's own queue is on,
+ * which a merge straight in would have to bypass, nor before the board has read
+ * which method GitHub's button would use.
+ */
+export function mergeRoutes(row: OfferFacts): MergeRoute[] {
+  if (row.mergeHelper?.kind === 'queue') return githubMergeWorks(row) && !row.mergeQueue && row.mergeMethod ? ['helper', 'merge'] : ['helper'];
+  return [row.mergeQueue ? 'queue' : 'merge'];
+}
+
+/** Whether GitHub itself says its merge would work for this account: a clean merge state, onto a branch it may push to. */
+function githubMergeWorks(row: OfferFacts): boolean {
+  return (row.mergeStateStatus === 'CLEAN' || row.mergeStateStatus === 'HAS_HOOKS') && row.basePushable !== false;
+}
+
+/** How a merge the board offers goes unless the click says otherwise: the first of `mergeRoutes`. */
+export function mergeRoute(row: OfferFacts): MergeRoute {
+  return mergeRoutes(row)[0]!;
+}
+
+/** Every way of merging one pull request, for checking what a click asked for. */
+export const MERGE_ROUTES: readonly MergeRoute[] = ['merge', 'queue', 'helper'];
+
+/** How each way of merging reads in a refusal. */
+const ROUTE_WORDS: Record<MergeRoute, string> = {
+  helper: 'through the merge helper',
+  queue: "through GitHub's merge queue",
+  merge: "with GitHub's merge",
+};
+
+/** Why the board won't merge this pull request by `route`: null when it will. `refuseMerge`, and a way the row offers. */
+export function refuseMergeBy(row: OfferFacts, route: MergeRoute): string | null {
+  const why = refuseMerge(row);
+  if (why) return why;
+  const routes = mergeRoutes(row);
+  if (routes.includes(route)) return null;
+  if (route === 'merge' && !row.mergeQueue && !row.mergeMethod) return UNREAD;
+  return `it merges ${routes.map((each) => ROUTE_WORDS[each]).join(' or ')}, not ${ROUTE_WORDS[route]}`;
 }
 
 /** What a click on the row may do to the pull request upstream, a stack apart: see `findStack`. */
@@ -429,7 +470,7 @@ export function pullOffers(row: OfferFacts): PullOffer[] {
   const offers: PullOffer[] = [];
   if (refuseReady(row) === null) offers.push('ready');
   if (refuseDraft(row) === null) offers.push('draft');
-  if (refuseMerge(row) === null) offers.push(mergeRoute(row));
+  if (refuseMerge(row) === null) offers.push(...mergeRoutes(row));
   return offers;
 }
 
