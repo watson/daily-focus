@@ -85,25 +85,59 @@ export function App({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.
   ];
 }
 
-/** The one-line notice at the foot of the page, with its Undo when there is one. */
-function Toast({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.Element {
+/**
+ * The one-line notice at the foot of the page, with its one button when it has
+ * one: Undo, or Show for a write that failed on a row. An error says so with
+ * its mark and stays until closed; anything else goes after a few seconds,
+ * unless the pointer or the keyboard is on it.
+ *
+ * What it says is spoken from two live regions that are always on the page and
+ * never hidden, polite for a notice and an alert for an error: a region that
+ * appears, or changes its role, as it fills is the one screen readers are
+ * likeliest to miss. The pill itself is not a live region, so nothing is said
+ * twice; its words stay readable beside its buttons.
+ */
+export function Toast({ ui, handlers }: { ui: UiState; handlers: Handlers }): JSX.Element[] {
   const toast = ui.toast.value;
-  return el(
-    'div',
-    { class: 'toast', id: 'toast', role: 'status', 'aria-live': 'polite', hidden: !toast },
-    toast?.message,
-    toast?.onUndo
-      ? el(
-          'button',
-          {
-            type: 'button',
-            onClick: () => {
-              handlers.hideToast();
-              toast.onUndo?.();
+  return [
+    el('div', { key: 'status', class: 'visually-hidden', role: 'status' }, toast && !toast.error ? toast.message : ''),
+    el('div', { key: 'alert', class: 'visually-hidden', role: 'alert' }, toast?.error ? toast.message : ''),
+    el(
+      'div',
+      {
+        key: 'toast',
+        class: 'toast',
+        id: 'toast',
+        'data-error': String(Boolean(toast?.error)),
+        hidden: !toast,
+        onMouseEnter: () => handlers.holdToast(true),
+        onMouseLeave: () => handlers.holdToast(false),
+        onFocusIn: () => handlers.holdToast(true),
+        onFocusOut: () => handlers.holdToast(false),
+      },
+      toast?.error ? el('span', { class: 'toast__mark', 'aria-hidden': 'true' }, '!') : null,
+      el('span', { class: 'toast__message' }, toast?.message),
+      toast?.action
+        ? el(
+            'button',
+            {
+              type: 'button',
+              class: 'toast__action',
+              onClick: () => {
+                handlers.hideToast();
+                toast.action?.run();
+              },
             },
-          },
-          'Undo',
-        )
-      : null,
-  );
+            toast.action.label,
+          )
+        : null,
+      toast?.sticky
+        ? el(
+            'button',
+            { type: 'button', class: 'toast__close', title: 'Close', 'aria-label': 'Close this message', onClick: () => handlers.hideToast() },
+            '×',
+          )
+        : null,
+    ),
+  ];
 }

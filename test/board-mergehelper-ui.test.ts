@@ -156,6 +156,7 @@ afterEach(() => {
   window.confirm = realConfirm;
   asked.length = 0;
   ui.pending.value = new Set();
+  ui.writeFailures.value = new Map();
   handlers.hideToast();
 });
 
@@ -211,7 +212,7 @@ test("GitHub's merge beside the helper asks as GitHub's, sends its way, and says
   assert.equal(requests.length, 1);
 });
 
-test('a helper that says nothing gets a toast of ours; its refusal is the toast, in its words', async () => {
+test("a helper that says nothing gets a toast of ours; its refusal goes on the row's card, in its words", async () => {
   state.value = stateWith(rows([pull(412)]));
   server(() => reply({ ...stateWith([]), notice: '' }));
   confirmWith(true);
@@ -224,7 +225,9 @@ test('a helper that says nothing gets a toast of ours; its refusal is the toast,
   const requests = server((path) => (path === '/api/board/merge' ? reply({ error: 'acme/payments-api is frozen for the release' }, 409) : reply(stateWith([]))));
   handlers.mergePull('github:pr:acme/payments-api#412');
   await until(() => ui.toast.value !== null && ui.pending.value.size === 0);
-  assert.equal(ui.toast.value?.message, 'Your merge helper would not take acme/payments-api#412: acme/payments-api is frozen for the release');
+  assert.equal(ui.toast.value?.message, 'Couldn’t add acme/payments-api#412 to the merge queue. The reason is on its card.');
+  assert.equal(ui.writeFailures.value.get('github:pr:acme/payments-api#412')?.message, 'acme/payments-api is frozen for the release');
+  assert.deepEqual(ui.writeFailures.value.get('github:pr:acme/payments-api#412')?.retry, { kind: 'merge', route: 'helper' });
   assert.deepEqual(requests.map((request) => `${request.method} ${request.path}`), ['POST /api/board/merge', 'GET /api/state']);
 });
 

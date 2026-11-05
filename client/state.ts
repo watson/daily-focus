@@ -16,7 +16,7 @@ import type {
   ResolvedItem,
   TicketRow,
 } from '../src/types.ts';
-import type { UiState, UiValues, View, WarningsSeen } from './types.ts';
+import type { UiState, UiValues, View, WarningsSeen, WriteFailure, WriteRetry } from './types.ts';
 
 /**
  * The panels, by name. Each name is also the id of its panel element, which is
@@ -50,6 +50,8 @@ export const PROJECT_KEY = 'daily-focus:project';
  * code change triggers mid-conversation, and not much else.
  */
 export const DETAIL_KEY = 'daily-focus:detail-for';
+/** The writes that failed on rows, for their cards. Per tab, in sessionStorage, for `DETAIL_KEY`'s reason. */
+export const WRITE_FAILURES_KEY = 'daily-focus:write-failures';
 
 /** The server's last word. Null until the first reply, which is when the page is empty. */
 export const state = signal<DashboardState | null>(null);
@@ -75,6 +77,7 @@ export function createUi(initial: Partial<UiValues> = {}): UiState {
     view: signal(initial.view ?? 'today'),
     theme: signal(initial.theme ?? 'system'),
     toast: signal(initial.toast ?? null),
+    writeFailures: signal(initial.writeFailures ?? new Map<string, WriteFailure>()),
     connectionError: signal(initial.connectionError ?? null),
     settingsReturn: signal(initial.settingsReturn ?? 'today'),
     settings: signal(initial.settings ?? null),
@@ -110,6 +113,41 @@ export function readWarningsSeen(raw: string | null): WarningsSeen | null {
   }
 }
 
+const RETRY_KINDS = new Set(['merge', 'stack', 'ready', 'draft', 'move']);
+
+function isRetry(value: unknown): value is WriteRetry {
+  const retry = value as Partial<Record<string, unknown>> | null;
+  if (typeof retry !== 'object' || retry === null || !RETRY_KINDS.has(retry.kind as string)) return false;
+  if (retry.kind === 'merge') return typeof retry.route === 'string';
+  if (retry.kind === 'move') return typeof retry.key === 'string' && typeof retry.status === 'string';
+  return true;
+}
+
+/** The failed writes kept for this tab; an empty map for nothing, and an entry that isn't what was written is left out. */
+export function readWriteFailures(raw: string | null): Map<string, WriteFailure> {
+  const out = new Map<string, WriteFailure>();
+  if (!raw) return out;
+  try {
+    const entries = JSON.parse(raw) as unknown;
+    if (!Array.isArray(entries)) return out;
+    for (const entry of entries) {
+      if (!Array.isArray(entry) || typeof entry[0] !== 'string') continue;
+      const failure = entry[1] as Partial<WriteFailure> | null;
+      if (typeof failure?.headline !== 'string' || typeof failure.message !== 'string' || typeof failure.at !== 'string' || !isRetry(failure.retry)) continue;
+      out.set(entry[0], {
+        headline: failure.headline,
+        message: failure.message,
+        at: failure.at,
+        attempts: typeof failure.attempts === 'number' && failure.attempts >= 1 ? failure.attempts : 1,
+        retry: failure.retry,
+      });
+    }
+  } catch {
+    // Not what was written: nothing kept.
+  }
+  return out;
+}
+
 /** What this browser remembered. Nothing, where there is no storage to ask. */
 function remembered(): Partial<UiValues> {
   try {
@@ -121,6 +159,7 @@ function remembered(): Partial<UiValues> {
       warningsSeen: readWarningsSeen(localStorage.getItem(WARNINGS_SEEN_KEY)),
       projectKey: localStorage.getItem(PROJECT_KEY),
       detailFor: sessionStorage.getItem(DETAIL_KEY),
+      writeFailures: readWriteFailures(sessionStorage.getItem(WRITE_FAILURES_KEY)),
     };
   } catch {
     return {};
@@ -206,6 +245,16 @@ function projectTicketRow(current: DashboardState, id: string): ProjectTicketRow
     }
   }
   return null;
+}
+
+/** A ticket by key, wherever the page has it: the ticket board, then a project kept open. */
+export function ticketByKey(current: DashboardState, key: string): TicketRow | InProgressTicket | ProjectTicketRow | null {
+  const tickets = current.tickets;
+  return (
+    tickets?.rows?.find((row) => row.key === key) ??
+    tickets?.inProgress?.find((row) => row.key === key) ??
+    projectTicketRow(current, projectTicketId(key))
+  );
 }
 
 /**

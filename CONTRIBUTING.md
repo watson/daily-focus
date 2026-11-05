@@ -115,6 +115,7 @@ versions and release notes come from, so CI checks it.
 | `src/projects.ts`, `src/projectboard.ts` | An epic or initiative zoomed into: the order its tickets can land in from Jira's blocks links, the loops in them, and reading the projects someone opens |
 | `client/stages.ts`, `client/projects.ts` | The Tickets tab's Projects view: where each ticket stands, joined from Jira, the ticket board and the pull request board, what to do next, the rail's lanes, and the page that shows them |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
+| `client/writefailure.ts` | A write a row's button asked for that failed: the note on its card, with the reason, Try again and Dismiss, kept per tab until it is put away |
 | `src/assistant.ts` | The on-demand assistant: runs a coding-agent CLI headless against one row |
 | `src/autoask.ts` | Asking the assistant ahead, on its own, about pull requests waiting on you, and which question each row's state calls for; and starting the done check on its own once a ticket's pull requests and description have settled |
 | `src/donecheck.ts`, `client/donecheck.ts` | The done check: whether a ticket's pull requests finish it, as a verdict keyed on its description and their head commits, run through the assistant's runner, kept in `donecheck.jsonl`, and the line on each ticket's row and card |

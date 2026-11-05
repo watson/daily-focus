@@ -91,7 +91,7 @@ export function failureFacts(failure: ReadFailure, lastGood: string | null, now:
 }
 
 /** A time, with its day when that isn't today: an outage can outlast one. */
-function when(value: string, now: Date): string {
+export function when(value: string, now: Date): string {
   const days = daysFromToday(value, now);
   if (days === 0) return formatTime(value);
   return `${days === -1 ? 'yesterday' : days === 1 ? 'tomorrow' : formatShortDay(value)} ${formatTime(value)}`;

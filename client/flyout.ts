@@ -22,10 +22,11 @@ import { SOURCE_LABEL, githubRepo, sourceColor } from './items.ts';
 import { renderMarkdown, renderMarkdownBlocks } from './markdown.ts';
 import { usePanel } from './panel.ts';
 import { RunPanel } from './runs.ts';
-import { RUN_PREFIX, type DetailRow } from './state.ts';
+import { RUN_PREFIX, projectTicketId, type DetailRow } from './state.ts';
 import { panelPulls } from './projects.ts';
 import { renderTicketControls, typeColor } from './tickets.ts';
 import type { Handlers, UiState } from './types.ts';
+import { writeFailureNote } from './writefailure.ts';
 
 export interface FlyoutProps {
   /** The row the panel is open on, or null: nothing open, or the row it was open for has gone. */
@@ -70,6 +71,8 @@ function RowPanel({ row, state, ui, handlers }: { row: DetailRow; state: Dashboa
     el(
       'div',
       { class: 'flyout__body', ref: body, onScroll },
+      // A move of the ticket's that failed, from the status above or its card.
+      'key' in row && 'summary' in row ? writeFailureNote(projectTicketId(row.key), state, ui, handlers) : null,
       facts.detail ? el('p', { class: 'flyout__detail' }, renderMarkdown(facts.detail)) : null,
       // A ticket's pull requests, each with its Draft or In review to change.
       'key' in row && 'summary' in row ? panelPulls(row.key, !('mine' in row) || row.mine !== false, state, ui, handlers) : null,
