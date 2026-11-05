@@ -20,6 +20,7 @@ import {
   HelperRefusal,
   MergeHelper,
   STATUS_AFTER_MS,
+  STATUS_AT_ONCE,
   firstLine,
   readCheck,
   readMerge,
@@ -260,24 +261,25 @@ function clock(start = Date.parse('2026-11-03T12:00:00Z')) {
 
 test('check is asked once per repository and branch, after a poll, and its answer kept a day', async () => {
   const time = clock();
-  const run = fakeRun(() => ran('{"queue": true, "label": "Queue it", "stacks": true}'));
+  const run = fakeRun((args) => ran(args[0] === 'check' ? '{"queue": true, "label": "Queue it", "stacks": true}' : '{"queued": false}'));
+  const checks = () => run.calls.filter((call) => call.startsWith('check '));
   const helper = new MergeHelper('/opt/merge-helper', run, () => ({}), time.now);
 
   assert.deepEqual(helper.view('acme/payments-api', 'main'), { kind: 'asking' }, 'nothing offered before it has said');
   const pulls = [pull(410), pull(411), pull(412, { baseRef: 'alice/change-411' }), pull(7, { repo: 'acme/webapp', id: 'github:pr:acme/webapp#7', url: 'https://github.com/acme/webapp/pull/7' })];
   await helper.ask(pulls);
   // One per branch a pull request targets as its default; never for a branch stacked on another.
-  assert.deepEqual(run.calls, ['check https://github.com/acme/payments-api/pull/410 main', 'check https://github.com/acme/webapp/pull/7 main']);
+  assert.deepEqual(checks(), ['check https://github.com/acme/payments-api/pull/410 main', 'check https://github.com/acme/webapp/pull/7 main']);
   assert.deepEqual(helper.view('acme/payments-api', 'main'), { kind: 'queue', label: 'Queue it', stacks: true });
   assert.deepEqual(helper.view('ACME/Payments-API', 'main'), { kind: 'queue', label: 'Queue it', stacks: true });
 
   run.calls.length = 0;
   time.pass(CHECK_FRESH_MS - 1);
   await helper.ask(pulls);
-  assert.deepEqual(run.calls, [], 'still fresh');
+  assert.deepEqual(checks(), [], 'still fresh');
   time.pass(1);
   await helper.ask(pulls);
-  assert.equal(run.calls.length, 2, 'a day on, asked again');
+  assert.equal(checks().length, 2, 'a day on, asked again');
   assert.deepEqual(helper.warnings(), []);
 });
 
@@ -316,6 +318,8 @@ test('a pull request handed to it is queued until status says otherwise or GitHu
   const run = fakeRun((args) => (args[0] === 'check' ? ran('{"queue": true}') : (queued.get(args[1]!) ?? ran('{"queued": true}'))));
   const helper = new MergeHelper('/opt/merge-helper', run, () => ({}), time.now);
   const handed = (number: number) => ({ id: `github:pr:acme/payments-api#${number}`, url: `https://github.com/acme/payments-api/pull/${number}`, repo: 'acme/payments-api', number });
+  // Stacked, as a stack merged from its top hands over: only being handed over gets them asked about.
+  const pull = (number: number) => stacked(number);
 
   helper.handed([handed(410), handed(411), handed(412)]);
   assert.ok(helper.queued('github:pr:acme/payments-api#410'));
@@ -323,7 +327,7 @@ test('a pull request handed to it is queued until status says otherwise or GitHu
   assert.equal(helper.queued('github:pr:acme/payments-api#413'), false);
 
   await helper.ask([pull(410), pull(411), pull(412)]);
-  assert.deepEqual(run.calls, ['check https://github.com/acme/payments-api/pull/410 main'], 'a queue gets a moment to notice it first');
+  assert.deepEqual(run.calls, [], 'a queue gets a moment to notice it first');
 
   run.calls.length = 0;
   time.pass(STATUS_AFTER_MS);
@@ -335,13 +339,70 @@ test('a pull request handed to it is queued until status says otherwise or GitHu
   assert.equal(helper.queued('github:pr:acme/payments-api#410'), false, 'merged, forgotten without asking');
   assert.equal(helper.queued('github:pr:acme/payments-api#411'), false, 'out of the queue, and asked about no more');
   assert.equal(helper.queued('github:pr:acme/payments-api#412'), true, 'what it said last stands while it can’t say');
-  assert.deepEqual(helper.warnings(), ["The merge helper couldn't say whether acme/payments-api#412 is still in its queue: it exited with code 1: queue API timed out."]);
+  assert.deepEqual(helper.warnings(), ["The merge helper couldn't say whether acme/payments-api#412 is in its queue: it exited with code 1: queue API timed out."]);
 
   run.calls.length = 0;
   queued.delete('https://github.com/acme/payments-api/pull/412');
   await helper.ask([pull(411), pull(412)]);
   assert.deepEqual(run.calls, ['status https://github.com/acme/payments-api/pull/412'], '411 is not asked about again');
   assert.deepEqual(helper.warnings(), []);
+});
+
+/** Stacked on another pull request's branch, where GitHub reports no review decision. */
+function stacked(number: number): PullRequest {
+  return pull(number, { baseRef: `alice/change-${number - 1}`, reviewDecision: null });
+}
+
+test('status is asked about every approved pull request on a branch it merges, since a queue takes them by other ways too', async () => {
+  const answers = new Map<string, HelperRun>([['https://github.com/acme/payments-api/pull/410', ran('{"queued": true}')]]);
+  const run = fakeRun((args) => {
+    if (args[0] === 'check') return ran(args[1]!.includes('/webapp/') ? '{"queue": false}' : '{"queue": true}');
+    return answers.get(args[1]!) ?? ran('{"queued": false}');
+  });
+  const statuses = () => run.calls.filter((call) => call.startsWith('status ')).sort();
+  const helper = new MergeHelper('/opt/merge-helper', run, () => ({}));
+  const webapp = pull(7, { repo: 'acme/webapp', id: 'github:pr:acme/webapp#7', url: 'https://github.com/acme/webapp/pull/7' });
+  const pulls = [pull(410), pull(411), pull(412, { reviewDecision: null }), pull(413, { isDraft: true }), stacked(414), webapp];
+
+  await helper.ask(pulls);
+  // Not 412, which nobody approved, 413, a draft, 414, stacked, nor 7, whose branch merges with GitHub's merge.
+  assert.deepEqual(statuses(), ['status https://github.com/acme/payments-api/pull/410', 'status https://github.com/acme/payments-api/pull/411']);
+  assert.equal(helper.queued('github:pr:acme/payments-api#410'), true, 'queued by a comment, never by the dashboard');
+  assert.equal(helper.queued('github:pr:acme/payments-api#411'), false);
+
+  run.calls.length = 0;
+  answers.set('https://github.com/acme/payments-api/pull/410', ran('', 1, 'queue API timed out'));
+  answers.set('https://github.com/acme/payments-api/pull/411', ran('{"queued": true}'));
+  await helper.ask(pulls);
+  assert.equal(statuses().length, 2, 'asked again after every poll, out of the queue or in it');
+  assert.equal(helper.queued('github:pr:acme/payments-api#410'), true, 'what it said last stands while it can’t say');
+  assert.equal(helper.queued('github:pr:acme/payments-api#411'), true);
+  assert.deepEqual(helper.warnings(), ["The merge helper couldn't say whether acme/payments-api#410 is in its queue: it exited with code 1: queue API timed out."]);
+
+  // 410 lost its approval: nothing says it may be queued now, so nothing it said stands. 411 merged.
+  run.calls.length = 0;
+  await helper.ask([pull(410, { reviewDecision: 'REVIEW_REQUIRED' })]);
+  assert.deepEqual(run.calls, []);
+  assert.equal(helper.queued('github:pr:acme/payments-api#410'), false);
+  assert.equal(helper.queued('github:pr:acme/payments-api#411'), false);
+  assert.deepEqual(helper.warnings(), []);
+});
+
+test(`status is asked at most ${STATUS_AT_ONCE} at a time`, async () => {
+  let running = 0;
+  let most = 0;
+  const run = fakeRun(async (args) => {
+    if (args[0] === 'check') return ran('{"queue": true}');
+    most = Math.max(most, ++running);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    running--;
+    return ran('{"queued": false}');
+  });
+  const helper = new MergeHelper('/opt/merge-helper', run, () => ({}));
+  const pulls = Array.from({ length: STATUS_AT_ONCE * 2 + 1 }, (_, i) => pull(410 + i));
+  await helper.ask(pulls);
+  assert.equal(run.calls.filter((call) => call.startsWith('status ')).length, pulls.length, 'every one is asked');
+  assert.equal(most, STATUS_AT_ONCE);
 });
 
 test('merge hands over one pull request, or a stack from its top, and says what the helper said', async () => {

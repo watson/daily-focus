@@ -68,11 +68,15 @@ const ran = (stdout: string, code = 0, stderr = ''): HelperRun => ({ code, signa
 
 /**
  * A board polling alice, with a merge helper whose answers come from `helper`.
- * Every call to GitHub and the helper is written down in `calls`.
+ * Every call to GitHub and the helper is written down in `calls`, but for
+ * `status`: every approved pull request gets one after every poll, so its
+ * answers come from `status`, not queued unless it says so, and the pull
+ * requests asked about are written down in `statuses`.
  */
 async function helpedBoard(opts: {
   pulls: () => PullRequest[];
   helper: (args: readonly string[]) => HelperRun | Promise<HelperRun>;
+  status?: (url: string) => HelperRun;
   approvals?: () => Promise<number>;
   /** GitHub's answer just before a hand-over; by default, the pulls as the board read them. */
   live?: (ids: readonly string[]) => Map<string, LiveHead>;
@@ -86,6 +90,7 @@ async function helpedBoard(opts: {
   dirs.push(dataDir);
   const config = loadConfig({ DAILY_FOCUS_DATA: dataDir, DAILY_FOCUS_GITHUB_ACCOUNTS: 'alice', DAILY_FOCUS_MERGE_HELPER: HELPER, ...opts.settings });
   const calls: string[] = [];
+  const statuses: string[] = [];
   const envs: RunOptions[] = [];
   const deps: BoardDeps = {
     listAccounts: async () => assert.fail('the account is configured'),
@@ -112,15 +117,19 @@ async function helpedBoard(opts: {
     },
     runHelper: async (helper, args, options) => {
       assert.equal(helper, HELPER);
-      calls.push(`helper ${args.join(' ')}`);
       envs.push(options);
+      if (args[0] === 'status') {
+        statuses.push(args[1]!);
+        return opts.status?.(args[1]!) ?? ran('{"queued": false}');
+      }
+      calls.push(`helper ${args.join(' ')}`);
       return opts.helper(args);
     },
   };
   const board = new Board(config, () => {}, deps);
   await board.start();
   if (opts.wait !== false) await board.answered();
-  return { board, calls, envs, dataDir };
+  return { board, calls, statuses, envs, dataDir };
 }
 
 // Merges only: turning a pull request back into a draft is offered on every open one, and is not what this file is about.
@@ -153,6 +162,24 @@ test('after a poll the board asks the helper, then offers its button where it sa
   // The CLIs' environment: the store as DAILY_FOCUS_DATA, as the agent gets it.
   assert.equal(envs[0]!.env.DAILY_FOCUS_DATA, dataDir);
   assert.equal(envs[0]!.timeoutMs, 30_000);
+});
+
+test('a pull request queued another way, by a comment say, is In merge queue once the helper says so, with no merge to offer', async () => {
+  // The queue reports itself as a check on the pull request while it merges it.
+  const merging = { name: 'queue/merge', kind: 'check-run' as const, detailsUrl: 'https://queue.example/412' };
+  const queued = { mergeStateStatus: 'BLOCKED' as const, checks: 'pending' as const, pendingChecks: [merging] };
+  const { board, statuses } = await helpedBoard({
+    pulls: () => [pull(412, queued), pull(413, queued), pull(414, { reviewDecision: 'REVIEW_REQUIRED', reviews: [] })],
+    helper: () => ran('{"queue": true}'),
+    status: (url) => ran(url.endsWith('/412') ? '{"queued": true}' : '{"queued": false}'),
+  });
+  assert.deepEqual(statuses.sort(), ['https://github.com/acme/payments-api/pull/412', 'https://github.com/acme/payments-api/pull/413'], 'every approved one, never the one awaiting review');
+  const rows = new Map(board.view([], new Date()).rows.map((row) => [row.number, row]));
+  assert.equal(rows.get(412)?.court, 'queue');
+  assert.equal(rows.get(412)?.helperQueued, true);
+  assert.deepEqual(merges(rows.get(412)!), []);
+  assert.equal(rows.get(413)?.court, 'checks', 'its check is just a check');
+  assert.deepEqual(board.view([], new Date()).warnings, []);
 });
 
 test("a failed check is a warning naming the helper's error, GitHub's merge meanwhile, and asked again after the next poll", async () => {
