@@ -780,20 +780,21 @@ test('a second click while the first is on its way is refused, and a switched-of
 });
 
 test('the facts the writes need survive a restart, and an older file reads as not having them', () => {
-  const kept = normalizeStoredPull(payments(412, { mergeQueue: true, stacked: true }));
+  const kept = normalizeStoredPull(payments(412, { mergeQueue: true, stacked: true, basePushable: false }));
   assert.ok(kept);
   assert.equal(kept.nodeId, 'PR_kwDOAcme412');
   assert.equal(kept.defaultBranch, 'main');
   assert.equal(kept.mergeMethod, 'SQUASH');
   assert.equal(kept.mergeQueue, true);
   assert.equal(kept.stacked, true);
+  assert.equal(kept.basePushable, false);
 
-  const { nodeId, defaultBranch, mergeMethod, mergeQueue, inMergeQueue, stacked, ...older } = payments(412);
+  const { nodeId, defaultBranch, mergeMethod, mergeQueue, inMergeQueue, stacked, basePushable, ...older } = payments(412);
   const old = normalizeStoredPull({ ...older, mergeMethod: 'FAST_FORWARD' });
   assert.ok(old);
   assert.deepEqual(
-    [old.nodeId, old.defaultBranch, old.mergeMethod, old.mergeQueue, old.inMergeQueue, old.stacked],
-    [null, null, null, false, false, false],
+    [old.nodeId, old.defaultBranch, old.mergeMethod, old.mergeQueue, old.inMergeQueue, old.stacked, old.basePushable],
+    [null, null, null, false, false, false, null],
   );
-  void [nodeId, defaultBranch, mergeMethod, mergeQueue, inMergeQueue, stacked];
+  void [nodeId, defaultBranch, mergeMethod, mergeQueue, inMergeQueue, stacked, basePushable];
 });

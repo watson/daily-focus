@@ -21,6 +21,7 @@ import {
   mergePull,
   mergeRequest,
   mergeStatesFromNodes,
+  basePushFromNodes,
   normalizePullRequest,
   readEnqueueReply,
   readMergeReply,
@@ -268,6 +269,29 @@ test('the merge-state reply is read by node id, and one odd node costs only itse
     ],
   );
   assert.deepEqual([...mergeStatesFromNodes([]).entries()], []);
+});
+
+test('whether the account may push to the base branch is read from the same reply, and only a rule saying so counts', () => {
+  const pushable = basePushFromNodes([
+    { id: 'PR_kwaaa', baseRef: { refUpdateRule: { viewerCanPush: false } } },
+    { id: 'PR_kwbbb', baseRef: { refUpdateRule: { viewerCanPush: true } } },
+    // No rule GitHub will show, a base branch gone, a field it errored on: nobody said.
+    { id: 'PR_kwccc', baseRef: { refUpdateRule: null } },
+    { id: 'PR_kwddd', baseRef: null },
+    { id: 'PR_kweee', mergeStateStatus: 'BLOCKED' },
+    { baseRef: { refUpdateRule: { viewerCanPush: false } } },
+    null,
+  ]);
+  assert.deepEqual(
+    [...pushable.entries()],
+    [
+      ['PR_kwaaa', false],
+      ['PR_kwbbb', true],
+      ['PR_kwccc', null],
+      ['PR_kwddd', null],
+      ['PR_kweee', null],
+    ],
+  );
 });
 
 test('the three requests stay split, and each asks for only its own half', async () => {

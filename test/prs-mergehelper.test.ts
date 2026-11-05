@@ -102,6 +102,52 @@ test('GitHub’s rules for a merge still decide whether the helper is offered', 
   assert.equal(rows.get(414)?.mergeHelper, undefined, 'the helper is asked about default branches only');
 });
 
+test('where only the helper’s queue may merge, a merge GitHub calls blocked with nothing left to wait on is ready, and offers it', () => {
+  // A branch only a queue's bot may push to reads blocked to the user: approved and green, there is nothing else to wait on.
+  const blocked = { mergeStateStatus: 'BLOCKED' as const, basePushable: false };
+  const queued = board([pull(421, blocked)]).get(421)!;
+  assert.equal(queued.court, 'ready');
+  assert.deepEqual(queued.reasons, []);
+  assert.deepEqual(merges(queued), ['helper']);
+  assert.equal(queued.since, '2026-11-02T10:00:00Z', 'ready since the approval, as any ready row is');
+
+  // GitHub's own merge would be refused, so without the helper's word it stays blocked.
+  for (const [what, merging] of [
+    ['no helper set', null],
+    ["the helper doesn't merge it", context({ helper: null })],
+    ['the helper is still being asked', context({ helper: { kind: 'asking' } })],
+  ] as const) {
+    const row = board([pull(421, blocked)], merging).get(421)!;
+    assert.equal(row.court, 'blocked', what);
+    assert.deepEqual(merges(row), [], what);
+  }
+
+  // Blocked for something else: the user may push there, or GitHub didn't say, as an older cache doesn't.
+  for (const [what, basePushable] of [
+    ['the user may push to the base branch', true],
+    ['GitHub showed no rule for it', null],
+    ['a cache from before it was read', undefined],
+  ] as const) {
+    const row = board([pull(421, { ...blocked, basePushable })]).get(421)!;
+    assert.equal(row.court, 'blocked', what);
+    assert.deepEqual(merges(row), [], what);
+  }
+
+  // Everything else still holds it up.
+  const rows = board([
+    pull(422, { ...blocked, pendingChecks: [{ name: 'integration-tests', kind: 'check-run', detailsUrl: null }] }),
+    pull(423, { ...blocked, reviewDecision: 'REVIEW_REQUIRED', reviews: [] }),
+    pull(424, { ...blocked, reviewDecision: null, reviews: [] }),
+    pull(425, { ...blocked, lastActivityByOthers: { login: 'bob', at: '2026-11-02T11:00:00Z', kind: 'comment' } }),
+    pull(426, { ...blocked, baseRef: 'release/2026.11' }),
+  ]);
+  assert.deepEqual(
+    Object.fromEntries([...rows].map(([number, row]) => [number, row.court])),
+    { 422: 'checks', 423: 'reviewers', 424: 'blocked', 425: 'you', 426: 'blocked' },
+  );
+  for (const row of rows.values()) assert.deepEqual(merges(row), [], `#${row.number}`);
+});
+
 /* ---------- stacks ---------- */
 
 /** 410 on main, 411 on 410, 412 on 411. */
