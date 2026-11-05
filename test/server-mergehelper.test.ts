@@ -85,7 +85,8 @@ before(async () => {
     `
 fs.appendFileSync(${quoted(log)}, args.join(' ') + '\\n');
 if (args[0] === 'check') say('{"queue": true, "label": "Queue it", "stacks": true}');
-else if (args[0] === 'status') say('{"queued": true}');
+// Nothing is in its queue but what the dashboard hands it, which isn't asked about for two minutes.
+else if (args[0] === 'status') say('{"queued": false}');
 else if (args[0] === 'merge' && args[1].endsWith('/421')) fail('the queue is closed for acme/payments-api#421');
 else if (args[0] === 'merge' && args[1] === '--stack') say('Stack queued from #' + args[2].split('/').pop());
 else if (args[0] === 'merge') say('Queued ' + args[1]);
@@ -150,7 +151,10 @@ test("once the helper has answered, its button and Merge stack are on the rows i
   );
   assert.deepEqual(row(state, 420)?.mergeHelper, { kind: 'queue', label: 'Queue it', stacks: true });
   assert.deepEqual(row(state, 412)?.stack, Object.keys(HEADS));
-  assert.deepEqual(await helperLog(), ['check https://github.com/acme/payments-api/pull/410 main'], 'one check for the branch');
+  const log = await helperLog();
+  assert.deepEqual(log.slice(0, 1), ['check https://github.com/acme/payments-api/pull/410 main'], 'one check for the branch');
+  // Then whether each approved one on it is queued, which it may be without the dashboard; not 411 and 412, stacked above 410.
+  assert.deepEqual([...new Set(log.slice(1))].sort(), [410, 420, 421].map((number) => `status https://github.com/acme/payments-api/pull/${number}`));
 });
 
 test('merge-stack takes the top row and the heads the page showed, behind the same guard as every POST', async () => {
@@ -193,7 +197,9 @@ test("the helper's refusal is a 409 in its own words", async () => {
 
 test('merge takes the way the click asked for, among those the row offers', async () => {
   await answered();
-  const before = (await helperLog()).length;
+  // Not its questions after each poll, which go on meanwhile.
+  const handedOver = async () => (await helperLog()).filter((line) => !line.startsWith('status'));
+  const before = (await handedOver()).length;
   for (const route of ['squash', 7, null]) {
     const res = await post('/api/board/merge', { id: 'github:pr:acme/payments-api#420', head: 'head-420', route });
     assert.equal(res.status, 400, String(route));
@@ -203,7 +209,7 @@ test('merge takes the way the click asked for, among those the row offers', asyn
   assert.deepEqual(await queue.json(), {
     error: "acme/payments-api#420: it merges through the merge helper or with GitHub's merge, not through GitHub's merge queue",
   });
-  assert.equal((await helperLog()).length, before, 'the helper heard of none of it');
+  assert.equal((await handedOver()).length, before, 'the helper heard of none of it');
 });
 
 test('merge and merge-stack hand over through the helper and answer with what it said, the board read back', async () => {

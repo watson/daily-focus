@@ -98,7 +98,8 @@ If your company merges through a queue of its own, set a **Merge helper** under 
 requests in Settings: a small program of yours that the board asks how each
 repository merges, and hands a pull request to from its own button, or a whole stack
 from its top with **Merge stack**. GitHub's own merge stays beside its button, for
-when you may skip the queue. Pull requests it took move to In merge queue. Where
+when you may skip the queue. Pull requests in its queue move to In merge queue,
+whether it took them or they got there another way, such as a comment. Where
 only the queue's bot may merge into a branch, GitHub calls everyone else's merge
 blocked; the board counts such a pull request ready when nothing else holds it up,
 and offers the helper's button alone. The

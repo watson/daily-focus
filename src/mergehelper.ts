@@ -18,8 +18,9 @@
  *       took it, and the first line it prints is what the page says; anything
  *       else is a refusal, in the first line of what it printed to stderr.
  *   <helper> status <pr-url>
- *       `{"queued": true}` or `{"queued": false}`: whether a pull request it
- *       was handed is still in its queue.
+ *       `{"queued": true}` or `{"queued": false}`: whether a pull request is
+ *       in its queue, however it got there: from the dashboard, or by a
+ *       comment or a tool of its own.
  *
  * `merge` runs only from a click on a row, as GitHub's merge does. `check` and
  * `status` are the helper's questions, asked after the board's polls; the
@@ -42,6 +43,7 @@ import { dirname, join } from 'node:path';
 
 import { canonicalId } from './ids.ts';
 import { launchFor, stopProcess } from './launch.ts';
+import { deriveDecision } from './prs.ts';
 import type { MergeHelperView, PullRequest } from './types.ts';
 
 /** How long `check` and `status` may take: questions, asked with nobody waiting. */
@@ -50,6 +52,8 @@ export const QUESTION_TIMEOUT_MS = 30_000;
 export const MERGE_TIMEOUT_MS = 120_000;
 /** How long a `check` answer is trusted before it is asked again. */
 export const CHECK_FRESH_MS = 24 * 3_600_000;
+/** How many `status` questions run at once: one each for every approved pull request, after every poll. */
+export const STATUS_AT_ONCE = 4;
 /**
  * How long after the helper took a pull request before `status` is asked about
  * it: a queue run by a bot may take a moment to notice a command, and a "no"
@@ -303,9 +307,14 @@ export class MergeHelper {
   readonly #failed = new Map<string, { repo: string; base: string; why: string }>();
   /** Branches being asked about now. */
   readonly #asking = new Set<string>();
-  /** Pull requests handed to it from the dashboard and not yet known to be out of its queue, by canonical id, with when. */
-  readonly #handed = new Map<string, Handed & { queued: boolean; at: number }>();
-  /** Handed pull requests whose last `status` failed, with why. */
+  /**
+   * What `status` last said about each pull request it is asked about, by
+   * canonical id: those handed to it from the dashboard, with when, until it
+   * says one is out of its queue, and every other that may be in it
+   * (`mayBeQueued`).
+   */
+  readonly #queue = new Map<string, Queued>();
+  /** Pull requests whose last `status` failed, with why. */
   readonly #statusFailed = new Map<string, string>();
 
   constructor(path: string, run: RunHelper, env: () => NodeJS.ProcessEnv, now: () => number = Date.now) {
@@ -329,9 +338,9 @@ export class MergeHelper {
     return { kind: 'asking' };
   }
 
-  /** Whether a pull request handed to it from the dashboard is still in its queue, as far as it last said. */
+  /** Whether a pull request is in its queue, as far as it last said, or since the dashboard handed it over. */
   queued(id: string): boolean {
-    return this.#handed.get(canonicalId(id))?.queued ?? false;
+    return this.#queue.get(canonicalId(id))?.queued ?? false;
   }
 
   /** What the board should say about the helper: each check and status that failed. */
@@ -341,19 +350,21 @@ export class MergeHelper {
         `The merge helper couldn't say how ${repo} merges into ${base}: it ${why}. Its pull requests offer GitHub's merge until it can.`,
     );
     for (const [id, why] of this.#statusFailed) {
-      const handed = this.#handed.get(id);
-      if (handed) warnings.push(`The merge helper couldn't say whether ${handed.repo}#${handed.number} is still in its queue: it ${why}.`);
+      const pull = this.#queue.get(id);
+      if (pull) warnings.push(`The merge helper couldn't say whether ${pull.repo}#${pull.number} is in its queue: it ${why}.`);
     }
     return warnings;
   }
 
   /**
    * After a poll: ask `check` about every branch the board's pull requests
-   * target as their default branch that has no fresh answer, and `status` about
-   * every pull request handed to it that GitHub still reports open, from
-   * `STATUS_AFTER_MS` after it was handed. One GitHub no longer lists has merged
-   * or closed, and is forgotten without asking. Resolves once every answer is
-   * in, and never rejects.
+   * target as their default branch that has no fresh answer, then `status`
+   * about every pull request GitHub still reports open that may be in its
+   * queue: handed to it, from `STATUS_AFTER_MS` after, until it says it is out;
+   * or approved on a branch it merges (`mayBeQueued`), since a queue also takes
+   * pull requests by a comment or a tool of its own. One GitHub no longer lists
+   * has merged or closed, and is forgotten without asking. Resolves once every
+   * answer is in, and never rejects.
    */
   async ask(pulls: readonly PullRequest[]): Promise<void> {
     const branches = new Map<string, { repo: string; base: string; url: string }>();
@@ -365,23 +376,48 @@ export class MergeHelper {
     // A branch no pull request targets any more has nothing to warn about.
     for (const key of this.#failed.keys()) if (!branches.has(key)) this.#failed.delete(key);
 
-    const open = new Set(pulls.map((pull) => canonicalId(pull.id)));
-    for (const id of this.#handed.keys()) {
-      if (!open.has(id)) {
-        this.#handed.delete(id);
-        this.#statusFailed.delete(id);
-      }
-    }
-
     const now = this.#now();
     const checks = [...branches].filter(([key]) => {
       const known = this.#checks.get(key);
       return !this.#asking.has(key) && (!known || now - known.at >= CHECK_FRESH_MS || this.#failed.has(key));
     });
-    await Promise.all([
-      ...checks.map(([key, branch]) => this.#check(key, branch)),
-      ...[...this.#handed.values()].filter((handed) => now - handed.at >= STATUS_AFTER_MS).map((handed) => this.#status(handed)),
-    ]);
+    // Whether one may be queued depends on what `check` says of its branch.
+    await Promise.all(checks.map(([key, branch]) => this.#check(key, branch)));
+
+    const asked: Handed[] = [];
+    const open = new Set<string>();
+    for (const pull of pulls) {
+      const id = canonicalId(pull.id);
+      open.add(id);
+      const known = this.#queue.get(id);
+      if (known?.handedAt != null) {
+        if (now - known.handedAt >= STATUS_AFTER_MS) asked.push(known);
+      } else if (this.#mayBeQueued(pull)) {
+        asked.push(known ?? { id: pull.id, url: pull.url, repo: pull.repo, number: pull.number });
+      } else {
+        // Nothing says it could be queued any more: what was said of it is old news.
+        this.#queue.delete(id);
+        this.#statusFailed.delete(id);
+      }
+    }
+    for (const id of this.#queue.keys()) {
+      if (!open.has(id)) {
+        this.#queue.delete(id);
+        this.#statusFailed.delete(id);
+      }
+    }
+    await inTurns(asked, STATUS_AT_ONCE, (pull) => this.#status(pull));
+  }
+
+  /**
+   * Whether a pull request may be in the helper's queue though the dashboard
+   * never handed it over: open, ready for review, approved, as a queue would
+   * want, and on its repository's default branch, which `check` says merges
+   * through the helper.
+   */
+  #mayBeQueued(pull: PullRequest): boolean {
+    if (pull.isDraft || !pull.defaultBranch || pull.baseRef !== pull.defaultBranch) return false;
+    return deriveDecision(pull) === 'APPROVED' && this.view(pull.repo, pull.baseRef)?.kind === 'queue';
   }
 
   async #check(key: string, branch: { repo: string; base: string; url: string }): Promise<void> {
@@ -399,18 +435,20 @@ export class MergeHelper {
     }
   }
 
-  async #status(handed: Handed & { queued: boolean; at: number }): Promise<void> {
-    const id = canonicalId(handed.id);
+  async #status(pull: Handed): Promise<void> {
+    const id = canonicalId(pull.id);
     try {
-      const queued = readStatus(await this.#run(this.path, ['status', handed.url], { timeoutMs: QUESTION_TIMEOUT_MS, env: this.#env() }));
+      const queued = readStatus(await this.#run(this.path, ['status', pull.url], { timeoutMs: QUESTION_TIMEOUT_MS, env: this.#env() }));
       this.#statusFailed.delete(id);
+      const known = this.#queue.get(id);
       // Out of its queue, and still open: something took it out, and the row is
-      // the user's to look at again. Asked about no more.
-      if (queued) handed.queued = true;
-      else this.#handed.delete(id);
+      // the user's to look at again. One handed over is asked about from now on
+      // only while it may be queued, as any other is.
+      this.#queue.set(id, { ...pull, queued, handedAt: queued ? (known?.handedAt ?? null) : null });
     } catch (err) {
       // What it said last stands until it can say again.
-      if (this.#handed.has(id)) this.#statusFailed.set(id, (err as Error).message);
+      if (!this.#queue.has(id)) this.#queue.set(id, { ...pull, queued: false, handedAt: null });
+      this.#statusFailed.set(id, (err as Error).message);
     }
   }
 
@@ -439,8 +477,23 @@ export class MergeHelper {
   handed(pulls: readonly Handed[]): void {
     for (const pull of pulls) {
       const id = canonicalId(pull.id);
-      this.#handed.set(id, { ...pull, queued: true, at: this.#now() });
+      this.#queue.set(id, { ...pull, queued: true, handedAt: this.#now() });
       this.#statusFailed.delete(id);
     }
   }
+}
+
+/** A pull request `status` is asked about, with what it last said, and when the dashboard handed it over, until it says it is out. */
+interface Queued extends Handed {
+  queued: boolean;
+  handedAt: number | null;
+}
+
+/** Run `each` on every item, at most `limit` at a time. */
+async function inTurns<T>(items: readonly T[], limit: number, each: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) await each(items[next++]!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
