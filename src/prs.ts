@@ -122,7 +122,7 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *
  *   1. drafts, which ask nothing of anyone
  *   2. anything only you can fix — a verdict against you, red CI, a conflict, a
- *      stale branch, or somebody having spoken after you
+ *      stale branch, or somebody having spoken after you, other than to approve
  *   3. in a merge queue, GitHub's or the helper's, which is what moves it now,
  *      whatever else GitHub says it is waiting on
  *   4. a review GitHub itself still requires, or one a pending gate says it is
@@ -172,16 +172,19 @@ export function judge(
 
   const theirMove = others !== null && (you === null || others.at > you);
   const approval = newest(pr, 'APPROVED');
-  // An approval is itself "someone acted after you", and the right reading of it
-  // is ready, not your move. Anything by others newer than the newest approval is
-  // by definition not that approval: a comment in the conversation, an inline
-  // review comment, a "one more thing before you merge". That puts it back in
-  // your court until you answer it. A reply or a push after it leaves the
-  // approval standing, just as a push after the approval itself does.
+  // An approval is itself "someone acted after you", and it asks nothing of you:
+  // with every review GitHub requires, the right reading of it is ready, and
+  // short of them, waiting on the reviewers still to come. Anything by others
+  // newer than the newest approval is by definition not that approval: a comment
+  // in the conversation, an inline review comment, a "one more thing before you
+  // merge". That puts it back in your court until you answer it. A reply or a
+  // push after it leaves the approval standing, just as a push after the
+  // approval itself does.
   const afterApproval = theirMove && others !== null && approval !== undefined && others.at > approval.at;
+  const spoke = theirMove && (approval === undefined || afterApproval);
   const approved = decision === 'APPROVED' && !afterApproval;
 
-  if (theirMove && others && !approved) {
+  if (spoke && others && !approved) {
     const reason: CourtReason = { kind: 'activity', login: others.login, at: others.at, activity: others.kind };
     // Approved, and held here only by what was said since. The reason names the
     // approval, since the row otherwise reads as approved and quiet, and says

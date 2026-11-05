@@ -62,7 +62,7 @@ The second tab shows your open pull requests in eight buckets:
 
 | Bucket | What it means |
 |---|---|
-| Waiting on you | A failure, conflict, requested change, outdated branch, or new activity needs your attention. |
+| Waiting on you | A failure, conflict, requested change, outdated branch, or new activity other than an approval needs your attention. |
 | Ready to merge | Required reviews and checks are satisfied, and GitHub allows the merge, or only your merge helper's queue may merge it. |
 | Waiting on reviewers | A review is still needed, by GitHub or by a merge gate that says approvals are all it's missing. The board flags when it may be time to ask. |
 | Waiting on merge gate | A check you've configured as a merge gate is pending for some other reason. |
