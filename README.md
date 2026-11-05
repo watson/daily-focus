@@ -80,18 +80,21 @@ request in the brief doesn't remove that pull request from the board.
 
 **Two buttons change the pull request on GitHub.** **Ready for review** on a draft
 marks it ready. **Merge** in Ready to merge asks first, then merges it with the
-method you last used in that repository, or reads **Add to merge queue** where its
-branch has one. Merge appears only when the pull request targets the repository's
-default branch and isn't part of a GitHub stack; merge the others on GitHub. If you
-pushed since the board last looked, GitHub refuses the merge and the board says why.
+method GitHub's own button would use, which it is named for (**Squash and merge**,
+say), or reads **Add to merge queue** where its branch has one. Merge appears only
+when the pull request targets the repository's default branch and isn't part of a
+GitHub stack; merge the others on GitHub. A pull request based on another's branch
+says "stacked on" that one, and under Ready to merge, why it has no merge button. If
+you pushed since the board last looked, GitHub refuses the merge and the board says why.
 
 If your company merges through a queue of its own, set a **Merge helper** under Pull
 requests in Settings: a small program of yours that the board asks how each
 repository merges, and hands a pull request to from its own button, or a whole stack
-from its top with **Merge stack**. Pull requests it took read "in merge queue". Where
+from its top with **Merge stack**. GitHub's own merge stays beside its button, for
+when you may skip the queue. Pull requests it took read "in merge queue". Where
 only the queue's bot may merge into a branch, GitHub calls everyone else's merge
 blocked; the board counts such a pull request ready when nothing else holds it up,
-and offers the helper's button. The
+and offers the helper's button alone. The
 [setup guide](https://dailyfocus.dev/setup/#merge-helper) says what it is asked.
 
 Cancelled checks appear as "cancelled, no verdict" rather than failures.

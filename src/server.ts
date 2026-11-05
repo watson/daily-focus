@@ -11,6 +11,7 @@ import { dataRoot, launchProfile, layerSettings, oldDotenvWarning, settingSource
 import { tempPathFor } from './fs.ts';
 import { Store, foldActionLog } from './store.ts';
 import { Board, BoardRefusal, type BoardDeps } from './board.ts';
+import { MERGE_ROUTES } from './prs.ts';
 import { CalendarBoard, helperDeps, type CalendarDeps } from './calendarboard.ts';
 import { runHelper } from './calendar.ts';
 import { CalendarAccounts, type CalendarAccountsDeps } from './calendaraccounts.ts';
@@ -38,7 +39,7 @@ import { hydratePath } from './shellpath.ts';
 import { command, PACKAGED, packageVersion, ranDirectly } from './install.ts';
 import { findStore, settleStore, type Profile } from './stores.ts';
 import { FOCUS_TEMPLATE, sourcesTemplate } from './templates.ts';
-import type { Action, ActionType, DashboardState, Service } from './types.ts';
+import type { Action, ActionType, DashboardState, MergeRoute, Service } from './types.ts';
 import { ACTION_TYPES } from './validate.ts';
 import { TimeZoneKeeper, validZone } from './zone.ts';
 
@@ -984,12 +985,19 @@ export async function startServer(env?: NodeJS.ProcessEnv, options: ServerOption
         sendJSON(res, 400, { error: '"head" must be the head commit the page showed' });
         return;
       }
+      // Which of the row's ways to merge the click was, where it offers more
+      // than one. Absent from a page older than that: the row's usual way.
+      const { route } = body;
+      if (path === '/api/board/merge' && route !== undefined && !MERGE_ROUTES.includes(route as MergeRoute)) {
+        sendJSON(res, 400, { error: `"route" must be one of ${MERGE_ROUTES.join(', ')}` });
+        return;
+      }
       let notice: string | null = null;
       try {
         const actions = await store.readActions();
         if (path === '/api/board/ready') await board.markReady(id, actions);
         else if (path === '/api/board/draft') await board.markDraft(id, actions);
-        else ({ notice } = await board.merge(id, actions, head as string));
+        else ({ notice } = await board.merge(id, actions, head as string, route as MergeRoute | undefined));
       } catch (err) {
         // GitHub's own words, and a 409, as for a transition: the request was
         // well-formed and GitHub refused it, which is the expected outcome for

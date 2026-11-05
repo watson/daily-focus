@@ -2,7 +2,7 @@
 
 import { h, type ComponentChild, type JSX } from 'preact';
 
-import type { BoardRow, BoardState, CourtReason, DashboardState, PendingCheck } from '../src/types.ts';
+import type { BoardRow, BoardState, CourtReason, DashboardState, MergeMethod, MergeRoute, PendingCheck } from '../src/types.ts';
 import { banner } from './banners.ts';
 import { el } from './el.ts';
 import { failureNotice } from './failure.ts';
@@ -184,6 +184,7 @@ export function PullRow({ item: row, state, ui, handlers }: RowProps<BoardRow>):
       ),
       renderPullMeta(row, state, now),
       renderPullReasons(row, now),
+      renderNoMerge(row, state),
       renderCancelledChecks(row),
       renderAhead(row.id, state),
     ),
@@ -220,6 +221,8 @@ function renderPullMeta(row: BoardRow, state: DashboardState, now: Date): JSX.El
   } else if (row.court === 'gate' || row.court === 'checks') {
     pill('pill', `waiting ${waitedFor(row.since, now)}`);
   }
+  const base = baseNote(row, state);
+  if (base) pills.push(el('span', { class: 'pill pill--tag', title: base.title }, base.pill));
   if (row.stale) pill('pill pill--age', 'untouched for weeks');
   if (row.status === 'snoozed') {
     pill('pill', row.snoozedUntil ? `snoozed until ${relativeDay(row.snoozedUntil, now)}` : 'snoozed');
@@ -272,6 +275,44 @@ function renderPullReasons(row: BoardRow, now: Date): JSX.Element | null {
   if (parts.length === 0) return null;
   const tone = row.court === 'you' ? '' : ' item__reason--waiting';
   return el('p', { class: `item__reason${tone}` }, parts);
+}
+
+/**
+ * Where a pull request merges, when that isn't its repository's default branch:
+ * the branch of another open pull request of the board's, which it is stacked
+ * on, or a branch of its own. Null for one on the default branch, or a cache
+ * that hasn't read which that is.
+ */
+function baseNote(row: BoardRow, state: DashboardState): { pill: string; title: string; into: string } | null {
+  if (!row.defaultBranch || row.baseRef === row.defaultBranch) return null;
+  const repo = row.repo.toLowerCase();
+  const below = state.board?.rows.find((other) => other.repo.toLowerCase() === repo && other.headRef === row.baseRef && other.id !== row.id);
+  if (below) {
+    return {
+      pill: `stacked on #${below.number}`,
+      title: `Its base is the branch of #${below.number}, ${below.title}: merging it lands there, not in ${row.defaultBranch}`,
+      into: `#${below.number}'s branch`,
+    };
+  }
+  return { pill: `into ${row.baseRef}`, title: `Its base is ${row.baseRef}: merging it lands there, not in ${row.defaultBranch}`, into: row.baseRef };
+}
+
+/**
+ * Why a pull request under Ready to merge has no merge button, where that is
+ * its base or a stack on GitHub: GitHub says the merge would work, but the
+ * board merges only into the default branch, and a GitHub stack merges there.
+ * Only where the server offers no merge, so it never contradicts a button.
+ */
+function renderNoMerge(row: BoardRow, state: DashboardState): JSX.Element | null {
+  if (row.court !== 'ready' || row.status !== 'open') return null;
+  if ((row.offers ?? []).some((offer) => offer !== 'ready' && offer !== 'draft')) return null;
+  const base = baseNote(row, state);
+  const why = base
+    ? `no merge button: it would land in ${base.into}, not ${row.defaultBranch}`
+    : row.stacked
+      ? 'no merge button: it is part of a stack on GitHub, which merges it there'
+      : null;
+  return why ? el('p', { class: 'item__reason item__reason--waiting' }, why) : null;
 }
 
 /**
@@ -409,17 +450,21 @@ export function helperLabel(row: BoardRow): string {
   return row.mergeHelper?.kind === 'queue' ? row.mergeHelper.label : HELPER_LABEL;
 }
 
+/** GitHub's own names for its merge buttons, by the method it would use. */
+export const MERGE_VERB: Record<MergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
+
 /** Which of a row's writes to show: Ready for review, the merge (or the merge helper's), or Merge stack. */
 export type PullWrite = 'ready' | 'merge' | 'stack';
 
 /**
  * The buttons that change the pull request on GitHub, where the server offers
- * them: ready for review on a draft, and merge on one that is ready, or the
- * merge helper's button where it merges the branch, and on the top of a stack
- * it can merge whole, Merge stack. Which rows offer what is the server's
- * reading (`pullOffers`, `findStack`), the same one it refuses a click by, so
- * the page never shows a button the server would turn down. While a click is
- * on its way the row is pending and they are disabled.
+ * them: ready for review on a draft, and merge on one that is ready, named for
+ * the method GitHub's own button would use, or the merge helper's button where
+ * it merges the branch, with GitHub's merge beside it where the server offers
+ * both, and on the top of a stack it can merge whole, Merge stack. Which rows
+ * offer what is the server's reading (`pullOffers`, `findStack`), the same one
+ * it refuses a click by, so the page never shows a button the server would turn
+ * down. While a click is on its way the row is pending and they are disabled.
  *
  * `kinds` narrows them, for the Projects view, which offers a write only where
  * the merge order says it is the next thing to do.
@@ -439,12 +484,17 @@ export function renderPullWrites(
   if (offers.includes('ready')) {
     buttons.push(button('Ready for review', 'Mark this draft ready for review on GitHub', () => handlers.markReady(row.id)));
   }
-  if (offers.includes('helper')) {
-    buttons.push(button(helperLabel(row), `Hand to your merge helper for ${row.baseRef}, after asking`, () => handlers.mergePull(row.id)));
-  } else if (offers.includes('merge')) {
-    buttons.push(button('Merge', `Merge into ${row.baseRef} on GitHub, after asking`, () => handlers.mergePull(row.id)));
+  const merge = (route: MergeRoute) => () => handlers.mergePull(row.id, route);
+  const helper = offers.includes('helper');
+  if (helper) {
+    buttons.push(button(helperLabel(row), `Hand to your merge helper for ${row.baseRef}, after asking`, merge('helper')));
+  }
+  if (offers.includes('merge')) {
+    const verb = MERGE_VERB[row.mergeMethod ?? 'MERGE'];
+    const past = helper ? ', without the merge queue' : '';
+    buttons.push(button(verb, `${verb} into ${row.baseRef} on GitHub${past}, after asking`, merge('merge')));
   } else if (offers.includes('queue')) {
-    buttons.push(button('Add to merge queue', `Add to ${row.baseRef}'s merge queue on GitHub, after asking`, () => handlers.mergePull(row.id)));
+    buttons.push(button('Add to merge queue', `Add to ${row.baseRef}'s merge queue on GitHub, after asking`, merge('queue')));
   }
   if (offers.includes('stack') && row.stack) {
     const below = row.stack.length - 1;

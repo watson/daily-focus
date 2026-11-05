@@ -77,6 +77,8 @@ async function helpedBoard(opts: {
   /** GitHub's answer just before a hand-over; by default, the pulls as the board read them. */
   live?: (ids: readonly string[]) => Map<string, LiveHead>;
   settings?: Record<string, string>;
+  /** GitHub's own merge, which by default must not be reached. */
+  merge?: BoardDeps['merge'];
   /** Whether to wait for the helper's answers to the first poll. */
   wait?: boolean;
 }) {
@@ -97,7 +99,7 @@ async function helpedBoard(opts: {
     },
     markReady: async () => assert.fail('nothing should be marked ready'),
     markDraft: async () => assert.fail('nothing should be turned into a draft'),
-    merge: async () => assert.fail("GitHub's merge is not the way here"),
+    merge: opts.merge ?? (async () => assert.fail("GitHub's merge is not the way here")),
     enqueue: async () => assert.fail("GitHub's queue is not the way here"),
     requiredApprovals: async (token, repo, branch) => {
       calls.push(`approvals:${token}:${repo}:${branch}`);
@@ -145,7 +147,7 @@ test('after a poll the board asks the helper, then offers its button where it sa
     'helper check https://github.com/acme/payments-api/pull/412 main',
     'helper check https://github.com/acme/webapp/pull/7 main',
   ]);
-  assert.deepEqual(offersOf(board), { 412: ['helper'], 7: ['merge'] });
+  assert.deepEqual(offersOf(board), { 412: ['helper', 'merge'], 7: ['merge'] });
   const row = board.view([], new Date()).rows.find((candidate) => candidate.number === 412)!;
   assert.deepEqual(row.mergeHelper, { kind: 'queue', label: 'Queue with the merge bot', stacks: false });
   // The CLIs' environment: the store as DAILY_FOCUS_DATA, as the agent gets it.
@@ -168,7 +170,7 @@ test("a failed check is a warning naming the helper's error, GitHub's merge mean
   await board.answered();
   assert.deepEqual(calls, ['token:alice', 'fetch', 'helper check https://github.com/acme/payments-api/pull/412 main']);
   assert.deepEqual(board.view([], new Date()).warnings, []);
-  assert.deepEqual(offersOf(board), { 412: ['helper'] });
+  assert.deepEqual(offersOf(board), { 412: ['helper', 'merge'] });
 });
 
 test('switched off, or with GitHub off, no helper is ever asked', async () => {
@@ -226,7 +228,42 @@ test("the helper's refusal comes back in its own words, and nothing is queued", 
     message: 'acme/payments-api is frozen for the release',
   });
   assert.equal(board.view([], new Date()).rows[0]?.helperQueued, undefined);
-  assert.deepEqual(offersOf(board), { 412: ['helper'] });
+  assert.deepEqual(offersOf(board), { 412: ['helper', 'merge'] });
+});
+
+test("GitHub's merge beside the helper's goes to GitHub, with the method its button would use, and the helper hears nothing", async () => {
+  let open = true;
+  const merged: string[] = [];
+  const { board, calls } = await helpedBoard({
+    pulls: () => (open ? [pull(412)] : []),
+    helper: (args) => (args[0] === 'check' ? ran('{"queue": true}') : assert.fail('the helper should not be asked to merge')),
+    merge: async (token, nodeId, method, head) => {
+      merged.push(`${token} ${nodeId} ${method} ${head}`);
+      open = false;
+    },
+  });
+  calls.length = 0;
+  assert.deepEqual(await board.merge('github:pr:acme/payments-api#412', [], 'head-412', 'merge'), { route: 'merge', notice: null });
+  assert.deepEqual(merged, ['t-alice PR_kwDOAcme412 SQUASH head-412']);
+  assert.ok(!calls.some((call) => call.startsWith('helper') || call.startsWith('live')), `the helper heard nothing: ${calls.join(', ')}`);
+  assert.deepEqual(board.view([], new Date()).rows, [], 'and the board read back');
+});
+
+test("a way the row doesn't offer is refused before anything is asked", async () => {
+  const { board, calls } = await helpedBoard({
+    pulls: () => [pull(412), pull(413, { mergeQueue: true })],
+    helper: (args) => (args[0] === 'check' ? ran('{"queue": true}') : assert.fail('the helper should not be asked to merge')),
+  });
+  calls.length = 0;
+  assert.deepEqual(await refusal(board.merge('github:pr:acme/payments-api#412', [], 'head-412', 'queue')), {
+    status: 409,
+    message: "acme/payments-api#412: it merges through the merge helper or with GitHub's merge, not through GitHub's merge queue",
+  });
+  assert.deepEqual(await refusal(board.merge('github:pr:acme/payments-api#413', [], 'head-413', 'merge')), {
+    status: 409,
+    message: "acme/payments-api#413: it merges through the merge helper, not with GitHub's merge",
+  });
+  assert.deepEqual(calls, []);
 });
 
 test('the helper is not handed a pull request GitHub has moved on since the last poll', async () => {
@@ -285,7 +322,7 @@ test('until the helper has answered, the row offers no merge at all, and a click
 
   answer(ran('{"queue": true}'));
   await board.answered();
-  assert.deepEqual(offersOf(board), { 412: ['helper'] });
+  assert.deepEqual(offersOf(board), { 412: ['helper', 'merge'] });
   assert.deepEqual(calls, ['token:alice', 'fetch', 'helper check https://github.com/acme/payments-api/pull/412 main'], 'asked once, not again meanwhile');
 });
 
@@ -308,7 +345,7 @@ test('a poll that ends while the helper is still answering gets a round of its o
   release();
   await board.answered();
   assert.ok(calls.includes('helper check https://github.com/acme/webapp/pull/7 main'), 'but straight after it');
-  assert.deepEqual(offersOf(board), { 412: ['helper'], 7: ['helper'] });
+  assert.deepEqual(offersOf(board), { 412: ['helper', 'merge'], 7: ['helper', 'merge'] });
 });
 
 /* ---------- stacks ---------- */
@@ -327,7 +364,7 @@ test("the stack merge reads the default branch's approvals as the pull requests'
     'token:alice',
     'approvals:t-alice:acme/payments-api:main',
   ]);
-  assert.deepEqual(offersOf(board), { 410: ['helper'], 411: [], 412: ['stack'] });
+  assert.deepEqual(offersOf(board), { 410: ['helper', 'merge'], 411: [], 412: ['stack'] });
 
   calls.length = 0;
   await board.refresh();
@@ -346,13 +383,13 @@ test('approvals that cannot be read stand at one, and are read again after the n
       return 2;
     },
   });
-  assert.deepEqual(offersOf(board), { 410: ['helper'], 411: ['stack'] }, 'one approval is enough when unreadable');
+  assert.deepEqual(offersOf(board), { 410: ['helper', 'merge'], 411: ['stack'] }, 'one approval is enough when unreadable');
   fail = false;
   calls.length = 0;
   await board.refresh();
   await board.answered();
   assert.ok(calls.includes('approvals:t-alice:acme/payments-api:main'));
-  assert.deepEqual(offersOf(board), { 410: ['helper'], 411: [] }, 'and two once main says so');
+  assert.deepEqual(offersOf(board), { 410: ['helper', 'merge'], 411: [] }, 'and two once main says so');
 });
 
 test('merge stack hands the top to the helper with --stack, and shows every pull request in it queued', async () => {

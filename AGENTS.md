@@ -93,10 +93,12 @@ run it again with `--remove` afterwards.
   GitHub says is ready, into its default branch at the head the board last read, or
   `enqueuePull` adds it to that branch's merge queue. The board's routes take a row
   id, never a URL or repository, and act only on a row the board is showing, as the
-  account that read it (`src/board.ts`, `refuseReady`, `refuseDraft` and `refuseMerge` in
+  account that read it, the one way the click names among those the row offers
+  (`src/board.ts`, `refuseReady`, `refuseDraft`, `refuseMerge` and `mergeRoutes` in
   `src/prs.ts`). The user's merge helper (`DAILY_FOCUS_MERGE_HELPER`,
-  `src/mergehelper.ts`) is run with `merge` only from such a click, in place of
-  `mergePull` where its `check` said so, or with `merge --stack` from the top of a
+  `src/mergehelper.ts`) is run with `merge` only from a click on its own button,
+  offered where its `check` said so, beside `mergePull` unless GitHub's queue is on,
+  or with `merge --stack` from the top of a
   stack (`findStack`), and never otherwise; `check` and `status` are its read-only
   questions, asked after polls. Keep its launch as it is: arguments without a shell,
   no stdin or terminal, an empty temporary folder outside any checkout, a timeout.

@@ -7,7 +7,7 @@
 import type { Signal } from '@preact/signals';
 import type { OrganizationReview } from '../src/organization.ts';
 import type { SettingsView } from '../src/settings.ts';
-import type { ActionType, CalendarProvider, DashboardState, OnboardingAnswer, Service } from '../src/types.ts';
+import type { ActionType, CalendarProvider, DashboardState, MergeRoute, OnboardingAnswer, Service } from '../src/types.ts';
 
 export type View = 'today' | 'board' | 'tickets' | 'settings';
 
@@ -252,8 +252,12 @@ export interface Handlers {
   markReady(id: string): void;
   /** Turn one of the user's open pull requests back into a draft on GitHub. */
   markDraft(id: string): void;
-  /** Merge a pull request, add it to its merge queue, or hand it to the merge helper, once the user has said yes. */
-  mergePull(id: string): void;
+  /**
+   * Merge a pull request, add it to its merge queue, or hand it to the merge
+   * helper, once the user has said yes: `route` is which button, of those the
+   * row offers, and without it the first.
+   */
+  mergePull(id: string, route?: MergeRoute): void;
   /** Have the merge helper merge the stack a pull request tops, bottom first, once the user has said yes. */
   mergeStack(id: string): void;
   refreshBoard(): void;

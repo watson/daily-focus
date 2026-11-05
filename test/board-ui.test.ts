@@ -367,24 +367,27 @@ const button = (node: HTMLElement, label: string): HTMLButtonElement | undefined
 
 test('a draft offers Ready for review, and a ready row Merge, or Add to merge queue where its branch has one', () => {
   const clicked: string[] = [];
-  const handlers = handlersWith({ markReady: (id) => clicked.push(`ready ${id}`), mergePull: (id) => clicked.push(`merge ${id}`) });
+  const handlers = handlersWith({ markReady: (id) => clicked.push(`ready ${id}`), mergePull: (id, route) => clicked.push(`${route} ${id}`) });
 
   const draft = renderWith({ isDraft: true }, UI, handlers).node;
   assert.deepEqual(buttonLabels(draft), ['Ready for review', 'Snooze']);
   button(draft, 'Ready for review')!.click();
 
+  // Named for the method GitHub's own button would use.
   const ready = renderWith({}, UI, handlers).node;
-  assert.deepEqual(buttonLabels(ready), ['Merge', 'Snooze']);
-  assert.match(button(ready, 'Merge')!.title, /into main/);
-  button(ready, 'Merge')!.click();
+  assert.deepEqual(buttonLabels(ready), ['Squash and merge', 'Snooze']);
+  assert.match(button(ready, 'Squash and merge')!.title, /into main/);
+  button(ready, 'Squash and merge')!.click();
+  assert.deepEqual(buttonLabels(renderWith({ mergeMethod: 'MERGE' }).node), ['Merge', 'Snooze']);
+  assert.deepEqual(buttonLabels(renderWith({ mergeMethod: 'REBASE' }).node), ['Rebase and merge', 'Snooze']);
 
   const queued = renderWith({ mergeQueue: true }, UI, handlers).node;
   assert.deepEqual(buttonLabels(queued), ['Add to merge queue', 'Snooze']);
   button(queued, 'Add to merge queue')!.click();
 
-  // The page sends the row's id and nothing else: which pull request, and how,
-  // is the server's to look up.
-  assert.deepEqual(clicked, ['ready github:pr:acme/webapp#3421', 'merge github:pr:acme/webapp#3421', 'merge github:pr:acme/webapp#3421']);
+  // The page sends the row's id and which button: which pull request is the
+  // server's to look up, and it refuses a way the row doesn't offer.
+  assert.deepEqual(clicked, ['ready github:pr:acme/webapp#3421', 'merge github:pr:acme/webapp#3421', 'queue github:pr:acme/webapp#3421']);
 });
 
 test('Merge is not offered where the server would refuse it', () => {
@@ -398,7 +401,7 @@ test('Merge is not offered where the server would refuse it', () => {
   ];
   for (const [what, overrides] of cases) {
     const labels = buttonLabels(renderWith(overrides).node);
-    assert.ok(!labels.includes('Merge') && !labels.includes('Add to merge queue'), `${what}: ${labels.join(' | ')}`);
+    assert.ok(!labels.some((label) => /merge/i.test(label)), `${what}: ${labels.join(' | ')}`);
   }
   // A draft from an older cache can't be named to GitHub yet either.
   assert.ok(!buttonLabels(renderWith({ isDraft: true, nodeId: undefined }).node).includes('Ready for review'));
@@ -409,9 +412,45 @@ test('Merge is not offered where the server would refuse it', () => {
   assert.deepEqual(buttonLabels(snoozed), ['Unsnooze']);
 });
 
+test('a pull request on another branch says where it lands, and under Ready to merge why it has no merge button', () => {
+  // #3420 owns the branch #3421 is based on: the board names it, with its title on hover.
+  const below = pr({ id: 'github:pr:acme/webapp#3420', number: 3420, title: 'Refactor the ledger', headRef: 'alice/refactor-ledger', ...WRITABLE });
+  const rows = resolveBoard([pr({ ...WRITABLE, baseRef: 'alice/refactor-ledger' }), below], [], NOW, GATES, REVIEWS);
+  const top = rows.find((each) => each.number === 3421)!;
+  assert.equal(top.court, 'ready');
+  const state = { now: NOW.toISOString(), board: { rows } } as unknown as DashboardState;
+  const node = mountOne(renderPullRow(top, state, UI, HANDLERS));
+  const pill = byClass(node, 'pill').find((each) => each.textContent === 'stacked on #3420');
+  assert.ok(pill, byClass(node, 'pill').map((each) => each.textContent).join(' | '));
+  assert.equal(pill.title, 'Its base is the branch of #3420, Refactor the ledger: merging it lands there, not in main');
+  assert.deepEqual(
+    byClass(node, 'item__reason').map((each) => each.textContent),
+    ["no merge button: it would land in #3420's branch, not main"],
+  );
+  assert.ok(!buttonLabels(node).some((label) => /merge/i.test(label)));
+
+  // A branch no pull request on the board owns is named as it is.
+  const alone = renderWith({ baseRef: 'release/2026.09' }).node;
+  assert.ok(byClass(alone, 'pill').some((each) => each.textContent === 'into release/2026.09'));
+  assert.deepEqual(byClass(alone, 'item__reason').map((each) => each.textContent), ['no merge button: it would land in release/2026.09, not main']);
+
+  // A member of a GitHub stack merges there.
+  assert.deepEqual(
+    byClass(renderWith({ stacked: true }).node, 'item__reason').map((each) => each.textContent),
+    ['no merge button: it is part of a stack on GitHub, which merges it there'],
+  );
+
+  // On the default branch, or a cache that hasn't read which that is, neither; nor where a merge is offered.
+  for (const overrides of [{}, { defaultBranch: undefined, baseRef: 'alice/refactor-ledger' }]) {
+    const plain = renderWith(overrides).node;
+    assert.ok(!byClass(plain, 'pill').some((each) => /stacked|into /.test(each.textContent ?? '')), JSON.stringify(overrides));
+    assert.deepEqual(byClass(plain, 'item__reason').map((each) => each.textContent), [], JSON.stringify(overrides));
+  }
+});
+
 test('while a click is on its way the row says so and its GitHub buttons are disabled', () => {
   const pending = uiWith({ pending: new Set(['github:pr:acme/webapp#3421']) });
-  for (const [overrides, label] of [[{}, 'Merge'], [{ isDraft: true }, 'Ready for review']] as const) {
+  for (const [overrides, label] of [[{}, 'Squash and merge'], [{ isDraft: true }, 'Ready for review']] as const) {
     const { node } = renderWith(overrides, pending);
     assert.equal(node.dataset.pending, 'true');
     const write = button(node, label);
@@ -419,7 +458,7 @@ test('while a click is on its way the row says so and its GitHub buttons are dis
     assert.equal(write.disabled, true, label);
     assert.equal(write.getAttribute('aria-busy'), 'true');
   }
-  const idle = button(renderWith({}).node, 'Merge');
+  const idle = button(renderWith({}).node, 'Squash and merge');
   assert.equal(idle?.disabled, false);
 });
 
