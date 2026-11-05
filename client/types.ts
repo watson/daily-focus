@@ -70,7 +70,47 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 
 export interface Toast {
   message: string;
-  onUndo: (() => void) | null;
+  /** Its one button, when it has one: Undo after a write, Show after one that failed. */
+  action: { label: string; run: () => void } | null;
+  /** Something went wrong: marked so, and announced as an alert. */
+  error: boolean;
+  /**
+   * It stays until it is closed, rather than going after a few seconds: an
+   * error with nowhere else to be read again. A passing toast shows over it,
+   * and it comes back when that goes.
+   */
+  sticky: boolean;
+  /** What failed, for a sticky error: the same thing working later takes it away. */
+  key: string | null;
+}
+
+/**
+ * How to ask again for a write a row's button asked for: which button, and for
+ * a ticket, which status. Plain data, since it is kept in sessionStorage.
+ */
+export type WriteRetry =
+  | { kind: 'merge'; route: MergeRoute }
+  | { kind: 'stack' }
+  | { kind: 'ready' }
+  | { kind: 'draft' }
+  | { kind: 'move'; key: string; status: string; from: string | null };
+
+/**
+ * A write a click on a row asked for that didn't happen: GitHub, Jira, the
+ * merge helper or the dashboard said no, or couldn't be reached. Kept on the
+ * row's card, under its row id, until it is dismissed, the write goes through,
+ * or what it tried has happened anyway.
+ */
+export interface WriteFailure {
+  /** What couldn't be done, as the card's note says it: "Couldn't add it to the merge queue". */
+  headline: string;
+  /** Why, in the words of whoever said no. Plain text, never Markdown. */
+  message: string;
+  /** When it last failed. */
+  at: string;
+  /** How many times in a row it has failed. */
+  attempts: number;
+  retry: WriteRetry;
 }
 
 /**
@@ -165,6 +205,13 @@ export interface UiState {
   theme: Signal<ThemeMode>;
   /** The toast at the foot of the page, while one is showing. */
   toast: Signal<Toast | null>;
+  /**
+   * Writes from a row's buttons that failed, by row id (`jira:KEY` for a
+   * ticket), shown on the row's card wherever it is drawn. Per tab, in
+   * sessionStorage, as the panel's row is: the click was made in this tab, and
+   * the note should survive the self-reload an update brings.
+   */
+  writeFailures: Signal<ReadonlyMap<string, WriteFailure>>;
   /** Why the live connection is down, while it is. */
   connectionError: Signal<Error | null>;
   /**
@@ -284,6 +331,12 @@ export interface Handlers {
   setTheme(mode: ThemeMode): void;
   openHelp(): void;
   hideToast(): void;
+  /** Keep the toast while the pointer or the keyboard is on it, or let its time run again. */
+  holdToast(held: boolean): void;
+  /** Ask again for the write that failed on a row, the way its button does: a merge asks first. */
+  retryWrite(id: string): void;
+  /** Put away the note about a write that failed on a row. */
+  dismissWriteFailure(id: string): void;
   /** Go to the settings page, scrolled to a section when one is named. */
   openSettings(section?: string | null): void;
   /** Leave the settings page for the view it was opened from. */

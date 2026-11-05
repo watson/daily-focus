@@ -58,6 +58,7 @@ import {
   type TicketWork,
 } from './stages.ts';
 import type { Handlers, UiState } from './types.ts';
+import { writeFailureNote } from './writefailure.ts';
 
 /** How many things to do the list names before leaving the rest to the merge order below it. */
 export const NEXT_SHOWN = 6;
@@ -507,7 +508,7 @@ function epicView(project: ProjectWork, state: DashboardState, ui: UiState, hand
  * margin, and on the right the board's own button where there is one, then the
  * link to where the rest is done.
  */
-function nextList(steps: readonly NextStep[], { writes, ui, handlers }: CardWrites): JSX.Element {
+function nextList(steps: readonly NextStep[], { writes, state, ui, handlers }: CardWrites): JSX.Element {
   const shown = steps.slice(0, NEXT_SHOWN);
   const rest = steps.length - shown.length;
   return el(
@@ -527,6 +528,7 @@ function nextList(steps: readonly NextStep[], { writes, ui, handlers }: CardWrit
             { class: 'next-step__body' },
             el('p', { class: 'next-step__title' }, step.title),
             el('p', { class: 'next-step__reason' }, step.reason),
+            step.pull ? writeFailureNote(step.pull.id, state, ui, handlers) : null,
           ),
           el(
             'div',
@@ -735,6 +737,7 @@ function ticketCard(work: TicketWork, project: ProjectWork, now: Date, writes: C
     // The user's own tickets only: the check reads no one else's.
     ticket.mine ? doneCheckLine(ticket.key, project.checks, now, writes ? { ui: writes.ui, handlers: writes.handlers } : null) : null,
     ticketMeta(work, project, writes),
+    writes ? writeFailureNote(id, writes.state, writes.ui, writes.handlers) : null,
     !ticket.linksRead && ticket.statusCategory !== 'done'
       ? el('p', { class: 'item__reason item__reason--waiting' }, 'Its links could not be read, so it may wait for more than this says.')
       : null,
@@ -772,6 +775,8 @@ export function pullLine(pull: PullWork, now: Date, writes: CardWrites | null): 
     detail ? el('span', { class: `project-pull__state${pull.row?.court === 'you' ? ' project-pull__state--you' : ''}` }, detail) : null,
     pull.stackedOn ? [' ', el('span', { class: 'pill pill--tag', title: pull.stackedOn.title }, `Stacked on #${pull.stackedOn.number}`)] : null,
     buttons.length > 0 ? [' ', el('span', { class: 'project-pull__writes' }, buttons)] : null,
+    // Its own line under the rest: a write from here, or the board, that failed.
+    writes && pull.row ? writeFailureNote(pull.row.id, writes.state, writes.ui, writes.handlers) : null,
   );
 }
 

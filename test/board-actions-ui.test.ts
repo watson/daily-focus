@@ -90,6 +90,7 @@ afterEach(() => {
   window.confirm = realConfirm;
   asked.length = 0;
   ui.pending.value = new Set();
+  ui.writeFailures.value = new Map();
   handlers.hideToast();
 });
 
@@ -154,7 +155,7 @@ test('Ready for review does not ask', async () => {
   assert.equal(ui.pending.value.size, 0);
 });
 
-test("GitHub's refusal is what the toast says, and the page reads the board again", async () => {
+test("GitHub's refusal goes on the row's card, the toast points to it, and the page reads the board again", async () => {
   state.value = stateWith([row(413, { mergeQueue: true, offers: ['queue'] })]);
   const requests = server((path) =>
     path === '/api/board/merge' ? reply({ error: 'Head branch was modified. Review and try the merge again.' }, 409) : reply(stateWith([])),
@@ -164,7 +165,14 @@ test("GitHub's refusal is what the toast says, and the page reads the board agai
   handlers.mergePull('github:pr:acme/payments-api#413');
   await until(() => ui.toast.value !== null && ui.pending.value.size === 0);
   assert.deepEqual(asked, ['Add acme/payments-api #413 to the merge queue for main?']);
-  assert.equal(ui.toast.value?.message, 'GitHub would not queue acme/payments-api#413: Head branch was modified. Review and try the merge again.');
+  assert.equal(ui.toast.value?.message, 'Couldn’t add acme/payments-api#413 to the merge queue. The reason is on its card.');
+  assert.equal(ui.toast.value?.error, true);
+  assert.equal(ui.toast.value?.action?.label, 'Show');
+  const failure = ui.writeFailures.value.get('github:pr:acme/payments-api#413');
+  assert.equal(failure?.headline, 'Couldn’t add it to the merge queue');
+  assert.equal(failure?.message, 'Head branch was modified. Review and try the merge again.');
+  assert.deepEqual(failure?.retry, { kind: 'merge', route: 'queue' });
+  assert.equal(failure?.attempts, 1);
   assert.deepEqual(
     requests.map((request) => `${request.method} ${request.path}`),
     ['POST /api/board/merge', 'GET /api/state'],

@@ -28,13 +28,29 @@ import {
   RUN_PREFIX,
   VIEW_KEY,
   WARNINGS_SEEN_KEY,
+  WRITE_FAILURES_KEY,
   availableViews,
   setDetailFor,
   state,
+  ticketByKey,
   ui,
 } from './state.ts';
 import { applyTheme } from './theme.ts';
-import type { ActionExtra, FocusField, Handlers, SettingsPage, SetupDraft, TextEditor, TextName, TicketMode, View } from './types.ts';
+import type {
+  ActionExtra,
+  FocusField,
+  Handlers,
+  SettingsPage,
+  SetupDraft,
+  TextEditor,
+  TextName,
+  TicketMode,
+  Toast,
+  View,
+  WriteFailure,
+  WriteRetry,
+} from './types.ts';
+import { FAILURE_ATTR, NOTE_CARD, failureMoot } from './writefailure.ts';
 
 /* ---------- small things ---------- */
 
@@ -77,18 +93,232 @@ function removePending(id: string): void {
 
 /* ---------- toast ---------- */
 
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
+/** How long a toast that isn't an error stays, unless the pointer or the keyboard is on it. */
+export const TOAST_MS = 6000;
 
-export function showToast(message: string, onUndo: (() => void) | null = null): void {
-  ui.toast.value = { message, onUndo };
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+/** An error a passing toast covered, shown again once that toast goes: closing it is the only way it goes. */
+let parked: Toast | null = null;
+
+function startToastTimer(): void {
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, 6000);
+  toastTimer = ui.toast.value && !ui.toast.value.sticky ? setTimeout(hideToast, TOAST_MS) : null;
 }
 
+function setToast(next: Toast): void {
+  const current = ui.toast.value;
+  if (next.sticky) parked = null;
+  else if (current?.sticky) parked = current;
+  ui.toast.value = next;
+  startToastTimer();
+}
+
+/** A notice that goes after a few seconds, with a button when `onUndo` is given: Undo, unless `label` says otherwise. */
+export function showToast(message: string, onUndo: (() => void) | null = null, label = 'Undo'): void {
+  setToast({ message, action: onUndo ? { label, run: onUndo } : null, error: false, sticky: false, key: null });
+}
+
+/**
+ * Something that went wrong. It stays until it is closed, rather than going
+ * after a few seconds: an error read in passing, or not at all, can't be read
+ * again. A notice meanwhile shows over it, and it comes back when that goes.
+ * `key` names what failed, so that the same thing working later takes it away
+ * (`settleError`) rather than leave it contradicting the page.
+ */
+export function showError(message: string, key: string | null = null): void {
+  setToast({ message, action: null, error: true, sticky: true, key });
+}
+
+/** What `key` names worked this time: an error it left is no longer true. */
+function settleError(key: string): void {
+  if (parked?.key === key) parked = null;
+  if (ui.toast.value?.key === key) hideToast();
+}
+
+/** Put the toast away. An error a passing toast covered comes back. */
 export function hideToast(): void {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = null;
-  ui.toast.value = null;
+  const back = ui.toast.value?.sticky ? null : parked;
+  parked = null;
+  ui.toast.value = back;
+}
+
+/** Keep the toast while the pointer or the keyboard is on it; its time starts again once they leave. */
+function holdToast(held: boolean): void {
+  if (held) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
+  } else {
+    startToastTimer();
+  }
+}
+
+/* ---------- writes that failed, on their rows ---------- */
+
+function keepFailures(next: ReadonlyMap<string, WriteFailure>): void {
+  ui.writeFailures.value = next;
+  try {
+    if (next.size === 0) sessionStorage.removeItem(WRITE_FAILURES_KEY);
+    else sessionStorage.setItem(WRITE_FAILURES_KEY, JSON.stringify([...next]));
+  } catch {
+    // No storage: the notes last as long as the page, which is most of the point.
+  }
+}
+
+const sameRetry = (a: WriteRetry, b: WriteRetry): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** The copies of row `id`'s note that are showing: the same row can be on a card and in the panel at once. */
+function visibleNotes(id: string): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(`[${FAILURE_ATTR}]`)].filter(
+    (note) => note.getAttribute(FAILURE_ATTR) === id && note.getClientRects().length > 0,
+  );
+}
+
+/** Whether any of `note` is inside the window: focusing it there moves nothing. */
+function inView(note: HTMLElement): boolean {
+  const rect = note.getBoundingClientRect();
+  return rect.bottom > 0 && rect.top < (window.innerHeight || document.documentElement.clientHeight);
+}
+
+/**
+ * Put the keyboard on row `id`'s new note, where that loses nobody their place:
+ * when the keyboard was on that card, or on nothing, and a copy of the note is
+ * already in the window. A button disabled while its write was on its way drops
+ * the focus to the page, and Safari never gives a clicked button focus at all,
+ * so "nothing" is common, and only the window says the user is still there. The
+ * panel's copy first when the panel is open, since it sits over the board's.
+ * Never scrolls. Says whether it did; when it didn't, a toast says what failed.
+ */
+function focusNewNote(id: string): boolean {
+  const active = document.activeElement;
+  const idle = !active || active === document.body;
+  const notes = visibleNotes(id).filter(inView);
+  const target = idle
+    ? (notes.find((note) => note.closest('#flyout')) ?? notes[0])
+    : notes.find((note) => note.closest(NOTE_CARD)?.contains(active));
+  if (!target) return false;
+  target.focus({ preventScroll: true });
+  return true;
+}
+
+/**
+ * Keep a write that failed on row `id`, for its card. `what` says what was
+ * tried, given who it was for: "add it to the merge queue". The keyboard goes
+ * to the note when it was on that card; otherwise a toast says what failed,
+ * and its Show brings the note into view. The note stays after the toast goes.
+ */
+function failWrite(id: string, ref: string, what: (who: string) => string, message: string, retry: WriteRetry): void {
+  const before = ui.writeFailures.value.get(id);
+  const failure: WriteFailure = {
+    headline: `Couldn’t ${what('it')}`,
+    message,
+    at: new Date().toISOString(),
+    attempts: before && sameRetry(before.retry, retry) ? before.attempts + 1 : 1,
+    retry,
+  };
+  keepFailures(new Map([...ui.writeFailures.value, [id, failure]]));
+  afterRender(() => {
+    if (focusNewNote(id)) return;
+    setToast({
+      message: `Couldn’t ${what(ref)}. The reason is on its card.`,
+      action: { label: 'Show', run: () => revealFailure(id) },
+      error: true,
+      sticky: false,
+      key: null,
+    });
+  });
+}
+
+/** Forget the failures kept on rows `ids`: the write went through. */
+function clearFailures(ids: readonly string[]): void {
+  if (!ids.some((id) => ui.writeFailures.value.has(id))) return;
+  const next = new Map(ui.writeFailures.value);
+  for (const id of ids) next.delete(id);
+  keepFailures(next);
+}
+
+function dismissWriteFailure(id: string): void {
+  clearFailures([id]);
+}
+
+/** Failures the state now shows have happened anyway, which their notes would contradict. */
+function pruneFailures(next: DashboardState): void {
+  const moot = [...ui.writeFailures.value].filter(([id, failure]) => failureMoot(id, failure, next)).map(([id]) => id);
+  if (moot.length > 0) clearFailures(moot);
+}
+
+/** Whether the reader asked for less motion: a jump, then, rather than a glide. */
+function lessMotion(): boolean {
+  try {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/** Scroll to the first copy of row `id`'s note showing, put the keyboard on it and mark it for a moment. */
+function revealNote(id: string): boolean {
+  const note = visibleNotes(id)[0];
+  if (!note) return false;
+  note.scrollIntoView?.({ block: 'center', behavior: lessMotion() ? 'auto' : 'smooth' });
+  note.focus({ preventScroll: true });
+  note.classList.remove('write-failure--revealed');
+  void note.offsetWidth;
+  note.classList.add('write-failure--revealed');
+  return true;
+}
+
+/**
+ * The toast's Show: bring row `id`'s note into view. When no copy of it is
+ * showing, go where the row lives first, the board or the ticket board, with
+ * the fold that holds it open, and look again; when it is on neither, say so.
+ * The toast's button has put the toast away already, and with it brought back
+ * any error it covered, which must stay: this doesn't hide it again.
+ */
+function revealFailure(id: string): void {
+  if (revealNote(id)) return;
+  const row = pullRow(id);
+  const key = id.startsWith('jira:') ? id.slice('jira:'.length) : null;
+  const tickets = state.value?.tickets;
+  const flagged = key ? tickets?.rows?.find((each) => each.key === key) : undefined;
+  const working = key ? tickets?.inProgress?.find((each) => each.key === key) : undefined;
+  const open = (fold: string) => {
+    if (ui.drawers.value.get(fold) !== true) ui.drawers.value = new Map(ui.drawers.value).set(fold, true);
+  };
+  if (row) {
+    setView('board');
+    open(row.status === 'snoozed' ? 'board:snoozed' : row.court === 'reviewers' && row.nudgedAt ? 'board:nudged' : `board:${row.court}`);
+  } else if (flagged || working) {
+    setView('tickets');
+    setTicketMode(flagged ? 'sync' : 'working');
+    if (flagged?.status === 'snoozed') open('tickets:snoozed');
+  }
+  afterRender(() => {
+    if (!revealNote(id)) showToast('Its card isn’t on the page any more, so its note can’t be shown.');
+  });
+}
+
+/** Ask again for the write that failed on row `id`, through the same handler its button uses. */
+function retryWrite(id: string): void {
+  const failure = ui.writeFailures.value.get(id);
+  if (!failure) return;
+  const retry = failure.retry;
+  switch (retry.kind) {
+    case 'merge':
+      return void mergePull(id, retry.route);
+    case 'stack':
+      return void mergeStack(id);
+    case 'ready':
+      return void markReady(id);
+    case 'draft':
+      return void markDraft(id);
+    case 'move': {
+      // Undo goes back to where it is now, which may not be where it was then.
+      const now = state.value ? ticketByKey(state.value, retry.key) : null;
+      return void moveTicket(retry.key, retry.status, now?.workflowStatus ?? retry.from);
+    }
+  }
 }
 
 /* ---------- state ---------- */
@@ -117,6 +347,7 @@ export function adoptState(next: DashboardState): void {
   batch(() => {
     state.value = next;
     ui.connectionError.value = null;
+    pruneFailures(next);
   });
   checkStore(next.storeId);
   checkAssetVersion(next.assetVersion);
@@ -130,6 +361,7 @@ export async function refresh(): Promise<void> {
     batch(() => {
       state.value = next;
       ui.connectionError.value = null;
+      pruneFailures(next);
     });
   } catch (err) {
     ui.connectionError.value = err as Error;
@@ -157,7 +389,7 @@ function checkAssetVersion(next: string | undefined): void {
   // try again on the next push.
   const typing = document.activeElement?.matches?.('input, textarea');
   if (typing) {
-    showToast('A new version of the dashboard is ready', () => location.reload());
+    showToast('A new version of the dashboard is ready', () => location.reload(), 'Reload');
     return;
   }
   location.reload();
@@ -291,7 +523,7 @@ async function applyAction(id: string, action: ActionType, extra: ActionExtra = 
   } catch (err) {
     removePending(id);
     await refresh();
-    showToast(`Could not save: ${(err as Error).message}`);
+    showError(`Could not save: ${(err as Error).message}`);
   }
 }
 
@@ -309,8 +541,9 @@ async function refreshBoard(): Promise<void> {
   if (!state.value?.board?.enabled || state.value.board.fetching) return;
   try {
     adoptState(await api.postBoardRefresh());
+    settleError('refresh:board');
   } catch (err) {
-    showToast(`Could not refresh: ${(err as Error).message}`);
+    showError(`Could not refresh GitHub: ${(err as Error).message}`, 'refresh:board');
   }
 }
 
@@ -319,7 +552,7 @@ async function connect(service: Service, start: boolean, again = false): Promise
   try {
     adoptState(await (start ? api.postConnect(service, again) : api.postConnectCancel(service)));
   } catch (err) {
-    showToast(`Could not ${start ? 'connect' : 'stop connecting'}: ${(err as Error).message}`);
+    showError(`Could not ${start ? 'connect' : 'stop connecting'}: ${(err as Error).message}`);
   }
 }
 
@@ -328,8 +561,9 @@ async function refreshTickets(): Promise<void> {
   if (!state.value?.tickets?.enabled || state.value.tickets.fetching) return;
   try {
     adoptState(await api.postTicketsRefresh());
+    settleError('refresh:tickets');
   } catch (err) {
-    showToast(`Could not refresh: ${(err as Error).message}`);
+    showError(`Could not refresh Jira: ${(err as Error).message}`, 'refresh:tickets');
   }
 }
 
@@ -360,8 +594,9 @@ async function openProject(key: string): Promise<void> {
   openingProjects.add(wanted);
   try {
     adoptState(await api.postProjectOpen(wanted));
+    settleError(`read:${wanted}`);
   } catch (err) {
-    showToast(`Could not read ${wanted}: ${(err as Error).message}`);
+    showError(`Could not read ${wanted}: ${(err as Error).message}`, `read:${wanted}`);
   } finally {
     openingProjects.delete(wanted);
   }
@@ -380,8 +615,9 @@ async function refreshProjects(): Promise<void> {
   if (projects.fetching) return;
   try {
     adoptState(await api.postProjectsRefresh());
+    settleError('refresh:projects');
   } catch (err) {
-    showToast(`Could not refresh: ${(err as Error).message}`);
+    showError(`Could not refresh the projects: ${(err as Error).message}`, 'refresh:projects');
   }
 }
 
@@ -390,8 +626,9 @@ async function refreshCalendar(): Promise<void> {
   if (state.value?.agendaSource?.failure?.retrying) return;
   try {
     adoptState(await api.postCalendarRefresh());
+    settleError('refresh:calendar');
   } catch (err) {
-    showToast(`Could not refresh: ${(err as Error).message}`);
+    showError(`Could not refresh the calendar: ${(err as Error).message}`, 'refresh:calendar');
   }
 }
 
@@ -418,13 +655,15 @@ async function moveTicket(key: string, status: string, from: string | null): Pro
 
   try {
     adoptState(await api.postTicketTransition(key, status));
+    clearFailures([id]);
     showToast(`${key} moved to ${status}`, from ? () => void moveTicket(key, from, null) : null);
     // Projects read Jira on their own clock; read the open ones again so the card moves too.
     if (state.value?.projects?.enabled && Object.keys(state.value.projects.open ?? {}).length > 0) void refreshProjects();
   } catch (err) {
     // Jira refusing the move is the expected failure, not an exception: the board
     // offers the statuses it has seen, never the transitions the workflow allows.
-    showToast(`Jira would not move ${key} to ${status}: ${(err as Error).message}`);
+    // Its words go on the ticket's card, until put away.
+    failWrite(id, key, (who) => `move ${who} to ${status}`, (err as Error).message, { kind: 'move', key, status, from });
     await refresh();
   } finally {
     removePending(id);
@@ -443,7 +682,7 @@ async function checkTicket(key: string): Promise<void> {
   try {
     adoptState(await api.postTicketCheck(key));
   } catch (err) {
-    showToast(`Could not check ${key}: ${(err as Error).message}`);
+    showError(`Could not check ${key}: ${(err as Error).message}`);
   } finally {
     removePending(id);
   }
@@ -484,6 +723,16 @@ export function stackQuestion(chain: readonly BoardRow[]): string {
   return `Merge this stack of ${chain.length} pull requests from the bottom: ${chain.map((member) => `#${member.number}`).join(', ')}?`;
 }
 
+/** What a pull request write says when it fails: what it tried, and how to try it again. */
+interface Failing {
+  /** The row it was asked from, which the failure is kept on: the top of a stack. */
+  id: string;
+  ref: string;
+  /** What it tried, given who for: "add it to the merge queue". */
+  what: (who: string) => string;
+  retry: WriteRetry;
+}
+
 /**
  * Change a pull request on GitHub from its row.
  *
@@ -492,14 +741,15 @@ export function stackQuestion(chain: readonly BoardRow[]): string {
  * back. The rows are pending meanwhile, which disables their buttons, so a
  * second click can't send the same write twice. A refusal is an expected outcome
  * — a push since the board looked makes GitHub refuse a merge — so its words go
- * in the toast. `done` is what the toast says on success, unless the merge
- * helper said something of its own.
+ * on the row's card, where they stay until put away, and a toast points to
+ * them. `done` is what the toast says on success, unless the merge helper said
+ * something of its own.
  */
 async function writePull(
   ids: readonly string[],
   send: () => Promise<api.Landed>,
   done: string,
-  refused: string,
+  failing: Failing,
   undo: (() => void) | null = null,
 ): Promise<void> {
   if (ids.some((id) => ui.pending.value.has(id))) return;
@@ -510,9 +760,10 @@ async function writePull(
   try {
     const { state: next, notice } = await send();
     adoptState(next);
+    clearFailures([failing.id, ...ids]);
     showToast(notice || done, undo);
   } catch (err) {
-    showToast(`${refused}: ${(err as Error).message}`);
+    failWrite(failing.id, failing.ref, failing.what, (err as Error).message, failing.retry);
     await refresh();
   } finally {
     for (const id of ids) removePending(id);
@@ -529,7 +780,8 @@ async function markReady(id: string): Promise<void> {
   if (!row) return;
   const ref = `${row.repo}#${row.number}`;
   const send = async () => ({ state: await api.postPullReady(id), notice: null });
-  await writePull([id], send, `${ref} is ready for review`, `GitHub would not mark ${ref} ready`, () => void markDraft(id));
+  const failing: Failing = { id, ref, what: (who) => `mark ${who} ready for review`, retry: { kind: 'ready' } };
+  await writePull([id], send, `${ref} is ready for review`, failing, () => void markDraft(id));
 }
 
 /** Turn a pull request back into a draft. It doesn't ask either: the toast's Undo marks it ready again. */
@@ -538,7 +790,18 @@ async function markDraft(id: string): Promise<void> {
   if (!row) return;
   const ref = `${row.repo}#${row.number}`;
   const send = async () => ({ state: await api.postPullDraft(id), notice: null });
-  await writePull([id], send, `${ref} is a draft again`, `GitHub would not turn ${ref} into a draft`, () => void markReady(id));
+  const failing: Failing = { id, ref, what: (who) => `turn ${who} back into a draft`, retry: { kind: 'draft' } };
+  await writePull([id], send, `${ref} is a draft again`, failing, () => void markReady(id));
+}
+
+/** What a merge by `route` tries, given who for, as a failure says it. */
+function mergeWhat(row: BoardRow, route: MergeRoute): (who: string) => string {
+  if (route === 'helper') {
+    return helperLabel(row) === HELPER_LABEL ? (who) => `add ${who} to the merge queue` : (who) => `hand ${who} to your merge helper`;
+  }
+  if (route === 'queue') return (who) => `add ${who} to the merge queue`;
+  const verb = MERGE_VERB[row.mergeMethod ?? 'MERGE'].toLowerCase();
+  return (who) => `${verb} ${who}`;
 }
 
 /**
@@ -557,17 +820,9 @@ async function mergePull(id: string, asked?: MergeRoute): Promise<void> {
   if (!window.confirm(mergeQuestion(row, route))) return;
   const ref = `${row.repo}#${row.number}`;
   const send = () => api.postPullMerge(id, head, route);
-  if (route === 'helper') {
-    await writePull([id], send, `${ref} went to your merge helper`, `Your merge helper would not take ${ref}`);
-    return;
-  }
-  const queue = route === 'queue';
-  await writePull(
-    [id],
-    send,
-    queue ? `${ref} added to the merge queue` : `${ref} merged into ${row.baseRef}`,
-    queue ? `GitHub would not queue ${ref}` : `GitHub would not merge ${ref}`,
-  );
+  const failing: Failing = { id, ref, what: mergeWhat(row, route), retry: { kind: 'merge', route } };
+  const done = route === 'helper' ? `${ref} went to your merge helper` : route === 'queue' ? `${ref} added to the merge queue` : `${ref} merged into ${row.baseRef}`;
+  await writePull([id], send, done, failing);
 }
 
 /**
@@ -588,7 +843,7 @@ async function mergeStack(id: string): Promise<void> {
     chain.map((member) => member.id),
     () => api.postPullMergeStack(id, heads),
     `${ref} and the ${chain.length - 1} under it went to your merge helper`,
-    `Your merge helper would not merge the stack up to ${ref}`,
+    { id, ref, what: (who) => (who === 'it' ? 'merge the stack it tops' : `merge the stack up to ${who}`), retry: { kind: 'stack' } },
   );
 }
 
@@ -607,7 +862,7 @@ async function ask(id: string, body: { action?: string; text?: string }): Promis
     ui.assistantDraft.value = '';
     adoptState(next);
   } catch (err) {
-    showToast(`Could not ask: ${(err as Error).message}`);
+    showError(`Could not ask: ${(err as Error).message}`);
   }
 }
 
@@ -615,7 +870,7 @@ async function stopAssistant(id: string): Promise<void> {
   try {
     adoptState(await api.postAssistantStop(id));
   } catch (err) {
-    showToast(`Could not stop: ${(err as Error).message}`);
+    showError(`Could not stop: ${(err as Error).message}`);
   }
 }
 
@@ -641,7 +896,7 @@ async function copy(text: string): Promise<void> {
     }
     showToast('Copied');
   } catch (err) {
-    showToast(`Could not copy: ${(err as Error).message}`);
+    showError(`Could not copy: ${(err as Error).message}`);
   }
 }
 
@@ -662,7 +917,7 @@ async function runAgent(): Promise<void> {
   try {
     adoptState(await api.postAgentRun());
   } catch (err) {
-    showToast(`Could not start the morning agent: ${(err as Error).message}`);
+    showError(`Could not start the morning agent: ${(err as Error).message}`);
   }
 }
 
@@ -670,7 +925,7 @@ async function stopAgent(): Promise<void> {
   try {
     adoptState(await api.postAgentStop());
   } catch (err) {
-    showToast(`Could not stop the morning agent: ${(err as Error).message}`);
+    showError(`Could not stop the morning agent: ${(err as Error).message}`);
   }
 }
 
@@ -684,7 +939,7 @@ async function askAgent(run: string, text: string): Promise<void> {
     ui.assistantDraft.value = '';
     adoptState(next);
   } catch (err) {
-    showToast(`Could not ask the morning agent: ${(err as Error).message}`);
+    showError(`Could not ask the morning agent: ${(err as Error).message}`);
   }
 }
 
@@ -803,7 +1058,7 @@ async function loadSettings(): Promise<void> {
   try {
     ui.settings.value = await api.fetchSettings();
   } catch (err) {
-    showToast(`Could not load the settings: ${(err as Error).message}`);
+    showError(`Could not load the settings: ${(err as Error).message}`);
   }
 }
 
@@ -867,7 +1122,7 @@ async function loadText(name: TextName): Promise<void> {
       },
     };
   } catch (err) {
-    showToast(`Could not open ${name === 'focus' ? 'focus.md' : 'sources.md'}: ${(err as Error).message}`);
+    showError(`Could not open ${name === 'focus' ? 'focus.md' : 'sources.md'}: ${(err as Error).message}`);
   }
 }
 
@@ -891,7 +1146,7 @@ async function saveText(name: TextName, overwrite = false): Promise<void> {
       patchText(name, { conflict: { text: failure.body.text ?? null, version: failure.body.version }, saving: false });
     } else {
       patchText(name, { saving: false });
-      showToast(`Could not save: ${failure.message}`);
+      showError(`Could not save: ${failure.message}`);
     }
   }
 }
@@ -906,7 +1161,7 @@ async function saveObjective(objective: string, blocker: string): Promise<void> 
     if (editor && editor.draft === (editor.saved ?? editor.template)) void loadText('focus');
     showToast(objective.trim() ? 'Objective saved' : 'Objective cleared');
   } catch (err) {
-    showToast(`Could not save the objective: ${(err as Error).message}`);
+    showError(`Could not save the objective: ${(err as Error).message}`);
   }
 }
 
@@ -932,7 +1187,7 @@ async function disconnectCalendar(id: string): Promise<void> {
     ui.calendars.value = null;
     showToast('Calendar account disconnected');
   } catch (err) {
-    showToast(`Could not disconnect: ${(err as Error).message}`);
+    showError(`Could not disconnect: ${(err as Error).message}`);
   }
 }
 
@@ -1031,7 +1286,7 @@ async function organizationRequest(send: () => Promise<DashboardState>, done: st
   } catch (err) {
     const current = ui.organizationReview.value;
     if (current) ui.organizationReview.value = { ...current, busy: false, error: (err as Error).message };
-    else showToast(`That didn’t work: ${(err as Error).message}`);
+    else showError(`That didn’t work: ${(err as Error).message}`);
     return false;
   }
   ui.organizationReview.value = null;
@@ -1176,7 +1431,7 @@ export const handlers: Handlers = {
   connect: (service, again) => void connect(service, true, again),
   cancelConnect: (service) => void connect(service, false),
   chooseConnect: (service, choice) =>
-    void api.postConnectChoose(service, choice).then(adoptState, (err: unknown) => showToast(`Could not choose ${choice}: ${(err as Error).message}`)),
+    void api.postConnectChoose(service, choice).then(adoptState, (err: unknown) => showError(`Could not choose ${choice}: ${(err as Error).message}`)),
   ask: (id, body) => void ask(id, body),
   stopAssistant: (id) => void stopAssistant(id),
   copy: (text) => void copy(text),
@@ -1208,6 +1463,9 @@ export const handlers: Handlers = {
     }),
   openHelp: () => (document.getElementById('help') as HTMLDialogElement | null)?.showModal(),
   hideToast,
+  holdToast,
+  retryWrite: (id) => retryWrite(id),
+  dismissWriteFailure,
   openSettings,
   closeSettings: () => setView(ui.settingsReturn.value),
   loadSettings: () => void loadSettings(),

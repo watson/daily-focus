@@ -14,6 +14,7 @@ import { activityText } from './stages.ts';
 import { drawer } from './section.ts';
 import { connecting, connectionView } from './connect.ts';
 import type { Handlers, UiState } from './types.ts';
+import { writeFailureNote } from './writefailure.ts';
 
 const COURT_TITLE = {
   you: 'Waiting on you',
@@ -187,6 +188,7 @@ export function PullRow({ item: row, state, ui, handlers }: RowProps<BoardRow>):
       renderNoMerge(row, state),
       renderCancelledChecks(row),
       renderAhead(row.id, state),
+      writeFailureNote(row.id, state, ui, handlers),
     ),
     renderPullActions(row, ui, handlers),
     ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, { indefinite: false }) : null,

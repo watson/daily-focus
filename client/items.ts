@@ -113,7 +113,8 @@ export function githubRepo(item: Pick<ResolvedItem, 'source' | 'url'>): string |
 /** Let links, buttons and inputs do their own thing; anywhere else on a card is the card. */
 export function onCard(event: Event): boolean {
   const target = event.target as Element | null;
-  return !target?.closest?.('a, button, input, textarea, summary');
+  // A failed write's note is for reading and copying from, not a way into the panel.
+  return !target?.closest?.('a, button, input, textarea, summary, .write-failure');
 }
 
 export interface RowProps<T> {

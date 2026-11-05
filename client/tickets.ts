@@ -16,6 +16,7 @@ import { drawer, section } from './section.ts';
 import { ProjectsView } from './projects.ts';
 import { PANEL_PREFIX, type ProjectTicketRow } from './state.ts';
 import type { Handlers, TicketMode, UiState } from './types.ts';
+import { writeFailureNote } from './writefailure.ts';
 
 /** Either kind of row this board shows. A row in a court is a `TicketRow`; one in Working on carries no court. */
 export type AnyTicketRow = TicketRow | InProgressTicket;
@@ -395,6 +396,7 @@ export function TicketRowView({ item: row, state, ui, handlers }: RowProps<AnyTi
       renderGitHubEvidence(row, now),
       // Whether its pull requests finish it: a line of advice, and nothing about the row changes with it.
       doneCheckLine(row.key, state.doneCheck, now, { ui, handlers }),
+      writeFailureNote(row.id, state, ui, handlers),
     ),
     renderTicketActions(row, ui, handlers),
     ui.menuFor.value === row.id ? renderSnoozeMenu(row, now, handlers, SNOOZE_MENU) : null,
@@ -465,6 +467,16 @@ export function statusControl(
     row.workflowStatus || '—',
   );
   return open ? [button, renderStatusMenu(row, offered, ui, handlers)] : [button];
+}
+
+/**
+ * Whether the status control would offer moving this ticket to `status`: the
+ * user's own, and a status its project is seen in. What a failed move's Try
+ * again asks before it offers itself.
+ */
+export function canMoveTo(row: StatusRow, status: string, state: DashboardState): boolean {
+  const wanted = status.trim().toLowerCase();
+  return row.mine !== false && ticketStatusOptions(row, state).some((each) => each.trim().toLowerCase() === wanted);
 }
 
 /**
