@@ -123,6 +123,32 @@ test('GitHub’s rules for a merge still decide whether the helper is offered', 
   assert.equal(rows.get(414)?.mergeHelper, undefined, 'the helper is asked about default branches only');
 });
 
+test("a pull request the helper says is in its queue moves to the queue's court, and offers no merge", () => {
+  // The helper's queue reporting itself as a check still running on it.
+  const merging = { name: 'queue/merge', kind: 'check-run' as const, detailsUrl: 'https://queue.example.com/acme/payments-api/420' };
+  const running = { mergeStateStatus: 'BLOCKED' as const, checks: 'pending' as const, pendingChecks: [merging], basePushable: false };
+  const rows = board([pull(420, running), pull(421, running)], context({ queued: ['github:pr:acme/payments-api#420'] }));
+
+  const queued = rows.get(420)!;
+  assert.equal(queued.court, 'queue');
+  assert.deepEqual(queued.reasons, [{ kind: 'checks-pending', checks: [merging] }]);
+  assert.deepEqual(merges(queued), []);
+  assert.equal(refuseMergeBy(queued, 'helper'), 'it is in the merge queue already');
+  assert.equal(rows.get(421)?.court, 'checks', 'one the helper never took is an ordinary check wait');
+});
+
+test('where only the helper’s queue may merge, a comment after the approval says an answer would make it ready', () => {
+  const said = pull(421, {
+    mergeStateStatus: 'BLOCKED',
+    basePushable: false,
+    lastActivityByOthers: { at: '2026-11-03T11:00:00Z', login: 'bob', kind: 'comment' },
+  });
+  const row = board([said]).get(421)!;
+  assert.equal(row.court, 'you');
+  assert.equal(row.reasons[0]?.readyOnAnswer, true);
+  assert.equal(board([said], null).get(421)?.reasons[0]?.readyOnAnswer, undefined, 'without the helper, it would be blocked');
+});
+
 test('where only the helper’s queue may merge, a merge GitHub calls blocked with nothing left to wait on is ready, and offers it', () => {
   // A branch only a queue's bot may push to reads blocked to the user: approved and green, there is nothing else to wait on.
   const blocked = { mergeStateStatus: 'BLOCKED' as const, basePushable: false };

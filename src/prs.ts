@@ -13,9 +13,9 @@ export const NUDGE_AFTER_MS = 24 * 3_600_000;
 /** How long a draft may go untouched before it's flagged as forgotten. */
 export const STALE_DRAFT_AFTER_MS = 14 * 86_400_000;
 
-const COURT_ORDER: readonly Court[] = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'draft'];
+const COURT_ORDER: readonly Court[] = ['you', 'ready', 'reviewers', 'gate', 'blocked', 'checks', 'queue', 'draft'];
 
-/** Order the buckets render in: what only you can move first, drafts last. */
+/** Order the buckets render in: what only you can move first, then what moves on its own, drafts last. */
 export function courtOrder(court: Court): number {
   return COURT_ORDER.indexOf(court);
 }
@@ -113,7 +113,9 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  * Nothing is a gate by default — the list arrives from the user's private config,
  * and an empty one simply leaves those rows in `checks`. `reviews` is the gate
  * title meaning only approvals are missing, from `mergeGateReviews`. `queue` is
- * whether the user's merge helper said it merges this pull request's branch.
+ * whether the user's merge helper said it merges this pull request's branch, and
+ * `queued` whether it says the pull request is in its queue now; GitHub's own
+ * queue says so in `inMergeQueue`.
  *
  * The order the questions are asked in is the whole design, so it is written out
  * rather than left implicit:
@@ -121,15 +123,17 @@ function newest(pr: PullRequest, state: string): { login: string; at: string } |
  *   1. drafts, which ask nothing of anyone
  *   2. anything only you can fix — a verdict against you, red CI, a conflict, a
  *      stale branch, or somebody having spoken after you
- *   3. a review GitHub itself still requires, or one a pending gate says it is
+ *   3. in a merge queue, GitHub's or the helper's, which is what moves it now,
+ *      whatever else GitHub says it is waiting on
+ *   4. a review GitHub itself still requires, or one a pending gate says it is
  *      missing and nothing else, which outranks any check
- *   4. a configured merge gate that hasn't finished
- *   5. GitHub reporting the merge blocked without naming an unfinished check,
+ *   5. a configured merge gate that hasn't finished
+ *   6. GitHub reporting the merge blocked without naming an unfinished check,
  *      unless it is approved, the user may not push to the base branch, and
  *      the merge helper merges it: ready
- *   6. GitHub reporting an ordinary check wait or an unstable merge
- *   7. ready, which needs GitHub to agree the merge would work
- *   8. otherwise, waiting on reviewers
+ *   7. GitHub reporting an ordinary check wait or an unstable merge
+ *   8. ready, which needs GitHub to agree the merge would work
+ *   9. otherwise, waiting on reviewers
  */
 export function judge(
   pr: PullRequest,
@@ -138,8 +142,10 @@ export function judge(
   gates: readonly string[] = [],
   reviews: RegExp | null = null,
   queue = false,
+  queued = false,
 ): Judgement {
   const decision = deriveDecision(pr);
+  const inQueue = queued || pr.inMergeQueue === true;
   // `?? null`: a pull read back from an older file may lack the key entirely.
   const you = pr.lastActivityByYou ?? null;
   const others = pr.lastActivityByOthers ?? null;
@@ -161,7 +167,8 @@ export function judge(
   // are one reason rather than two rows saying the same thing twice.
   if (pr.mergeable === 'CONFLICTING' || mergeState === 'DIRTY') reasons.push({ kind: 'conflicts' });
   // Behind the base branch: nobody else can press the update button for you.
-  if (mergeState === 'BEHIND') reasons.push({ kind: 'behind' });
+  // Unless a queue has it, which merges it onto the base as it stands then.
+  if (mergeState === 'BEHIND' && !inQueue) reasons.push({ kind: 'behind' });
 
   const theirMove = others !== null && (you === null || others.at > you);
   const approval = newest(pr, 'APPROVED');
@@ -182,7 +189,7 @@ export function judge(
     // having spoken last, can't recurse again.
     if (decision === 'APPROVED' && approval) {
       reason.approval = { login: approval.login, at: approval.at };
-      if (judge({ ...pr, lastActivityByYou: others.at }, now, nudgedAt, gates, reviews).court === 'ready') reason.readyOnAnswer = true;
+      if (judge({ ...pr, lastActivityByYou: others.at }, now, nudgedAt, gates, reviews, queue, queued).court === 'ready') reason.readyOnAnswer = true;
     }
     reasons.push(reason);
   }
@@ -207,6 +214,14 @@ export function judge(
     since: waitingSince,
   });
   const ready = (): Judgement => ({ court: 'ready', decision, reasons: [], stale: false, nudge: false, since: approval?.at ?? pr.updatedAt });
+
+  // Only the queue moves it now. A queue may report itself as an unfinished
+  // check, which would otherwise read as an ordinary check wait; those still
+  // running are named, since the queue's own links to where it says how it goes.
+  if (inQueue) {
+    const pending = pr.pendingChecks ?? [];
+    return { court: 'queue', decision, reasons: pending.length > 0 ? [{ kind: 'checks-pending', checks: pending }] : [], stale: false, nudge: false, since: waitingSince };
+  }
 
   // GitHub's own "a review is still required" outranks every check, including a
   // gate: a gate that is waiting for that same approval would otherwise hide the
@@ -300,12 +315,13 @@ export function resolveBoard(
     const log = folded.get(canonicalId(pr.id));
     // Only a branch the helper is asked about: the default one.
     const helper = merging && pr.defaultBranch && pr.baseRef === pr.defaultBranch ? merging.helper(pr.repo, pr.baseRef) : null;
-    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates, reviews, helper?.kind === 'queue');
+    const queued = merging?.queued(pr.id) ?? false;
+    const verdict = judge(pr, now, log?.nudgedAt ?? null, gates, reviews, helper?.kind === 'queue', queued);
 
     const row: BoardRow = { ...pr, ...verdict, status: log?.status === 'snoozed' ? 'snoozed' : 'open', notes: log?.notes ?? [] };
     if (row.status === 'snoozed' && log?.snoozedUntil) row.snoozedUntil = log.snoozedUntil;
     if (helper) row.mergeHelper = helper;
-    if (merging?.queued(pr.id)) row.helperQueued = true;
+    if (queued) row.helperQueued = true;
     row.offers = pullOffers(row);
     return row;
   });
@@ -400,6 +416,7 @@ export function refuseDraft(row: OfferFacts): string | null {
  * taken back, and the answer is seconds away.
  */
 export function refuseMerge(row: OfferFacts): string | null {
+  if (row.inMergeQueue || row.helperQueued) return 'it is in the merge queue already';
   if (row.court !== 'ready') return 'it is not ready to merge';
   // The ready court also holds an approved, quiet pull request whose merge
   // state couldn't be read, so the court alone is not GitHub saying yes. Nor is
@@ -411,7 +428,6 @@ export function refuseMerge(row: OfferFacts): string | null {
   if (!row.nodeId || !row.account || !row.headSha || !row.defaultBranch) return UNREAD;
   if (row.stacked) return 'it is part of a stack on GitHub, which merges there';
   if (row.baseRef !== row.defaultBranch) return `it targets ${row.baseRef}, not ${row.defaultBranch}`;
-  if (row.inMergeQueue || row.helperQueued) return 'it is in the merge queue already';
   if (row.mergeHelper?.kind === 'asking') return ASKING;
   if (queue || row.mergeQueue) return null;
   if (!row.mergeMethod) return UNREAD;
@@ -591,6 +607,7 @@ export function countBoard(rows: readonly BoardRow[]): Record<Court | 'snoozed',
     gate: 0,
     blocked: 0,
     checks: 0,
+    queue: 0,
     draft: 0,
     snoozed: 0,
   };

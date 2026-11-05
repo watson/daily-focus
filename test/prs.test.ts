@@ -330,7 +330,7 @@ test('the board honours snooze, nudges and notes from the log, and ignores done 
   assert.equal(byNumber.get(4)?.status, 'snoozed');
   assert.equal(byNumber.get(4)?.snoozedUntil, '2026-10-01');
 
-  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 4, gate: 0, blocked: 0, checks: 0, draft: 0, snoozed: 1 });
+  assert.deepEqual(countBoard(rows), { you: 0, ready: 0, reviewers: 4, gate: 0, blocked: 0, checks: 0, queue: 0, draft: 0, snoozed: 1 });
 });
 
 test('an expired snooze reopens, and a dateless one stays snoozed indefinitely', () => {
@@ -663,10 +663,51 @@ test('the counts cover every court the board can render', () => {
       approved({ id: 'github:pr:acme/webapp#5', number: 5, mergeStateStatus: 'UNSTABLE', pendingChecks: [pending('e2e')] }),
       pr({ id: 'github:pr:acme/webapp#6', number: 6, isDraft: true }),
       approved({ id: 'github:pr:acme/webapp#7', number: 7, mergeStateStatus: 'BLOCKED' }),
+      approved({ id: 'github:pr:acme/webapp#8', number: 8, inMergeQueue: true }),
     ],
     [],
     NOW,
     GATES,
   );
-  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, blocked: 1, checks: 1, draft: 1, snoozed: 0 });
+  assert.deepEqual(countBoard(rows), { you: 1, ready: 1, reviewers: 1, gate: 1, blocked: 1, checks: 1, queue: 1, draft: 1, snoozed: 0 });
+});
+
+test('a pull request in a merge queue waits on the queue, even where the queue reports as a running check', () => {
+  // A queue that reports itself as a check on the pull request, as some do, with a link to where it says how it is going.
+  const merging = pending('queue/merge', { detailsUrl: 'https://queue.example.com/acme/webapp/3421' });
+  const running = { mergeStateStatus: 'BLOCKED' as const, checks: 'pending' as const, pendingChecks: [merging] };
+
+  assert.equal(judge(approved(running), NOW, null, GATES).court, 'checks', 'nothing says it is queued');
+  for (const [what, verdict] of [
+    ["in GitHub's merge queue", judge(approved({ ...running, inMergeQueue: true }), NOW, null, GATES)],
+    ["in the merge helper's", judge(approved(running), NOW, null, GATES, REVIEWS, true, true)],
+  ] as const) {
+    assert.equal(verdict.court, 'queue', what);
+    assert.deepEqual(verdict.reasons, [{ kind: 'checks-pending', checks: [merging] }], what);
+    assert.equal(verdict.nudge, false, what);
+  }
+
+  const quiet = judge(approved({ inMergeQueue: true }), NOW, null, GATES);
+  assert.equal(quiet.court, 'queue', 'nothing left running, and not yet merged');
+  assert.deepEqual(quiet.reasons, []);
+
+  const gated = judge(approved({ mergeStateStatus: 'BLOCKED', pendingChecks: [pending('policy/merge-gate')], inMergeQueue: true }), NOW, null, GATES);
+  assert.equal(gated.court, 'queue', 'the queue has it, whatever the gate is waiting on');
+});
+
+test('in a merge queue, what only you can fix still comes first, but a branch behind its base does not', () => {
+  const behind = judge(approved({ mergeStateStatus: 'BEHIND', inMergeQueue: true }), NOW, null, GATES);
+  assert.equal(behind.court, 'queue', 'the queue merges it onto the base as it stands then');
+
+  const red = judge(approved({ checks: 'failure', failingChecks: ['unit-tests'], mergeStateStatus: 'BLOCKED', inMergeQueue: true }), NOW, null, GATES);
+  assert.equal(red.court, 'you');
+  assert.deepEqual(red.reasons, [{ kind: 'ci-failing' }]);
+
+  const conflicting = judge(approved({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', inMergeQueue: true }), NOW, null, GATES);
+  assert.equal(conflicting.court, 'you');
+
+  // Said after the approval, while the queue has it: worth reading before it lands.
+  const said = judge(approved({ lastActivityByOthers: { at: hoursAgo(1), login: 'bob', kind: 'comment' }, inMergeQueue: true }), NOW, null, GATES);
+  assert.equal(said.court, 'you');
+  assert.equal(said.reasons[0]?.readyOnAnswer, undefined, 'an answer leaves it in the queue, not ready to merge');
 });
