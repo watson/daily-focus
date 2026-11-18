@@ -258,21 +258,70 @@ test('a ticket waiting on one outside the project is not started, merged or mark
 });
 
 test('a stack between two tickets orders them though Jira links neither', () => {
-  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.stacked)] }, [PULLS.ready, PULLS.stacked]);
-  const project = projectWork(planned([ticket('PAY-2'), ticket('PAY-1')]), sources);
-  assert.deepEqual(project.order, ['PAY-1', 'PAY-2']);
-  assert.deepEqual(project.waitsFor['PAY-2'], ['PAY-1']);
-  assert.deepEqual(project.stackedOn.get('PAY-2'), ['PAY-1']);
+  const sources = sourcesFor({ 'PAY-201': [linked(PULLS.ready)], 'PAY-202': [linked(PULLS.stacked)] }, [PULLS.ready, PULLS.stacked]);
+  const project = projectWork(planned([ticket('PAY-202'), ticket('PAY-201')]), sources);
+  assert.deepEqual(project.order, ['PAY-201', 'PAY-202']);
+  assert.deepEqual(project.waitsFor['PAY-202'], ['PAY-201']);
+  assert.deepEqual(project.stackedOn.get('PAY-202'), ['PAY-201']);
   assert.deepEqual(project.overruled, []);
 });
 
 test('a stack wins over a Jira link that says the opposite, and that is kept to say so', () => {
-  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.stacked)] }, [PULLS.ready, PULLS.stacked]);
-  const tickets = [ticket('PAY-1', { blockedBy: ['PAY-2'] }), ticket('PAY-2', { blocks: ['PAY-1'] })];
+  const sources = sourcesFor({ 'PAY-201': [linked(PULLS.ready)], 'PAY-202': [linked(PULLS.stacked)] }, [PULLS.ready, PULLS.stacked]);
+  const tickets = [ticket('PAY-201', { blockedBy: ['PAY-202'] }), ticket('PAY-202', { blocks: ['PAY-201'] })];
   const project = projectWork(planned(tickets), sources);
-  assert.deepEqual(project.order, ['PAY-1', 'PAY-2']);
+  assert.deepEqual(project.order, ['PAY-201', 'PAY-202']);
   assert.deepEqual(project.plan.loops, [], 'one order, not a loop');
-  assert.deepEqual(project.overruled, [{ ticket: 'PAY-2', over: 'PAY-1' }]);
+  assert.deepEqual(project.overruled, [{ ticket: 'PAY-202', over: 'PAY-201' }]);
+});
+
+test("a pull request that only mentions another ticket isn't that ticket's work in a stack", () => {
+  // One ticket's stack of three. The middle one's description mentions PAY-202,
+  // the ticket it unblocks, which links it to PAY-202 too. Jira: PAY-201 blocks PAY-202.
+  const middle = pull({
+    id: 'github:pr:acme/payments-api#416',
+    number: 416,
+    title: 'Write entries through the ledger',
+    url: 'https://github.com/acme/payments-api/pull/416',
+    headRef: 'pay-201-write-through',
+    baseRef: 'pay-201-ledger-table',
+  });
+  const top = pull({
+    id: 'github:pr:acme/payments-api#417',
+    number: 417,
+    title: 'Name the ledger columns',
+    url: 'https://github.com/acme/payments-api/pull/417',
+    headRef: 'pay-201-column-names',
+    baseRef: 'pay-201-write-through',
+  });
+  const sources = sourcesFor(
+    { 'PAY-201': [linked(PULLS.ready), linked(middle), linked(top)], 'PAY-202': [linked(middle)] },
+    [PULLS.ready, middle, top],
+  );
+  const tickets = [ticket('PAY-201', { blocks: ['PAY-202'] }), ticket('PAY-202', { blockedBy: ['PAY-201'] })];
+  const project = projectWork(planned(tickets), sources);
+  assert.deepEqual(project.plan.loops, [], 'no loop');
+  assert.deepEqual([...project.stackedOn], [], 'no stack between the two tickets');
+  assert.deepEqual(project.overruled, [], 'so nothing overrules Jira');
+  assert.deepEqual(project.order, ['PAY-201', 'PAY-202']);
+});
+
+test("a stack counts only a pull request's own ticket: named in its branch or title, or else its one link", () => {
+  const tickets = [ticket('PAY-201'), ticket('PAY-202')];
+  // No key in its branch or title: the one ticket it is linked to.
+  const unnamed = pull({ ...PULLS.stacked, title: 'Write entries through the ledger', headRef: 'write-through' });
+  const one = sourcesFor({ 'PAY-201': [linked(PULLS.ready)], 'PAY-202': [linked(unnamed)] }, [PULLS.ready, unnamed]);
+  assert.deepEqual(projectWork(planned(tickets), one).stackedOn.get('PAY-202'), ['PAY-201']);
+
+  // Its branch names a ticket beyond the project, and its description this one: not this one's work.
+  const elsewhere = pull({ ...PULLS.stacked, headRef: 'ops-9-write-through' });
+  const other = sourcesFor({ 'PAY-201': [linked(PULLS.ready)], 'PAY-202': [linked(elsewhere)] }, [PULLS.ready, elsewhere]);
+  assert.deepEqual([...projectWork(planned(tickets), other).stackedOn], []);
+
+  // Its branch names one ticket and its title the other: neither's alone, so no stack.
+  const both = pull({ ...PULLS.stacked, title: 'PAY-201: write entries through the ledger' });
+  const split = sourcesFor({ 'PAY-201': [linked(PULLS.ready), linked(both)], 'PAY-202': [linked(both)] }, [PULLS.ready, both]);
+  assert.deepEqual([...projectWork(planned(tickets), split).stackedOn], []);
 });
 
 test('without stacks between tickets the server plan stands as it is', () => {

@@ -111,7 +111,7 @@ versions and release notes come from, so CI checks it.
 | `src/organizationfile.ts` | The setup in use as the store keeps it, `organization.json` and `organization/`: its values for the settings to layer, and the check that a file it pinned still has the approved hash before it runs |
 | `src/connect.ts`, `client/connect.ts` | Connecting GitHub or Jira from the page: the CLI fetched if need be, then signed in, on setup's card, the boards and Settings |
 | `scripts/licenses.ts` | The package's `dist/third-party-licenses.txt`: every npm package its bundles read, and the fonts |
-| `src/jira.ts`, `src/linked.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states, ticket classification, and polling |
+| `src/jira.ts`, `src/linked.ts`, `src/issuekeys.ts`, `src/tickets.ts`, `src/ticketboard.ts` | Jira access, GitHub's correction to Jira's pull request states and the ticket keys it finds, ticket classification, and polling |
 | `src/projects.ts`, `src/projectboard.ts` | An epic or initiative zoomed into: the order its tickets can land in from Jira's blocks links, the loops in them, and reading the projects someone opens |
 | `client/stages.ts`, `client/projects.ts` | The Tickets tab's Projects view: where each ticket stands, joined from Jira, the ticket board and the pull request board, what to do next, the rail's lanes, and the page that shows them |
 | `src/failure.ts`, `client/failure.ts` | How the three pollers report a failed read: one line, and the detail behind a click |
