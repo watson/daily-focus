@@ -568,11 +568,14 @@ export type NextKind = 'merge' | 'merge-after' | 'close' | 'ready' | 'answer' | 
 /** One thing the user can do now, as the list ranks it. */
 export interface NextStep {
   kind: NextKind;
-  /** The ticket it moves on. */
-  key: string;
+  /**
+   * The tickets it moves on, in merge order: one, or every one of the user's
+   * that a pull request is linked to, since that is still one thing to do.
+   */
+  keys: readonly string[];
   /** What to do, as a verb: "Merge acme/payments-api #412". */
   title: string;
-  /** Why, in a line: the ticket, and what it unblocks or waits for. */
+  /** Why, in a line: the tickets, and what they unblock or wait for. */
   reason: string;
   /** Where the button goes, and so what it says. Null when there is nowhere to link. */
   url: string | null;
@@ -599,16 +602,19 @@ export interface NextStep {
  * 6. Nudge reviewers who have been asked long enough.
  * 7. Start a ticket of theirs that waits for nothing.
  *
- * Only the user's own tickets lead anywhere. `only` narrows it to some
- * tickets, as an initiative's epic cards do.
+ * Only the user's own tickets lead anywhere. A pull request linked to several
+ * of them is one step, said for them all, and judged by what all of them wait
+ * for and hold up: merging it moves every one. `only` narrows the list to the
+ * steps that move some tickets, as an initiative's epic cards do.
  */
 export function nextSteps(project: ProjectWork, now: Date, only: (work: TicketWork) => boolean = () => true): NextStep[] {
   const { works, order, waitsFor } = project;
   const position = new Map(order.map((key, i) => [key, i]));
-  const mine = order.map((key) => works.get(key)!).filter((work) => work.ticket.mine && work.stage !== 'done' && only(work));
+  const mine = order.map((key) => works.get(key)!).filter((work) => work.ticket.mine && work.stage !== 'done');
 
   // Whether a ticket's work can land once merging starts: it is ready, or
-  // merged, and so is everything it waits for. A loop never can.
+  // merged, and so is everything it waits for, and everything the other
+  // tickets its ready pull requests are linked to wait for. A loop never can.
   const memo = new Map<string, boolean>();
   const path = new Set<string>();
   const clear = (key: string): boolean => {
@@ -618,73 +624,90 @@ export function nextSteps(project: ProjectWork, now: Date, only: (work: TicketWo
     if (!work || path.has(key)) return false;
     if (work.stage === 'done') return true;
     path.add(key);
-    const result = (work.stage === 'ready' || work.stage === 'merged') && (waitsFor[key] ?? []).every(clear);
+    const shared = work.pulls.flatMap((pull) => (pull.stage === 'ready' ? waitsOf(ownersOf.get(pull.url) ?? []) : []));
+    const result = (work.stage === 'ready' || work.stage === 'merged') && [...(waitsFor[key] ?? []), ...shared].every(clear);
     path.delete(key);
     memo.set(key, result);
     return result;
   };
 
-  const freedBy = (key: string): number =>
-    (project.dependents.get(key) ?? []).filter((other) => waitsFor[other]!.every((blocker) => blocker === key)).length;
-  const unblocks = (key: string): string => {
-    const held = blocksOf(key, project);
+  // What a step's tickets wait for, hold up and free, each other left out: one
+  // pull request for several of them lands them together, so a link between
+  // two of them cannot put it after itself.
+  const others = (keys: readonly string[], found: readonly string[]): string[] =>
+    [...new Set(found)].filter((other) => !keys.includes(other));
+  const waitsOf = (keys: readonly string[]): string[] => others(keys, keys.flatMap((key) => waitsFor[key] ?? []));
+  const dependentsOf = (keys: readonly string[]): string[] => others(keys, keys.flatMap((key) => project.dependents.get(key) ?? []));
+  const freedBy = (keys: readonly string[]): number =>
+    dependentsOf(keys).filter((other) => waitsFor[other]!.every((blocker) => keys.includes(blocker))).length;
+  const unblocks = (keys: readonly string[]): string => {
+    const rank = (key: string): number => position.get(key) ?? order.length;
+    const held = others(keys, keys.flatMap((key) => blocksOf(key, project))).sort((a, b) => rank(a) - rank(b));
     return held.length > 0 ? `unblocks ${listOf(held.map((other) => nameTicket(other, project)))}` : '';
   };
-  const line = (key: string, ...parts: string[]): string => [key, ...parts.filter(Boolean)].join(' · ');
-  const byImpact = (a: string, b: string): number =>
-    freedBy(b) - freedBy(a) ||
-    (project.dependents.get(b)?.length ?? 0) - (project.dependents.get(a)?.length ?? 0) ||
-    position.get(a)! - position.get(b)!;
+  const line = (keys: readonly string[], ...parts: string[]): string => [listOf(keys), ...parts.filter(Boolean)].join(' · ');
+  const byImpact = (a: NextStep, b: NextStep): number =>
+    freedBy(b.keys) - freedBy(a.keys) ||
+    dependentsOf(b.keys).length - dependentsOf(a.keys).length ||
+    position.get(a.keys[0]!)! - position.get(b.keys[0]!)!;
 
-  // Whose each of the user's pull requests is, so a stack on a blocker's own
+  // Whose each of the user's pull requests is: the unfinished tickets it is
+  // linked to, for its step, and every ticket, so a stack on a blocker's own
   // pull request is said once, as the blocker, rather than twice.
-  const ticketOf = new Map<string, string>();
-  for (const work of works.values()) for (const pull of work.pulls) ticketOf.set(pull.url, work.ticket.key);
+  const ownersOf = new Map<string, string[]>();
+  for (const work of mine) for (const pull of work.pulls) ownersOf.set(pull.url, [...(ownersOf.get(pull.url) ?? []), work.ticket.key]);
+  const ticketsOf = new Map<string, string[]>();
+  for (const work of works.values()) for (const pull of work.pulls) ticketsOf.set(pull.url, [...(ticketsOf.get(pull.url) ?? []), work.ticket.key]);
 
-  const merge: { key: string; step: NextStep }[] = [];
+  const merge: NextStep[] = [];
   const mergeAfter: NextStep[] = [];
   const close: NextStep[] = [];
   const ready: NextStep[] = [];
   const answer: NextStep[] = [];
   const nudge: NextStep[] = [];
-  const start: { key: string; step: NextStep }[] = [];
+  const start: NextStep[] = [];
 
   for (const work of mine) {
     const key = work.ticket.key;
-    const waits = waitsFor[key] ?? [];
-    const summary = work.ticket.summary;
+    const one = [key];
 
     if (work.stage === 'merged') {
       close.push({
         kind: 'close',
-        key,
+        keys: one,
         title: `Move ${key} to Done`,
-        reason: line(key, 'every pull request has merged', unblocks(key)),
+        reason: line(one, 'every pull request has merged', unblocks(one)),
         url: work.ticket.url,
         on: 'jira',
         pull: null,
       });
     }
-    if (work.stage === 'not-started' && waits.length === 0) {
-      start.push({ key, step: { kind: 'start', key, title: `Start ${key}`, reason: line(key, summary, unblocks(key)), url: work.ticket.url, on: 'jira', pull: null } });
+    if (work.stage === 'not-started' && waitsOf(one).length === 0) {
+      start.push({ kind: 'start', keys: one, title: `Start ${key}`, reason: line(one, work.ticket.summary, unblocks(one)), url: work.ticket.url, on: 'jira', pull: null });
     }
 
     for (const pull of work.pulls) {
+      // Said once, where its last ticket in merge order comes: after everything any of them waits for.
+      const keys = ownersOf.get(pull.url)!;
+      if (keys[keys.length - 1] !== key) continue;
+      const waits = waitsOf(keys);
+      // What it is: the ticket's summary, or with several, the pull request's own title.
+      const about = keys.length === 1 ? work.ticket.summary : pull.title;
       const row = pull.row;
       // A ticket whose links could not be read may wait for something unseen, so
-      // it is never offered to merge; its card says why.
-      if (pull.stage === 'ready' && work.ticket.linksRead) {
+      // its pull requests are never offered to merge; its card says why.
+      if (pull.stage === 'ready' && keys.every((owner) => works.get(owner)!.ticket.linksRead)) {
         const base = pull.stackedOn;
         if (waits.length === 0 && !base) {
-          merge.push({ key, step: { kind: 'merge', key, title: `Merge ${pullRef(pull)}`, reason: line(key, unblocks(key) || summary), url: pull.url, on: 'github', pull: row } });
+          merge.push({ kind: 'merge', keys, title: `Merge ${pullRef(pull)}`, reason: line(keys, unblocks(keys) || about), url: pull.url, on: 'github', pull: row });
         } else if (waits.every(clear) && (!base || (base.court === 'ready' && !base.isDraft))) {
-          const baseTicket = base ? ticketOf.get(base.url) : undefined;
-          const after = [...waits, ...(base && !(baseTicket && waits.includes(baseTicket)) ? [`#${base.number}`] : [])];
+          const baseTickets = base ? (ticketsOf.get(base.url) ?? []) : [];
+          const after = [...waits, ...(base && !baseTickets.some((other) => waits.includes(other)) ? [`#${base.number}`] : [])];
           mergeAfter.push({
             kind: 'merge-after',
-            key,
+            keys,
             title: `Then merge ${pullRef(pull)} (after ${listOf(after)})`,
-            reason: line(key, unblocks(key) || summary),
+            reason: line(keys, unblocks(keys) || about),
             url: pull.url,
             on: 'github',
             pull: row,
@@ -695,9 +718,9 @@ export function nextSteps(project: ProjectWork, now: Date, only: (work: TicketWo
         const behind = waits.length > 0 ? `${listOf(waits)} ${waits.length === 1 ? 'is' : 'are'} ready to merge` : '';
         ready.push({
           kind: 'ready',
-          key,
+          keys,
           title: `Mark ${pullRef(pull)} ready for review`,
-          reason: line(key, 'checks passed', behind),
+          reason: line(keys, 'checks passed', behind),
           url: pull.url,
           on: 'github',
           pull: row,
@@ -710,15 +733,15 @@ export function nextSteps(project: ProjectWork, now: Date, only: (work: TicketWo
           .filter((reason) => !(reason.kind === 'activity' && reason.login && askers.has(reason.login)))
           .map((reason) => reasonText(reason, row, now))
           .filter(Boolean);
-        answer.push({ kind: 'answer', key, title: answerTitle(row, pull), reason: line(key, ...why.slice(0, 2)), url: pull.url, on: 'github', pull: row });
+        answer.push({ kind: 'answer', keys, title: answerTitle(row, pull), reason: line(keys, ...why.slice(0, 2)), url: pull.url, on: 'github', pull: row });
       }
       if (row && row.nudge) {
         const asked = row.requestedReviewers.length > 0 ? `asked ${row.requestedReviewers.map((login) => `@${login}`).join(', ')}` : '';
         nudge.push({
           kind: 'nudge',
-          key,
+          keys,
           title: `Nudge reviewers on ${pullRef(pull)}`,
-          reason: line(key, `waiting on reviewers for ${waitedFor(row.since, now)}`, asked),
+          reason: line(keys, `waiting on reviewers for ${waitedFor(row.since, now)}`, asked),
           url: pull.url,
           on: 'github',
           pull: row,
@@ -727,15 +750,9 @@ export function nextSteps(project: ProjectWork, now: Date, only: (work: TicketWo
     }
   }
 
-  return [
-    ...merge.sort((a, b) => byImpact(a.key, b.key)).map((entry) => entry.step),
-    ...mergeAfter,
-    ...close,
-    ...ready,
-    ...answer,
-    ...nudge,
-    ...start.sort((a, b) => byImpact(a.key, b.key)).map((entry) => entry.step),
-  ];
+  return [...merge.sort(byImpact), ...mergeAfter, ...close, ...ready, ...answer, ...nudge, ...start.sort(byImpact)].filter((step) =>
+    step.keys.some((key) => only(works.get(key)!)),
+  );
 }
 
 /** Whether a blocker is out of the way of marking its dependent's draft ready: inside, and at least ready to merge. */

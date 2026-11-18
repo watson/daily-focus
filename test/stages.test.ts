@@ -199,7 +199,7 @@ test('the fixture epic: merge first, then what only waits on merging, then close
 
 test("a teammate's tickets lead to nothing to do", () => {
   const steps = nextSteps(projectWork(epicRead(), SOURCES), NOW);
-  assert.ok(!steps.some((step) => step.key === 'PAY-205'));
+  assert.ok(!steps.some((step) => step.keys.includes('PAY-205')));
 });
 
 test('what frees the most goes first among merges', () => {
@@ -299,6 +299,75 @@ test('fixing CI and answering a comment are worded as what to do', () => {
   const steps = nextSteps(projectWork(planned([ticket('PAY-1')]), sourcesFor({ 'PAY-1': [linked(red)] }, [red])), NOW);
   assert.equal(steps[0]?.title, 'Fix CI on acme/payments-api #412');
   assert.equal(steps[0]?.reason, 'PAY-1 · CI failing: unit');
+});
+
+test('a pull request linked to several tickets is one step, said for all of them', () => {
+  const tickets = [ticket('PAY-1'), ticket('PAY-2'), ticket('PAY-3')];
+  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.waiting)], 'PAY-2': [linked(PULLS.waiting)], 'PAY-3': [linked(PULLS.waiting)] }, [PULLS.waiting]);
+  const project = projectWork(planned(tickets), sources);
+  const steps = nextSteps(project, NOW);
+  assert.deepEqual(
+    steps.map((step) => step.title),
+    ['Nudge reviewers on acme/web #88'],
+  );
+  assert.deepEqual(steps[0]!.keys, ['PAY-1', 'PAY-2', 'PAY-3']);
+  assert.equal(steps[0]!.reason, 'PAY-1, PAY-2 and PAY-3 · waiting on reviewers for 3 days · asked @sam');
+  assert.equal(nextSteps(project, NOW, (work) => work.ticket.key === 'PAY-3').length, 1, 'an epic card holding any of them has it');
+});
+
+test('a pull request for several tickets merges once none of them waits on anything still in the way', () => {
+  const shared = { 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.ready)] };
+  const other = pull({ id: 'github:pr:acme/payments-api#503', number: 503, url: 'https://github.com/acme/payments-api/pull/503', headRef: 'pay-3' });
+  const tickets = [ticket('PAY-3'), ticket('PAY-1'), ticket('PAY-2', { blockedBy: ['PAY-3'] })];
+  const inReview = sourcesFor({ ...shared, 'PAY-3': [linked(PULLS.waiting)] }, [PULLS.ready, PULLS.waiting]);
+  assert.ok(
+    !nextSteps(projectWork(planned(tickets), inReview), NOW).some((step) => step.kind.startsWith('merge')),
+    'not while one of its tickets waits on one in review',
+  );
+  const ready = sourcesFor({ ...shared, 'PAY-3': [linked(other)] }, [PULLS.ready, other]);
+  assert.deepEqual(
+    nextSteps(projectWork(planned(tickets), ready), NOW).map((step) => step.title),
+    ['Merge acme/payments-api #503', 'Then merge acme/payments-api #412 (after PAY-3)'],
+  );
+
+  const linkedTogether = [ticket('PAY-1', { blocks: ['PAY-2'] }), ticket('PAY-2', { blockedBy: ['PAY-1'] })];
+  const steps = nextSteps(projectWork(planned(linkedTogether), sourcesFor(shared)), NOW);
+  assert.deepEqual(
+    steps.map((step) => step.title),
+    ['Merge acme/payments-api #412'],
+    'a link between two of its own tickets does not put it after itself',
+  );
+  assert.equal(steps[0]!.reason, 'PAY-1 and PAY-2 · Add the ledger table');
+});
+
+test("what waits on a ticket waits too on what its shared pull request's other tickets wait for", () => {
+  const fourth = pull({ id: 'github:pr:acme/payments-api#504', number: 504, url: 'https://github.com/acme/payments-api/pull/504', headRef: 'pay-4' });
+  const tickets = [ticket('PAY-3'), ticket('PAY-1'), ticket('PAY-2', { blockedBy: ['PAY-3'] }), ticket('PAY-4', { blockedBy: ['PAY-1'] })];
+  const sources = sourcesFor(
+    { 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.ready)], 'PAY-3': [linked(PULLS.waiting)], 'PAY-4': [linked(fourth)] },
+    [PULLS.ready, PULLS.waiting, fourth],
+  );
+  assert.ok(!nextSteps(projectWork(planned(tickets), sources), NOW).some((step) => step.kind.startsWith('merge')));
+});
+
+test('a pull request for several tickets is said after what any of them waits for', () => {
+  const second = pull({ id: 'github:pr:acme/payments-api#505', number: 505, url: 'https://github.com/acme/payments-api/pull/505', headRef: 'pay-3' });
+  const third = pull({ id: 'github:pr:acme/payments-api#506', number: 506, url: 'https://github.com/acme/payments-api/pull/506', headRef: 'pay-4' });
+  const tickets = [ticket('PAY-1'), ticket('PAY-3'), ticket('PAY-4', { blockedBy: ['PAY-3'] }), ticket('PAY-5', { blockedBy: ['PAY-4'] })];
+  const sources = sourcesFor(
+    { 'PAY-1': [linked(PULLS.ready)], 'PAY-3': [linked(second)], 'PAY-4': [linked(third)], 'PAY-5': [linked(PULLS.ready)] },
+    [PULLS.ready, second, third],
+  );
+  assert.deepEqual(
+    nextSteps(projectWork(planned(tickets), sources), NOW).map((step) => step.title),
+    ['Merge acme/payments-api #505', 'Then merge acme/payments-api #506 (after PAY-3)', 'Then merge acme/payments-api #412 (after PAY-4)'],
+  );
+});
+
+test("a pull request is not offered to merge when any of its tickets' links could not be read", () => {
+  const sources = sourcesFor({ 'PAY-1': [linked(PULLS.ready)], 'PAY-2': [linked(PULLS.ready)] });
+  const steps = nextSteps(projectWork(planned([ticket('PAY-1'), ticket('PAY-2', { linksRead: false })]), sources), NOW);
+  assert.ok(!steps.some((step) => step.kind.startsWith('merge')));
 });
 
 test('nothing to do on a project that is all done', () => {
