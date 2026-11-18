@@ -30,6 +30,7 @@ import type {
   ProjectRead,
   ProjectTicket,
 } from '../src/types.ts';
+import { issueKeysIn } from '../src/issuekeys.ts';
 import { planProject } from '../src/projects.ts';
 import { relativeTime, waitedFor } from './format.ts';
 
@@ -407,23 +408,51 @@ export interface ProjectWork {
 }
 
 /**
+ * The one ticket an open pull request is the work of, of the tickets it is
+ * linked to: the one its branch or title names. Linking reads its description
+ * and commit messages too, where a pull request mentions the tickets around it
+ * ("unblocks PAY-2"), and those are not its own. With no key in its branch or
+ * title, the one ticket it is linked to, if there is only one; a key there that
+ * names none of them, one beyond the project say, leaves it none. Null when
+ * that leaves none or several.
+ */
+function ownTicket(row: BoardRow, linkedTo: ReadonlySet<string> | undefined): string | null {
+  const tickets = [...(linkedTo ?? [])];
+  const named = new Set([...issueKeysIn(row.title), ...issueKeysIn(row.headRef)]);
+  const own = named.size === 0 ? tickets : tickets.filter((key) => named.has(key.toUpperCase()));
+  return own.length === 1 ? own[0]! : null;
+}
+
+/**
  * The stacks between tickets: a ticket whose pull request is stacked on
  * another ticket's pull request merges after that ticket, whatever Jira's links
  * say, since a stack is the order the code will actually land in. Stacks inside
  * one ticket are its own business.
+ *
+ * Each end counts as the work of its own ticket alone (`ownTicket`). A pull
+ * request that mentions the next ticket is linked to both. Counted as the next
+ * ticket's work, a stack on it would put that ticket first, and with Jira's
+ * link saying the opposite, the page would show a loop that is in neither
+ * GitHub nor Jira. A stack whose ends have no single ticket says nothing about
+ * the order between tickets.
  */
 function ticketStacks(works: ReadonlyMap<string, TicketWork>): Map<string, string[]> {
-  const ticketOf = new Map<string, string>();
-  for (const work of works.values()) for (const pull of work.pulls) ticketOf.set(pull.url, work.ticket.key);
-  const stacks = new Map<string, string[]>();
+  const linkedTo = new Map<string, Set<string>>();
+  const stacked = new Map<string, { row: BoardRow; base: BoardRow }>();
   for (const work of works.values()) {
     for (const pull of work.pulls) {
-      const parent = pull.stackedOn ? ticketOf.get(pull.stackedOn.url) : undefined;
-      if (!parent || parent === work.ticket.key) continue;
-      const parents = stacks.get(work.ticket.key) ?? [];
-      if (!parents.includes(parent)) parents.push(parent);
-      stacks.set(work.ticket.key, parents);
+      linkedTo.set(pull.url, (linkedTo.get(pull.url) ?? new Set<string>()).add(work.ticket.key));
+      if (pull.row && pull.stackedOn) stacked.set(pull.url, { row: pull.row, base: pull.stackedOn });
     }
+  }
+  const stacks = new Map<string, string[]>();
+  for (const { row, base } of stacked.values()) {
+    const child = ownTicket(row, linkedTo.get(row.url));
+    const parent = ownTicket(base, linkedTo.get(base.url));
+    if (!child || !parent || child === parent) continue;
+    const parents = stacks.get(child) ?? [];
+    if (!parents.includes(parent)) parents.push(parent);
+    stacks.set(child, parents);
   }
   return stacks;
 }

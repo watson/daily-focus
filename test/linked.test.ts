@@ -13,7 +13,8 @@ import { test } from 'node:test';
 
 import { loadConfig } from '../src/config.ts';
 import { buildTicketSearchQueries, normalizeTicketPull, type TicketPullsFetch } from '../src/github.ts';
-import { issueKeysIn, needsJiraCount, readLinkedPulls, reconcile, type LinkedDeps, type LinkedRead } from '../src/linked.ts';
+import { issueKeysIn } from '../src/issuekeys.ts';
+import { needsJiraCount, readLinkedPulls, reconcile, type LinkedDeps, type LinkedRead } from '../src/linked.ts';
 import { judge } from '../src/tickets.ts';
 import type { LinkedPull, Ticket } from '../src/types.ts';
 

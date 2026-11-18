@@ -23,6 +23,7 @@
 
 import type { GitHubConfig } from './config.ts';
 import { fetchTicketPulls, ghToken, type TicketPullsFetch } from './github.ts';
+import { issueKeysIn } from './issuekeys.ts';
 import type { LinkedPull, Ticket } from './types.ts';
 
 /**
@@ -32,35 +33,6 @@ import type { LinkedPull, Ticket } from './types.ts';
  * in charge of that ticket. Two months keeps that rare at a few pages a read.
  */
 export const CLOSED_LOOKBACK_DAYS = 60;
-
-/* ---------- finding keys ---------- */
-
-const KEYISH = /(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9_]*)-(\d+)/g;
-
-/**
- * Every ticket key a piece of text could be naming, upper-cased.
- *
- * Case-insensitive, because branches are usually lower case — `proj-8842-drop-
- * retry` — and the connector reads them regardless. A key can't continue a word
- * (`XPROJ-1` names nothing) and its number is read whole, so `PROJ-12` is never
- * found inside `PROJ-123`.
- *
- * An underscore is ambiguous: project keys may contain one, and so may a branch
- * prefix. So `mara_proj-8842` offers both MARA_PROJ-8842 and PROJ-8842. That
- * generosity costs nothing, because only keys that are on the board are ever
- * looked up — which is also why "UTF-8" here is harmless.
- */
-export function issueKeysIn(text: string): Set<string> {
-  const keys = new Set<string>();
-  for (const match of text.matchAll(KEYISH)) {
-    const parts = match[1]!.split('_');
-    for (let i = 0; i < parts.length; i++) {
-      const project = parts.slice(i).join('_');
-      if (/^[A-Za-z]/.test(project)) keys.add(`${project.toUpperCase()}-${match[2]}`);
-    }
-  }
-  return keys;
-}
 
 /* ---------- reading GitHub ---------- */
 
